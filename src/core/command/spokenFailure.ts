@@ -6,6 +6,7 @@ import { classifyEmptyLanding, isPageArrival } from '../browser/emptyLanding'
 import { classifyNotFoundPage } from '../browser/notFoundPage'
 import { classifyUnavailablePage, isUnavailableNotice } from '../browser/unavailablePage'
 import { pageReadText } from '../browser/pageText'
+import { reportFault } from '../trace/fault'
 
 // A failure speaks one line (#327, ADR 0076): a Command whose action fails,
 // or whose action lands on a Blocked Action, a consent wall, a Blocker, or an
@@ -83,7 +84,8 @@ function landingFacts(result: string): { url: string; title: string } | null {
   if (match === null) return null
   try {
     return { url: match[1]!, title: JSON.parse(match[2]!) as string }
-  } catch {
+  } catch (error) {
+    reportFault('command.spokenFailure.landingFacts', error)
     return { url: match[1]!, title: '' }
   }
 }
