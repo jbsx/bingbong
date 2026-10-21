@@ -1972,7 +1972,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // The first Step's turn already holds the split's ask: its own reading's ask is named apart.
       const heard = await read(stepTurnId, words[index]!, first ? pending : null, line.source === 'spoken', { split: false, step, ...(first ? { askId: `${turnId}-step1` } : {}) })
       if (reading?.turnId === stepTurnId) reading = null
-      const split = first && whole.ask !== undefined && whole.jev !== undefined && 'confidence' in whole.jev ? { split: { ask: whole.ask, jev: whole.jev, steps: words } } : {}
+      const split = first && whole.ask !== undefined && whole.jev !== undefined && 'confidence' in whole.jev ? { split: { ask: whole.ask, jev: whole.jev, steps: words, line: line.text } } : {}
       const end = await runStep(line, stepTurnId, words[index]!, heard, first ? { ...extra, ...split } : {}, { measured: first, step, taskId: turnId })
       if (!stepDone(end)) {
         stopSteps(line, turnId, end, index + 2, words.length)

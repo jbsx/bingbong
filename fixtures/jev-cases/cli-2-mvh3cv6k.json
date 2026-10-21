@@ -1,6 +1,6 @@
 {
   "turnId": "cli-2-mvh3cv6k",
-  "transcript": "start the song from the beginning",
+  "transcript": "start the song from the beginning and put it on loop",
   "model": "jev-1.14.0",
   "recordedAt": 1792525426671,
   "expect": [

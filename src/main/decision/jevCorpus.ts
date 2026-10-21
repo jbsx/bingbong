@@ -194,10 +194,11 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     if (typeof expectation === 'string') return { error: expectation }
     parsed.push(expectation)
   }
-  const decision = collectDecisionRecords(logsDir).records.findLast((record): record is DecisionRecord => record.type === 'decision' && record.turnId === id)
+  // A Command's record by its turn, or — a Step's own ask named by its id (#364) — by the ask it was read from.
+  const decision = collectDecisionRecords(logsDir).records.findLast((record): record is DecisionRecord => record.type === 'decision' && (record.turnId === id || record.ask === id))
   const asks = collectAsks(logsDir)
   // A line read as Steps (#364) holds two asks on its first Step's turn: the Step's own, and the one that split the line — taken when the expectations judge a question only it asked.
-  const askIds = decision !== undefined ? [decision.ask, decision.split?.ask].filter((askId): askId is string => askId !== undefined) : [id]
+  const askIds = decision !== undefined ? [decision.ask, decision.split?.ask].filter((askId): askId is string => askId !== undefined && (askId === id || id === decision.turnId)) : [id]
   const judged = askIds.find((askId) => parsed.every((expectation) => expectation.question in (asks.get(askId)?.questions ?? {})))
   const askId = judged ?? askIds[0]
   const ask = askId === undefined ? undefined : asks.get(askId)
@@ -206,9 +207,11 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     const problem = expectationProblem(ask.questions, expectation)
     if (problem !== null) return { error: problem }
   }
+  // The split's case is the whole line's; a Step's case carries the Step's words.
+  const transcript = decision === undefined ? undefined : askId === decision.split?.ask ? decision.split.line : decision.transcript
   const jevCase: JevCase = {
     turnId: decision?.turnId ?? ask.turnId ?? ask.id,
-    ...(decision !== undefined ? { transcript: decision.transcript } : {}),
+    ...(transcript !== undefined ? { transcript } : {}),
     model: ask.model,
     recordedAt: ask.at,
     expect: parsed,

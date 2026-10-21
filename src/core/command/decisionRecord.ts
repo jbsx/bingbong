@@ -99,10 +99,11 @@ export interface DecisionRecord {
   /**
    * The line was read as Steps (#364), on the first Step's hop 0: the ask
    * that split it — the whole line's, with the steps Choice — Jev's answer
-   * to it, and each Step's words. The record's own `ask` and `jev` are the
-   * first Step's reading.
+   * to it, each Step's words, and the line itself (absent in records before
+   * 2026-10-21). The record's own `ask` and `jev` are the first Step's
+   * reading.
    */
-  readonly split?: { readonly ask: string; readonly jev: JevDetail; readonly steps: readonly string[] }
+  readonly split?: { readonly ask: string; readonly jev: JevDetail; readonly steps: readonly string[]; readonly line?: string }
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */

@@ -329,7 +329,9 @@ describe('the Player (#343)', () => {
     browser.snapshot = { ...browser.snapshot, media: null }
     decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
     await runner.run('loop the song')
-    expect(Object.keys((decision.requests[1]!.questions.verb as DecisionChoiceQuestion).options)).not.toContain('loop')
+    const noSong = Object.keys((decision.requests[1]!.questions.verb as DecisionChoiceQuestion).options)
+    expect(noSong).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
+    expect(noSong).not.toContain('loop')
   })
 
   it('a Capability reading fires the Player\'s op, answers its line and ends the Task `terminal`: no hop, no Verdict (#362)', async () => {
