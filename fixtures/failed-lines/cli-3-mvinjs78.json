@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvinjs78",
+  "transcript": "turn off annotations",
+  "at": 1792619808360,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Live CLI under Xvfb with #380's collector, YouTube watch page (kt_0b4RwerY), menus shut: hop 0 none 0.58, the Where Ask read menu-7 (right-click the video) 0.34 over click-13 (the player Settings, hasPopup=menu expanded=false) 0.19; the context menu opened, hop 1 clicked the hidden 'Show cards InfoShopping' 0.83, then captions, the masthead Settings, its menu: cap. With Settings already open the same line reads click Annotations 1.00 and ends done (case cli-5-mvineu5g)",
+  "meant": "Open the player Settings menu and switch Annotations off",
+  "log": "decision-1792619796808-1.jsonl"
+}

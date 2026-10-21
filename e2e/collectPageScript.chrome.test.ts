@@ -3,7 +3,7 @@ import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
 import { buildPageSnapshot, parseCollectedPage } from '../src/core/browser/snapshot.ts'
 import { commandPageOf } from '../src/core/command/command.ts'
-import { commandState } from '../src/core/command/jevReading.ts'
+import { commandQuestions, commandState } from '../src/core/command/jevReading.ts'
 import { readRefStates } from '../src/main/browser/readRefStates.ts'
 import { dismissCommand } from '../src/core/command/dismissDialog.ts'
 import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
@@ -443,5 +443,55 @@ describe.skipIf(!canDriveChrome)('the Ref State read from the accessibility tree
       '[5] button "Save Save to Watch later"',
       '[6] link "Home" https://example.com/home',
     ])
+  })
+})
+
+// The ARIA widget roles a click acts on (#380): a menu's toggle and choice
+// rows, as YouTube's player Settings draws Ambient mode and Annotations, a
+// tablist and a tree. Each is a ref, kinded as a button, carrying the state
+// the tree gives it — never offered a type.
+const WIDGET_PAGES: Record<string, string> = {
+  '/widgets': `<body>
+    <div role="menu" aria-label="Settings">
+      <div role="menuitemcheckbox" aria-checked="true" tabindex="0">Annotations</div>
+      <div role="menuitemcheckbox" aria-checked="false" tabindex="0">Ambient mode</div>
+      <div role="menuitemradio" aria-checked="true" tabindex="0">Auto</div>
+      <div role="menuitemradio" aria-checked="false" tabindex="0">1080p</div>
+      <div role="menuitem" tabindex="0">Playback speed</div>
+    </div>
+    <div role="tablist"><div role="tab" aria-selected="true" tabindex="0">Videos</div><div role="tab" aria-selected="false" tabindex="0">Shorts</div></div>
+    <ul role="tree"><li role="treeitem" aria-expanded="false" tabindex="0">src</li><li role="treeitem" tabindex="0">README.md</li></ul>
+    <div role="searchbox" contenteditable="true" aria-label="Search"></div>
+  </body>`,
+}
+
+describe.skipIf(!canDriveChrome)('the collector takes every ARIA widget role a click acts on (#380)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(WIDGET_PAGES, 'bingbong-collector-widgets-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it('makes every menu row, tab and tree row a button ref with its state, and offers a type only to the search box', async () => {
+    await fixtures.open('/widgets')
+    const collected = parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))
+    const page = commandPageOf(buildPageSnapshot(await readRefStates(fixtures.chrome.cdp, collected)))
+    expect(commandState('turn off annotations', page).split('\n').slice(3)).toEqual([
+      '[1] button "Annotations" role=menuitemcheckbox checked=true',
+      '[2] button "Ambient mode" role=menuitemcheckbox checked=false',
+      '[3] button "Auto" role=menuitemradio checked=true',
+      '[4] button "1080p" role=menuitemradio checked=false',
+      '[5] button "Playback speed" role=menuitem',
+      '[6] button "Videos" role=tab selected=true',
+      '[7] button "Shorts" role=tab selected=false',
+      '[8] button "src" role=treeitem level=1 expanded=false selected=false',
+      '[9] button "README.md" role=treeitem level=1 selected=false',
+      '[10] input "Search"',
+    ])
+    const card = commandQuestions('turn off annotations', page).action
+    expect(Object.keys(card.options).filter((label) => label.startsWith('type-'))).toEqual(['type-10'])
+    expect(card.options['click-1']).toBe('click [1] button "Annotations" role=menuitemcheckbox checked=true')
   })
 })

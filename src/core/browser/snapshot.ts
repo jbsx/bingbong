@@ -260,6 +260,13 @@ export const MAX_HREF_LENGTH = 200
 
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
+/**
+ * The ARIA widget roles a click acts on (#380): a menu row, a tab, a list
+ * choice, a toggle, a tree row. Kinded as buttons, so none is offered a
+ * type; `textbox`, `searchbox` and `combobox` stay inputs.
+ */
+const CLICK_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'checkbox', 'radio', 'switch', 'treeitem'])
+
 export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
@@ -267,6 +274,7 @@ export function refKindOf(element: CollectedElement): RefKind {
   if (
     element.tag === 'button' ||
     element.role === 'button' ||
+    (element.role !== null && CLICK_ROLES.has(element.role)) ||
     (element.tag === 'input' && element.inputType !== null && BUTTON_INPUT_TYPES.has(element.inputType))
   ) {
     return 'button'

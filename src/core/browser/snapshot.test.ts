@@ -12,6 +12,7 @@ import {
   pageReadPartCount,
   pageSignature,
   parseCollectedPage,
+  refKindOf,
 } from './snapshot'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
@@ -139,6 +140,22 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
   it('refuses to format a part past the end, naming the range', () => {
     const snapshot = buildPageSnapshot(textPage(2, 100))
     expect(() => formatPageRead(snapshot, 2)).toThrow("read_page: part 2 is past the end — this page's text has 1 part, part=1")
+  })
+})
+
+describe('refKindOf: an ARIA widget role kinds its ref (#380)', () => {
+  // The roles a click acts on: a menu row, a tab, a list choice, a toggle, a tree row — never typed into.
+  it.each(['menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'checkbox', 'radio', 'switch', 'treeitem'])('a div of role=%s is a button', (role) => {
+    expect(refKindOf(element({ tag: 'div', role }))).toBe('button')
+  })
+
+  it.each(['textbox', 'searchbox', 'combobox'])('a div of role=%s stays an input', (role) => {
+    expect(refKindOf(element({ tag: 'div', role }))).toBe('input')
+  })
+
+  it('a native text input stays an input whatever its role', () => {
+    expect(refKindOf(element({ tag: 'input', role: 'combobox', inputType: 'text' }))).toBe('input')
+    expect(refKindOf(element({ tag: 'input', role: null, inputType: 'search' }))).toBe('input')
   })
 })
 

@@ -58,6 +58,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     '[role="switch"]',
     '[role="tab"]',
     '[role="menuitem"]',
+    '[role="menuitemcheckbox"]',
+    '[role="menuitemradio"]',
+    '[role="treeitem"]',
     '[role="option"]',
     'iframe'
   ].join(',')
