@@ -1,4 +1,4 @@
-import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulAnswer, DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink, PageMedia } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
@@ -194,14 +194,19 @@ type RefAct = 'click' | 'type' | 'menu'
  */
 export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly verb: string }
 
-/** The set-aside of the action a Command fired on a page; null when the page lacks the ref it names, or it is no card action. */
+/**
+ * The set-aside of the action a Command fired on a page; null when the
+ * page lacks the ref it names, or it is no card action. A navigation sets
+ * nothing aside: an `open-N` fires as one, and the address it opened is
+ * never offered again anyway (a visited address).
+ */
 export function setAsideOf(command: Command, page: CommandPage): SetAside | null {
   if (command.capability !== undefined) return { verb: command.capability }
   if (command.verb === 'click' || command.verb === 'type' || command.verb === 'menu') {
     const ref = page.refs.find((candidate) => candidate.ref === command.target)
     return ref === undefined ? null : { act: command.verb, ...refIdentityOf(ref, page) }
   }
-  return isRefLessVerb(command.verb) ? { verb: command.verb } : null
+  return command.verb !== 'navigate' && isRefLessVerb(command.verb) ? { verb: command.verb } : null
 }
 
 /** Whether the Task set aside what a card label names on this page. */
@@ -465,15 +470,24 @@ export const RUNNER_UP_FLOOR = 0.05
  * it is fired on is collected anew. Null when there is none.
  */
 export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[], kind: 'click' | 'menu' = 'click'): RefIdentity | null {
-  const ranked = Object.entries(action.probabilities)
-    .filter(([, probability]) => probability >= RUNNER_UP_FLOOR)
-    .sort((a, b) => b[1] - a[1])
-  for (const [label] of ranked) {
+  const firedRef = page.refs.find((ref) => ref.ref === fired)
+  const firedIdentity = firedRef !== undefined ? refIdentityOf(firedRef, page) : null
+  for (const label of rankedOffered(action, page, setAside)) {
     const acted = refActionOf(label)
-    const ref = acted?.act === kind && acted.n !== fired ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
-    if (ref !== undefined && !isAside(label, page, setAside)) return refIdentityOf(ref, page)
+    const ref = acted?.act === kind ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
+    if (ref === undefined) continue
+    const own = refIdentityOf(ref, page)
+    if (firedIdentity === null || !sameRef(own, firedIdentity)) return own
   }
   return null
+}
+
+/** The card labels an answer gives {@link RUNNER_UP_FLOOR} or over, most probable first, none the Task set aside. */
+function rankedOffered(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[]): string[] {
+  return Object.entries(action.probabilities)
+    .filter(([label, probability]) => probability >= RUNNER_UP_FLOOR && !isAside(label, page, setAside))
+    .sort((a, b) => b[1] - a[1])
+    .map(([label]) => label)
 }
 
 /** The ref on a page that an identity names (#363): its label and its address; null when the page has none. */
@@ -675,10 +689,12 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
     room -= taken.length
     return taken
   }
-  const clicked = new Set(take(page.refs.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
-  const typed = new Set(take(page.refs.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
+  // The refs the clicks reach under the cap; their types and right-clicks come from these.
+  const reached = page.refs.slice(0, Math.max(0, room))
+  const clicked = new Set(take(reached.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
+  const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const opened = take(links)
-  const menus = take(page.refs.filter((ref) => kept(`menu-${ref.ref}`)))
+  const menus = take(reached.filter((ref) => kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
   return {
@@ -779,8 +795,8 @@ export function dismissPhraseQuestions(text: string, page: CommandPage, { capabi
  * The Progress Noul (#373, ADR 0080): did the last action bring the page
  * closer to what the words ask? Asked beside the Verdict at every hop past
  * the first; the runner acts on it only when sure it did not help
- * ({@link PROGRESS_FLOOR}), and it never ends a Task. Measured on the 11:50
- * run's hop asks and the #370 AC8 ones: wordings naming repeats, or changes
+ * ({@link PROGRESS_FLOOR}), and it never ends a Task. Measured 2026-10-21 on
+ * that day's 11:50 run's hop asks and #370 AC8's: wordings naming repeats, or changes
  * that would have happened anyway, did not lower the clock flips reading
  * 0.4–0.6, and one lowered the menu step.
  */
@@ -792,8 +808,8 @@ function progressQuestion(): DecisionNoulQuestion {
   }
 }
 
-/** At or under it, the Progress Noul is sure the last action did not help (#373): the mirror of the 0.7 Choice bar. */
-export const PROGRESS_FLOOR = 0.3
+/** At or under it, the Progress Noul is sure the last action did not help (#373): the mirror of the Choice bar, 0.3. */
+export const PROGRESS_FLOOR = Math.round((1 - DEFAULT_DECISION_THRESHOLDS.choice) * 100) / 100
 
 /** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice. */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion }
@@ -973,11 +989,7 @@ const isRefLessVerb = (label: string): label is RefLessVerb => (REFLESS_VERBS as
  * `none` under it.
  */
 function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[]): string {
-  if (!isAside(action.choice, page, setAside)) return action.choice
-  const next = Object.entries(action.probabilities)
-    .filter(([label, probability]) => probability >= RUNNER_UP_FLOOR && !isAside(label, page, setAside))
-    .sort((a, b) => b[1] - a[1])[0]
-  return next?.[0] ?? 'none'
+  return isAside(action.choice, page, setAside) ? (rankedOffered(action, page, setAside)[0] ?? 'none') : action.choice
 }
 
 /** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them. */

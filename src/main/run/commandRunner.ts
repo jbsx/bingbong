@@ -1149,9 +1149,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** The words it has searched for or typed (owner's rule 2026-10-19): a page whose address carries them is their results. */
     readonly terms: string[]
     /** The last hop fired, whose "Done so far" line waits for the page it left to be read, so it can tell the facts; `told` is the page it was told against before, when a re-read tells it again. */
-    pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly told?: CommandPage }
+    pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly told?: CommandPage; readonly stepAside?: true }
     /** The last action told in "Done so far", kept so a re-read (the page moved under the reading) tells it again against the page as it is then. */
-    last?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult }
+    last?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly stepAside?: true }
     /** Whether a reading was already read again because the page had moved under it: once per Task. */
     rechecked: boolean
     /** Whether the Task already watched the page it reached for a late pop-up: once per Task. */
@@ -1263,8 +1263,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * A hop has fired (#328): its record is written with how its navigation
    * landed and, when the Task ends here, how. A Task goes on from a
    * Jev-read hop that landed, under the cap; resolves to its end, or null.
+   * `stepAside`: a Step Aside's dismissal (#354), which the next hop's
+   * Progress Noul does not judge (#373).
    */
-  function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult): TaskEnded | null {
+  function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult, stepAside = false): TaskEnded | null {
     const landed = {
       ...(fired.landing !== undefined ? { landing: fired.landing } : {}),
       ...(fired.video !== undefined ? { video: fired.video } : {}),
@@ -1277,7 +1279,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
     // The line is provisional: the next hop, reading the page the action left, tells it in facts.
     task.actions.push(doneLine(command, page, doneResult(page, fired)))
-    task.pending = { command, page, fired }
+    task.pending = { command, page, fired, ...(stepAside ? { stepAside: true as const } : {}) }
     if (command.site !== undefined) task.searched.push(command.site)
     if ((command.verb === 'search' || command.verb === 'type') && command.slot !== null && command.slot !== '') task.terms.push(command.slot)
     if (fired.unchanged === true) {
@@ -1517,14 +1519,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       visit(task, page.url)
       if (task.pending !== undefined) {
         // The last action's "Done so far" line, in the facts of the page it left: what it did to its target, what appeared, and whether a pop-up covers it.
-        const { command: last, page: before, fired, told } = task.pending
+        const { command: last, page: before, fired, told, stepAside } = task.pending
         const found = doneFacts(before, page, doneResult(before, fired), last.target)
         // Told again after a re-read (post mortem 2026-10-19): the pop-up the line named over a clear page is gone — closed by the collect's consent dismissal or by the page — and the line says so, or Jev reads a wall over a page with nothing in the way.
         const retold = told?.dialog !== undefined && before.dialog === undefined && page.dialog === undefined && found.changed
         const facts: DoneResult = retold ? { ...found, covered: true, closed: true } : found
         task.actions[task.actions.length - 1] = doneLine(last, before, facts)
         task.pending = undefined
-        task.last = { command: last, page: before, fired }
+        task.last = { command: last, page: before, fired, ...(stepAside === true ? { stepAside } : {}) }
         // The action that raised a pop-up over a clear page (#354): set aside if the Task steps past it.
         task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
         task.opened = facts.changed ? openedBy(last, before, page) : undefined
@@ -1554,7 +1556,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const progress = readProgress(result.answers)
       const verdict = readVerdict(result.answers)
       const sureYes = sure(verdict) && verdict.outcome === 'yes'
-      const judged = task.last !== undefined && task.last.fired.unchanged !== true && !sureYes ? task.last : null
+      // A Step Aside's dismissal is the runner's own move over a pop-up, never the card's: it is not judged.
+      const judged = task.last !== undefined && task.last.fired.unchanged !== true && task.last.stepAside !== true && !sureYes ? task.last : null
       const stalled = judged !== null && progress !== null && progress <= PROGRESS_FLOOR
       const aside = stalled ? setAsideOf(judged.command, judged.page) : null
       const placed: TaskHop = { ...hopOf(task, hop), ...(progress !== null ? { progress } : {}) }
@@ -1581,8 +1584,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // no next step and no sure yes ends unsure, said so.
       // Either end is read against the page as it is now: a page that moved
       // under the reading is read again, once.
-      const ends = sureYes || command.verb === 'none'
       const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page) && command.verb !== 'play'
+      // A second strike in a row (#336, #373) leaves the reading no next step: it ends unsure as `none` does, through Look then act.
+      const struckOut = stalled && !inTheWay && task.stalled + 1 >= MAX_STALLED_HOPS
+      const ends = sureYes || command.verb === 'none' || struckOut
       if ((inTheWay || ends) && !task.rechecked && (await pageMoved(page))) {
         if (superseded(task)) {
           log({ ...record, ended: 'superseded' })
@@ -1605,13 +1610,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         else {
           task.stalled += 1
           if (aside !== null) task.setAside.push(aside)
-          if (task.stalled >= MAX_STALLED_HOPS) {
-            // Two hops in a row that changed nothing or did not help (#336, #373): the Task ends unsure, said so.
-            log({ ...record, ended: 'unsure' })
-            answerFailure(turnId, SPOKEN_FAILURES.unsure)
-            dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
-            return endTask(task, 'unsure', hop + 1)
-          }
         }
       }
       if (inTheWay) {
@@ -1635,7 +1633,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
               hop += 1
               continue
             }
-            ended = settleHop(task, stepped, null, aside, page, fired)
+            // The pop-up closed is the runner's move: the next hop does not judge it, and one that changed the page clears the run.
+            ended = settleHop(task, stepped, null, aside, page, fired, true)
+            if (fired.unchanged !== true) task.stalled = 0
             break
           }
           if (ended !== null) return endTask(task, ended, hop + 1)
@@ -1665,6 +1665,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         if (ended === 'unsure' && (task.opened !== undefined || task.lookedAgain === true)) {
           // Look then act (#363): a dead end closes what the last hop opened and tries the reading before's runner-up, once.
+          // It starts the run afresh (#373), or a struck-out Task would end on the runner-up's settle with what it opened left open.
+          task.stalled = 0
           const looked = await lookAgain(task, hop, { read, record, page, words: slotWords(result.answers.slot, task.text), turnId, firedAt })
           if (looked.ended !== null) return endTask(task, looked.ended, looked.hop + 1)
           hop = looked.hop

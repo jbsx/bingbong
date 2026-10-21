@@ -1000,6 +1000,8 @@ describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
     expect(setAsideOf({ verb: 'scroll_down', target: null, slot: null }, MEDIA_PAGE)).toEqual({ verb: 'scroll_down' })
     expect(setAsideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' }, MEDIA_PAGE)).toEqual({ verb: 'loop' })
     expect(setAsideOf({ verb: 'click', target: 9, slot: null }, MEDIA_PAGE)).toBeNull()
+    // An open-N fires as a navigate: the address it opened is a visited one, and the navigate verb stays on the card.
+    expect(setAsideOf({ verb: 'navigate', target: null, slot: 'https://example.com/docs' }, MEDIA_PAGE)).toBeNull()
   })
 
   it('leaves a set-aside ref action off the next card, and only that action: the ref keeps its other actions and its line', () => {

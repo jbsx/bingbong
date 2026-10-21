@@ -2125,6 +2125,25 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
       })
 
+      it('#373: the dismissal is the runner\'s move: the next hop does not judge it, and it clears a standing strike', async () => {
+        const h = taskHarness()
+        const { browser, decision, records, runner } = h
+        closing(h, SEARCH_REFS)
+        const click = browser.click.bind(browser)
+        browser.click = async (n) => {
+          const line = await click(n)
+          if (n !== 3) return line
+          covered(h)
+          return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+        }
+        const progress = (scripted: { answers: Record<string, DecisionAnswer> }, noul: number) => ({ answers: { ...scripted.answers, progress: { type: 'noul' as const, noul } } })
+        // Hop 1 strikes the search; hop 3 reads the closed pop-up as no progress, which counts for nothing.
+        decision.script.push(answer('search', 's3-6'), progress(answer('click-3'), 0.1), withOutcome(answer('click-3'), 'in_the_way', 0.85), progress(answer('click-1'), 0.1), SURE_YES)
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([3, 1, 1])
+        expect(decisions(records).at(-1)!.ended).toBe('done')
+      })
+
       it('AC5: a sheet still open after every rung of the Dismissal Ladder ends the Task as a wall, saying the pop-up is still open — said once, at the last rung', async () => {
         const h = taskHarness()
         const { browser, events, records, decision, runner } = h
@@ -2679,6 +2698,21 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
       expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I couldn't find loop here."])
       expect(decisions(records).at(-1)).toMatchObject({ undo: true, ended: 'not_found' })
+    })
+
+    it('#373: a second no-progress strike is a dead end like none: it closes what the last hop opened and tries the runner-up', async () => {
+      const { browser, decision, records, runner } = menuHarness()
+      browser.scroll = async (direction) => {
+        browser.scrolls.push(direction)
+        return `scrolled ${direction}: x=0 y=360`
+      }
+      const judgedAnswer = (card: Record<string, number>, noul: number) => ({ answers: { ...hopAnswer(card).answers, progress: { type: 'noul' as const, noul } } })
+      decision.script.push(answer('scroll_down'), judgedAnswer({ 'menu-1': 0.6, 'menu-2': 0.3, none: 0.1 }, 0.2), judgedAnswer({ 'click-4': 0.9, none: 0.1 }, 0.2), hopAnswer({ none: 0.9 }, 's0-0'))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(browser.menus).toEqual([1, 2])
+      expect(browser.clicks).toEqual([])
+      expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape', 'Escape'])
+      expect(decisions(records).find((record) => record.runnerUp === true)).toMatchObject({ verb: 'menu', target: 2 })
     })
 
     it('a scroll that brought new refs into view opened nothing: its dead end ends unsure, nothing pressed', async () => {
