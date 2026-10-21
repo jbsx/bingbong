@@ -99,6 +99,8 @@ export interface DecisionRecord {
   readonly undo?: true
   /** The runner opened the previous reading's runner-up target after a dead end (#363): `verb` and `target` are its own. */
   readonly runnerUp?: true
+  /** The Where Ask's reading (#379, ADR 0082): hop 0 read `none`, and this is the Choice asked after it, its own record beside the first's. */
+  readonly whereAsk?: true
   /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
   readonly error?: string
   /**

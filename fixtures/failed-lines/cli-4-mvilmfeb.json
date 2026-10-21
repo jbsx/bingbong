@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-4-mvilmfeb",
+  "transcript": "open page information",
+  "at": 1792616572290,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "On Wikipedia's Teapot article the first ask read 'read' 0.29 over none 0.26 and the Tools click 0.17, so no Where Ask was asked and the page was read aloud (the same line on Duck read none and the Where Ask opened Tools, then Page information, done)",
+  "meant": "Open Tools and click Page information",
+  "log": "decision-1792616508517-1.jsonl"
+}

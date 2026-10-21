@@ -133,6 +133,17 @@ describe('noResponseAnswer', () => {
     expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words.')
   })
 
+  it('names both readings after a Where Ask (#379, ADR 0082): the first none, then what the Where Ask read or why it gave nothing', () => {
+    const first = jev({ none: 0.55, 'click-13': 0.2 })
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words, and nothing on this page to look for.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ 'click-9': 0.6, none: 0.4 }) })).toBe(
+      'No response.\n\nJev read no command in the words, and where it would be read “click [9]”, but nothing on this page fits it.',
+    )
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: { model: 'jev', latencyMs: 800, reason: 'timeout' } })).toBe(
+      "No response.\n\nJev read no command in the words; asked where it would be, Jev didn't answer in time.",
+    )
+  })
+
   it("puts the grammar's error first", () => {
     expect(noResponseAnswer({ grammarError: 'I can scroll up or down.', jevAsked: false })).toBe('No response.\n\nI can scroll up or down.')
   })

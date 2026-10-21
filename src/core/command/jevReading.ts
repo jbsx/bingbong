@@ -751,9 +751,9 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
  * own words (`steps: false`).
  */
-export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly appliance?: Appliance } = {}): CommandQuestions {
+export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk } = {}): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, hop !== undefined, applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [])
+  const card = actionQuestion(page, pageRead, links, options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [])
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
@@ -761,6 +761,42 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
   const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
   return steps === null ? asked : { ...asked, steps }
+}
+
+/**
+ * What the action card is asked (#379, ADR 0082): at hop 0, which action
+ * the words are; at a later hop, which comes next; and, when hop 0 read
+ * `none`, the Where Ask — the same card, asked where on the page the thing
+ * the words name would be, its `none` a remark or noise. The wording is
+ * the one `jev:replay` settled on (#379 AC3): saying the words are a
+ * command put Wikipedia's Tools click top for "open page information"
+ * (0.25–0.33, `none` 0.06–0.11) where "the words name something" left it
+ * at 0.01, the ambient asks' Settings click stayed top (0.35–0.53), and
+ * "Thank you." and "I'm so hungry." stayed none (0.68–1.00). The first
+ * ask's wording stays as it was measured.
+ */
+export type CardAsk = 'first' | 'later' | 'where'
+
+const SAYS_NOT_A_COMMAND = { chooseNone: 'Choose none when the words are not a command.', none: REFLESS_DESCRIPTIONS.none }
+
+const CARD_ASKS: Readonly<Record<CardAsk, { readonly question: string; readonly chooseNone: string; readonly none: string }>> = {
+  first: { question: "Which one action does the browser take for the user's words?", ...SAYS_NOT_A_COMMAND },
+  later: { question: "Which one action comes next for the user's words, given Done so far and the page now?", ...SAYS_NOT_A_COMMAND },
+  where: {
+    question: 'The words are a command for something this page does not show. Which one action would reveal it, or find it?',
+    chooseNone: 'Choose none when the words are a remark or noise, nothing to look for.',
+    none: 'a remark or noise, nothing to look for',
+  },
+}
+
+/**
+ * The Where Ask's questions (#379, ADR 0082): hop 0's, with the action
+ * card asked where the thing the words name would be — every option it
+ * offered, `search` and `where` as they were — and no `steps`: the first
+ * reading already read the line as one Command.
+ */
+export function whereQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): CommandQuestions {
+  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where' })
 }
 
 /**
@@ -775,12 +811,14 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * chosen over the page's own control in the logged asks. An action the
  * Task set aside is not offered (#373): a ref's other actions stay.
  */
-function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredVerbs: readonly ApplianceVerb[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
+function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], asked: CardAsk, offeredVerbs: readonly ApplianceVerb[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
   const applianceVerbs = offeredVerbs.filter(kept)
-  const refLess = Object.entries(REFLESS_DESCRIPTIONS).filter(([verb]) => kept(verb))
+  const refLess = Object.entries(REFLESS_DESCRIPTIONS)
+    .filter(([verb]) => kept(verb))
+    .map(([verb, line]) => [verb, verb === 'none' ? CARD_ASKS[asked].none : line] as const)
   let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
@@ -795,7 +833,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
   const opened = take(links)
   const menus = take(reached.filter((ref) => kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
-  const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
+  const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
     type: 'choice',
     instructions: ops.length === 0 ? instructions : `${instructions} ${CLICK_NAMES_A_BUTTON}`,

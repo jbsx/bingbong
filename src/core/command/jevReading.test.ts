@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -293,6 +293,30 @@ describe('the questions', () => {
     // Every single word is a span; the longest spans are the ones left out.
     expect(spans.filter((span) => span.start === span.end)).toHaveLength(40)
     expect(Math.max(...spans.map((span) => span.end - span.start + 1))).toBeLessThan(40)
+  })
+})
+
+describe('the Where Ask (#379, ADR 0082): the same action card, asked where the thing the words name would be', () => {
+  const SITE = { ...PAGE, url: 'https://www.youtube.com/watch?v=x' }
+
+  it('offers every option the first card offered, with the question and its none changed — the where beside it, never the steps', () => {
+    const first = commandQuestions('turn on ambient mode and loop it', SITE)
+    const where = whereQuestions('turn on ambient mode and loop it', SITE)
+    expect(Object.keys(where)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(where.action.options)).toEqual(Object.keys(first.action.options))
+    expect(where.action.options['click-2']).toBe(first.action.options['click-2'])
+    expect(where.action.options.search).toBe(first.action.options.search)
+    expect(where.action.options.none).toBe('a remark or noise, nothing to look for')
+    expect(where.action.instructions).toBe(
+      'The words are a command for something this page does not show. Which one action would reveal it, or find it? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are a remark or noise, nothing to look for.',
+    )
+    expect(where.slot).toEqual(first.slot)
+  })
+
+  it('leaves the first ask as it was measured', () => {
+    const first = commandQuestions('turn on ambient mode', SITE)
+    expect(first.action.instructions).toMatch(/^Which one action does the browser take for the user's words\? .* Choose none when the words are not a command\.$/)
+    expect(first.action.options.none).toBe('not a command for this page: a remark, a question, a name, noise')
   })
 })
 

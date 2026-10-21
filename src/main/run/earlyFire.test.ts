@@ -115,11 +115,14 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     const { records, asks, perf, runner } = wired([
       { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
       { action: choice('none'), slot: choice('none') },
+      { action: choice('none'), slot: choice('none') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
-    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'command'])
-    expect(decisions(records)).toEqual([expect.objectContaining({ ask: asks[1]!.id, partialCalls: 1, partialAsks: [asks[0]!.id] })])
+    // The Endpoint's none is followed by its Where Ask (#379), whose own record carries none of the partials.
+    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'command', 'where'])
+    expect(decisions(records)).toEqual([expect.objectContaining({ ask: asks[1]!.id, partialCalls: 1, partialAsks: [asks[0]!.id] }), expect.objectContaining({ ask: asks[2]!.id, whereAsk: true })])
+    expect(decisions(records)[1]).not.toHaveProperty('partialCalls')
   })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
 

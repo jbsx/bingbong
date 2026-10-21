@@ -13,6 +13,7 @@ import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch,
 import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
+  whereQuestions,
   commandState,
   doneAction,
   doneFacts,
@@ -637,6 +638,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     action?: DecisionChoiceAnswer
     /** The line Jev split into Steps (#364): each Step's words; `command` is then the whole line's reading, never fired. */
     steps?: readonly string[]
+    /** The Where Ask's reading (#379, ADR 0082), read after a hop 0 whose top choice was `none`. */
+    whereAsk?: true
   }
 
   /** How a hop 0 is read (#364): whether Jev may split the line, and, for a Step's own words, where the Step stands and the ask's own id. */
@@ -743,6 +746,36 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ask: result.askId,
     }
   }
+
+  /**
+   * The Where Ask (#379, ADR 0082): a hop 0 whose top choice was `none`, on
+   * a line Jev read, is asked once more — the same card over the same
+   * page, the question changed to where the thing the words name would
+   * be. Its reading is hop 0's, fired with no bar; `none` again, or no
+   * answer, is no Command, and nothing guesses.
+   */
+  async function readWhere(turnId: string, text: string, first: Reading, step: StepContext | undefined): Promise<Reading> {
+    const { page } = first
+    const model = deps.decisionModel()
+    if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
+    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step), whereQuestions(text, page, { appliance: appliance() }), `${first.ask ?? turnId}-where`)
+    if (result.status === 'answered') {
+      return {
+        command: readCommandAnswers(result.answers, text, page),
+        page,
+        reading: 'jev',
+        jevAsked: true,
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model),
+        ask: result.askId,
+        action: result.answers.action,
+        whereAsk: true,
+      }
+    }
+    return { command: UNREAD, page, reading: 'best_guess', jevAsked: true, jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId, whereAsk: true }
+  }
+
+  /** Whether a hop 0 reading is followed by a Where Ask (#379): Jev read the line, and its top choice was `none`, at any probability. */
+  const asksWhere = (first: Reading): boolean => first.reading === 'jev' && first.action?.choice === 'none'
 
   /** The Learned Terms, when wired. */
   const learnedTerms = (): readonly string[] => deps.terms?.learned() ?? []
@@ -935,6 +968,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       jevAsked: read.jevAsked,
       ...(read.jev !== undefined ? { jev: read.jev } : {}),
       ...(read.ask !== undefined ? { ask: read.ask } : {}),
+      ...(read.whereAsk ? { whereAsk: true as const } : {}),
       ...(truncated ? { truncated: true } : {}),
     }
   }
@@ -1908,15 +1942,23 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * it is the first, and only the first measures the line's Reaction;
    * every Step's Task carries the line's id (`taskId`).
    */
-  async function runStep(line: Line, turnId: string, words: string, heard: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string }): Promise<StepEnd> {
+  async function runStep(line: Line, turnId: string, words: string, first: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string }): Promise<StepEnd> {
     const { source, endpointAt, truncated, submission, givenAt } = line
-    const firedAt = at()
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
+    let heard = first
+    if (asksWhere(first) && submission === submitted) {
+      // A none at hop 0 asks where (#379, ADR 0082): its record stays, and the Where Ask's reading is hop 0's, with a record of its own.
+      log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
+      reading = { turnId, submission }
+      heard = await readWhere(turnId, words, first, options.step)
+      if (reading?.turnId === turnId) reading = null
+    }
+    const firedAt = at()
     if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...extra, task: hop0 }
+    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(heard === first ? extra : {}), task: hop0 }
     const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
 
     if (submission !== submitted) {
@@ -1937,7 +1979,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // An Utterance read as no Command — hop 0 has no Verdict, so never as the page already being what was asked (#370):
       // a greyed entry of the words, and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
       publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
-      answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
+      // After a Where Ask, both readings are the reason.
+      const where = heard.whereAsk === true ? { where: heard.jev } : {}
+      answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }
     }

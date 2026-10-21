@@ -16,6 +16,12 @@ Command names it on the action card: `action=click-12` is a click on ref 12,
 were converted in #370: each ask's action card rebuilt by the real
 `commandQuestions`, its refs and their lines the same as the target card's.
 
+A Where Ask case (#379, ADR 0082), named `<turnId>-where`, is the ask a
+hop 0 that read `none` is asked next: its card's question and `none`
+rewritten as `whereQuestions` words them. It expects the opener as the top
+choice, with no floor: the runner fires the Where Ask's best reading at any
+probability.
+
 - `pnpm jev:candidates` lists the logged asks a misfire or overrun signal
   pointed at.
 - `pnpm jev:case <turnId> --expect action=click-27 [outcome=yes>=0.7 action!=click-21 …]` writes

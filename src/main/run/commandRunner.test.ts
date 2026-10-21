@@ -319,16 +319,19 @@ describe('the Player (#343)', () => {
 
   it("with nothing queued the ask offers a song to play and not the Queue's walk; with a song current, skip, previous and show too; never a song op of the Player's own (#374)", async () => {
     const { decision, runner } = music()
-    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+    // Each none is followed by its Where Ask (#379), on the same card.
+    const none = { answers: { action: choice('none'), slot: choice('none') } }
+    decision.script.push(none, none)
     await runner.run('go to the next song')
     await runner.run('play bohemian rhapsody')
-    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+    decision.script.push(none, none)
     await runner.run('go to the next song')
     const verbs = decision.requests.map((request) => Object.keys((request.questions.action as DecisionChoiceQuestion).options))
     expect(verbs[0]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
     for (const label of ['skip', 'previous', 'show']) expect(verbs[0]).not.toContain(label)
-    expect(verbs[2]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue', 'skip', 'previous', 'show']))
-    for (const label of RETIRED_LABELS) expect(verbs[2]).not.toContain(label)
+    expect(verbs[1]).toEqual(verbs[0])
+    expect(verbs[3]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue', 'skip', 'previous', 'show']))
+    for (const label of RETIRED_LABELS) expect(verbs[3]).not.toContain(label)
   })
 
   describe("a song on the page the Player never started — brought back by `resume`, or left paused by a `skip` with nothing queued (#362, #364 live runs)", () => {
@@ -778,13 +781,13 @@ describe('a Command the Local Match cannot settle', () => {
 
   it('a none verb publishes one greyed Feed Entry and no speak, error or tool_call', async () => {
     const { browser, decision, runner, events, records } = harness()
-    decision.script.push({ answers: { action: choice('none', 0.7), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none', 0.7), slot: choice('none') } }, { answers: { action: choice('none', 0.9), slot: choice('none') } })
 
     expect(await runner.run('what a lovely day', { source: 'spoken' })).toBe(true)
 
     expect(types(events)).toEqual(['command', 'display', 'done'])
     expect(events[0]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
-    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nJev read no command in the words.', muted: true })
+    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nJev read no command in the words, and nothing on this page to look for.', muted: true })
     expect(events[0]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
@@ -1086,7 +1089,7 @@ describe('what every Command records', () => {
     decision.script.push({ answers: { action: choice('type-3', 0.5, card), slot: choice('s0-1', 0.8) } })
     // The type's Task goes on one hop, whose Verdict says done (#328, #370).
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
-    decision.script.push({ answers: { action: choice('none', 0.9), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none', 0.9), slot: choice('none') } }, { answers: { action: choice('none', 0.9), slot: choice('none') } })
 
     // No plain verb heads the words: the Local Match settles nothing, Jev reads them.
     await runner.run('hello there into search', { source: 'spoken', turnId: 'voice-1' })
@@ -1094,7 +1097,7 @@ describe('what every Command records', () => {
     await runner.run('scroll down', { turnId: 'typed-1' })
 
     // A new Utterance within 3 s of a Jev-read hop is an overrun of it (#328).
-    expect(records.map((record) => record.type)).toEqual(['decision', 'decision', 'misfire', 'decision', 'decision'])
+    expect(records.map((record) => record.type)).toEqual(['decision', 'decision', 'misfire', 'decision', 'decision', 'decision'])
     expect(records[1]).toMatchObject({ verb: 'none', ended: 'done', task: { id: 'voice-1', hop: 1 } })
     expect(records[2]).toMatchObject({ signal: 'overrun', turnId: 'voice-1', signalTurnId: 'voice-2', hop: 0 })
     records.splice(1, 2)
@@ -1121,7 +1124,11 @@ describe('what every Command records', () => {
       ask: 'voice-1',
       task: { id: 'voice-1', hop: 0 },
     })
-    expect(records[1]).toMatchObject({ turnId: 'voice-2', verb: 'none', reading: 'jev', ended: 'terminal' })
+    // A none at hop 0 keeps its record, and its Where Ask ends the line (#379).
+    expect(records[1]).toMatchObject({ turnId: 'voice-2', verb: 'none', reading: 'jev', ask: 'voice-2' })
+    expect(records[1]).not.toHaveProperty('ended')
+    expect(records[2]).toMatchObject({ turnId: 'voice-2', verb: 'none', reading: 'jev', ask: 'voice-2-where', whereAsk: true, ended: 'terminal' })
+    records.splice(1, 1)
     expect(records[2]).toMatchObject({ turnId: 'typed-1', source: 'typed', verb: 'scroll_down', reading: 'local_match', jevAsked: false, ended: 'local_match' })
     expect(perf.records.filter((record) => record.stage === 'reaction').map((record) => record.turnId)).toEqual(['voice-1', 'typed-1'])
   })
@@ -1889,17 +1896,18 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC3: hop 0 asks no Verdict and never ends "already here" (#370): a none fires nothing, writes a record, is dropped with "No response.", and has no Reaction', async () => {
     const { browser, events, records, decision, perf, runner } = harness()
-    decision.script.push(answer('none'))
+    decision.script.push(answer('none'), answer('none'))
     await runner.run('pull up the example page', { source: 'spoken' })
-    expect(decision.requests[0]!.questions).not.toHaveProperty('outcome')
+    for (const request of decision.requests) expect(request.questions).not.toHaveProperty('outcome')
     expect(Object.keys((decision.requests[0]!.questions.action as DecisionChoiceQuestion).options)).not.toContain('done')
     expect(browser.navigations).toEqual([])
     expect(browser.clicks).toEqual([])
-    expect(decision.requests).toHaveLength(1)
+    // The none is followed by its Where Ask (#379), which reads none too.
+    expect(decision.requests).toHaveLength(2)
     expect(commands(events)).toEqual([expect.objectContaining({ dropped: true, task: expect.objectContaining({ hop: 0 }) })])
     expect(commands(events)[0]).not.toHaveProperty('action')
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read no command in the words.' })
-    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'none', ended: 'terminal' })])
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read no command in the words, and nothing on this page to look for.' })
+    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'none' }), expect.objectContaining({ verb: 'none', whereAsk: true, ended: 'terminal' })])
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
 
@@ -2907,6 +2915,173 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
     expect(decisions(records)[1]).toMatchObject({ verb: 'type', slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', task: { hop: 1 } })
+  })
+})
+
+describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the thing is, then opens it', () => {
+  const WATCH = 'https://www.youtube.com/watch?v=ambient1'
+  /** The 14:25 run's page, cut down: the gear opens a menu that holds Ambient mode. */
+  const WATCH_REFS: SnapshotRef[] = [ref(1, 'button', 'Settings', { states: ['hasPopup=menu', 'expanded=false'] }), ref(2, 'media', 'Video player'), ref(3, 'button', 'Theater mode (t)')]
+  const MENU_REFS: SnapshotRef[] = [ref(4, 'input', 'Ambient mode', { inputType: 'checkbox' }), ref(5, 'button', 'Playback speed')]
+  const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+  const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  const displays = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+  /** A card reading whose top action carries the probabilities given. */
+  const reading = (probabilities: Record<string, number>, more: Record<string, DecisionAnswer> = {}) => {
+    const [top, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]!
+    return { answers: { action: choice(top, confidence, probabilities), slot: choice('none'), ...more } }
+  }
+  /** The 14:25 run's first reading: none over the Settings click. */
+  const NONE_OVER_SETTINGS = reading({ none: 0.55, 'click-1': 0.2, 'click-3': 0.1 })
+  const isWhereAsk = (request: DecisionRequest<DecisionQuestions>): boolean => cardOf(request).instructions.startsWith('The words are a command for something this page does not show.')
+
+  /** The watch page: Settings opens its menu (`inert` refs change nothing), Escape closes it. */
+  function watchHarness(inert: readonly number[] = []) {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: WATCH, title: 'Song - YouTube', refs: WATCH_REFS }
+    const click = h.browser.click.bind(h.browser)
+    h.browser.click = async (n) => {
+      const line = await click(n)
+      if (inert.includes(n)) return line
+      if (n === 1) h.browser.snapshot = { ...h.browser.snapshot, refs: [...WATCH_REFS, ...MENU_REFS] }
+      return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+    }
+    const pressKey = h.browser.pressKey.bind(h.browser)
+    h.browser.pressKey = async (press, times) => {
+      await pressKey(press, times)
+      if (press.key === 'Escape') h.browser.snapshot = { ...h.browser.snapshot, refs: WATCH_REFS }
+    }
+    return h
+  }
+
+  it('AC4 shape: "turn on ambient mode" reads none, the Where Ask opens Settings as hop 0, and the Task goes on to Ambient mode and ends done', async () => {
+    const { browser, events, records, asks, decision, runner } = watchHarness()
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.53, none: 0.2 }), reading({ 'click-4': 0.9 }), SURE_YES)
+    await runner.run('Turn on ambient mode.', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([1, 4])
+    expect(decision.requests).toHaveLength(4)
+    const [first, where] = decision.requests
+    // The same card and state, the question changed; no steps.
+    expect(isWhereAsk(first!)).toBe(false)
+    expect(isWhereAsk(where!)).toBe(true)
+    expect(where!.state).toBe(first!.state)
+    expect(Object.keys(cardOf(where!).options)).toEqual(Object.keys(cardOf(first!).options))
+    expect(cardOf(where!).options.none).toBe('a remark or noise, nothing to look for')
+    expect(where!.questions).not.toHaveProperty('steps')
+    expect(where!.questions).not.toHaveProperty('outcome')
+
+    // The first reading's none record stays; the Where Ask is its own record, with its own ask.
+    const read = decisions(records)
+    expect(read[0]).toMatchObject({ turnId: 't1', verb: 'none', reading: 'jev', ask: 't1', task: { id: 't1', hop: 0 } })
+    expect(read[0]).not.toHaveProperty('ended')
+    expect(read[0]).not.toHaveProperty('whereAsk')
+    expect(read[1]).toMatchObject({ turnId: 't1', whereAsk: true, verb: 'click', target: 1, targetLabel: 'Settings', reading: 'jev', ask: 't1-where', task: { id: 't1', hop: 0 } })
+    expect(read.at(-1)).toMatchObject({ ended: 'done' })
+    expect(asks.map((ask) => ask.id)).toEqual(['t1', 't1-where', expect.any(String), expect.any(String)])
+    expect(asks[1]!.questions).toEqual(where!.questions)
+
+    // One Feed entry for hop 0 — the Where Ask's action — and no "No response.".
+    expect(commands(events)[0]).toMatchObject({ turnId: 't1', action: 'click [1] "Settings"', task: { id: 't1', hop: 0 } })
+    expect(commands(events)[0]).not.toHaveProperty('dropped')
+    expect(displays(events).some((text) => text.startsWith('No response.'))).toBe(false)
+  })
+
+  it('AC6 trigger: a none at any probability asks where; a grammar line, an unread line and a top choice that is not none never do', async () => {
+    const sure = watchHarness()
+    sure.decision.script.push(reading({ none: 0.99 }), reading({ none: 0.9 }))
+    await sure.runner.run('lovely weather today', { source: 'spoken' })
+    expect(sure.decision.requests.map(isWhereAsk)).toEqual([false, true])
+
+    const grammar = watchHarness()
+    await grammar.runner.run('scroll down', { source: 'spoken' })
+    expect(grammar.decision.requests).toEqual([])
+
+    const unread = watchHarness()
+    unread.decision.script.push({ unavailable: 'timeout' })
+    await unread.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(unread.decision.requests).toHaveLength(1)
+
+    const unfit = watchHarness()
+    unfit.decision.script.push(reading({ 'click-9': 0.8, none: 0.2 }))
+    await unfit.runner.run('the ninth thing', { source: 'spoken' })
+    expect(unfit.decision.requests).toHaveLength(1)
+    expect(displays(unfit.events)).toEqual(['No response.\n\nJev read “click [9]”, but nothing on this page fits it.'])
+  })
+
+  it('AC5: a Where Ask that reads none ends the line "No response." with both readings in its reason', async () => {
+    const { browser, events, records, runner, decision } = watchHarness()
+    decision.script.push(NONE_OVER_SETTINGS, reading({ none: 0.9, 'click-1': 0.05 }))
+    await runner.run('thank you', { source: 'spoken', turnId: 't1' })
+    expect(browser.clicks).toEqual([])
+    expect(displays(events)).toEqual(['No response.\n\nJev read no command in the words, and nothing on this page to look for.'])
+    expect(commands(events)).toEqual([expect.objectContaining({ turnId: 't1', dropped: true })])
+    expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
+      ['none', undefined, undefined],
+      ['none', true, 'terminal'],
+    ])
+  })
+
+  it('AC5: a Where Ask that times out or errors ends the same way, no guess', async () => {
+    for (const reason of ['timeout', 'http'] as const) {
+      const { browser, events, records, runner, decision } = watchHarness()
+      decision.script.push(NONE_OVER_SETTINGS, { unavailable: reason })
+      await runner.run('turn on ambient mode', { source: 'spoken', turnId: 't1' })
+      expect(browser.clicks).toEqual([])
+      expect(displays(events)).toEqual([`No response.\n\nJev read no command in the words; asked where it would be, ${reason === 'timeout' ? "Jev didn't answer in time." : "Jev's service answered with an error."}`])
+      expect(decisions(records)[1]).toMatchObject({ whereAsk: true, verb: 'none', reading: 'best_guess', jevAsked: true, ask: 't1-where', jev: { reason }, ended: 'unavailable' })
+    }
+  })
+
+  it("AC6: a dead end tries the Where Ask's runner-up, never the first reading's", async () => {
+    const { browser, records, decision, runner } = watchHarness()
+    decision.script.push(
+      reading({ none: 0.6, 'click-2': 0.3 }),
+      reading({ 'click-1': 0.5, 'click-3': 0.3, none: 0.2 }),
+      reading({ none: 0.9 }),
+      SURE_YES,
+    )
+    await runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(browser.clicks).toEqual([1, 3])
+    expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape'])
+    expect(decisions(records).find((record) => record.runnerUp === true)).toMatchObject({ verb: 'click', target: 3 })
+  })
+
+  it('AC6: an Early Fire partial that reads none asks nothing more; the Endpoint\'s none does', async () => {
+    const { browser, decision, runner } = watchHarness()
+    decision.script.push(reading({ none: 0.7 }, { complete: { type: 'noul', noul: 0.95 } }), NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }), SURE_YES)
+    void runner.prepare()
+    await runner.consider('turn on ambient')
+    expect(decision.requests).toHaveLength(1)
+    await runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(decision.requests.map(isWhereAsk)).toEqual([false, false, true, false])
+    expect(decision.requests.filter((request) => 'complete' in request.questions)).toHaveLength(1)
+    expect(browser.clicks).toEqual([1])
+  })
+
+  it("AC6: a Step's hop 0 asks where, told its Step, under the Step's own ask id", async () => {
+    const { browser, records, decision, runner } = watchHarness()
+    decision.script.push(
+      { answers: { action: choice('none'), slot: choice('none'), steps: choice('w5') } },
+      NONE_OVER_SETTINGS,
+      reading({ 'click-1': 0.5 }),
+      SURE_YES,
+    )
+    await runner.run('turn on ambient mode and go full screen', { source: 'spoken', turnId: 't1' })
+    const where = decision.requests[2]!
+    expect(isWhereAsk(where)).toBe(true)
+    expect(where.state).toContain('Step 1 of 2 of the line: "turn on ambient mode and go full screen"')
+    expect(browser.clicks[0]).toBe(1)
+    expect(decisions(records).find((record) => record.whereAsk === true)).toMatchObject({ ask: 't1-step1-where', task: { id: 't1', hop: 0, step: 1, of: 2 } })
+  })
+
+  it("AC6: an opener the Where Ask fired that changed nothing is Set Aside by #336's rule", async () => {
+    const { browser, decision, runner } = watchHarness([1])
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }), SURE_YES)
+    await runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(browser.clicks).toEqual([1])
+    expect(cardRefs(decision.requests[2]!)).not.toContain('click-1')
+    expect(cardRefs(decision.requests[2]!)).toContain('menu-1')
   })
 })
 

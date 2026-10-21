@@ -7,8 +7,8 @@ import type { DecisionQuestions } from '../ports/decisionModel'
 // record names its ask by id; the corpus of replayable cases is grown
 // from these (`pnpm jev:candidates`, `pnpm jev:case`).
 
-/** Which call asked: hop 0's reading, a later hop of a Task, or an Early Fire partial. */
-export type AskKind = 'command' | 'hop' | 'partial'
+/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), a later hop of a Task, or an Early Fire partial. */
+export type AskKind = 'command' | 'where' | 'hop' | 'partial'
 
 export interface AskRecord {
   readonly type: 'ask'

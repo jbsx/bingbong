@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvilcee7",
+  "transcript": "turn on ambient mode",
+  "at": 1792616105694,
+  "source": "typed",
+  "stage": "page",
+  "happened": "Live CLI run under Xvfb (dark appearance, SwiftShader WebGL): none 0.53, the Where Ask opened Settings (click-13 0.35), but YouTube's Settings menu held only Sleep timer, Playback speed and Quality — no Ambient mode — and the Task clicked Cinema mode, Settings twice and right-clicked the video to the cap",
+  "meant": "Open Settings and switch Ambient mode on",
+  "log": "decision-1792616095733-1.jsonl"
+}

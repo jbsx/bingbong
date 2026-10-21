@@ -39,6 +39,8 @@ export interface NoResponseFacts {
   readonly grammarError: string | null
   readonly jevAsked: boolean
   readonly jev?: JevDetail | JevUnavailable
+  /** The Where Ask's reading (#379, ADR 0082), when the first read `none` and the Where Ask was asked. */
+  readonly where?: JevDetail | JevUnavailable
 }
 
 /** An action card label in words (#370): `click-12` is "click [12]", `open-3` "open link 3", `scroll_down` "scroll down". */
@@ -55,9 +57,20 @@ function noResponseReason(facts: NoResponseFacts): string {
   if (!facts.jevAsked) return "Jev is off, and the words aren't a command the grammar knows — try “help”."
   const jev = facts.jev
   if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
+  const top = topAction(jev)
+  const first = top === 'none' ? 'Jev read no command in the words' : `Jev read “${actionWords(top)}”, but nothing on this page fits it`
+  const where = facts.where
+  // After a Where Ask (#379, ADR 0082), both readings: the first's none, then the Where Ask's.
+  if (where === undefined) return `${first}.`
+  if ('reason' in where) return `${first}; asked where it would be, ${JEV_UNAVAILABLE[where.reason]}`
+  const found = topAction(where)
+  return found === 'none' ? `${first}, and nothing on this page to look for.` : `${first}, and where it would be read “${actionWords(found)}”, but nothing on this page fits it.`
+}
+
+/** The action card label a reading gave the most probability; `none` when it gave none. */
+function topAction(jev: JevDetail | undefined): string {
   const actions = Object.entries(jev?.probabilities.action ?? {})
-  const top = actions.length > 0 ? actions.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0] : 'none'
-  return top === 'none' ? 'Jev read no command in the words.' : `Jev read “${actionWords(top)}”, but nothing on this page fits it.`
+  return actions.length > 0 ? actions.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0] : 'none'
 }
 
 /**
