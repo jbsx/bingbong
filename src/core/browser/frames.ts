@@ -6,6 +6,7 @@
 // numbering; underneath, each element keeps its address — the frame it was
 // read in and its index in that frame's own registry.
 
+import type { CollectedTextBlock } from './pageText'
 import type { CollectedElement, CollectedPage } from './snapshot'
 
 /** Where a collected element lives: its frame (null for the top document) and its index in that frame's registry. */
@@ -57,13 +58,20 @@ function meetsViewport(rect: CollectedElement['rect'], viewport: CollectedPage['
  * fall outside the top viewport are left out, as a top element would be.
  * An iframe whose frame did not answer stays its opaque ref — the
  * challenge detection's signal (ADR 0007) — and any frame 2×2 px or
- * smaller contributes nothing. `previous` is the last
+ * smaller contributes nothing, as does a nested frame whose iframe falls
+ * outside the top viewport outside a dialog. A frame whose elements joined the page
+ * puts its text at its iframe's place in the text too (#378), and every
+ * other frame's place reads as nothing. `previous` is the last
  * collect's addresses: an element's `previousIndex`, its own frame's,
  * becomes its place in that whole page; without it, the top's stand.
  */
 export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[], previous?: readonly FrameAddress[]): MergedPage {
   const elements: CollectedElement[] = []
   const addresses: FrameAddress[] = []
+  // The frames whose elements joined the page: the frames whose text joins it too (#378).
+  const joined = new Set<string>()
+  const childOf = (key: string | null, slot: number | undefined): CollectedFrame | undefined =>
+    slot === undefined ? undefined : frames.find((candidate) => candidate.parentKey === key && candidate.page.frameIndex === slot)
   const previousPlace = (key: string | null, index: number | undefined): number => {
     if (index === undefined || index < 0) return -1
     if (previous === undefined) return key === null ? index : -1
@@ -74,8 +82,11 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
     page.elements.forEach((element, index) => {
       if (element.tag === 'iframe') {
         if (!reachable(element)) return
-        const child = element.frameIndex === undefined ? undefined : frames.find((candidate) => candidate.parentKey === key && candidate.page.frameIndex === element.frameIndex)
-        if (child !== undefined && element.frameBox !== undefined) {
+        const child = childOf(key, element.frameIndex)
+        // A nested frame meets the top viewport as any of its frame's elements must; the top's own iframes the collector judged.
+        const inView = key === null || layer === 'dialog' || meetsViewport({ ...element.rect, x: element.rect.x + offset.x, y: element.rect.y + offset.y }, top.viewport)
+        if (child !== undefined && element.frameBox !== undefined && inView) {
+          joined.add(child.key)
           expand(child.page, child.key, { x: offset.x + element.frameBox.x, y: offset.y + element.frameBox.y }, key === null ? element.layer : layer)
           return
         }
@@ -94,5 +105,17 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
   }
   expand(top, null, { x: 0, y: 0 }, 'page')
 
-  return { page: { ...top, elements: elements.slice(0, MAX_MERGED_ELEMENTS) }, addresses: addresses.slice(0, MAX_MERGED_ELEMENTS) }
+  // A frame's text at its iframe's place (#378): each place marker gives way to its frame's own blocks, or to nothing.
+  let textCut = top.textCut === true
+  const textOf = (page: CollectedPage, key: string | null): CollectedTextBlock[] =>
+    (page.textBlocks ?? []).flatMap((block) => {
+      if (block.kind !== 'frame') return [block]
+      const child = childOf(key, block.slot)
+      if (child === undefined || !joined.has(child.key)) return []
+      if (child.page.textCut === true) textCut = true
+      return textOf(child.page, child.key)
+    })
+  const text = top.textBlocks === undefined ? {} : { textBlocks: textOf(top, null), textCut }
+
+  return { page: { ...top, ...text, elements: elements.slice(0, MAX_MERGED_ELEMENTS) }, addresses: addresses.slice(0, MAX_MERGED_ELEMENTS) }
 }

@@ -27,6 +27,15 @@ export type CollectedTextBlock = (
       /** The list's dt (`term`) and dd entries, in document order. */
       items: { term: boolean; text: string }[]
     }
+  | {
+      /**
+       * An iframe's place (#378, ADR 0081): the frame in its document's
+       * `window.frames[slot]`, whose own text the page merge puts here.
+       * It reads as nothing itself.
+       */
+      kind: 'frame'
+      slot: number
+    }
 ) & {
   /** Whether the block intersects the viewport right now (#194). */
   inView?: boolean
@@ -99,6 +108,8 @@ function renderBlock(block: CollectedTextBlock): string[] {
     }
     case 'definitions':
       return renderDefinitions(block.items)
+    case 'frame':
+      return []
   }
 }
 

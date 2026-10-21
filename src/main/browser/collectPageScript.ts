@@ -63,7 +63,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   ].join(',')
   // Read in a frame (#377, ADR 0081): this document is one of the page's
   // frames, paired with its iframe by its own slot in its parent's
-  // window.frames. A frame's text is not read here (#378).
+  // window.frames; its text the page merge puts at its iframe's place (#378).
   const inFrame = window !== window.top
   const frameSlotOf = ${FRAME_SLOT_FN}
   const ownSlot = ${OWN_SLOT_FN}()
@@ -368,7 +368,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (inView) block.inView = true
     textBlocks.push(block)
   }
-  if (heading && !inFrame) take({ kind: 'text', text: textOf(heading), heading: true }, inViewport(heading))
+  // A frame's h1 is its first block at its iframe's place, not the page's.
+  if (heading) take({ kind: 'text', text: textOf(heading), ...(inFrame ? {} : { heading: true }) }, inViewport(heading))
+  // An iframe's place in the text (#378, ADR 0081): the page merge puts its
+  // frame's own text here. The iframe itself carries no prose; one inside a
+  // tag block takes the place just after it. Past the collected-text bound
+  // the read has ended, and a frame's place with it.
+  const markFrame = (iframe) => {
+    if (collectedText > ${MAX_COLLECTED_PAGE_TEXT}) textCut = true
+    else textBlocks.push({ kind: 'frame', slot: frameSlotOf(iframe) })
+  }
   // One recursive pass over the text root in document order (#265). A tag
   // block is taken whole at its element and not descended; an element that
   // never carries prose is skipped; every other element is descended, and
@@ -386,8 +395,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // An inline element joins the run unless it wraps the heading or a tag
   // block — a card's <a> around an <h3> and a <p> — in which case it is
   // descended, so the heading stays a block of its own as it was before
-  // runs existed and the h1 is never read again.
-  const joinsRun = (el) => INLINE.has(el.tagName) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR) === null
+  // runs existed and the h1 is never read again. One around an iframe — an
+  // embed's <span> — is descended too, so the frame keeps its place (#378).
+  const joinsRun = (el) => INLINE.has(el.tagName) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR + ', iframe') === null
   const runInView = (nodes) => {
     const range = document.createRange()
     range.setStartBefore(nodes[0])
@@ -424,13 +434,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       // tagName is upper-case for HTML elements only; an <svg> or <math>
       // keeps its case.
       const tag = node.tagName.toUpperCase()
+      if (tag === 'IFRAME') markFrame(node)
       if (node === heading || NEVER_PROSE.has(tag)) continue
-      if (TAG_BLOCKS.has(tag)) take(rawBlock(node), inViewport(node))
-      else walk(node)
+      if (TAG_BLOCKS.has(tag)) {
+        take(rawBlock(node), inViewport(node))
+        node.querySelectorAll('iframe').forEach(markFrame)
+      } else walk(node)
     }
     closeRun()
   }
-  if (textRoot && !inFrame) walk(textRoot)
+  if (textRoot) walk(textRoot)
 
   const mediaFactsOf = ${MEDIA_FACTS_FN}
   const describeElement = (el, dialogRoot) => {

@@ -315,6 +315,8 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
         }),
         ...inView,
       }
+    case 'frame':
+      return isFiniteNumber(block.slot) ? { kind: 'frame', slot: block.slot } : null
     default:
       return null
   }

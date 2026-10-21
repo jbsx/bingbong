@@ -5,7 +5,8 @@ export interface CdpSocket {
   onclose: (() => void) | null
 }
 
-type EventHandler = (params: unknown) => void
+/** An event's params, and the session it came on — absent for the page's own. */
+type EventHandler = (params: unknown, sessionId?: string) => void
 
 interface PendingRequest {
   resolve: (result: never) => void
@@ -54,6 +55,7 @@ export class CdpClient {
       error?: { message?: string }
       method?: string
       params?: unknown
+      sessionId?: string
     }
     if (message.id !== undefined) {
       const request = this.pending.get(message.id)
@@ -64,7 +66,7 @@ export class CdpClient {
       return
     }
     if (message.method) {
-      for (const handler of this.handlers.get(message.method) ?? []) handler(message.params)
+      for (const handler of this.handlers.get(message.method) ?? []) handler(message.params, message.sessionId)
     }
   }
 

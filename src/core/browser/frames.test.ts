@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeFrames, type CollectedFrame } from './frames'
+import type { CollectedTextBlock } from './pageText'
 import type { CollectedElement, CollectedPage } from './snapshot'
 
 const VIEWPORT = { width: 1000, height: 600, scrollX: 0, scrollY: 0, scrollHeight: 600 }
@@ -99,5 +100,29 @@ describe('mergeFrames (#377, ADR 0081)', () => {
     const previous = [{ frame: null, index: 0 }, { frame: 'f', index: 3 }]
 
     expect(mergeFrames(top, [embed], previous).page.elements.map((el) => el.previousIndex)).toEqual([0, 1, -1])
+  })
+})
+
+describe("mergeFrames: a frame's text (#378, ADR 0081)", () => {
+  const text = (value: string): CollectedTextBlock => ({ kind: 'text', text: value })
+  const at = (slot: number): CollectedTextBlock => ({ kind: 'frame', slot })
+  const textsOf = (merged: CollectedPage): string[] => (merged.textBlocks ?? []).map((block) => (block.kind === 'text' ? block.text : `<${block.kind}>`))
+  const withText = (read: CollectedFrame, blocks: CollectedTextBlock[]): CollectedFrame => ({ ...read, page: { ...read.page, textBlocks: blocks } })
+
+  it("puts each read frame's text at its iframe's place, a nested frame's inside its parent's", () => {
+    const top = page('https://news.example/a', [iframe(0, { x: 0, y: 0 })], { textBlocks: [text('Intro'), at(0), text('Outro')] })
+    const outer = withText(frame('outer', null, 0, 'https://comments.example/', [iframe(0, { x: 10, y: 10, width: 100, height: 100 })]), [text('First comment'), at(0), text('Last comment')])
+    const inner = withText(frame('inner', 'outer', 0, 'https://quote.example/', []), [text('Quoted tweet')])
+
+    expect(textsOf(mergeFrames(top, [inner, outer]).page)).toEqual(['Intro', 'First comment', 'Quoted tweet', 'Last comment', 'Outro'])
+  })
+
+  it('takes no text from a frame not read, a frame 2×2 px or smaller, or a nested frame outside the top viewport', () => {
+    const top = page('https://a.example/', [iframe(0, { x: 0, y: 0 }), iframe(1, { x: 0, y: 400, width: 2, height: 2 })], { textBlocks: [at(0), at(1), at(2), text('Body')] })
+    const outer = withText(frame('outer', null, 0, 'https://o.example/', [iframe(0, { x: 0, y: 2000 })]), [text('Outer'), at(0)])
+    const low = withText(frame('low', 'outer', 0, 'https://low.example/', []), [text('Below the fold')])
+    const pixel = withText(frame('pixel', null, 1, 'https://tracker.example/', []), [text('Tracker')])
+
+    expect(textsOf(mergeFrames(top, [outer, low, pixel]).page)).toEqual(['Outer', 'Body'])
   })
 })
