@@ -42,7 +42,12 @@ export function App() {
   const [promptFocused, setPromptFocused] = useState(false)
   // The blank pane is never shown (#361): with no page, a tap leaves the Idle Screen up, as one with the Prompt open does.
   const paneHasPage = usePaneHasPage()
-  const idle = useIdle({ tapWakes: () => paneHasPage && promptDraft === null })
+  // Whether the Idle Screen is up, as of the last render: once up it is
+  // sticky, and only input or a Command that acts on the pane wakes it.
+  const idleUp = useRef(false)
+  // A key typed on the Idle Screen opens its Prompt with it, as main's does (#361).
+  const typeIntoPrompt = useCallback((text: string) => setPromptDraft((draft) => (draft ?? '') + text), [])
+  const idle = useIdle({ tapWakes: () => paneHasPage && promptDraft === null, shown: () => idleUp.current, onType: typeIntoPrompt })
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
@@ -75,10 +80,6 @@ export function App() {
     onHeard: assistant.appendVoiceHeard,
     onError: assistant.appendVoiceError,
   })
-
-  // Whether the Idle Screen is up, as of the last render: once up it is
-  // sticky, and only input or a Command that acts on the pane wakes it.
-  const idleUp = useRef(false)
 
   // Real activity — a command running, speech heard, a listen starting —
   // counts as "not idle" alongside input, so the idle screen never covers a
@@ -142,7 +143,7 @@ export function App() {
   const promptOpen = showIdle && promptDraft !== null
   const prompting = promptOpen && promptFocused
   useEffect(() => window.bingbong.idle.reportShown({ up: showIdle, open: promptOpen, prompting }), [showIdle, promptOpen, prompting])
-  useEffect(() => window.bingbong.idle.onTyped((text) => setPromptDraft((draft) => (draft ?? '') + text)), [])
+  useEffect(() => window.bingbong.idle.onTyped(typeIntoPrompt), [typeIntoPrompt])
   // The Prompt goes with the screen.
   useEffect(() => {
     if (!showIdle) setPromptDraft(null)

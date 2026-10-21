@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { idleKeyAction } from './idleTyping'
+import { idleKeyAction, idlePromptText, type IdleKeyInput } from './idleKey'
 
-const key = (over: Partial<Electron.Input>) =>
-  ({ type: 'keyDown', key: 'a', control: false, meta: false, shift: false, alt: false, isComposing: false, ...over }) as Electron.Input
+const key = (over: Partial<IdleKeyInput>): IdleKeyInput => ({ type: 'keyDown', key: 'a', control: false, meta: false, alt: false, isComposing: false, ...over })
 
 describe('idleKeyAction (#361)', () => {
   it('types a printable key: a letter, a capital, a digit, punctuation, a non-Latin letter', () => {
@@ -25,5 +24,12 @@ describe('idleKeyAction (#361)', () => {
     expect(idleKeyAction(key({ meta: true, key: 'PageUp' }))).toEqual({ kind: 'pass' })
     expect(idleKeyAction(key({ alt: true }))).toEqual({ kind: 'pass' })
     expect(idleKeyAction(key({ isComposing: true }))).toEqual({ kind: 'pass' })
+  })
+
+  it("opens the Prompt with a typed key's character, empty for Space, and not at all for the rest", () => {
+    expect(idlePromptText(idleKeyAction(key({ key: 's' })))).toBe('s')
+    expect(idlePromptText(idleKeyAction(key({ key: ' ' })))).toBe('')
+    expect(idlePromptText(idleKeyAction(key({ key: 'PageDown' })))).toBeNull()
+    expect(idlePromptText(idleKeyAction(key({ control: true })))).toBeNull()
   })
 })

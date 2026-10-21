@@ -56,7 +56,8 @@ describe('idle prompt e2e: the blank pane is never shown', () => {
   })
 
   it('a typed key opens the Idle Prompt with it, the Feed shut; Escape closes it and the screen stays', async () => {
-    await harness.pressKey('pane', { key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 })
+    // A key that carries its character reaches the dashboard's renderer, which main's before-input-event never sees: it opens the Prompt too.
+    await harness.pressKey('dashboard', { key: 's', code: 'KeyS', windowsVirtualKeyCode: 83, text: 's' })
     expect(await waitFor(async () => ((await promptValue()) === 's' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })).toBe(true)
     expect(await idleUp()).toBe(true)
     expect(await feedOpen()).toBe(false)
@@ -67,7 +68,8 @@ describe('idle prompt e2e: the blank pane is never shown', () => {
   })
 
   it('a Command that acts on the blank pane answers in the Prompt, the Idle Screen up', async () => {
-    await harness.pressKey('dashboard', { key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 })
+    // From the pane this time: main hears the key there and hands it over.
+    await harness.pressKey('pane', { key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 })
     await waitFor(async () => ((await promptValue()) === 's' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
     // The field takes focus as it opens: the keys after the first land in it.
     expect(
