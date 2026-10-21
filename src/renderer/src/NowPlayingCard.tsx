@@ -68,8 +68,8 @@ function Thumbnail({ id, cover, verb, label, form }: { id: string; cover: 'pause
 
 const TOGGLE_LABEL = { pause: 'Pause', play: 'Play', replay: 'Play again' } as const
 
-/** Previous · play/pause/replay · skip: round buttons, the middle one raised. */
-function Controls({ toggle, glyph, form }: { toggle: 'pause' | 'play'; glyph: 'pause' | 'play' | 'replay'; form: Form }) {
+/** Previous · play/pause/replay · skip: round buttons, the middle one raised. Skip greys out on an ended song: nothing is queued to skip to. */
+function Controls({ toggle, glyph, form, skippable }: { toggle: 'pause' | 'play'; glyph: 'pause' | 'play' | 'replay'; form: Form; skippable: boolean }) {
   const side = form === 'full' ? 22 : 20
   return (
     <span className="idle-music-controls">
@@ -79,7 +79,7 @@ function Controls({ toggle, glyph, form }: { toggle: 'pause' | 'play'; glyph: 'p
       <button type="button" className="idle-music-button idle-music-button--main" aria-label={TOGGLE_LABEL[glyph]} {...tap(toggle)}>
         <CardGlyph name={glyph} size={form === 'full' ? 26 : 24} />
       </button>
-      <button type="button" className="idle-music-button" aria-label="Skip" {...tap('skip')}>
+      <button type="button" className="idle-music-button" aria-label="Skip" disabled={!skippable} {...(skippable ? tap('skip') : {})}>
         <CardGlyph name="skip" size={side} />
       </button>
     </span>
@@ -123,7 +123,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
     </span>
   )
   const thumbnail = <Thumbnail id={nowPlaying.id} cover={cover} verb={view.toggle} label={`${view.label}. ${TOGGLE_LABEL[view.glyph]}`} form={form} />
-  const controls = <Controls toggle={view.toggle} glyph={view.glyph} form={form} />
+  const controls = <Controls toggle={view.toggle} glyph={view.glyph} form={form} skippable={state !== 'ended'} />
   return (
     <section className={`idle-card idle-music-card idle-music-card--${form} idle-music-card--${state}`} aria-label={view.label}>
       {form === 'small' ? (

@@ -2711,6 +2711,12 @@ button.idle-line {
   -webkit-app-region: no-drag;
 }
 
+.idle-music-button:disabled {
+  color: var(--fg3);
+  opacity: 0.5;
+  cursor: default;
+}
+
 .idle-music-button--main {
   width: 60px;
   height: 60px;

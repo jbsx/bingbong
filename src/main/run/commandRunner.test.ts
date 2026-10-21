@@ -371,11 +371,13 @@ describe('the Player (#343)', () => {
   })
 
   it('an Appliance Verb reading fires the Player\'s action, answers its line and ends the Task `terminal`: no hop, no Verdict (#374)', async () => {
-    const { decision, records, youtube, runner } = music()
+    const { decision, events, records, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
     decision.script.push({ answers: { action: choice('skip'), slot: choice('none') } })
     await runner.run('go to the next song')
-    expect(youtube.controls.map((control) => control.op)).toEqual(['pause'])
+    // Nothing queued: the skip does nothing to the song and says so (2026-10-21 audit).
+    expect(youtube.controls).toEqual([])
+    expect(events.filter((event) => event.type === 'display').at(-1)).toMatchObject({ text: 'Nothing queued.' })
     expect(decision.requests).toHaveLength(2)
     expect(records.filter((record) => record.type === 'decision').at(-1)).toEqual(expect.objectContaining({ reading: 'jev', jevAsked: true, verb: 'play', music: { kind: 'skip' }, ended: 'terminal' }))
   })
@@ -398,7 +400,7 @@ describe('the Player (#343)', () => {
   })
 
   it('a partial Jev reads as an Appliance Verb with no words fires early; one read as `play <words>` waits for its Endpoint (#362)', async () => {
-    const { browser, decision, youtube, runner } = music()
+    const { browser, decision, events, runner } = music()
     await runner.run('play bohemian rhapsody')
     const navigations = browser.navigations.length
     decision.script.push({ answers: { action: choice('play'), slot: choice('s1-1'), complete: { type: 'noul', noul: 0.95 } } })
@@ -407,7 +409,7 @@ describe('the Player (#343)', () => {
     decision.script.push({ answers: { action: choice('skip'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
     await runner.consider('go to the next song')
     await flushMicrotasks()
-    expect(youtube.controls.map((control) => control.op)).toContain('pause')
+    expect(events.filter((event) => event.type === 'display').at(-1)).toMatchObject({ text: 'Nothing queued.' })
     expect(Object.keys((decision.requests.at(-1)!.questions.action as DecisionChoiceQuestion).options)).toContain('skip')
   })
 

@@ -131,14 +131,16 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     await answered('Nothing before this.')
     expect(await idleShown()).toBe(true)
 
-    // Nothing queued: the song is shown ended, and the toggle plays it again.
+    // Nothing queued: a skip with nothing to do does nothing — the song plays on (2026-10-21 audit).
     await harness.clickDashboardElement('.idle-music-button[aria-label="Skip"]')
     await answered('Nothing queued.')
-    await cardIs('ended')
-    expect(await dashboardText('.idle-music-next')).toBe('Say “play” or tap to hear it again')
+    await cardIs('playing')
+    expect((await facts()).paused).toBe(false)
     expect(await idleShown()).toBe(true)
 
     // The picture toggles, as the line did.
+    await harness.clickDashboardElement('.idle-music-thumb')
+    await cardIs('paused')
     await harness.clickDashboardElement('.idle-music-thumb')
     await cardIs('playing')
     expect(await idleShown()).toBe(true)

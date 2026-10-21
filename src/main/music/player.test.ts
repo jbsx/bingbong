@@ -146,15 +146,22 @@ describe('the Player', () => {
     expect(youtube.controls.map((control) => control.op)).toEqual(['pause', 'loop', 'play', 'restart', 'volume', 'nudge', 'nudge', 'mute', 'loop'])
   })
 
-  it('`skip` plays the next queued song, and with none queued pauses and says so', async () => {
-    const { browser, youtube, perform } = wired()
+  it('`skip` plays the next queued song, and with none queued does nothing and says so: the song plays on (2026-10-21 audit)', async () => {
+    const { browser, youtube, player, perform } = wired()
     await perform({ kind: 'search', place: 'now' }, 'song a')
     await perform({ kind: 'search', place: 'end' }, 'song b')
     expect((await perform({ kind: 'skip' })).answer).toBe('Skipped to “Song B”.')
     expect(browser.navigations.at(-1)).toBe(`${WATCH}bbbbbbbbbbb`)
-    expect((await perform({ kind: 'skip' })).answer).toBe('Nothing queued.')
-    expect(youtube.element.paused).toBe(true)
-    expect((await perform({ kind: 'previous' })).answer).toBe('Back to “Song B”.')
+    const controls = youtube.controls.length
+    const navigations = browser.navigations.length
+    expect(await perform({ kind: 'skip' })).toEqual({ result: 'queue empty', answer: 'Nothing queued.' })
+    // Nothing touched: no pause, no navigation, the song still the Queue's current and not shown ended.
+    expect(youtube.controls.length).toBe(controls)
+    expect(browser.navigations.length).toBe(navigations)
+    expect(youtube.element.paused).toBe(false)
+    expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+    expect(player.nowPlaying()?.ended).toBe(false)
+    expect((await perform({ kind: 'previous' })).answer).toBe('Back to “Song A”.')
   })
 
   it('a verb with no video on the page fails in words', async () => {

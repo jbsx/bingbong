@@ -465,15 +465,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       case 'forget':
         return forget()
       case 'skip': {
+        const { next } = advance(state)
+        // Nothing queued: a line with nothing to do does nothing (2026-10-21 audit). The song plays on, and
+        // the Queue owns skip (#374), so it never falls to YouTube's Autoplay or ends the song.
+        if (next === null) return { result: 'queue empty', answer: 'Nothing queued.' }
         if (pick !== null) pick.staying = false
-        const { queue, next } = advance(state)
-        if (next === null) {
-          // The Player's own pause: YouTube's player alone, never another site's video (ADR 0076).
-          await control({ op: 'pause' }, 'youtube')
-          ended = state.current
-          state = queue
-          return { result: 'queue empty', answer: 'Nothing queued.' }
-        }
         return playSong(next, current, `Skipped to ${quoted(next.title)}.`, () => advance(state).queue)
       }
       case 'previous': {

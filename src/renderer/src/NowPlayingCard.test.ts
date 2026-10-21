@@ -38,6 +38,7 @@ describe('the Now Playing card', () => {
     expect(html).toContain('aria-label="Previous"')
     expect(html).toContain('aria-label="Pause"')
     expect(html).toContain('aria-label="Skip"')
+    expect(html).not.toMatch(/aria-label="Skip" disabled/)
     expect(text(html)).not.toMatch(/Loop|Muted/)
   })
 
@@ -55,6 +56,9 @@ describe('the Now Playing card', () => {
     expect(html).toContain('style="width:100%"')
     expect(text(html)).toContain('Say “play” or tap to hear it again')
     expect(html).toContain('aria-label="Play again"')
+    // Nothing is queued to skip to: the Skip button greys out (2026-10-21 audit); Previous stays live.
+    expect(html).toMatch(/aria-label="Skip" disabled=""/)
+    expect(html).not.toMatch(/aria-label="Previous" disabled/)
   })
 
   it('full, starting: STARTING, a dash for the length, no channel yet', () => {
