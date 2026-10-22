@@ -164,13 +164,15 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const holds = ref.holds !== undefined && ref.holds.length > 0 ? ` menu holds ${ref.holds.map((name) => JSON.stringify(name)).join(', ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
   const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
+  // Its player's switches ride the same line (#389, ADR 0080), each by its own label: Jev reads what it switches.
+  const switches = ref.switches !== undefined && ref.switches.length > 0 ? ` ${ref.switches.map((toggle) => `[${toggle.ref}] ${JSON.stringify(toggle.label)} ${toggle.on ? 'on' : 'off'}`).join(', ')}` : ''
   // A Scroll Region's position and length ride its line (#383, ADR 0085): what its ops move, and what the Verdict reads.
   const region = ref.region !== undefined ? ` ${regionStateOf(ref.region)}` : ''
   // A ref read in a frame names its host (#377, ADR 0081): the embedded player is another site's.
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
   // A Textless Ref the Mark Ask boxed on the image (#382, ADR 0084) is named by its mark, the one thing Jev can find it by.
   const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${holds}${media}${region}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${holds}${media}${switches}${region}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */

@@ -891,9 +891,50 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // here is exactly what the controller's element registry is keyed by.
   const collected = collectElements(dialogRoot)
   window.__bingbongRefs = collected
+  // Player Switches (#389, ADR 0080): a two-state control — a button
+  // pressed or not, a switch, a checkbox by role or input; never one choice
+  // among several — sits with a media element when the smallest part of the
+  // page holding both holds no other video or audio. By kind, never by its
+  // words: Jev reads its label on the media ref's line.
+  const isSwitch = (el) => {
+    const role = el.getAttribute('role')
+    if (role === 'switch' || role === 'checkbox') return true
+    if (tagOf(el).toUpperCase() === 'INPUT' && el.type === 'checkbox' && role === null) return true
+    return el.hasAttribute('aria-pressed') && (role === null || role === 'button')
+  }
+  // Read off the element itself, as the collect reads every fact: the Ref State comes after it, for refs alone.
+  const switchOn = (el) => {
+    if (tagOf(el).toUpperCase() === 'INPUT' && el.type === 'checkbox') return el.checked
+    const role = el.getAttribute('role')
+    return role === 'switch' || role === 'checkbox' ? el.getAttribute('aria-checked') === 'true' : el.getAttribute('aria-pressed') === 'true'
+  }
+  const isMedia = (el) => { const tag = tagOf(el).toUpperCase(); return tag === 'VIDEO' || tag === 'AUDIO' }
+  const mediaIn = (root, out) => {
+    for (const el of root.querySelectorAll('*')) {
+      if (isMedia(el)) out.push(el)
+      if (el.shadowRoot) mediaIn(el.shadowRoot, out)
+    }
+    return out
+  }
+  // An element's parent, its shadow root's host at the top of a shadow tree.
+  const parentDeep = (node) => node.parentElement || hostOf(node)
+  const switchesByMedia = new Map()
+  if (collected.some(isMedia) && collected.some(isSwitch)) {
+    const media = mediaIn(document, [])
+    collected.forEach((el, index) => {
+      if (!isSwitch(el)) return
+      for (let node = parentDeep(el); node !== null; node = parentDeep(node)) {
+        const held = media.filter((candidate) => containsDeep(node, candidate))
+        if (held.length === 0) continue
+        if (held.length === 1) switchesByMedia.set(held[0], [...(switchesByMedia.get(held[0]) || []), { index, on: switchOn(el) }])
+        break
+      }
+    })
+  }
   const elements = collected.map((el) => {
     const described = describeElement(el, dialogRoot)
     described.previousIndex = priorIndex.has(el) ? priorIndex.get(el) : -1
+    if (switchesByMedia.has(el)) described.switches = switchesByMedia.get(el)
     return described
   })
   return {

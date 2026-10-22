@@ -133,5 +133,17 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
   })
   const dialog = framed.length === 0 ? {} : { dialogText: [top.dialogText ?? '', ...framed].filter((part) => part !== '').join(' ').slice(0, MAX_COLLECTED_DIALOG_TEXT) }
 
-  return { page: { ...top, ...text, ...dialog, elements: elements.slice(0, MAX_MERGED_ELEMENTS) }, addresses: addresses.slice(0, MAX_MERGED_ELEMENTS) }
+  // A Player Switch names its element by its own document's index (#389): it becomes the element's place in the whole page, or goes with it.
+  const kept = elements.slice(0, MAX_MERGED_ELEMENTS)
+  const placed = addresses.slice(0, MAX_MERGED_ELEMENTS)
+  const merged = kept.map((element, at) => {
+    if (element.switches === undefined) return element
+    const switches = element.switches.flatMap((toggle) => {
+      const index = placed.findIndex((address) => address.frame === placed[at].frame && address.index === toggle.index)
+      return index < 0 ? [] : [{ ...toggle, index }]
+    })
+    return { ...element, switches }
+  })
+
+  return { page: { ...top, ...text, ...dialog, elements: merged }, addresses: placed }
 }

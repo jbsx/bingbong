@@ -1163,7 +1163,7 @@ describe('createCdpBrowserController click', () => {
   })
 
   describe('a Media Op (#372, ADR 0080): one evaluate on the media ref\'s own element', () => {
-    const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+    const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
 
     it('evaluates the op on the registry node the number names — no mouse, no collect — and tells what changed from the element\'s facts before and after', async () => {
       const { cdp, controller } = makeController()
@@ -3452,7 +3452,7 @@ describe('createCdpBrowserController readiness wait and effects (#324)', () => {
 // its iframe's place in one numbering, and every action on a frame's ref
 // runs in that frame — a click at its point plus the iframe's origin.
 describe('frames (#377, ADR 0081)', () => {
-  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
   const button = (label: string, y: number): CollectedElement => ({ tag: 'button', role: null, inputType: null, label, rect: { x: 10, y, width: 80, height: 30 }, layer: 'page' })
   /** A news page: a button, the embed's iframe (window.frames[0]), a button below it. */
   const TOP: CollectedPage = {

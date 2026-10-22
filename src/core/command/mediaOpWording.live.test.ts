@@ -16,7 +16,7 @@ import { resolveDecisionRouting } from '../decision/decisionRouting'
 const routing = process.env.BINGBONG_WORDING_MEASURE ? resolveDecisionRouting(process.env) : ({ configured: false } as const)
 const TIMES = Number(process.env.WORDING_TIMES ?? 3)
 
-const FACTS = { paused: false, ended: false, currentTime: 7.4, duration: 60, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 60 }, tracks: 1, captions: null, buffering: false, failed: false }
+const FACTS = { paused: false, ended: false, currentTime: 7.4, duration: 60, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 60 }, tracks: 1, captions: null, hiddenTrack: false, buffering: false, failed: false }
 /** The e2e fixture page with the native video (e2e/fixtureServer.ts /native-video), as the collect reads it. */
 const FIXTURE: CommandPage = {
   url: 'http://127.0.0.1:4100/native-video',

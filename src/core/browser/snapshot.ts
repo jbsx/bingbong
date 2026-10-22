@@ -56,6 +56,8 @@ export interface CollectedElement {
   region?: RegionFacts
   /** The names of the controls a closed trigger opens (#388), read while its panel is hidden; absent for every other element. */
   holds?: readonly string[]
+  /** A media element's Player Switches (#389): each one's index in the collect and whether it is on; absent for every other element, and for a player with none. */
+  switches?: readonly CollectedSwitch[]
   className?: string
   /**
    * Where this element sat in the collect before this one, or -1 when this
@@ -123,10 +125,30 @@ export interface MediaFacts {
   readonly tracks: number
   /** The language of the text track showing; null when none shows. */
   readonly captions: string | null
+  /** A track is `hidden` and none shows (#389): on at Vimeo and BBC, which draw their own captions, off at Plyr, so the line says nothing of it. */
+  readonly hiddenTrack: boolean
   /** Waiting for data while meant to play. */
   readonly buffering: boolean
   /** The element's load or decode failed. */
   readonly failed: boolean
+}
+
+/** A Player Switch as the collect sends it (#389): its element's index in the collect, and whether it is on. */
+export interface CollectedSwitch {
+  readonly index: number
+  readonly on: boolean
+}
+
+/**
+ * A Player Switch (#389, ADR 0080): a two-state control (a button pressed
+ * or not, a switch, a checkbox) that sits with one media element and no
+ * other, by its ref, its own label and whether it is on. Nothing names
+ * what it switches: Jev reads the label.
+ */
+export interface PlayerSwitch {
+  readonly ref: number
+  readonly label: string
+  readonly on: boolean
 }
 
 /**
@@ -219,6 +241,8 @@ export interface SnapshotRef {
   region?: RegionFacts
   /** What a closed trigger opens (#388): the names of its hidden panel's controls, label-cut; absent for every other ref. */
   holds?: readonly string[]
+  /** A media ref's Player Switches (#389, ADR 0080), in ref order; absent for every other ref, and for a player with none among the refs. */
+  switches?: readonly PlayerSwitch[]
   /** The host of the frame the ref was read in (#377, ADR 0081); absent for the top document's own. */
   frame?: string
   className?: string
@@ -390,6 +414,8 @@ export function parseMediaFacts(raw: unknown): MediaFacts | undefined {
     seekable: seekable === null ? null : { start: seekable.start, end: seekable.end },
     tracks: facts.tracks,
     captions: facts.captions as string | null,
+    // Absent in older payloads, read as none hidden.
+    hiddenTrack: facts.hiddenTrack === true,
     buffering: facts.buffering as boolean,
     failed: facts.failed as boolean,
   }
@@ -428,6 +454,18 @@ function regionFactsEntry(raw: unknown): { region: RegionFacts } | Record<string
 function holdsEntry(raw: unknown): { holds: string[] } | Record<string, never> {
   const holds = Array.isArray(raw) ? raw.filter((name): name is string => typeof name === 'string' && name !== '') : []
   return holds.length > 0 ? { holds } : {}
+}
+
+/** The `switches` entry of a collected media element (#389): those that read, nothing for none. */
+function switchesEntry(raw: unknown): { switches: CollectedSwitch[] } | Record<string, never> {
+  const switches = Array.isArray(raw)
+    ? raw.flatMap((entry: unknown) => {
+        if (typeof entry !== 'object' || entry === null) return []
+        const { index, on } = entry as Record<string, unknown>
+        return isFiniteNumber(index) && index >= 0 && typeof on === 'boolean' ? [{ index, on }] : []
+      })
+    : []
+  return switches.length > 0 ? { switches } : {}
 }
 
 function frameBoxEntry(raw: unknown): { frameBox: { x: number; y: number } } | Record<string, never> {
@@ -484,6 +522,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
       ...holdsEntry(el.holds),
+      ...switchesEntry(el.switches),
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
       value: typeof el.value === 'string' ? el.value : null,
@@ -611,7 +650,16 @@ export function refElementIndices(page: CollectedPage, options?: { maxRefs?: num
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
   const visible = page.elements.filter((element) => isVisible(element, page))
   // The same elements the controller read Ref States for (readRefStates.ts): one rule picks both.
-  const taken = refElementIndices(page, options).map((index) => page.elements[index])
+  const indices = refElementIndices(page, options)
+  const taken = indices.map((index) => page.elements[index])
+  // A Player Switch is named by its ref (#389): one that is not a ref on this read is left out.
+  const playerSwitchesEntry = (element: CollectedElement): { switches: PlayerSwitch[] } | Record<string, never> => {
+    const switches = (element.switches ?? []).flatMap(({ index, on }) => {
+      const at = indices.indexOf(index)
+      return at < 0 ? [] : [{ ref: at + 1, label: truncateLabel(page.elements[index].label), on }]
+    }).sort((a, b) => a.ref - b.ref)
+    return switches.length > 0 ? { switches } : {}
+  }
 
   return {
     url: page.url,
@@ -649,6 +697,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.region !== undefined ? { region: element.region } : {}),
       ...(element.holds !== undefined ? { holds: [...new Set(element.holds.map(truncateLabel))] } : {}),
+      ...playerSwitchesEntry(element),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,

@@ -126,13 +126,15 @@ const playingOf = (facts: MediaFacts): string => (facts.ended ? 'ended' : facts.
 /** The volume as a percentage. */
 const percentOf = (facts: MediaFacts): number => Math.round(facts.volume * 100)
 const loopOf = (facts: MediaFacts): string => `loop ${facts.loop ? 'on' : 'off'}`
-const captionsOf = (facts: MediaFacts): string => `captions ${facts.captions ?? 'off'}`
+/** The captions as the line tells them: the language showing, off when every track is disabled; nothing for a hidden track, on at one player and off at another (#389). */
+const captionsOf = (facts: MediaFacts): string[] => (facts.captions !== null ? [`captions ${facts.captions}`] : facts.hiddenTrack ? [] : ['captions off'])
 
 /**
  * A media ref's state as its line carries it (ADR 0080): playing, paused
  * or ended; elapsed/duration, or live; the volume as a percentage, or
  * muted; loop; the speed when not normal; captions off or the language
- * showing, on an element with text tracks; buffering; failed.
+ * showing, on an element with text tracks, none for a hidden track;
+ * buffering; failed.
  */
 export function mediaStateOf(facts: MediaFacts): string {
   const live = !Number.isFinite(facts.duration)
@@ -142,7 +144,7 @@ export function mediaStateOf(facts: MediaFacts): string {
     facts.muted ? 'muted' : `volume ${percentOf(facts)}%`,
     loopOf(facts),
     ...(facts.rate !== 1 ? [`speed ${facts.rate}×`] : []),
-    ...(facts.tracks > 0 ? [captionsOf(facts)] : []),
+    ...(facts.tracks > 0 ? captionsOf(facts) : []),
     ...(facts.buffering ? ['buffering'] : []),
     ...(facts.failed ? ['failed'] : []),
   ].join(' ')
@@ -165,7 +167,7 @@ export function mediaChangesOf(before: MediaFacts, after: MediaFacts): string[] 
     ...(percentOf(before) !== percentOf(after) ? [`volume ${percentOf(before)}% → ${percentOf(after)}%`] : []),
     ...(before.loop !== after.loop ? [loopOf(after)] : []),
     ...(before.rate !== after.rate ? [`speed ${before.rate}× → ${after.rate}×`] : []),
-    ...(before.captions !== after.captions ? [captionsOf(after)] : []),
+    ...(captionsOf(before).join() !== captionsOf(after).join() ? captionsOf(after) : []),
     ...(before.failed !== after.failed && after.failed ? ['failed'] : []),
   ]
 }

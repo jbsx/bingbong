@@ -399,11 +399,79 @@ describe.skipIf(!canDriveChrome)('the collector reads the playing media element 
     await until(() => fixtures.chrome.evaluate<boolean>("document.getElementById('v').currentTime > 0 && document.getElementById('v').seekable.length > 0"), 'the video to play')
     const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
     const [video, never] = page.refs.filter((ref) => ref.kind === 'media')
-    expect(video).toMatchObject({ label: 'Tracked', media: { paused: false, ended: false, duration: 5, volume: 0.5, muted: false, loop: false, rate: 1.5, tracks: 2, captions: 'en', buffering: false, failed: false } })
+    expect(video).toMatchObject({ label: 'Tracked', media: { paused: false, ended: false, duration: 5, volume: 0.5, muted: false, loop: false, rate: 1.5, tracks: 2, captions: 'en', hiddenTrack: false, buffering: false, failed: false } })
     expect(video!.media!.currentTime).toBeGreaterThan(0)
     expect(video!.media!.seekable).toEqual({ start: 0, end: 5 })
     // An element that never started still carries its facts: its ops are offered by ability, not by state.
     expect(never).toMatchObject({ label: 'Never played', media: { paused: true, currentTime: 0, tracks: 0, captions: null } })
+  })
+})
+
+// Player Switches (#389, ADR 0080): every two-state control that sits with
+// one media element and no other rides its ref's line, by its own label.
+const TRACK = (mode: string) => `<track kind="subtitles" srclang="en" label="English" src="data:text/vtt,WEBVTT" data-mode="${mode}">`
+const SWITCH_PAGES: Record<string, string> = {
+  '/players': `<body>
+    <div class="player"><video src="${SONG}" title="First" width="320" height="180"></video>
+      <button aria-pressed="true">Subtitles/closed captions unavailable</button>
+      <div role="switch" aria-checked="false" tabindex="0">Autoplay</div>
+      <label><input type="checkbox" checked> Loop this one</label>
+      <button>Settings</button>
+      <div role="radio" aria-checked="true" tabindex="0">Quality auto</div>
+      <div role="menuitemradio" aria-checked="true" tabindex="0">Speed normal</div>
+      <div role="option" aria-selected="true" tabindex="0">English</div>
+      <button aria-pressed="true" style="display:none">Hidden switch</button>
+    </div>
+    <div class="player"><video src="${SONG}" title="Second" width="320" height="180"></video>
+      <div role="checkbox" aria-checked="true" tabindex="0">Captions</div>
+    </div>
+    <button aria-pressed="false">Like</button>
+    <shadow-player></shadow-player>
+    <script>
+      customElements.define('shadow-player', class extends HTMLElement {
+        connectedCallback() { this.attachShadow({ mode: 'open' }).innerHTML = '<video src="${SONG}" title="Shadowed" width="320" height="180"></video><button aria-pressed="false">CC</button>' }
+      })
+    </script>
+  </body>`,
+  '/hidden-track': `<body><video id="hidden" src="${SONG}" title="Hidden track" width="320" height="180">${TRACK('hidden')}</video><video id="disabled" src="${SONG}" title="Disabled track" width="320" height="180">${TRACK('disabled')}</video><script>for (const v of document.querySelectorAll('video')) v.textTracks[0].mode = v.querySelector('track').dataset.mode</script></body>`,
+}
+
+describe.skipIf(!canDriveChrome)("the collector reads each media element's Player Switches (#389, ADR 0080)", () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(SWITCH_PAGES, 'bingbong-collector-switches-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  const read = async () => commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
+
+  it('gives each of two players only its own switches: a pressed button, a switch, a checkbox by input or role; never a choice among several, a plain button, a hidden one, or one beside both', async () => {
+    await fixtures.open('/players')
+    const page = await read()
+    const media = (label: string) => page.refs.find((ref) => ref.kind === 'media' && ref.label === label)
+    const named = (label: string) => page.refs.find((ref) => ref.label === label)!.ref
+    expect(media('First')?.switches).toEqual([
+      { ref: named('Subtitles/closed captions unavailable'), label: 'Subtitles/closed captions unavailable', on: true },
+      { ref: named('Autoplay'), label: 'Autoplay', on: false },
+      { ref: page.refs.find((ref) => ref.kind === 'input' && ref.inputType === 'checkbox')!.ref, label: expect.any(String), on: true },
+    ])
+    expect(media('Second')?.switches).toEqual([{ ref: named('Captions'), label: 'Captions', on: true }])
+    // A player in a shadow root is the same: its switch sits with its media and no other.
+    expect(media('Shadowed')?.switches).toEqual([{ ref: named('CC'), label: 'CC', on: false }])
+    // The card's line names each by its ref and label, and the Like beside both players rides neither.
+    const state = commandState('disable captions', page).split('\n')
+    expect(state.find((line) => line.includes('media "Second"'))).toMatch(new RegExp(`loop off \\[${named('Captions')}\\] "Captions" on$`))
+    expect(state.filter((line) => line.includes(' media ')).join('\n')).not.toMatch(/Like|Settings|Quality|Speed|English|Hidden switch/)
+  })
+
+  it('says nothing of captions for a track hidden with none showing, and captions off when every track is disabled', async () => {
+    await fixtures.open('/hidden-track')
+    await until(() => fixtures.chrome.evaluate<boolean>("document.getElementById('hidden').textTracks[0].mode === 'hidden'"), 'the track modes to be set')
+    const state = commandState('turn on captions', await read()).split('\n')
+    expect(state.find((line) => line.includes('media "Hidden track"'))).toMatch(/loop off$/)
+    expect(state.find((line) => line.includes('media "Disabled track"'))).toMatch(/loop off captions off$/)
   })
 })
 

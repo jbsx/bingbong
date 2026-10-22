@@ -1,5 +1,5 @@
 import type { KeyPress } from '../ports/browser'
-import type { MediaFacts, PageMedia, PageSnapshot, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
+import type { MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
@@ -120,6 +120,8 @@ export interface CommandRef {
   readonly region?: RegionFacts
   /** What a closed trigger opens (#388): the names of its hidden panel's controls, its line's "menu holds"; absent for every other ref. */
   readonly holds?: readonly string[]
+  /** A media ref's Player Switches (#389, ADR 0080): each by its ref, label and on or off; absent for every other ref. */
+  readonly switches?: readonly PlayerSwitch[]
   /** The host of the frame it was read in (#377, ADR 0081); absent for the top document's own. */
   readonly frame?: string
 }
@@ -151,7 +153,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms, its text in view and the dialog open over it. */

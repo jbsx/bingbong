@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeFrames, type CollectedFrame } from './frames'
 import type { CollectedTextBlock } from './pageText'
-import type { CollectedElement, CollectedPage } from './snapshot'
+import { buildPageSnapshot, type CollectedElement, type CollectedPage } from './snapshot'
 
 const VIEWPORT = { width: 1000, height: 600, scrollX: 0, scrollY: 0, scrollHeight: 600 }
 
@@ -38,6 +38,22 @@ describe('mergeFrames (#377, ADR 0081)', () => {
       { frame: 'f1', index: 1 },
       { frame: null, index: 2 },
     ])
+  })
+
+  it("points a frame's Player Switches at their places in the whole page, and drops one its frame left out (#389)", () => {
+    const top = page('https://news.example/a', [element('a', 'Home', { x: 0, y: 0 }), iframe(0, { x: 100, y: 200 })])
+    const embed = frame('f1', null, 0, 'https://www.youtube.com/embed/x', [
+      element('button', 'Off the page', { x: 10, y: 5000 }),
+      element('video', '', { x: 0, y: 0, width: 396, height: 296 }, { switches: [{ index: 2, on: true }, { index: 0, on: false }] }),
+      element('button', 'Subtitles/closed captions', { x: 10, y: 250 }),
+    ])
+
+    const { page: merged } = mergeFrames(top, [embed])
+
+    expect(merged.elements.map((el) => el.label)).toEqual(['Home', '', 'Subtitles/closed captions'])
+    expect(merged.elements[1]?.switches).toEqual([{ index: 2, on: true }])
+    // Its switch is the whole page's third element: the ref it becomes.
+    expect(buildPageSnapshot(merged).refs[1]?.switches).toEqual([{ ref: 3, label: 'Subtitles/closed captions', on: true }])
   })
 
   it("names a script-written frame by the origin it inherited, never by about:blank", () => {

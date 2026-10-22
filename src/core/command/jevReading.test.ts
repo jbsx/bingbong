@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
+import { mediaChangesOf } from './mediaOp'
 import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
@@ -175,7 +176,7 @@ describe('full screen in the state Jev reads (#387)', () => {
 })
 
 describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops on the action card, on any site', () => {
-  const FACTS: MediaFacts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const FACTS: MediaFacts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
   const VIDEO: CommandRef = { ref: 7, kind: 'media', label: 'YE - HIGHS AND LOWS', href: null, inputType: null, media: FACTS }
   const WATCH: CommandPage = { url: 'https://www.youtube.com/watch?v=kt_0b4RwerY', title: 'YE - HIGHS AND LOWS - YouTube', refs: [{ ref: 1, kind: 'button', label: 'Pause (k)', href: null, inputType: null }, VIDEO, { ref: 8, kind: 'button', label: 'Mute (m)', href: null, inputType: null }] }
   const ELEVEN = ['play', 'pause', 'forward', 'back', 'restart', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate']
@@ -225,9 +226,28 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     expect(line({ paused: true, muted: true, loop: false, rate: 1.5, tracks: 2, captions: 'en' })).toBe('[7] media "YE - HIGHS AND LOWS" paused 0:16/1:51 muted loop off speed 1.5× captions en')
     expect(line({ duration: Infinity, seekable: { start: 100, end: 3700 }, currentTime: 3690, tracks: 1, buffering: true })).toBe('[7] media "YE - HIGHS AND LOWS" playing live 1:01:30 volume 100% loop on captions off buffering')
     expect(line({ ended: true, failed: true })).toBe('[7] media "YE - HIGHS AND LOWS" ended 0:16/1:51 volume 100% loop on failed')
+    // A track hidden with none showing says nothing (#389): on at Vimeo and BBC, which draw their own, off at Plyr.
+    expect(line({ tracks: 1, captions: null, hiddenTrack: true })).toBe('[7] media "YE - HIGHS AND LOWS" playing 0:16/1:51 volume 100% loop on')
+    expect(line({ tracks: 2, captions: 'en', hiddenTrack: false })).toBe('[7] media "YE - HIGHS AND LOWS" playing 0:16/1:51 volume 100% loop on captions en')
+    // A change tells the same words: showing to hidden says nothing; to every track disabled, captions off.
+    const tracked = { ...FACTS, tracks: 1, captions: 'en' }
+    expect(mediaChangesOf(tracked, { ...tracked, captions: null, hiddenTrack: true })).toEqual([])
+    expect(mediaChangesOf(tracked, { ...tracked, captions: null })).toEqual(['captions off'])
+    expect(mediaChangesOf({ ...tracked, captions: null, hiddenTrack: true }, tracked)).toEqual(['captions en'])
     // The Ref State the tree gave comes first, as on every ref; the card's click line carries the same.
     const stated = { ...WATCH, refs: WATCH.refs.map((ref) => (ref.ref === 7 ? { ...ref, states: ['focused'] } : ref)) }
     expect(commandQuestions('mute it', stated).action.options['click-7']).toBe('click [7] media "YE - HIGHS AND LOWS" focused playing 0:16/1:51 volume 100% loop on')
+  })
+
+  it("carries its Player Switches on its line, each by its own label and on or off, naming nothing itself; never on the Playing: line (#389)", () => {
+    const switches = [{ ref: 12, label: 'Subtitles/closed captions unavailable', on: true }, { ref: 19, label: 'Dislike this video', on: false }]
+    const page: CommandPage = { ...WATCH, refs: WATCH.refs.map((ref) => (ref.ref === 7 ? { ...ref, switches } : ref)), media: { title: 'YE - HIGHS AND LOWS', paused: false, currentTime: 16, duration: 111, loop: true, muted: false } }
+    const state = commandState('disable captions', page).split('\n')
+    expect(state).toContain('[7] media "YE - HIGHS AND LOWS" playing 0:16/1:51 volume 100% loop on [12] "Subtitles/closed captions unavailable" on, [19] "Dislike this video" off')
+    expect(state.filter((l) => /^(Playing|Paused):/.test(l)).join('\n')).not.toMatch(/Subtitles/)
+    expect(commandQuestions('disable captions', page).action.options['click-7']).toMatch(/loop on \[12\] "Subtitles\/closed captions unavailable" on, \[19\] "Dislike this video" off$/)
+    // No switches, nothing more on the line.
+    expect(commandState('disable captions', { ...page, refs: WATCH.refs }).split('\n')).toContain('[7] media "YE - HIGHS AND LOWS" playing 0:16/1:51 volume 100% loop on')
   })
 
   it('reads an op label as a media Command on that ref: a seek with its rung and seconds, a volume or a speed with its level', () => {

@@ -343,7 +343,7 @@ describe('the Player (#343)', () => {
   })
 
   describe("a song on the page the Player never started — brought back by `resume`, or left paused by a `skip` with nothing queued (#362, #364 live runs)", () => {
-    const FACTS = { paused: false, ended: false, currentTime: 5, duration: 124, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 124 }, tracks: 0, captions: null, buffering: false, failed: false }
+    const FACTS = { paused: false, ended: false, currentTime: 5, duration: 124, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 124 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
     const VIDEO = ref(7, 'media', QUEEN, { media: FACTS })
     const MEDIA = { title: QUEEN, paused: false, currentTime: 5, duration: 124, loop: false, muted: false }
 
@@ -1752,7 +1752,7 @@ describe('a Command whose output is speech', () => {
 
 describe('a Media Op (#372, ADR 0080): one evaluate on the media ref, the Task ending on it', () => {
   const WATCH_URL = 'https://www.youtube.com/watch?v=kt_0b4RwerY'
-  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
   const WATCH_REFS: SnapshotRef[] = [ref(1, 'button', 'Pause (k)'), ref(7, 'media', 'YE - HIGHS AND LOWS', { media: FACTS }), ref(10, 'button', '0:16 / 1:51')]
   const card = (top: string, amount?: string) => ({ answers: { action: choice(top, 0.9), slot: choice('none'), ...(amount !== undefined ? { amount: choice(amount, 0.8) } : {}) } })
 

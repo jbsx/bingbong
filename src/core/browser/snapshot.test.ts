@@ -310,7 +310,7 @@ describe('parseCollectedPage', () => {
 })
 
 describe("a media element's own facts (#372, ADR 0080)", () => {
-  const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 0.8, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 2, captions: 'en', buffering: false, failed: false }
+  const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 0.8, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 2, captions: 'en', hiddenTrack: false, buffering: false, failed: false }
 
   it("parses each video or audio element's media facts and carries them onto its ref, a null duration read as a live stream's Infinity", () => {
     const parsed = parseCollectedPage(page({ elements: [element({ tag: 'video', label: 'Highs and Lows', media: facts }), element({ tag: 'audio', label: 'Live', media: { ...facts, duration: null as unknown as number, seekable: null, tracks: 0, captions: null } })] }))
@@ -340,6 +340,31 @@ describe("what a closed trigger opens (#388)", () => {
     expect(refs[0]?.holds?.[1]?.length).toBeLessThanOrEqual(80)
     expect(refs[1]).not.toHaveProperty('holds')
     expect(refs[2]).not.toHaveProperty('holds')
+  })
+})
+
+describe('Player Switches (#389, ADR 0080)', () => {
+  it("names each of a media element's switches by its ref and its own label, in ref order, and leaves out one that is no ref on this read", () => {
+    const below = { x: 10, y: 2000, width: 50, height: 30 }
+    const parsed = parseCollectedPage(page({
+      elements: [
+        element({ label: 'Like', ariaPressed: 'false' }),
+        element({ tag: 'video', label: '', switches: [{ index: 3, on: true }, { index: 0, on: false }, { index: 2, on: true }, { index: 'x', on: true }] as unknown as CollectedElement['switches'] }),
+        element({ label: 'Off screen', rect: below }),
+        element({ label: 'Subtitles/closed captions unavailable', ariaPressed: 'true' }),
+      ],
+    }))
+    const refs = buildPageSnapshot(parsed).refs
+    expect(refs[1]?.switches).toEqual([
+      { ref: 1, label: 'Like', on: false },
+      { ref: 3, label: 'Subtitles/closed captions unavailable', on: true },
+    ])
+    expect(refs[0]).not.toHaveProperty('switches')
+  })
+
+  it('carries no switches for a player whose switches are none of the refs', () => {
+    const parsed = parseCollectedPage(page({ elements: [element({ tag: 'video', label: '', switches: [{ index: 1, on: true }] }), element({ rect: { x: 10, y: 2000, width: 50, height: 30 } })] }))
+    expect(buildPageSnapshot(parsed).refs[0]).not.toHaveProperty('switches')
   })
 })
 

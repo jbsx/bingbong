@@ -13,7 +13,8 @@ const MEDIA_SELECTOR = "'video, audio'"
  * (#372, ADR 0080) — the `MediaFacts` shape the collect carries on each
  * media ref and a Media Op reads before and after it acts, so the ref
  * line and the op's outcome tell the same facts. An Infinity duration
- * travels as null. Captions are the showing text track's language.
+ * travels as null. Captions are the showing text track's language; a
+ * track hidden with none showing is told apart (#389), as it says nothing.
  */
 export const MEDIA_FACTS_FN = `((el) => {
   const tracks = el.textTracks ? Array.from(el.textTracks) : []
@@ -31,6 +32,7 @@ export const MEDIA_FACTS_FN = `((el) => {
     seekable: seekable && Number.isFinite(seekable.start) && Number.isFinite(seekable.end) ? seekable : null,
     tracks: tracks.length,
     captions: showing ? (showing.language || showing.label || 'on') : null,
+    hiddenTrack: !showing && tracks.some((track) => track.mode === 'hidden'),
     buffering: !el.paused && !el.ended && el.readyState < 3,
     failed: el.error !== null
   }
