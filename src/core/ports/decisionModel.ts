@@ -88,6 +88,8 @@ export type DecisionResult<Q extends DecisionQuestions> =
 export interface DecisionModel {
   /** The versioned model id requests are addressed to (`jev-1.14.0`, or `scripted`). */
   readonly model: string
+  /** False for a text-only model (#395): an ask that needs an image (the Mark Ask) is then not made. Absent, it reads them. */
+  readonly readsImages?: boolean
   /** Never rejects: every failure resolves to an `unavailable` result. */
   ask<const Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>>
 }

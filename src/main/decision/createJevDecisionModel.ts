@@ -85,6 +85,7 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
 
   return {
     model: endpoint.model,
+    readsImages: deps.images !== false,
     async ask<const Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>> {
       const images = Object.entries(request.images ?? {})
       // Unavailable at once, as an unanswered call would be after a wasted round trip.

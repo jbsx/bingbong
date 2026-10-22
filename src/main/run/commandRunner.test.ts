@@ -53,6 +53,7 @@ const PAGE_REFS: SnapshotRef[] = [ref(1, 'link', 'Home'), ref(2, 'button', 'Sign
 /** A Decision Model that counts its asks and answers a script, like the stand-in main serves. */
 class CountingDecisionModel implements DecisionModel {
   readonly model = 'jev-1.14.0'
+  readsImages = true
   readonly requests: DecisionRequest<DecisionQuestions>[] = []
   readonly script: ({ answers: Record<string, DecisionAnswer> } | { unavailable: DecisionUnavailableReason })[] = []
   latencyMs = 212
@@ -4021,6 +4022,28 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
       [undefined, undefined],
       [true, 'terminal'],
     ])
+  })
+
+  it('a model that reads no images (#395) makes no Mark Ask on either trigger: no capture, no ask, the line ends as with no capture', async () => {
+    const where = playerHarness(TEXTLESS_REFS)
+    where.decision.readsImages = false
+    where.decision.script.push(NONE, NONE)
+    await where.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(where.captured).toEqual([])
+    expect(where.decision.requests.some(isMarkAsk)).toBe(false)
+    expect(decisions(where.records).map((record) => [record.whereAsk, record.markAsk, record.ended])).toEqual([
+      [undefined, undefined, undefined],
+      [true, undefined, 'terminal'],
+    ])
+
+    const guess = playerHarness(TEXTLESS_REFS)
+    guess.decision.readsImages = false
+    guess.decision.script.push(reading({ 'click-1': 0.35, 'click-2': 0.3, none: 0.2 }))
+    await guess.runner.run('click the cog wheel', { source: 'spoken', turnId: 't1' })
+    expect(guess.captured).toEqual([])
+    expect(guess.decision.requests.some(isMarkAsk)).toBe(false)
+    expect(guess.browser.clicks).toEqual([1])
+    expect(decisions(guess.records)[0]).toMatchObject({ verb: 'click', target: 1, ask: 't1' })
   })
 
   describe('the second trigger (owner ruling 2026-10-22, ADR 0084 amended): an unsure hop-0 click on a Textless Ref is replaced by the Mark Ask', () => {

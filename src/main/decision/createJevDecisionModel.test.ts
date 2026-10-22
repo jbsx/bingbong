@@ -121,6 +121,9 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
     })
     expect(text.status).toBe('answered')
     expect(calls).toHaveLength(1)
+    // Said up front, so a caller makes no capture for an ask it would refuse.
+    expect(model.readsImages).toBe(false)
+    expect(createJevDecisionModel(ENDPOINT, { fetch }).readsImages).toBe(true)
   })
 
   it('reports the model id the vendor answered with, not the one asked for', async () => {

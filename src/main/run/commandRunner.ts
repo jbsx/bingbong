@@ -797,15 +797,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * with a Textless Ref is asked once more — the same card, with one image
    * of the pane on which each Textless Ref is boxed with its number, those
    * refs' options reading "the control marked N". Null when it is not
-   * made: no Textless Ref on the card, no model, or no capture (a hidden
-   * pane) — the line then ends as it would have. Its reading is hop 0's,
+   * made: no Textless Ref on the card, no model, a model that reads no
+   * images (#395), or no capture (a hidden pane) — the line then ends as
+   * it would have. Its reading is hop 0's,
    * fired with no bar; `none`, or no answer, is no Command.
    */
   async function readMarks(turnId: string, text: string, first: Reading, where: Reading, step: StepContext | undefined): Promise<Reading | null> {
     const { page } = where
     const model = deps.decisionModel()
     const capture = browser.markedScreenshot?.bind(browser)
-    if (model === null || capture === undefined) return null
+    if (model === null || model.readsImages === false || capture === undefined) return null
     const textless = textlessRefsOf(whereQuestions(text, page, { appliance: appliance() }), page)
     if (textless.length === 0) return null
     const shot = await capture(textless)
