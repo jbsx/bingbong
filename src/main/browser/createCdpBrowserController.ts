@@ -20,7 +20,7 @@ import {
   blockedActionHead,
   clickFlagsHead,
   mediaOpHead,
-  regionScrollHead,
+  scrollOpHead,
   menuFlagsHead,
   NO_OBSERVABLE_CHANGE,
   PAGE_NOT_READ,
@@ -922,6 +922,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   const SCROLL_TICKS = 3
+  /** Blur an editable element, or a frame, holding the page's focus (#383), so an End or Home key reaches the scroller. */
+  const BLUR_FOCUSED_FIELD_JS = `(() => {
+    const el = document.activeElement
+    if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'IFRAME'].includes(el.tagName))) el.blur()
+    return true
+  })()`
   /** How long no scroll event says an Extent's page scroll has stopped (#383), and how long it is waited for at most. */
   const SCROLL_STILL_MS = 150
   const SCROLL_SETTLE_CAP_MS = 1000
@@ -1100,6 +1106,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (extent !== undefined && extent.screens === undefined) {
       // All the way (#383, ADR 0085): the browser's own End or Home key, which reaches the document's scroller — or, in an app shell whose body does not scroll, the focused region.
       page.focus()
+      // A field or a frame holding the focus would take the key for its own (a caret to the line's end): the page is given it back.
+      await evaluateInPage(BLUR_FOCUSED_FIELD_JS).catch((error: unknown) => reportFault('browser.createCdpBrowserController.blurForEnd', error))
       await dispatchShortcut(shortcutEventFor({ key: direction === 'down' ? 'End' : 'Home' }))
     } else {
       // The Extent's screens in wheel notches (#383); the grammar's line, with none, its fixed three.
@@ -2095,7 +2103,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const { snapshot: before, target } = await resolveRef(ref)
     if (target.kind !== 'region') throw new Error(`ref ${ref} is no scroll region`)
     const at = addressOfRef(target.ref)
-    const head = regionScrollHead(direction, ref)
+    const head = scrollOpHead(direction, ref)
     await armReadiness(at.frame)
     const read = await evaluateInFrame<{ before: unknown; after: unknown } | null>(at.frame, `((op) => {
       /* SCROLL_REGION */

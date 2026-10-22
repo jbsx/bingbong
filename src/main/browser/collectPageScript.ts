@@ -417,7 +417,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const regionLabelOf = (el) => {
     const parts = [el.getAttribute('aria-label')]
     const labelledBy = el.getAttribute('aria-labelledby')
-    if (labelledBy) for (const id of labelledBy.split(/\\s+/)) parts.push((document.getElementById(id) || {}).textContent)
+    // Its own tree's ids: a region in a shadow root is labelled from inside it.
+    const tree = typeof el.getRootNode().getElementById === 'function' ? el.getRootNode() : document
+    if (labelledBy) for (const id of labelledBy.split(/\\s+/)) parts.push((tree.getElementById(id) || {}).textContent)
     parts.push(el.getAttribute('title'))
     const named = parts.filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ').trim()
     if (named) return named.slice(0, 300)

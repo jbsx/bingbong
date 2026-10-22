@@ -65,6 +65,7 @@ import {
 } from '../../core/command/decisionRecord'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
+import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { SPOKEN_FAILURES, failureLineOf, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
@@ -404,7 +405,7 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'media', args: { ref: command.target, ...command.mediaOp } }
     case 'scroll_up':
     case 'scroll_down':
-      return { name: 'scroll', args: { direction: command.verb === 'scroll_up' ? 'up' : 'down', ...(command.target !== null ? { ref: command.target } : {}), ...command.extent } }
+      return { name: 'scroll', args: { direction: scrollOpOfVerb(command.verb), ...(command.target !== null ? { ref: command.target } : {}), ...command.extent } }
     case 'press':
       return { name: 'press', args: { key: command.key?.key ?? 'Enter', times: command.times ?? 1, ...(command.key?.shift ? { shift: true } : {}) } }
     case 'read':
@@ -442,7 +443,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The page collected at speech start, waiting for the Endpoint's Command. */
   let prepared: PreparedPage | null = null
   /** The Command that last fired, for the Misfire signal. */
-  let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
+  let previous: { turnId: string; verb: Command['verb']; target: number | null; key?: Command['key']; at: number } | null = null
   /** The Jev-read hop that last fired (#328), for the overrun signal; null once a Command read otherwise fires, or one is counted. */
   let jevHop: { turnId: string; hop: number; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
@@ -934,10 +935,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'scroll_up':
       case 'scroll_down': {
-        const direction = command.verb === 'scroll_up' ? 'up' : 'down'
+        const direction = scrollOpOfVerb(command.verb)!
         if (command.target === null) return browser.scroll(direction, command.extent)
         // A Scroll Op (#383, ADR 0085): one evaluate on the region's own element, never the page.
-        const result = await browser.scrollRegion(command.target, direction, command.extent ?? { rung: 'screen', screens: 1 })
+        const result = await browser.scrollRegion(command.target, direction, command.extent ?? ONE_SCREEN)
         flash(command.target)
         return result
       }
@@ -1067,10 +1068,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // The Misfire signal (ADR 0076): this Command as the recovery of the one
     // that fired before it. A hop past the first is the Task's own move, never the user's recovery; so is a later Step's (#364).
     if (previous !== null && task.hop === 0 && (task.step ?? 1) === 1 && reacting.ownMove !== true) {
-      const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
+      const signal = misfireSignal(previous, { verb: command.verb, target: command.target, key: command.key, at: firedAt })
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
-    previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
+    previous = { turnId, verb: command.verb, target: command.target, key: command.key, at: firedAt }
     // A Jev-read hop: what an overrun is read against, until the next one fires.
     jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken' && reacting.ownMove !== true) learnFrom(command, matched, firedAt)

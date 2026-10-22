@@ -6,7 +6,7 @@ import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsO
 import { isAddressShaped } from './openAddress'
 import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
-import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpsOf, type ExtentRung, type ScrollOp } from './scrollOp'
+import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -288,8 +288,7 @@ export function setAsideOf(command: Command, page: CommandPage): SetAside | null
 
 /** The Scroll Op a scroll of a region is (#383): `down` or `up`; undefined for anything else, the page's own scroll among it. */
 function scrollOpOf(command: Command): ScrollOp | undefined {
-  if (command.target === null) return undefined
-  return command.verb === 'scroll_down' ? 'down' : command.verb === 'scroll_up' ? 'up' : undefined
+  return command.target === null ? undefined : (scrollOpOfVerb(command.verb) ?? undefined)
 }
 
 /** Whether the Task set aside what a card label names on this page. */
@@ -868,6 +867,7 @@ export function whereQuestions(text: string, page: CommandPage, { appliance }: {
 export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): number[] {
   const offeredClicks = new Set(Object.keys(questions.action.options).flatMap((label) => {
     const acted = refActionOf(label)
+    // A region by its `down-N`, which comes with its `up-N` on every card: each region counts once.
     return acted?.act === 'click' || acted?.act === 'down' ? [acted.n] : []
   }))
   return page.refs.filter((ref) => offeredClicks.has(ref.ref) && shownLabel(ref, page).trim() === '').map((ref) => ref.ref)
@@ -1147,7 +1147,7 @@ function extentOf(answers: CommandAnswers | HopAnswers): ExtentRung {
 /** The scroll a Scroll Op makes of its region (#383, ADR 0085), the Extent read into screens; null on a ref that is no region. */
 function scrollCommand(op: ScrollOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
   if (!isRegionRef(ref)) return null
-  return { verb: op === 'down' ? 'scroll_down' : 'scroll_up', target: ref.ref, slot: null, extent: scrollExtent(extentOf(answers), text) }
+  return { verb: scrollVerbOf(op), target: ref.ref, slot: null, extent: scrollExtent(extentOf(answers), text) }
 }
 
 /**

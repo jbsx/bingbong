@@ -43,12 +43,13 @@ export function notchesFor(screens: number, viewportHeight: number): number {
 /** Within a pixel of the top or the end reads as there: a zoomed page scrolls on fractional pixels. */
 const SLACK_PX = 1
 
-/** Where a region stands: `at top`, `at end`, or `scrolled 40%` of the way. */
-export function regionPositionOf(facts: RegionFacts): string {
+/** Where a region stands: `at top`, `at end`, or `scrolled 40%` of the way — to the tenth, `scrolled 40.2%`, when asked. */
+export function regionPositionOf(facts: RegionFacts, tenths = false): string {
   const room = facts.height - facts.view
   if (facts.top <= SLACK_PX) return 'at top'
   if (facts.top >= room - SLACK_PX) return 'at end'
-  return `scrolled ${Math.round((facts.top / room) * 100)}%`
+  const percent = (facts.top / room) * 100
+  return `scrolled ${tenths ? percent.toFixed(1) : Math.round(percent)}%`
 }
 
 /** A region's length in screens: its content over its view, at least one. */
@@ -62,8 +63,13 @@ export function regionStateOf(facts: RegionFacts): string {
   return `${regionPositionOf(facts)} ${screens} ${screens === 1 ? 'screen' : 'screens'}`
 }
 
-/** What a Scroll Op moved, in the words its outcome and "Done so far" share: `at top → scrolled 35%`; null when it did not move. */
+/**
+ * What a Scroll Op moved, in the words its outcome and "Done so far" share:
+ * `at top → scrolled 35%`; null when it did not move. A move under a
+ * percent of a long region is told to the tenth, never as no move.
+ */
 export function regionChangeOf(before: RegionFacts, after: RegionFacts): string | null {
+  if (Math.abs(after.top - before.top) <= SLACK_PX) return null
   const [from, to] = [regionPositionOf(before), regionPositionOf(after)]
-  return Math.abs(after.top - before.top) <= SLACK_PX || from === to ? null : `${from} → ${to}`
+  return from !== to ? `${from} → ${to}` : `${regionPositionOf(before, true)} → ${regionPositionOf(after, true)}`
 }

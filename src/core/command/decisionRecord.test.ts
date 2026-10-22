@@ -23,6 +23,12 @@ describe('misfireSignal', () => {
     expect(misfireSignal({ verb: 'none', at: 1_000 }, { verb: 'back', at: 1_500 })).toBeNull()
     expect(misfireSignal({ verb: 'click', at: 1_000 }, { verb: 'click', at: 1_500 })).toBeNull()
   })
+
+  it('reads a Scroll Op as the page scroll is read, on the same scroller only (#383): the region scrolled back, never the page after it', () => {
+    expect(misfireSignal({ verb: 'scroll_down', target: 12, at: 1_000 }, { verb: 'scroll_up', target: 12, at: 1_500 })).toBe('opposite_scroll')
+    expect(misfireSignal({ verb: 'scroll_down', target: null, at: 1_000 }, { verb: 'scroll_up', target: 12, at: 1_500 })).toBeNull()
+    expect(misfireSignal({ verb: 'scroll_down', target: 12, at: 1_000 }, { verb: 'scroll_up', target: 9, at: 1_500 })).toBeNull()
+  })
 })
 
 describe('jevDetailOf', () => {

@@ -5,6 +5,7 @@ import { isAddressShaped, isBareWord } from './openAddress'
 import { firstNumber } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
+import { ONE_SCREEN } from './scrollOp'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
 // from the Utterance and the page alone, without asking the Decision Model
@@ -362,7 +363,7 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('type', { target: parsed.ref, slot: parsed.text })
     case 'scroll':
       // A region's line scrolls it one screen (#383, ADR 0085); the page's keeps its fixed distance.
-      return command(parsed.direction === 'up' ? 'scroll_up' : 'scroll_down', parsed.ref !== undefined ? { target: parsed.ref, extent: { rung: 'screen', screens: 1 } } : {})
+      return command(parsed.direction === 'up' ? 'scroll_up' : 'scroll_down', parsed.ref !== undefined ? { target: parsed.ref, extent: ONE_SCREEN } : {})
     case 'press':
       // The grammar's key, named as its Slot the way it was typed ("enter", "up").
       return command('press', { slot: parsed.press.key.replace(/^Arrow/, '').toLowerCase(), key: parsed.press, times: parsed.times })

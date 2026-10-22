@@ -201,9 +201,11 @@ const KEPT_ACTIONS = 8
  * and for a Command before that fired nothing.
  */
 export function misfireSignal(
-  previous: { readonly verb: CommandVerb; readonly at: number },
-  next: { readonly verb: CommandVerb; readonly key?: KeyPress; readonly at: number },
+  previous: { readonly verb: CommandVerb; readonly target?: number | null; readonly at: number },
+  next: { readonly verb: CommandVerb; readonly target?: number | null; readonly key?: KeyPress; readonly at: number },
 ): MisfireSignal | null {
+  // A scroll back is a recovery of the same scroller's scroll: the page's, or one Scroll Region's (#383).
+  const sameScroller = (previous.target ?? null) === (next.target ?? null)
   if (previous.verb === 'none' || next.at - previous.at > MISFIRE_WINDOW_MS) return null
   switch (next.verb) {
     case 'back':
@@ -213,9 +215,9 @@ export function misfireSignal(
     case 'press':
       return next.key?.key === 'Escape' ? 'escape' : null
     case 'scroll_up':
-      return previous.verb === 'scroll_down' ? 'opposite_scroll' : null
+      return previous.verb === 'scroll_down' && sameScroller ? 'opposite_scroll' : null
     case 'scroll_down':
-      return previous.verb === 'scroll_up' ? 'opposite_scroll' : null
+      return previous.verb === 'scroll_up' && sameScroller ? 'opposite_scroll' : null
     default:
       return null
   }

@@ -108,12 +108,12 @@ export function mediaOpHead(op: string, ref: number): string {
 }
 
 /** The head of a Scroll Op's outcome (#383, ADR 0085): `scroll [12] down: `, the position it moved from and to after it. */
-export function regionScrollHead(op: string, ref: number): string {
+export function scrollOpHead(op: string, ref: number): string {
   return `scroll [${ref}] ${op}: `
 }
 
 /** A Scroll Op that reached its region (#383): `end of region` when it did not move. */
-const REGION_SCROLL_HEAD_RE = headPattern(...SCROLL_OPS.map((op) => regionScrollHead(op, 0)))
+const SCROLL_OP_HEAD_RE = headPattern(...SCROLL_OPS.map((op) => scrollOpHead(op, 0)))
 
 /** A click or a right-click that reached its target (#363): what its changes clause says decides whether it moved anything. */
 const UNMOVED_REF_ACTION_RE = headPattern(clickFlagsHead(0, false, false), menuFlagsHead(0, false, false))
@@ -139,7 +139,7 @@ export const STATE_DELTA = ' -> '
 export function blockedOrInertAction(text: string): ConsumedNothing | null {
   if (COVERED_HEAD_RE.test(text)) return 'covered'
   if (NOT_SHOWN_HEAD_RE.test(text)) return 'notShown'
-  const regionScroll = REGION_SCROLL_HEAD_RE.exec(text)
+  const regionScroll = SCROLL_OP_HEAD_RE.exec(text)
   if (regionScroll !== null) return text.slice(regionScroll[0].length).split('\n', 1)[0] === SCROLL_END_OF_REGION ? 'inert' : null
   const mediaOp = MEDIA_OP_HEAD_RE.exec(text)
   if (mediaOp !== null) return text.slice(mediaOp[0].length).split('\n', 1)[0] === NO_OBSERVABLE_CHANGE ? 'inert' : null

@@ -101,6 +101,8 @@ describe('a Scroll Op in "Done so far", the Feed and the set-asides', () => {
     expect(facts).toEqual({ changed: true, region: 'the scrolling part moved down: at top → scrolled 35%' })
     expect(doneLine(DOWN, PAGE, facts)).toBe('scroll down a screen "Live chat" (the scrolling part moved down: at top → scrolled 35%)')
     expect(doneFacts(withFacts({ top: 4400 }), withFacts({ top: 1540 }), { changed: true }, 12)).toMatchObject({ region: 'the scrolling part moved up: at end → scrolled 35%' })
+    // A small scroll of a long region moves it under a percent: it is told by the tenth, never as not moving.
+    expect(doneFacts(withFacts({ height: 40_000, top: 15_000 }), withFacts({ height: 40_000, top: 15_133 }), { changed: true }, 12)).toEqual({ changed: true, region: 'the scrolling part moved down: scrolled 37.9% → scrolled 38.2%' })
     // A region that did not move, read unchanged, is nothing changed.
     expect(doneFacts(PAGE, PAGE, { changed: false }, 12)).toEqual({ changed: false })
     expect(doneLine({ ...DOWN, verb: 'scroll_up', extent: { rung: 'end' } }, PAGE, { changed: false })).toBe('scroll up to the top "Live chat" (nothing changed)')

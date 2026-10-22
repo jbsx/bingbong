@@ -28,7 +28,9 @@ const PAGE = `<!doctype html><html><head><title>regions</title></head><body styl
     ${lines('Message', 40)}
   </div>
   <button style="position:absolute;top:640px;left:10px">Send</button>
+  <input id="field" placeholder="Message" style="position:absolute;top:640px;left:100px">
   <div id="host" style="position:absolute;top:10px;left:330px;width:200px;height:100px"></div>
+  <div id="named" style="position:absolute;top:10px;left:660px;width:200px;height:140px"></div>
   <div id="blank" style="position:absolute;top:130px;left:330px;width:200px;height:100px;overflow:auto"><div style="height:400px"></div></div>
   <iframe id="embed" src="/frame" style="position:absolute;top:250px;left:330px;width:300px;height:200px;border:0"></iframe>
   <div id="slack" style="position:absolute;top:330px;left:10px;width:300px;height:200px;overflow:auto"><div style="height:218px">We use cookies</div></div>
@@ -38,6 +40,8 @@ const PAGE = `<!doctype html><html><head><title>regions</title></head><body styl
   <script>
     const root = document.getElementById('host').attachShadow({ mode: 'open' })
     root.innerHTML = '<ul id="list" style="margin:0;height:100px;overflow-y:scroll">' + Array.from({ length: 20 }, (_, n) => '<li style="height:20px">Item ' + (n + 1) + '</li>').join('') + '</ul>'
+    const named = document.getElementById('named').attachShadow({ mode: 'open' })
+    named.innerHTML = '<p id="title" style="margin:0;height:20px">Playlist</p><div aria-labelledby="title" style="height:100px;overflow-y:auto">' + Array.from({ length: 20 }, (_, n) => '<p style="margin:0;height:20px">Song ' + (n + 1) + '</p>').join('') + '</div>'
   </script>
 </body></html>`
 
@@ -85,12 +89,13 @@ describe.skipIf(!canDriveChrome)('Scroll Regions in a real Chrome (#383)', () =>
       expect.stringMatching(/^\[\d+\] region "Live chat" at top 3 screens$/),
       expect.stringMatching(/^\[\d+\] region "Thread" at top 4 screens$/),
       expect.stringMatching(/^\[\d+\] region "Item 1 Item 2 Item 3 Item 4 Item 5 Item 6 Item 7 Item 8 Item" at top 4 screens$/),
+      expect.stringMatching(/^\[\d+\] region "Playlist" at top 4 screens$/),
       expect.stringMatching(/^\[\d+\] region at top 4 screens$/),
       expect.stringMatching(/^\[\d+\] region "Comments" in 127\.0\.0\.1 at top 4 screens$/),
     ])
     // Page order: the outer region, the one nested in it, then the button after them.
     // A label from the words is their first 60 characters, cut where it falls.
-    expect(page.refs.map((ref) => ref.label)).toEqual(['Live chat', 'Thread', 'Send', 'Item 1 Item 2 Item 3 Item 4 Item 5 Item 6 Item 7 Item 8 Item', '', 'Comments'])
+    expect(page.refs.map((ref) => ref.label)).toEqual(['Live chat', 'Thread', 'Send', 'Message', 'Item 1 Item 2 Item 3 Item 4 Item 5 Item 6 Item 7 Item 8 Item', 'Playlist', '', 'Comments'])
   })
 
   it('AC1: the drawer, the slack box, the overflow-hidden box and the sideways scroller are no refs', async () => {
@@ -159,6 +164,8 @@ describe.skipIf(!canDriveChrome)('Scroll Regions in a real Chrome (#383)', () =>
 
     // Six notches of 120 px: a 700 px screen over a notch, rounded up. The outcome is read where the scroll stops, not on its first frame.
     expect((await controller.scroll('down', { rung: 'screen', screens: 1 })).split('\n')[0]).toBe('scrolled down: x=0 y=720')
+    // A text field holding the focus does not take the End key for its caret.
+    await chrome.evaluate(`document.getElementById('field').focus()`)
     expect((await controller.scroll('down', { rung: 'end' })).split('\n')[0]).toBe('scrolled down: x=0 y=2300')
     expect((await controller.scroll('up', { rung: 'end' })).split('\n')[0]).toBe('scrolled up: x=0 y=0')
   })

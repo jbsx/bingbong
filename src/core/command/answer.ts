@@ -6,6 +6,7 @@ import type { JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
 import { NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
 import { mediaOpAnswer } from './mediaOp'
+import { scrollOpOfVerb } from './scrollOp'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
 
@@ -135,7 +136,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
       return command.mediaOp === undefined ? null : mediaOpAnswer(command.mediaOp, mediaChangesIn(facts.mediaChanges))
     case 'scroll_up':
     case 'scroll_down': {
-      const [direction, end] = command.verb === 'scroll_up' ? ['up', 'top'] : ['down', 'bottom']
+      const direction = scrollOpOfVerb(command.verb)!
+      const end = direction === 'up' ? 'top' : 'bottom'
       // A Scroll Region by its label (#383); End of Region is its already-at-the-end.
       if (command.target !== null) return facts.scrollEnded === true ? `${ref()} is already at the ${end}.` : `Scrolled ${ref()} ${direction}.`
       return facts.scrollEnded === true ? `Already at the ${end}.` : `Scrolled ${direction}.`

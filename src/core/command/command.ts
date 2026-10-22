@@ -4,7 +4,7 @@ import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
-import { describeExtent, type ScrollExtent } from './scrollOp'
+import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -284,7 +284,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     case 'scroll_up':
     case 'scroll_down': {
       // A Scroll Op names its region (#383, ADR 0085); either scroll names its Extent when it has one.
-      const op = command.verb === 'scroll_down' ? 'down' : 'up'
+      const op = scrollOpOfVerb(command.verb)!
       const how = command.extent !== undefined ? ` ${describeExtent(command.extent, op)}` : ''
       return `scroll${label(command.target)} ${op}${how}`
     }

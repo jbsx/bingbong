@@ -2,6 +2,7 @@ import type { DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { RegionFacts } from '../browser/snapshot'
 import { SCROLL_OPS, type ExtentRung, type ScrollExtent, type ScrollOp } from '../browser/scrollOp'
 import { firstNumber } from '../timer/duration'
+import type { CommandVerb } from './command'
 
 export { EXTENT_RUNGS, SCROLL_END_OF_REGION, SCROLL_OPS, isScrollOp, notchesFor, regionChangeOf, regionPositionOf, regionStateOf, type ExtentRung, type ScrollExtent, type ScrollOp } from '../browser/scrollOp'
 
@@ -12,6 +13,19 @@ export { EXTENT_RUNGS, SCROLL_END_OF_REGION, SCROLL_OPS, isScrollOp, notchesFor,
 // each one evaluate on that element, on any site, never moving the page.
 // How far is the Extent's, a Choice of its own beside the media Amount,
 // which the page's own scroll reads too.
+
+/** A screen, as the grammar's `scroll <ref> up|down` and a Scroll Op read with no Extent go. */
+export const ONE_SCREEN: ScrollExtent = { rung: 'screen', screens: 1 }
+
+/** The way a scroll Command goes, as a Scroll Op names it: `down` for `scroll_down`; null for any other verb. */
+export function scrollOpOfVerb(verb: CommandVerb): ScrollOp | null {
+  return verb === 'scroll_down' ? 'down' : verb === 'scroll_up' ? 'up' : null
+}
+
+/** The scroll verb a Scroll Op fires as: `scroll_down` for `down`. */
+export function scrollVerbOf(op: ScrollOp): 'scroll_down' | 'scroll_up' {
+  return op === 'down' ? 'scroll_down' : 'scroll_up'
+}
 
 /** The ops a region can take: both, always — never gated by its position. */
 export function scrollOpsOf(_facts: RegionFacts): ScrollOp[] {
