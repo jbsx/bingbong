@@ -38,11 +38,32 @@ export const OWN_SLOT_SCRIPT = `${OWN_SLOT_FN}()`
  */
 export const TAG_OF_FN = `((get) => (el) => get.call(el))(Object.getOwnPropertyDescriptor(Element.prototype, 'tagName').get)`
 
+/**
+ * A JS function source `(el, separator) => text`: an element's text nodes
+ * joined, without what a page never renders (#391) — a script's source, a
+ * stylesheet, a noscript fallback, a template. textContent keeps them all,
+ * and so does innerText for an element that is not rendered.
+ */
+export const SOURCE_FREE_TEXT_FN = `((tagOf) => {
+  const NEVER_RENDERED = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'])
+  const accept = (node) => (node.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT : NEVER_RENDERED.has(tagOf(node).toUpperCase()) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP)
+  return (el, separator = '') => {
+    const parts = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: accept })
+    while (walker.nextNode()) parts.push(walker.currentNode.nodeValue)
+    return parts.join(separator)
+  }
+})(${TAG_OF_FN})`
+
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
 export const COLLECT_PAGE_SCRIPT = `(() => {
   const tagOf = ${TAG_OF_FN}
+  const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
+  // An element's text as it shows (#391): a rendered one's innerText leaves
+  // the source out; an empty or unrendered one is read without it.
+  const renderedText = (el) => (el.getClientRects().length > 0 && el.innerText) || sourceFreeText(el)
   const vw = window.innerWidth
   const vh = window.innerHeight
   const SELECTOR = [
@@ -112,20 +133,17 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (labelledBy) {
       for (const id of labelledBy.split(/\\s+/)) {
         const source = document.getElementById(id)
-        if (source && source.textContent) parts.push(source.textContent)
+        if (source) parts.push(sourceFreeText(source))
       }
     }
     if (el.labels) {
-      for (const label of Array.from(el.labels)) {
-        if (label.textContent) parts.push(label.textContent)
-      }
+      for (const label of Array.from(el.labels)) parts.push(sourceFreeText(label))
     }
     if (el.placeholder) parts.push(el.placeholder)
     if ((tagOf(el) === 'INPUT' && (el.type === 'submit' || el.type === 'button' || el.type === 'reset')) || tagOf(el) === 'BUTTON') {
       if (typeof el.value === 'string' && el.value) parts.push(el.value)
     }
-    const text = el.innerText || el.textContent
-    if (text) parts.push(text)
+    parts.push(renderedText(el))
     if (el.title) parts.push(el.title)
     return parts.join(' ').replace(/\\s+/g, ' ').trim().slice(0, 300)
   }
@@ -221,7 +239,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     let last = null
     for (const control of document.querySelectorAll(CONSENT_CONTROL_SELECTOR)) {
       // Cheap text first: innerText lays out, and most controls are not consent choices.
-      const text = [control.getAttribute('aria-label'), control.value, control.textContent].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
+      const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
       if (!CONSENT_LABEL_RE.test(text) || !hasSize(control) || insideInert(control)) continue
       const root = pinnedAncestor(control)
       if (root === null || !rectVisible(root)) continue
@@ -432,7 +450,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const labelledBy = el.getAttribute('aria-labelledby')
     // Its own tree's ids: a region in a shadow root is labelled from inside it.
     const tree = typeof el.getRootNode().getElementById === 'function' ? el.getRootNode() : document
-    if (labelledBy) for (const id of labelledBy.split(/\\s+/)) parts.push((tree.getElementById(id) || {}).textContent)
+    if (labelledBy) for (const source of labelledBy.split(/\\s+/).map((id) => tree.getElementById(id))) if (source) parts.push(sourceFreeText(source))
     parts.push(el.getAttribute('title'))
     const named = parts.filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ').trim()
     if (named) return named.slice(0, 300)
@@ -510,7 +528,6 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     regions = new WeakSet(taken.filter((entry) => entry.cue === 'region').map((entry) => entry.el))
     return taken.map((entry) => entry.el)
   }
-  const renderedText = (el) => el.innerText || el.textContent || ''
   const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
   // The page's text is its main landmark's, and the body's when it has
@@ -679,12 +696,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     return Array.from(parent.children).find((sibling) => sibling !== child && isHidden(sibling) && sibling.querySelector(HELD_SELECTOR) !== null) || null
   }
   // A hidden element has no rendered text, so its words are its text nodes, spaced: "Sleep timer" "Off" is not "Sleep timerOff".
-  const spacedText = (el) => {
-    const words = []
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    while (walker.nextNode()) words.push(walker.currentNode.nodeValue)
-    return words.join(' ').replace(/\\s+/g, ' ').trim()
-  }
+  const spacedText = (el) => sourceFreeText(el, ' ').replace(/\\s+/g, ' ').trim()
   const hiddenInside = (el, panel) => {
     // display alone: visibility inherits, so a panel hidden by it would hide every row.
     for (let node = el; node !== null && node !== panel; node = node.parentElement) if (window.getComputedStyle(node).display === 'none') return true
@@ -1028,6 +1040,7 @@ const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
 export function clickPrepScript(index: number, naming: CoverNaming): string {
   return `(() => {
     const tagOf = ${TAG_OF_FN}
+    const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
     const el = (window.__bingbongRefs || [])[${index}]
     if (!el || !el.isConnected) return { ok: false }
     const scrollers = [${ROOT_SCROLLER}]
@@ -1167,7 +1180,7 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     const nameOf = (node) => {
       const parts = [node.getAttribute('aria-label')]
       const labelledBy = node.getAttribute('aria-labelledby')
-      if (labelledBy) parts.push(labelledBy.split(/\\s+/).map((id) => (document.getElementById(id) || {}).textContent || '').join(' '))
+      if (labelledBy) parts.push(labelledBy.split(/\\s+/).map((id) => document.getElementById(id)).filter((source) => source).map((source) => sourceFreeText(source)).join(' '))
       parts.push(node.getAttribute('alt'), node.getAttribute('title'))
       for (const part of parts) {
         const name = (part || '').replace(/\\s+/g, ' ').trim()

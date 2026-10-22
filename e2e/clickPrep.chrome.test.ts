@@ -35,6 +35,11 @@ const PAGES: Record<string, string> = {
       <p style="margin-top:40vh">Get our newsletter</p>
       <div style="position:absolute;bottom:0"><button>Subscribe</button><button>Not now</button><button>Settings</button><button>More</button></div>
     </div></body>`,
+  // The same region named by aria-labelledby, its title holding a stylesheet (#391).
+  '/region-labelledby': `<body>${COLLECTION_SEARCH}
+    <div role="region" aria-labelledby="newsletter-title" style="position:fixed;inset:0;background:#fff">
+      <p id="newsletter-title" style="margin-top:40vh">Newsletter<style>.title { color: red }</style></p>
+    </div></body>`,
   // A listed button laid over the input's centre.
   '/button-over': `<body style="margin:0"><input aria-label="Name" style="position:absolute;top:100px;left:100px;width:200px;height:40px">
     <button style="position:absolute;top:90px;left:90px;width:240px;height:60px"><span>Open chat</span></button></body>`,
@@ -138,6 +143,11 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
         clickable: false,
         blocked: { fact: 'covered', cover: { role: 'region', name: 'Newsletter', contains: ['Subscribe', 'Not now', 'Settings'].map((label) => refOf(page, label)) } },
       })
+    })
+
+    it("names a cover by its labelled-by text without the label's stylesheet (#391)", async () => {
+      const page = await collect('/region-labelledby')
+      expect(await prep(page, 'Search the collection')).toMatchObject({ clickable: false, blocked: { fact: 'covered', cover: { role: 'region', name: 'Newsletter' } } })
     })
 
     it('names a listed ref over the target by its number, from a descendant hit', async () => {

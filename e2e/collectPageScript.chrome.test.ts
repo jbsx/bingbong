@@ -20,7 +20,7 @@ import { silentWav } from './fixtureServer.ts'
 interface Collected {
   readonly dialogOpen: boolean
   readonly dialogText: string
-  readonly elements: readonly { readonly label: string; readonly layer: 'dialog' | 'page' }[]
+  readonly elements: readonly { readonly label: string; readonly layer: 'dialog' | 'page'; readonly holds?: readonly string[] }[]
   readonly textBlocks: readonly CollectedTextBlock[]
 }
 
@@ -651,5 +651,72 @@ describe.skipIf(!canDriveChrome)('the collector reads a form whose controls clob
       'Sign up',
       'A sentence before the form, long enough that it is read as a run of prose.',
     ])
+  })
+})
+
+// A page's never-rendered text (#391): a script's source, a stylesheet, a
+// noscript fallback, a template. innerText leaves it out of a rendered
+// element, but every read of raw DOM text let it back in — the empty-
+// innerText fallback (Reddit's inline span around a script), an unrendered
+// element's innerText, and the textContent of labels and labelled-by text.
+const SCRIPT_TEXT_PAGES: Record<string, string> = {
+  '/script-text': `<body><main><h1>r/programming</h1>
+    <div>A post on why the faster-than-Rust claim does not hold up <span><script>(() => { SML.load(["0iGC7FzoNQ"], 'en-US/', 'auto'); })();</script></span> under measurement.</div>
+    <div><span><script>(() => { SML.load(["B_BVaQ0zm6","Fh2kQ9xLpa"], 'en-US/', 'auto'); })();</script></span></div>
+    <p><script>window.paragraphScript = "a script alone inside a paragraph"</script></p>
+    <p style="display:none">Words in a hidden paragraph<script>var hiddenScript = "inside a hidden paragraph"</script><noscript>Turn on JavaScript</noscript></p>
+    <p>A visible paragraph<style>.visible { color: red }</style> keeps its words.</p>
+  </main>
+  <span id="email-label">Email address<style>.label { color: red }</style></span><input aria-labelledby="email-label">
+  <label>Full name<style>.name { color: blue }</style><input></label>
+  <button>Send<script>var buttonScript = 1</script></button>
+  <p id="chat-title">Live chat<style>.chat { color: green }</style></p>
+  <div aria-labelledby="chat-title" style="height:60px;overflow-y:auto"><div style="height:400px"></div></div>
+  <button aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu">Settings</button>
+  <div id="settings-menu" role="menu" style="display:none"><div role="menuitem">Sleep timer<script>var heldScript = 1</script><template>Template words</template></div></div>
+  </body>`,
+  '/script-dialog': `<body><main><h1>Home</h1><p>The page under the sign-in sheet.</p></main>
+    <div role="dialog" style="position:fixed;inset:20%;background:#fff"><p>Sign in to continue<script>var dialogScript = 1</script></p><style>.sheet { color: red }</style><button>Close</button></div>
+  </body>`,
+}
+
+describe.skipIf(!canDriveChrome)('the collector reads no never-rendered text (#391)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(SCRIPT_TEXT_PAGES, 'bingbong-collector-script-text-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  const collect = async (path: string) => {
+    await fixtures.open(path)
+    return fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+  }
+
+  it('keeps script, style, noscript and template text out of every text block, the hidden block included, and a visible block reads as before', async () => {
+    const page = await collect('/script-text')
+    expect(page.textBlocks.map((block) => (block.kind === 'text' ? block.text : block.kind))).toEqual([
+      'r/programming',
+      'A post on why the faster-than-Rust claim does not hold up under measurement.',
+      'Words in a hidden paragraph',
+      'A visible paragraph keeps its words.',
+    ])
+  })
+
+  it("keeps it out of a ref's name, a region's labelled-by name and a closed menu's held names, and a visible control's name reads as before", async () => {
+    const page = await collect('/script-text')
+    expect(page.elements.map((element) => [element.label, element.holds ?? []])).toEqual([
+      ['Email address', []],
+      ['Full name', []],
+      ['Send', []],
+      ['Live chat', []],
+      ['Settings', ['Sleep timer']],
+    ])
+  })
+
+  it('keeps it out of the Dialog Text', async () => {
+    const page = await collect('/script-dialog')
+    expect(page.dialogText).toBe('Sign in to continue Close')
   })
 })
