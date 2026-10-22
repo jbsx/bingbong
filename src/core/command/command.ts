@@ -133,6 +133,8 @@ export interface CommandPage {
   readonly dialog?: PageDialog
   /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
   readonly media?: PageMedia
+  /** Whether the document is in full screen (#387): a fact of the page by kind, never a site's button label; absent for a page read without it. */
+  readonly fullScreen?: boolean
 }
 
 /** A dialog open over the page (#336). */
@@ -154,6 +156,7 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     refs: snapshot.refs.map(commandRefOf),
     terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
+    ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
   }
 }

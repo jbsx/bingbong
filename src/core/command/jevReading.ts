@@ -313,7 +313,7 @@ function isAside(label: string, page: CommandPage, setAside: readonly SetAside[]
  */
 export type DoneResult =
   | { readonly changed: false }
-  | { readonly changed: true; readonly opened?: string; readonly target?: TargetChange; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[]; readonly region?: string }
+  | { readonly changed: true; readonly opened?: string; readonly target?: TargetChange; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[]; readonly region?: string; readonly fullScreen?: boolean }
 
 /** One state of the acted ref that differs between the two reads (#366), each side as the ref line shows it: `pressed=false`, `value="…"`, `no value`. */
 export interface StateFlip {
@@ -421,6 +421,19 @@ function targetMoved(change: TargetChange): boolean {
 }
 
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
+  // Full screen is the document's (#387): a change to it is told whatever else the action did, and first.
+  const screen = fullScreenChange(before, after)
+  const facts = pageDoneFacts(before, after, result, target)
+  if (screen === undefined) return facts
+  return { ...(facts.changed ? facts : { changed: true }), fullScreen: screen }
+}
+
+/** The page's full screen after the action, when it changed between two reads that both carry it (#387). */
+function fullScreenChange(before: CommandPage, after: CommandPage): boolean | undefined {
+  return before.fullScreen !== undefined && after.fullScreen !== undefined && before.fullScreen !== after.fullScreen ? after.fullScreen : undefined
+}
+
+function pageDoneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
   // A Scroll Region tells what a scroll moved by its own facts (#383, ADR 0085): its position, never a state flip.
   const scrolled = regionRefChange(before, after, target)
   if (scrolled === null) return { changed: false }
@@ -542,7 +555,7 @@ function targetFacts(change: TargetChange): string {
 function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
   const page = pageFacts(result)
   // A change the target or the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
-  const told = [...(result.region !== undefined ? [result.region] : []), ...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
+  const told = [...(result.fullScreen !== undefined ? [result.fullScreen ? 'the page went full screen' : 'the page left full screen'] : []), ...(result.region !== undefined ? [result.region] : []), ...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
   return told.length > 0 ? told.join('; ') : page
 }
 
@@ -697,6 +710,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
         : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
+    ...(page.fullScreen !== undefined ? [`Full screen: ${page.fullScreen ? 'on' : 'off'}`] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address, states):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page, marked)}`),

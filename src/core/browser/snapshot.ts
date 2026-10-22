@@ -168,6 +168,8 @@ export interface CollectedPage {
   elements: CollectedElement[]
   /** The playing media element (#363); absent or null when none has started. */
   media?: PageMedia | null
+  /** Whether the document is in full screen (#387); absent in a payload that does not read it. */
+  fullScreen?: boolean
   /** A frame's own slot in its parent's `window.frames` (#377); -1 or absent for the top document. */
   frameIndex?: number
   /** The document's origin (#377): a script-written frame's is its parent's, where its address is only `about:blank`. */
@@ -249,6 +251,8 @@ export interface PageSnapshot {
   truncated: boolean
   /** The playing media element (#363); null, or absent in an older snapshot, when none has started. */
   media?: PageMedia | null
+  /** Whether the document is in full screen (#387); absent in an older snapshot. */
+  fullScreen?: boolean
 }
 
 /**
@@ -501,6 +505,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       : [],
     elements,
     media: parseMedia(candidate.media),
+    ...(typeof candidate.fullScreen === 'boolean' ? { fullScreen: candidate.fullScreen } : {}),
     ...(isFiniteNumber(candidate.frameIndex) ? { frameIndex: candidate.frameIndex } : {}),
     ...(typeof candidate.origin === 'string' ? { origin: candidate.origin } : {}),
   }
@@ -601,6 +606,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     dialogOpen: page.dialogOpen ?? false,
     dialogText: page.dialogText ?? '',
     media: page.media ?? null,
+    ...(page.fullScreen !== undefined ? { fullScreen: page.fullScreen } : {}),
     ...pageTextOf(page),
     refs: taken.map((element, index) => ({
       ref: index + 1,

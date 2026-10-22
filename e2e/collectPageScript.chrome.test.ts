@@ -407,6 +407,31 @@ describe.skipIf(!canDriveChrome)('the collector reads the playing media element 
   })
 })
 
+// Full screen (#387): a fact of the document, read by kind, never a
+// site's button label — what the card's `Full screen:` line says.
+describe.skipIf(!canDriveChrome)('the collector reads whether the document is in full screen (#387)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures({ '/player': '<body><div id="player"><button>Play</button></div><p>A player page.</p></body>' }, 'bingbong-collector-fullscreen-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it('carries Full screen on while an element is in full screen, and off once it has left', async () => {
+    await fixtures.open('/player')
+    const read = async (): Promise<string> => commandState('exit full screen', commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))).split('\n').find((line) => line.startsWith('Full screen:'))!
+    expect(await read()).toBe('Full screen: off')
+    // As a person's press would: requestFullscreen needs a gesture.
+    await fixtures.chrome.cdp.send('Runtime.evaluate', { expression: "document.getElementById('player').requestFullscreen()", userGesture: true, awaitPromise: true })
+    await until(() => fixtures.chrome.evaluate<boolean>('document.fullscreenElement !== null'), 'the page to go full screen')
+    expect(await read()).toBe('Full screen: on')
+    await fixtures.chrome.evaluate('document.exitFullscreen()')
+    await until(() => fixtures.chrome.evaluate<boolean>('document.fullscreenElement === null'), 'the page to leave full screen')
+    expect(await read()).toBe('Full screen: off')
+  })
+})
+
 // The Ref State: what Chrome's accessibility tree says of each ref, read
 // after the collect, through to the lines Jev reads. A captions switch whose
 // name went stale ("unavailable") while it is pressed, the way YouTube's is.
@@ -434,7 +459,7 @@ describe.skipIf(!canDriveChrome)('the Ref State read from the accessibility tree
     await fixtures.open('/controls')
     const collected = parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))
     const page = commandPageOf(buildPageSnapshot(await readRefStates(fixtures.chrome.cdp, collected)))
-    expect(commandState('turn off captions', page).split('\n').slice(3)).toEqual([
+    expect(commandState('turn off captions', page).split('\n').filter((line) => line.startsWith('['))).toEqual([
       '[1] button "Subtitles/closed captions unavailable CC" pressed=true keyshortcuts="c"',
       '[2] button "Account" hasPopup=menu expanded=false',
       '[3] button "Send" disabled=true',
@@ -478,7 +503,7 @@ describe.skipIf(!canDriveChrome)('the collector takes every ARIA widget role a c
     await fixtures.open('/widgets')
     const collected = parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))
     const page = commandPageOf(buildPageSnapshot(await readRefStates(fixtures.chrome.cdp, collected)))
-    expect(commandState('turn off annotations', page).split('\n').slice(3)).toEqual([
+    expect(commandState('turn off annotations', page).split('\n').filter((line) => line.startsWith('['))).toEqual([
       '[1] button "Annotations" role=menuitemcheckbox checked=true',
       '[2] button "Ambient mode" role=menuitemcheckbox checked=false',
       '[3] button "Auto" role=menuitemradio checked=true',

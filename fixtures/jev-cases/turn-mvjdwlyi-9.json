@@ -1,0 +1,139 @@
+{
+  "turnId": "turn-mvjdwlyi-9",
+  "transcript": "Exit out of full screen.",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792664076481,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-16"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Exit out of full screen.\"\nPage: https://www.youtube.com/watch?v=kt_0b4RwerY — \"YE - HIGHS AND LOWS - YouTube\"\nPlaying: \"YE - HIGHS AND LOWS - YouTube\" 0:32 / 1:51, loop off\nFull screen: on\nRefs (number, kind, label, address, states):\n[1] button \"\"\n[2] media \"YE - HIGHS AND LOWS - YouTube\" playing 0:32/1:51 volume 0% loop off\n[3] button \"YE - HIGHS AND LOWS\"\n[4] button \"like this video along with 44,767 other people\" pressed=false\n[5] button \"Dislike this video\" pressed=false\n[6] button \"Comments\" pressed=false\n[7] button \"Share\"\n[8] button \"More actions\"\n[9] button \"\"\n[10] button \"Pause (k)\" keyshortcuts=\"k\"\n[11] button \"Mute (m)\" keyshortcuts=\"m\"\n[12] button \"0 Minutes 26 Seconds of 1 Minutes 51 Seconds 0:26 / 1:51\"\n[13] button \"Auto-play is off\"\n[14] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"\n[15] button \"Settings\" hasPopup=menu expanded=false\n[16] button \"Exit full screen keyboard shortcut f\" keyshortcuts=\"f\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
+        "options": {
+          "click-1": "click [1] button \"\"",
+          "click-2": "click [2] media \"YE - HIGHS AND LOWS - YouTube\" playing 0:32/1:51 volume 0% loop off",
+          "click-3": "click [3] button \"YE - HIGHS AND LOWS\"",
+          "click-4": "click [4] button \"like this video along with 44,767 other people\" pressed=false",
+          "click-5": "click [5] button \"Dislike this video\" pressed=false",
+          "click-6": "click [6] button \"Comments\" pressed=false",
+          "click-7": "click [7] button \"Share\"",
+          "click-8": "click [8] button \"More actions\"",
+          "click-9": "click [9] button \"\"",
+          "click-10": "click [10] button \"Pause (k)\" keyshortcuts=\"k\"",
+          "click-11": "click [11] button \"Mute (m)\" keyshortcuts=\"m\"",
+          "click-12": "click [12] button \"0 Minutes 26 Seconds of 1 Minutes 51 Seconds 0:26 / 1:51\"",
+          "click-13": "click [13] button \"Auto-play is off\"",
+          "click-14": "click [14] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"",
+          "click-15": "click [15] button \"Settings\" hasPopup=menu expanded=false",
+          "click-16": "click [16] button \"Exit full screen keyboard shortcut f\" keyshortcuts=\"f\"",
+          "play-2": "play [2] \"YE - HIGHS AND LOWS - YouTube\": start it, or carry on playing it",
+          "pause-2": "pause [2] \"YE - HIGHS AND LOWS - YouTube\"",
+          "forward-2": "go forward in [2] \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
+          "back-2": "go back in [2] \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
+          "restart-2": "play [2] \"YE - HIGHS AND LOWS - YouTube\" again from the start",
+          "volume-2": "set the volume of [2] \"YE - HIGHS AND LOWS - YouTube\": to the number the words carry (0 to 100), or up or down as they say",
+          "mute-2": "mute [2] \"YE - HIGHS AND LOWS - YouTube\"",
+          "unmute-2": "unmute [2] \"YE - HIGHS AND LOWS - YouTube\"",
+          "loop-2": "put [2] \"YE - HIGHS AND LOWS - YouTube\" on loop, so it repeats",
+          "unloop-2": "stop looping [2] \"YE - HIGHS AND LOWS - YouTube\"",
+          "rate-2": "set the playback speed of [2] \"YE - HIGHS AND LOWS - YouTube\": to the number the words carry (1 is normal), or faster or slower as they say",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "skip": "music: skip to the next song",
+          "previous": "music: go back to the song before",
+          "show": "music: show the video playing on the screen"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Exit",
+          "s0-1": "Exit out",
+          "s0-2": "Exit out of",
+          "s0-3": "Exit out of full",
+          "s0-4": "Exit out of full screen",
+          "s1-1": "out",
+          "s1-2": "out of",
+          "s1-3": "out of full",
+          "s1-4": "out of full screen",
+          "s2-2": "of",
+          "s2-3": "of full",
+          "s2-4": "of full screen",
+          "s3-3": "full",
+          "s3-4": "full screen",
+          "s4-4": "screen"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

@@ -198,6 +198,13 @@ describe('parseCollectedPage', () => {
     expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, media: { ...media, duration: null } })).media).toEqual({ ...media, duration: Infinity })
   })
 
+  it('carries whether the document is in full screen to the snapshot and the page Jev reads, and nothing when the payload says nothing (#387)', () => {
+    expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, fullScreen: true })).fullScreen).toBe(true)
+    expect(commandPageOf(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, fullScreen: false }))).fullScreen).toBe(false)
+    expect(commandPageOf(buildPageSnapshot(parseCollectedPage(youtubeFixture))).fullScreen).toBeUndefined()
+    expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, fullScreen: 'yes' })).fullScreen).toBeUndefined()
+  })
+
   it('rejects payloads that are not objects', () => {
     expect(() => parseCollectedPage('nope')).toThrow(/collected page payload malformed/)
     expect(() => parseCollectedPage(null)).toThrow(/collected page payload malformed/)

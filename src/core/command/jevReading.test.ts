@@ -108,6 +108,30 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
   })
 })
 
+// Replay 2026-10-22 of "Exit out of full screen." hop 1 (turn-mvjdwnew-a), 3× each: click "Full screen (f)" at 0.48–0.66 unchanged; with both lines, none 0.87–0.90 and the Verdict yes 1.00 (#387).
+describe('full screen in the state Jev reads (#387)', () => {
+  const SONG = { title: 'Highs and Lows', paused: false, currentTime: 62.4, duration: 124, loop: false, muted: false }
+
+  it('carries one line under Playing, or under Page when nothing plays, saying whether the page is in full screen', () => {
+    expect(commandState('exit full screen', { ...PAGE, media: SONG, fullScreen: true }).split('\n').slice(1, 4)).toEqual(['Page: https://example.com/ — "Example"', 'Playing: "Highs and Lows" 1:02 / 2:04, loop off', 'Full screen: on'])
+    expect(commandState('go full screen', { ...PAGE, fullScreen: false }).split('\n')[2]).toBe('Full screen: off')
+    // A page read without the fact says nothing of it.
+    expect(commandState('go full screen', PAGE)).not.toContain('Full screen')
+  })
+
+  it('names a full-screen change first in the action\'s facts in Done so far, whether the page read as changed or not', () => {
+    const before = { ...PAGE, fullScreen: true }
+    const after = { ...PAGE, refs: [...PAGE.refs, { ref: 4, kind: 'button' as const, label: 'Guide', href: null, inputType: null }], fullScreen: false }
+    const left = doneFacts(before, after, { changed: true }, 2)
+    expect(doneLine({ verb: 'click', target: 2, slot: null }, before, left)).toBe('click "Sign in" (the page left full screen; its state did not change; the address did not change; "Guide" appeared)')
+    const went = doneFacts({ ...PAGE, fullScreen: false }, { ...PAGE, fullScreen: true }, { changed: false })
+    expect(went).toEqual({ changed: true, fullScreen: true })
+    expect(doneLine({ verb: 'press', target: null, slot: 'f' }, PAGE, went)).toMatch(/\(the page went full screen\)$/)
+    // Unread on either side is no change.
+    expect(doneFacts(PAGE, { ...PAGE, fullScreen: true }, { changed: false })).toEqual({ changed: false })
+  })
+})
+
 describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops on the action card, on any site', () => {
   const FACTS: MediaFacts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
   const VIDEO: CommandRef = { ref: 7, kind: 'media', label: 'YE - HIGHS AND LOWS', href: null, inputType: null, media: FACTS }

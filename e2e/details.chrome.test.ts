@@ -49,7 +49,7 @@ describe.skipIf(!canDriveChrome)('a details is acted on through its summary (#38
   it("carries the summary's expanded state on its line, and no role the button kind already says", async () => {
     await fixtures.open('/details')
     const page = commandPageOf(buildPageSnapshot(await readRefStates(fixtures.chrome.cdp, await collect())))
-    expect(commandState('open the language menu', page).split('\n').slice(3, 5)).toEqual([
+    expect(commandState('open the language menu', page).split('\n').filter((line) => line.startsWith('[')).slice(0, 2)).toEqual([
       '[1] button "Language" expanded=false',
       '[2] button "Date range" expanded=true',
     ])
