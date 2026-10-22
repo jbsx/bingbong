@@ -1341,7 +1341,9 @@ it as a control, found by the cues Vimium's link hints use and a Ref like
 any other: an `onclick` attribute, an Angular click directive, a Google
 `jsaction` click, `contenteditable`; weakly, a `button` or `btn` class and a
 `span`, dropped when a nearby descendant is already a Ref. Never one marked
-`aria-disabled`, and never one found by its cursor or its listeners.
+`aria-disabled`, never a weak cue inside a Ref a click acts on whole (a
+link, a button, a click role: that is the Ref's own icon or text), and
+never one found by its cursor or its listeners.
 _Avoid_: clickable div, fake button, hint
 
 **Textless Ref**:

@@ -4,7 +4,8 @@
 
 Accepted on 2026-10-21 by the owner, grilled from #381 (the companion of
 #380). Amends ADR 0007's selector-only collect. Leaves ADR 0062's
-visibility rule as it is.
+visibility rule as it is. Amended on 2026-10-22 by the owner's ruling on
+#384.
 
 ## Context
 
@@ -31,6 +32,17 @@ are weak cues, dropped when a ref within Vimium's lookback (the 6 before
 it, 3 levels up) is its descendant; strong cues nest freely. `tabindex`
 alone gives no ref, and `aria-disabled="true"` vetoes one.
 
+One step is not Vimium's, ruled on #384. A weak cue that sits inside a
+ref a click acts on whole (any `<a>`, a `button`, or one of #380's click
+roles), at any depth and whatever its words, is dropped. Vimium keeps
+that hint, since two markers on one button cost a person nothing and
+either clicks it; on the card it is a second line for the same click, a
+button's own icon or text span, with no words of its own, and a Textless
+Ref that would gate the Mark Ask for nothing. The "one for one" above
+binds which elements the collect finds, not how many lines one element
+gets. A weak cue inside an Unmarked Control stays, as in Vimium: an
+`onclick` or `jsaction` container may hold a distinct control of its own.
+
 The collect walks open shadow roots, for every ref kind, as Vimium does.
 An Unmarked Control is kinded `button` and carries no flag on its line.
 Marked elements take the collect's 400 places first. The cues run in
@@ -53,6 +65,13 @@ them, and a "scroll this region" op is a separate decision.
 - The collect gains a cost, budgeted at ≤15 ms added to the median
   `browser-collect` on a YouTube watch page and a news front page; the
   shadow-root walk counts against it.
+- The drop is measured, not assumed (2026-10-22, headless Chrome, the
+  first viewport, each page clean of its wall): a YouTube watch page
+  gives 48 refs with the step and 65 without, the 17 dropped all a
+  button's own icon (14, no words) or text span (3, words within the
+  button's own); the BBC News and Guardian fronts give 45 and 48 either
+  way. It costs no measurable collect time. A dropped line that was a
+  distinct control would be a ledger miss and reopens this paragraph.
 - A pointer `div` with none of these cues is not a ref. That is Vimium's
   own false negative, accepted.
 - How such a ref is labelled when it has no text is ADR 0084.
