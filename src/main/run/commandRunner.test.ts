@@ -736,7 +736,7 @@ describe('a Command the Local Match cannot settle', () => {
     expect(decision.requests).toHaveLength(2)
     const request = decision.requests[0]!
     // One action card in place of a verb and a target (#370), and no Verdict at hop 0.
-    expect(Object.keys(request.questions)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(request.questions)).toEqual(['action', 'slot', 'extent', 'where'])
     expect(request.state).toContain('"take me home"')
     expect(request.state).toContain('Page: https://example.com/ — "Example"')
     expect(request.state).toContain('[1] link "Home" https://example.com/1')
@@ -1375,7 +1375,7 @@ describe('Early Fire (#326)', () => {
     expect(decision.requests).toHaveLength(1)
     const questions = decision.requests[0]!.questions
     // example.com is a site, so the partial asks where too (#340).
-    expect(Object.keys(questions).sort()).toEqual(['action', 'complete', 'slot', 'where'])
+    expect(Object.keys(questions).sort()).toEqual(['action', 'complete', 'extent', 'slot', 'where'])
     expect(questions.complete).toEqual({ type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' })
     expect([questions.action, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice'])
 
@@ -1801,6 +1801,63 @@ describe('a Media Op (#372, ADR 0080): one evaluate on the media ref, the Task e
     await runner.run('pause the video', { source: 'spoken', turnId: 'voice-1' })
     expect(records.find((entry) => entry.type === 'decision')).toMatchObject({ verb: 'media', error: 'ref 7 is no video or audio element', ended: 'terminal' })
     expect(events.some((event) => event.type === 'display' && event.failure === true)).toBe(true)
+  })
+})
+
+describe('a Scroll Op (#383, ADR 0085): one evaluate on the Scroll Region, the Extent saying how far', () => {
+  const CHAT = { top: 0, height: 4800, view: 400 }
+  const REFS: SnapshotRef[] = [ref(1, 'button', 'Send'), ref(12, 'region', 'Live chat', { region: CHAT })]
+  const card = (top: string, extent?: string) => ({ answers: { action: choice(top, 0.9), slot: choice('none'), ...(extent !== undefined ? { extent: choice(extent, 0.8) } : {}) } })
+
+  function chatHarness() {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: 'https://example.com/stream', title: 'Stream', refs: REFS }
+    return h
+  }
+
+  it('"scroll the chat to the bottom" reads down-12 with the end rung, scrolls the region and not the page, and the record keeps the rung', async () => {
+    const { browser, decision, records, events, runner, asks } = chatHarness()
+    browser.regionScrollChanges = 'at top → at end'
+    decision.script.push(card('down-12', 'end'))
+
+    await runner.run('scroll the chat to the bottom', { source: 'spoken', turnId: 'voice-1' })
+
+    expect(browser.regionScrolls[0]).toEqual({ ref: 12, direction: 'down', extent: { rung: 'end' } })
+    expect(browser.scrolls).toEqual([])
+    expect(asks[0]!.questions).toHaveProperty('extent')
+    expect(records.find((entry) => entry.type === 'decision')).toMatchObject({ verb: 'scroll_down', target: 12, targetLabel: 'Live chat', extent: { rung: 'end' }, jev: { confidence: { extent: 0.8 }, probabilities: { extent: { end: 0.8 } } } })
+    expect(events.filter((event) => event.type === 'display').map((event) => (event as { text: string }).text)).toContain('Scrolled “Live chat” down.')
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ action: 'scroll [12] "Live chat" down to the end' })
+    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ name: 'scroll', args: { direction: 'down', ref: 12, rung: 'end' } })
+  })
+
+  it('a region at its end says so: End of Region is a scroll that changed nothing', async () => {
+    const { browser, decision, events, runner } = chatHarness()
+    decision.script.push(card('down-12', 'screen'))
+    await runner.run('scroll the chat down', { source: 'spoken', turnId: 'voice-1' })
+    expect(browser.regionScrolls[0]).toMatchObject({ ref: 12, extent: { rung: 'screen', screens: 1 } })
+    expect(events.filter((event) => event.type === 'display').map((event) => (event as { text: string }).text)).toContain('“Live chat” is already at the bottom.')
+  })
+
+  it("the page's own scroll Jev reads carries the Extent to the browser", async () => {
+    const { browser, decision, runner } = chatHarness()
+    decision.script.push(card('scroll_down', 'lot'))
+    await runner.run('scroll down a lot', { source: 'spoken', turnId: 'voice-1' })
+    expect(browser.scrollExtents[0]).toEqual({ rung: 'lot', screens: 3 })
+  })
+
+  it('AC4: `scroll <ref> up|down` is an exact line that scrolls the region one screen with no ask; `scroll up|down` scrolls the page as it did', async () => {
+    const { browser, decision, runner } = chatHarness()
+    await runner.run('scroll 12 down')
+    await runner.run('scroll 12 up')
+    await runner.run('scroll down')
+    expect(decision.requests).toHaveLength(0)
+    expect(browser.regionScrolls).toEqual([
+      { ref: 12, direction: 'down', extent: { rung: 'screen', screens: 1 } },
+      { ref: 12, direction: 'up', extent: { rung: 'screen', screens: 1 } },
+    ])
+    expect(browser.scrolls).toEqual(['down'])
+    expect(browser.scrollExtents).toEqual([undefined])
   })
 })
 
@@ -3149,14 +3206,14 @@ describe('the Site Scope at hop 0 (#340)', () => {
     expect(commands(events).map((event) => event.action)).toEqual(['search donald trumps profile on x.com', `navigate ${PROFILE}`, 'done'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
-    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where'])
-    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'extent', 'where'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'extent', 'outcome', 'progress'])
     expect(Object.values(cardOf(decision.requests[1]!).options)).toContainEqual(expect.stringContaining(PROFILE))
     // The record keeps where for the scoped read, and the ask sidecar the fourth question.
     const [hop0, hop1] = decisions(records)
     expect(hop0).toMatchObject({ verb: 'search', slot: 'donald trumps profile', jev: { confidence: { where: 0.6 }, probabilities: { where: { page: 0.1, site: 0.6, web: 0.3 } } } })
     expect(hop1!.jev).not.toHaveProperty('confidence.where')
-    expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'slot', 'extent', 'where'])
   })
 
   it('AC2: where = web searches the whole web as before', async () => {
@@ -3190,7 +3247,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
       const { decision, runner } = siteHarness(start)
       decision.script.push(read('search', 's2-4'), read('none'))
       await runner.run(TEXT, { source: 'spoken' })
-      expect(asked(decision.requests[0]!), start).toEqual(['action', 'slot'])
+      expect(asked(decision.requests[0]!), start).toEqual(['action', 'slot', 'extent'])
     }
   })
 
@@ -3198,7 +3255,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
     const { browser, decision, runner } = siteHarness()
     decision.script.push(read('search', 's2-3', 'site'), read('none'))
     await runner.run('search for donald trump', { source: 'spoken' })
-    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'extent', 'where'])
     await runner.run('open youtube', { source: 'spoken' })
     expect(decision.requests).toHaveLength(2)
     expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=site%3Ax.com%20donald%20trump', 'https://youtube.com'])
@@ -3251,9 +3308,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     // Hop 0 is the Local Match's; hop 1 on the site is asked where; hop 2 on the results is not; hop 3 on the searched site is not.
     expect(decision.requests).toHaveLength(3)
     expect(decision.requests[0]!.state).toContain(`"${TEXT}"`)
-    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where', 'outcome', 'progress'])
-    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
-    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'extent', 'where', 'outcome', 'progress'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'extent', 'outcome', 'progress'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'extent', 'outcome', 'progress'])
     expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
       ['local_match', 'navigate', undefined],
       ['jev', 'search', undefined],
@@ -3281,7 +3338,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
       read('search', 's5-7'),
     )
     await runner.run(TEXT, { source: 'spoken' })
-    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'extent', 'outcome', 'progress'])
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
   })
 
@@ -3311,9 +3368,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     await runner.run('go to donald trumps profile', { source: 'spoken' })
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(decision.requests.map(asked)).toEqual([
-      ['action', 'slot', 'where'],
-      ['action', 'slot', 'outcome', 'progress'],
-      ['action', 'slot', 'outcome', 'progress'],
+      ['action', 'slot', 'extent', 'where'],
+      ['action', 'slot', 'extent', 'outcome', 'progress'],
+      ['action', 'slot', 'extent', 'outcome', 'progress'],
     ])
   })
 
@@ -3363,7 +3420,7 @@ describe('a pop-up covering the page (#336)', () => {
     const { browser, events, records, decision, runner } = sheetHarness()
     await runner.run('exit out of this', { source: 'spoken' })
     // Jev is asked which control closes it (owner's rule 2026-10-19); with no answer the ladder stands without its choice.
-    expect(decision.requests.map((request) => Object.keys(request.questions))).toEqual([['action', 'slot', 'where', 'dismiss']])
+    expect(decision.requests.map((request) => Object.keys(request.questions))).toEqual([['action', 'slot', 'extent', 'where', 'dismiss']])
     expect(browser.clicks).toEqual([9])
     expect(browser.navigations).toEqual([])
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])

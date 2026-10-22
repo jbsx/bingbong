@@ -50,7 +50,10 @@ describe('parseCliCommand', () => {
   it('parses scroll up/down and rejects other directions', () => {
     expect(parseCliCommand('scroll down')).toEqual({ ok: true, command: { type: 'scroll', direction: 'down' } })
     expect(parseCliCommand('scroll up')).toEqual({ ok: true, command: { type: 'scroll', direction: 'up' } })
-    expect(parseCliCommand('scroll sideways')).toEqual({ ok: false, error: "scroll: expected 'scroll up' or 'scroll down'" })
+    expect(parseCliCommand('scroll sideways')).toEqual({ ok: false, error: "scroll: expected 'scroll up', 'scroll down' or 'scroll <ref> up|down'" })
+    // A Scroll Region by its number (#383).
+    expect(parseCliCommand('scroll 12 down')).toEqual({ ok: true, command: { type: 'scroll', direction: 'down', ref: 12 } })
+    expect(parseCliCommand('scroll 12 sideways')).toMatchObject({ ok: false })
   })
 
   it('parses screenshot with an optional path', () => {
@@ -90,7 +93,7 @@ describe('parseCliCommand', () => {
     expect(grammarErrorOf('press F5')).toBe("I can't press F5. Keys I know: up, down, left, right, space, enter, tab, escape.")
     expect(grammarErrorOf('press')).toBe('Press needs a key. Keys I know: up, down, left, right, space, enter, tab, escape.')
     expect(grammarErrorOf('press down zero')).toBe('Press takes a whole number of times, like “press down 3”.')
-    expect(grammarErrorOf('scroll sideways')).toBe('I can scroll up or down.')
+    expect(grammarErrorOf('scroll sideways')).toBe('I can scroll up or down, or a scrolling part of the page by its number, like “scroll 12 down”.')
     expect(grammarErrorOf('click seven')).toBe('Click needs the number of an item, like “click 7”.')
     expect(grammarErrorOf('volume 140')).toBe('Volume takes a number from 0 to 100, like “volume 40”.')
     expect(grammarErrorOf('dance now')).toBeNull()

@@ -361,7 +361,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
     case 'type':
       return command('type', { target: parsed.ref, slot: parsed.text })
     case 'scroll':
-      return command(parsed.direction === 'up' ? 'scroll_up' : 'scroll_down')
+      // A region's line scrolls it one screen (#383, ADR 0085); the page's keeps its fixed distance.
+      return command(parsed.direction === 'up' ? 'scroll_up' : 'scroll_down', parsed.ref !== undefined ? { target: parsed.ref, extent: { rung: 'screen', screens: 1 } } : {})
     case 'press':
       // The grammar's key, named as its Slot the way it was typed ("enter", "up").
       return command('press', { slot: parsed.press.key.replace(/^Arrow/, '').toLowerCase(), key: parsed.press, times: parsed.times })

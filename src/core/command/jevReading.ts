@@ -1,11 +1,12 @@
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
-import type { MediaFacts, PageLink, PageMedia } from '../browser/snapshot'
+import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
+import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpsOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -161,11 +162,13 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
   const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
+  // A Scroll Region's position and length ride its line (#383, ADR 0085): what its ops move, and what the Verdict reads.
+  const region = ref.region !== undefined ? ` ${regionStateOf(ref.region)}` : ''
   // A ref read in a frame names its host (#377, ADR 0081): the embedded player is another site's.
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
   // A Textless Ref the Mark Ask boxed on the image (#382, ADR 0084) is named by its mark, the one thing Jev can find it by.
   const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}${region}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
@@ -253,7 +256,7 @@ export function refIdentityOf(ref: CommandRef, page: CommandPage): RefIdentity {
 }
 
 /** What an action card label does to a numbered ref, as a set-aside keeps it: a click, a type, a right-click or a Media Op (#372). */
-type RefAct = 'click' | 'type' | 'menu' | MediaOp
+type RefAct = 'click' | 'type' | 'menu' | MediaOp | ScrollOp
 
 /**
  * An action set aside (#336, #373, ADR 0080), keyed by its card label: a
@@ -275,12 +278,18 @@ export function setAsideOf(command: Command, page: CommandPage): SetAside | null
     return verb === null ? null : { verb }
   }
   // A Media Op by its op and the ref's identity (#372, ADR 0080): `forward-7` is set aside as `click-10` is, the ref's other ops staying.
-  const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : undefined
+  const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : scrollOpOf(command)
   if (act !== undefined) {
     const ref = page.refs.find((candidate) => candidate.ref === command.target)
     return ref === undefined ? null : { act, ...refIdentityOf(ref, page) }
   }
   return command.verb !== 'navigate' && isRefLessVerb(command.verb) ? { verb: command.verb } : null
+}
+
+/** The Scroll Op a scroll of a region is (#383): `down` or `up`; undefined for anything else, the page's own scroll among it. */
+function scrollOpOf(command: Command): ScrollOp | undefined {
+  if (command.target === null) return undefined
+  return command.verb === 'scroll_down' ? 'down' : command.verb === 'scroll_up' ? 'up' : undefined
 }
 
 /** Whether the Task set aside what a card label names on this page. */
@@ -305,7 +314,7 @@ function isAside(label: string, page: CommandPage, setAside: readonly SetAside[]
  */
 export type DoneResult =
   | { readonly changed: false }
-  | { readonly changed: true; readonly opened?: string; readonly target?: TargetChange; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[] }
+  | { readonly changed: true; readonly opened?: string; readonly target?: TargetChange; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[]; readonly region?: string }
 
 /** One state of the acted ref that differs between the two reads (#366), each side as the ref line shows it: `pressed=false`, `value="…"`, `no value`. */
 export interface StateFlip {
@@ -413,6 +422,10 @@ function targetMoved(change: TargetChange): boolean {
 }
 
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
+  // A Scroll Region tells what a scroll moved by its own facts (#383, ADR 0085): its position, never a state flip.
+  const scrolled = regionRefChange(before, after, target)
+  if (scrolled === null) return { changed: false }
+  if (scrolled !== undefined) return { changed: true, ...(result.changed && result.opened !== undefined ? { opened: result.opened } : {}), region: scrolled }
   // A page another address opened is a new page: what the target did on the old one is no fact of it.
   const change = !result.changed || result.opened === undefined ? targetChange(before, after, target) : undefined
   // An acted media ref tells its change from its own facts (#372, ADR 0080); otherwise a change to the page's media element is one the DOM does not show (#363): Loop ticked in a right-click menu changes no ref.
@@ -447,9 +460,26 @@ function mediaRefChanges(before: CommandPage, after: CommandPage, ref: number | 
   return now === undefined || !isMediaRef(now) ? null : mediaChangesOf(target.media, now.media)
 }
 
+/**
+ * What a scroll moved on the acted Scroll Region (#383): its position
+ * change, or null when it did not move; undefined when the target is no
+ * region read with its facts, or is gone from the page the action left.
+ */
+function regionRefChange(before: CommandPage, after: CommandPage, ref: number | null | undefined): string | null | undefined {
+  const target = ref === null || ref === undefined ? undefined : before.refs.find((one) => one.ref === ref)
+  if (target === undefined || !isRegionRef(target)) return undefined
+  const now = targetAfter(target, before, after)
+  return now === undefined || !isRegionRef(now) ? undefined : regionChangeOf(target.region, now.region)
+}
+
 /** A media ref read with its facts (#372): the one kind that carries Media Ops. */
 function isMediaRef(ref: CommandRef): ref is CommandRef & { readonly media: MediaFacts } {
   return ref.kind === 'media' && ref.media !== undefined
+}
+
+/** A Scroll Region read with its facts (#383): the one kind that carries Scroll Ops. */
+function isRegionRef(ref: CommandRef): ref is CommandRef & { readonly region: RegionFacts } {
+  return ref.kind === 'region' && ref.region !== undefined
 }
 
 /** What changed on the media element between two reads (#363), in "Done so far"'s words; none when nothing did. */
@@ -506,7 +536,7 @@ function targetFacts(change: TargetChange): string {
 function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
   const page = pageFacts(result)
   // A change the target or the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
-  const told = [...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
+  const told = [...(result.region !== undefined ? [result.region] : []), ...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
   return told.length > 0 ? told.join('; ') : page
 }
 
@@ -548,6 +578,9 @@ export function doneAction(command: Command, page: CommandPage): string {
   if (command.verb === 'type') return `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
   // A Media Op by what it did (#372): `skip forward 10 s "Title"`, `mute "Title"`.
   if (command.verb === 'media' && command.mediaOp !== undefined) return `${describeMediaOp(command.mediaOp)} ${JSON.stringify(label)}`
+  // A Scroll Op by its direction and Extent (#383): `scroll down a screen "Live chat"`.
+  const op = scrollOpOf(command)
+  if (op !== undefined) return `scroll ${op}${command.extent !== undefined ? ` ${describeExtent(command.extent, op)}` : ''} ${JSON.stringify(label)}`
   return `${command.verb} ${JSON.stringify(label)}`
 }
 
@@ -676,11 +709,11 @@ type ActionQuestions = {
 type Asked<Q, K extends string> = Q | (Q & { readonly [key in K]: DecisionChoiceQuestion })
 
 /**
- * The reading's questions (#340): the action card and the Slot; the
- * Amount beside them on an ask that offers a media ref (#372); `where` on
+ * The reading's questions (#340): the action card, the Slot and the
+ * Extent (#383); the Amount beside them on an ask that offers a media ref (#372); `where` on
  * a site; and at hop 0, on a line with a conjunction, `steps` (#364).
  */
-type ReadingQuestions = Asked<Asked<ActionQuestions, 'amount'>, 'where'>
+type ReadingQuestions = Asked<Asked<ActionQuestions & { readonly extent: DecisionChoiceQuestion }, 'amount'>, 'where'>
 export type CommandQuestions = Asked<ReadingQuestions, 'steps'>
 
 /** Where a line splits into two Steps (#364): the word the second starts at, and each Step's words. */
@@ -772,7 +805,9 @@ export function commandQuestions(
   const card = actionQuestion(page, pageRead, links, options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
-  const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
+  // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
+  const extended = { ...action, extent: extentQuestion() }
+  const reading: Asked<typeof extended, 'amount'> = card.mediaOps ? { ...extended, amount: amountQuestion() } : extended
   const site = scopableSite(pageRead.url, hop)
   const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
@@ -875,6 +910,10 @@ function actionQuestion(
   const kept = (label: string): boolean => !isAside(label, page, setAside)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
+  // Each Scroll Region's Scroll Ops the Task has not set aside (#383, ADR 0085).
+  const scrollsOf = (ref: CommandRef): [ScrollOp, CommandRef][] => (isRegionRef(ref) ? scrollOpsOf(ref.region).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
+  // A region carries no click (ADR 0085): a right-click is a click too.
+  const clickable = (ref: CommandRef): boolean => ref.kind !== 'region'
   const applianceVerbs = offeredVerbs.filter(kept)
   const refLess = Object.entries(REFLESS_DESCRIPTIONS)
     .filter(([verb]) => kept(verb))
@@ -887,11 +926,12 @@ function actionQuestion(
   }
   // The refs the clicks reach under the cap; their types, Media Ops and right-clicks come from these.
   const reached = page.refs.slice(0, Math.max(0, room))
-  const clicked = new Set(take(reached.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
+  const clicked = new Set(take(reached.filter((ref) => clickable(ref) && kept(`click-${ref.ref}`))).map((ref) => ref.ref))
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const ops = take(reached.flatMap(opsOf))
+  const scrolls = take(reached.flatMap(scrollsOf))
   const opened = take(links)
-  const menus = take(reached.filter((ref) => kept(`menu-${ref.ref}`)))
+  const menus = take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
@@ -905,6 +945,7 @@ function actionQuestion(
         }),
       ),
       ...Object.fromEntries(ops.map(([op, ref]) => [`${op}-${ref.ref}`, mediaOpDescription(op, ref.ref, shownLabel(ref, pageRead))])),
+      ...Object.fromEntries(scrolls.map(([op, ref]) => [`${op}-${ref.ref}`, scrollOpDescription(op, ref.ref, ref.label)])),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(refLess),
@@ -1066,12 +1107,12 @@ type ActionAnswers = {
 type Answered<A, K extends string> = A | (A & { readonly [key in K]: DecisionChoiceAnswer })
 
 /** The answers to {@link CommandQuestions}: the action card's and the Slot's; the Amount's (#372), `where` and `steps` (#364) when they were asked. */
-type ReadingAnswers = Answered<Answered<ActionAnswers, 'amount'>, 'where'>
+type ReadingAnswers = Answered<Answered<Answered<ActionAnswers, 'amount'>, 'extent'>, 'where'>
 export type CommandAnswers = Answered<ReadingAnswers, 'steps'>
 
 /** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3, `forward-7` a Media Op on ref 7 (#372). */
 interface RefAction {
-  readonly act: 'click' | 'type' | 'menu' | 'open' | MediaOp
+  readonly act: 'click' | 'type' | 'menu' | 'open' | MediaOp | ScrollOp
   readonly n: number
 }
 
@@ -1080,13 +1121,25 @@ function refActionOf(label: string): RefAction | null {
   const match = /^([a-z]+)-(\d+)$/.exec(label)
   if (match === null) return null
   const [, act, n] = match as unknown as [string, string, string]
-  return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || isMediaOp(act) ? { act, n: Number(n) } : null
+  return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || isMediaOp(act) || isScrollOp(act) ? { act, n: Number(n) } : null
 }
 
 /** The Amount rung the answers name (#372); `little` when none was asked, or the answer names no rung. */
 function amountOf(answers: CommandAnswers | HopAnswers): AmountRung {
   const choice = 'amount' in answers ? answers.amount.choice : null
   return AMOUNT_RUNGS.find((rung) => rung === choice) ?? 'little'
+}
+
+/** The Extent rung the answers name (#383); `screen` when none was asked, or the answer names no rung. */
+function extentOf(answers: CommandAnswers | HopAnswers): ExtentRung {
+  const choice = 'extent' in answers ? answers.extent.choice : null
+  return EXTENT_RUNGS.find((rung) => rung === choice) ?? 'screen'
+}
+
+/** The scroll a Scroll Op makes of its region (#383, ADR 0085), the Extent read into screens; null on a ref that is no region. */
+function scrollCommand(op: ScrollOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
+  if (!isRegionRef(ref)) return null
+  return { verb: op === 'down' ? 'scroll_down' : 'scroll_up', target: ref.ref, slot: null, extent: scrollExtent(extentOf(answers), text) }
 }
 
 /**
@@ -1214,6 +1267,7 @@ function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text
   const ref = offeredRefOf(acted, page)
   if (ref === null) return null
   if (isMediaOp(acted.act)) return mediaCommand(acted.act, ref, answers, text)
+  if (isScrollOp(acted.act)) return scrollCommand(acted.act, ref, answers, text)
   return { verb: acted.act, target: ref.ref, slot: acted.act === 'type' ? slotWords(answers.slot, text) : null }
 }
 
@@ -1270,6 +1324,8 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     if (!onResults(page.url, hop)) return none
     return mostProbableFallbackOpening(answers.action, page, links, hop.setAside ?? []) ?? none
   }
+  // The page's own scroll reads the Extent when it was asked (#383, ADR 0085); unasked, it scrolls as the grammar's line does.
+  if ((verb === 'scroll_down' || verb === 'scroll_up') && 'extent' in answers) return { verb, target: null, slot, extent: scrollExtent(extentOf(answers), text) }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)
     return { verb, target: null, slot, key: key ?? PRESS_KEYS.enter, times: 1 }

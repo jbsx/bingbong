@@ -266,7 +266,7 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
 describe('the questions', () => {
   it('asks the action card among the refs and the ref-less verbs, the Slot among the word spans', () => {
     const questions = commandQuestions('type hello in search', { ...PAGE, url: 'about:blank' })
-    expect(Object.keys(questions)).toEqual(['action', 'slot'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent'])
     expect(questions.action.type).toBe('choice')
     expect(Object.keys(questions.action.options)).toEqual([
       'click-1',
@@ -311,7 +311,7 @@ describe('the Where Ask (#379, ADR 0082): the same action card, asked where the 
   it('offers every option the first card offered, with the question and its none changed — the where beside it, never the steps', () => {
     const first = commandQuestions('turn on ambient mode and loop it', SITE)
     const where = whereQuestions('turn on ambient mode and loop it', SITE)
-    expect(Object.keys(where)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(where)).toEqual(['action', 'slot', 'extent', 'where'])
     expect(Object.keys(where.action.options)).toEqual(Object.keys(first.action.options))
     expect(where.action.options['click-2']).toBe(first.action.options['click-2'])
     expect(where.action.options.search).toBe(first.action.options.search)
@@ -644,13 +644,13 @@ describe('the Site Scope (#340): where the words point, asked at hop 0 on a site
 
   it('asks a third Choice on a site: on this page, on this site, or elsewhere on the web', () => {
     const questions = commandQuestions(TEXT, X)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where'])
     expect('where' in questions && Object.keys(questions.where.options)).toEqual(['page', 'site', 'web'])
     expect('where' in questions && questions.where.options.site).toContain('x.com')
   })
 
   it('asks no where on a blank page, or on a Web Engine’s results or front page', () => {
-    for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['action', 'slot'])
+    for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['action', 'slot', 'extent'])
   })
 
   it('reads search, search terms and where = site as a search scoped to the site, the Slot kept as the words — a navigate of such words too', () => {
@@ -700,13 +700,13 @@ describe('the Site Scope at a later hop (#341): a hop may search once, on a site
 
   it('asks where at a later hop on a site the Task has not searched', () => {
     const questions = commandQuestions(TEXT, X, hop)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where'])
     expect('where' in questions && questions.where.options.site).toContain('x.com')
   })
 
   it('asks no where on a results landing, or on a site the Task has already searched', () => {
-    expect(Object.keys(commandQuestions(TEXT, RESULTS, { ...hop, hop: 2 }))).toEqual(['action', 'slot'])
-    expect(Object.keys(commandQuestions(TEXT, { ...X, url: 'https://x.com/realDonaldTrump' }, { ...hop, hop: 3, searched: ['x.com'] }))).toEqual(['action', 'slot'])
+    expect(Object.keys(commandQuestions(TEXT, RESULTS, { ...hop, hop: 2 }))).toEqual(['action', 'slot', 'extent'])
+    expect(Object.keys(commandQuestions(TEXT, { ...X, url: 'https://x.com/realDonaldTrump' }, { ...hop, hop: 3, searched: ['x.com'] }))).toEqual(['action', 'slot', 'extent'])
   })
 
   it('reads search, search terms and where = site at a later hop as a search scoped to the site', () => {
@@ -755,7 +755,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
 
   it('asks the outcome at a hop, among yes, in the way and not yet, beside the action card, the Slot and where', () => {
     const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'progress'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where', 'outcome', 'progress'])
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
     expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
     expect(questions.outcome.instructions).toContain('the action they asked for has happened')
@@ -774,7 +774,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       dialog: { text: 'Don’t miss what’s happening', refs: [7, 8, 9, 10] },
     }
     const questions = hopQuestions('open elon musks latest tweet', covered, hop)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'progress', 'dismiss'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where', 'outcome', 'progress', 'dismiss'])
     expect(Object.keys(questions.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
     expect(questions.dismiss!.instructions).toContain('Which control closes it and leaves the page behind as it was')
     expect(questions.dismiss!.instructions).toContain('Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install')
@@ -788,7 +788,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {
-    expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'where'])
+    expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'extent', 'where'])
   })
 
   it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
@@ -1005,7 +1005,7 @@ describe('a dismiss phrase over a pop-up (owner\'s rule 2026-10-19)', () => {
   }
 
   it('asks the Command\'s questions and the dismiss Choice in one call; none with no control to choose', () => {
-    expect(Object.keys(dismissPhraseQuestions('close', SHEET)!)).toEqual(['action', 'slot', 'where', 'dismiss'])
+    expect(Object.keys(dismissPhraseQuestions('close', SHEET)!)).toEqual(['action', 'slot', 'extent', 'where', 'dismiss'])
     expect(dismissPhraseQuestions('close', { ...SHEET, dialog: { text: 'Sign in', refs: [8] } })).toBeNull()
   })
 
@@ -1028,7 +1028,7 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
   }
 
   it('is asked at hop 0 beside the others, one option per conjunction boundary labelled with its two halves, and none', () => {
-    expect(Object.keys(commandQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'steps'])
+    expect(Object.keys(commandQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'extent', 'steps'])
     expect(stepsOf(LINE)).toEqual({ none: 'one command: the whole line', w7: 'start the song from the beginning | put it on loop' })
   })
 
@@ -1044,12 +1044,12 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
   })
 
   it('is not asked for a line with no conjunction, or one that starts or ends on one; nor at a later hop, on a partial, or when left out', () => {
-    expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['action', 'slot'])
-    expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['action', 'slot'])
-    expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['action', 'slot'])
+    expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['action', 'slot', 'extent'])
+    expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['action', 'slot', 'extent'])
+    expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['action', 'slot', 'extent'])
     expect(Object.keys(hopQuestions(LINE, BLANK, { hop: 1, visited: [], actions: [], links: [] }))).not.toContain('steps')
-    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'complete'])
-    expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['action', 'slot'])
+    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'extent', 'complete'])
+    expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['action', 'slot', 'extent'])
   })
 
   it('reads a boundary as the two Steps, and none or a label it did not offer as one Command', () => {
@@ -1135,7 +1135,7 @@ describe('Appliance Verbs (#374)', () => {
     const PLAYED: Command = { verb: 'play', target: null, slot: 'discover weekly', music: { kind: 'search', place: 'now' } }
 
     it('asks `where` beside the Player\'s lines on a site, as on any site', () => {
-      expect(Object.keys(commandQuestions(TEXT, SPOTIFY, undefined, { appliance: { queued: false } }))).toEqual(['action', 'slot', 'where'])
+      expect(Object.keys(commandQuestions(TEXT, SPOTIFY, undefined, { appliance: { queued: false } }))).toEqual(['action', 'slot', 'extent', 'where'])
     })
 
     it('words Jev reads as pointing on the site open are looked for on that site: a Site Scope, the Slot kept as the words', () => {

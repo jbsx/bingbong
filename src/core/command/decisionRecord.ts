@@ -3,6 +3,7 @@ import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
 import type { MusicAction } from '../music/musicWords'
 import type { MediaOpAction } from './mediaOp'
+import type { ScrollExtent } from './scrollOp'
 import type { CommandAnswers, HopAnswers } from './jevReading'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
@@ -25,13 +26,15 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
+  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
     readonly action: Readonly<Record<string, number>>
     readonly slot: Readonly<Record<string, number>>
     /** The Amount's (#372), on an ask that offered a media ref. */
     readonly amount?: Readonly<Record<string, number>>
+    /** The Extent's (#383), on every ask since. */
+    readonly extent?: Readonly<Record<string, number>>
     readonly where?: Readonly<Record<string, number>>
     /** The Verdict's, at a hop past the first. */
     readonly outcome?: Readonly<Record<string, number>>
@@ -62,6 +65,8 @@ export interface DecisionRecord {
   readonly music?: MusicAction
   /** For `media` (#372, ADR 0080): the op; for a seek the Amount rung read and the seconds it asked for (the outcome line in the Feed tells where the element went, which its range may have capped); for a volume or a speed, the level set. */
   readonly mediaOp?: MediaOpAction
+  /** For a scroll Jev read (#383, ADR 0085): the Extent rung and the screens it came to; `target` is the Scroll Region for a Scroll Op, null for the page. */
+  readonly extent?: ScrollExtent
   readonly target: number | null
   readonly targetLabel?: string
   readonly slot: string | null
@@ -227,6 +232,7 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 /** Jev's answers as the record keeps them. */
 export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string): JevDetail {
   const amount = 'amount' in answers ? answers.amount : undefined
+  const extent = 'extent' in answers ? answers.extent : undefined
   const where = 'where' in answers ? answers.where : undefined
   const outcome = 'outcome' in answers ? answers.outcome : undefined
   const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
@@ -238,6 +244,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       action: answers.action.confidence,
       slot: answers.slot.confidence,
       ...(amount !== undefined ? { amount: amount.confidence } : {}),
+      ...(extent !== undefined ? { extent: extent.confidence } : {}),
       ...(where !== undefined ? { where: where.confidence } : {}),
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
       ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
@@ -247,6 +254,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       action: topProbabilities(answers.action.probabilities, KEPT_ACTIONS),
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
       ...(amount !== undefined ? { amount: { ...amount.probabilities } } : {}),
+      ...(extent !== undefined ? { extent: { ...extent.probabilities } } : {}),
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
       ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),

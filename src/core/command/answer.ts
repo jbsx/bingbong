@@ -50,6 +50,7 @@ function actionWords(label: string): string {
   return label
     .replace(/^(click|type|menu)-(\d+)$/, '$1 [$2]')
     .replace(/^open-(\d+)$/, 'open link $1')
+    .replace(/^(down|up)-(\d+)$/, 'scroll [$2] $1')
     .replace(/_/g, ' ')
 }
 
@@ -99,7 +100,7 @@ function searchAnswer(command: Command): string {
 export interface AnswerFacts {
   readonly page: { url: string; title: string }
   readonly label?: string
-  /** A scroll that brought nothing new into view (`SCROLL_END_OF_PAGE`): the page was already at its end. */
+  /** A scroll that brought nothing new into view (`SCROLL_END_OF_PAGE`): the page was already at its end; a Scroll Op's End of Region (#383), the region was. */
   readonly scrollEnded?: boolean
   /** A Media Op's changes clause (#372): what the element's facts changed, or `no observable change`. */
   readonly mediaChanges?: string
@@ -133,9 +134,12 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'media':
       return command.mediaOp === undefined ? null : mediaOpAnswer(command.mediaOp, mediaChangesIn(facts.mediaChanges))
     case 'scroll_up':
-      return facts.scrollEnded === true ? 'Already at the top.' : 'Scrolled up.'
-    case 'scroll_down':
-      return facts.scrollEnded === true ? 'Already at the bottom.' : 'Scrolled down.'
+    case 'scroll_down': {
+      const [direction, end] = command.verb === 'scroll_up' ? ['up', 'top'] : ['down', 'bottom']
+      // A Scroll Region by its label (#383); End of Region is its already-at-the-end.
+      if (command.target !== null) return facts.scrollEnded === true ? `${ref()} is already at the ${end}.` : `Scrolled ${ref()} ${direction}.`
+      return facts.scrollEnded === true ? `Already at the ${end}.` : `Scrolled ${direction}.`
+    }
     case 'back':
       return `Went back to ${pageName(facts.page)}.`
     case 'forward':

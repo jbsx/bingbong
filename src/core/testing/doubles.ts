@@ -15,7 +15,8 @@ import type {
 import { settledStateFromSnapshot } from '../browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
-import { blockedActionHead, clickFlagsHead, mediaOpHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, type BlockedAction } from '../browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, mediaOpHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, regionScrollHead, type BlockedAction } from '../browser/actionOutcome'
+import { SCROLL_END_OF_REGION, type ScrollExtent } from '../browser/scrollOp'
 import type { MediaOpAction } from '../browser/mediaOp'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
@@ -231,9 +232,23 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return `typed [${ref}]: value=${JSON.stringify(text)}`
   }
 
-  async scroll(direction: 'up' | 'down'): Promise<string> {
+  /** The Extent each page scroll was fired with (#383), in order; undefined for a grammar line's. */
+  readonly scrollExtents: (ScrollExtent | undefined)[] = []
+
+  async scroll(direction: 'up' | 'down', extent?: ScrollExtent): Promise<string> {
     this.scrolls.push(direction)
+    this.scrollExtents.push(extent)
     return `scrolled ${direction}: x=0 y=0`
+  }
+
+  /** Every Scroll Op fired (#383), in order. */
+  readonly regionScrolls: { ref: number; direction: 'up' | 'down'; extent: ScrollExtent }[] = []
+  /** What a Scroll Op's outcome says it moved; a test scripts it, and the default says the region was at its end. */
+  regionScrollChanges: string = SCROLL_END_OF_REGION
+
+  async scrollRegion(ref: number, direction: 'up' | 'down', extent: ScrollExtent): Promise<string> {
+    this.regionScrolls.push({ ref, direction, extent })
+    return `${regionScrollHead(direction, ref)}${this.regionScrollChanges}`
   }
 
   async pressKey(press: KeyPress, times = 1): Promise<void> {
@@ -411,8 +426,8 @@ export class StallingBrowser extends FakeBrowser {
     return this.act('click', `clicked [${ref}]`, () => super.click(ref))
   }
 
-  override scroll(direction: 'up' | 'down'): Promise<string> {
-    return this.act('scroll', `scrolled ${direction}`, () => super.scroll(direction))
+  override scroll(direction: 'up' | 'down', extent?: ScrollExtent): Promise<string> {
+    return this.act('scroll', `scrolled ${direction}`, () => super.scroll(direction, extent))
   }
 
   /** Every stalled action finally lands, long after anyone waited for it. */

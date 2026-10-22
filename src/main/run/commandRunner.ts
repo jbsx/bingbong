@@ -403,9 +403,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
     case 'media':
       return { name: 'media', args: { ref: command.target, ...command.mediaOp } }
     case 'scroll_up':
-      return { name: 'scroll', args: { direction: 'up' } }
     case 'scroll_down':
-      return { name: 'scroll', args: { direction: 'down' } }
+      return { name: 'scroll', args: { direction: command.verb === 'scroll_up' ? 'up' : 'down', ...(command.target !== null ? { ref: command.target } : {}), ...command.extent } }
     case 'press':
       return { name: 'press', args: { key: command.key?.key ?? 'Enter', times: command.times ?? 1, ...(command.key?.shift ? { shift: true } : {}) } }
     case 'read':
@@ -934,9 +933,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return result
       }
       case 'scroll_up':
-        return browser.scroll('up')
-      case 'scroll_down':
-        return browser.scroll('down')
+      case 'scroll_down': {
+        const direction = command.verb === 'scroll_up' ? 'up' : 'down'
+        if (command.target === null) return browser.scroll(direction, command.extent)
+        // A Scroll Op (#383, ADR 0085): one evaluate on the region's own element, never the page.
+        const result = await browser.scrollRegion(command.target, direction, command.extent ?? { rung: 'screen', screens: 1 })
+        flash(command.target)
+        return result
+      }
       case 'back':
         return browser.back()
       case 'forward':
@@ -1011,6 +1015,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       verb: command.verb,
       ...(command.music !== undefined ? { music: command.music } : {}),
       ...(command.mediaOp !== undefined ? { mediaOp: command.mediaOp } : {}),
+      ...(command.extent !== undefined ? { extent: command.extent } : {}),
       target: command.target,
       ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,
@@ -1187,7 +1192,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           const text = commandAnswer(command, {
             page: { url: state.url ?? '', title: state.title ?? '' },
             ...(label !== undefined ? { label } : {}),
-            ...(result.endsWith(`\n${SCROLL_END_OF_PAGE}`) ? { scrollEnded: true } : {}),
+            ...(result.endsWith(`\n${SCROLL_END_OF_PAGE}`) || blockedOrInertAction(result) === 'inert' ? { scrollEnded: true } : {}),
             // A Media Op's changes clause (#372): what follows its `<op> [N]: ` head.
             ...(command.verb === 'media' && command.mediaOp !== undefined ? { mediaChanges: result.slice(mediaOpHead(command.mediaOp.op, command.target ?? 0).length).split('\n', 1)[0] } : {}),
           })

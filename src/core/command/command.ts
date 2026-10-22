@@ -1,9 +1,10 @@
 import type { KeyPress } from '../ports/browser'
-import type { MediaFacts, PageMedia, PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
+import type { MediaFacts, PageMedia, PageSnapshot, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
+import { describeExtent, type ScrollExtent } from './scrollOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -70,7 +71,7 @@ export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
 
 export interface Command {
   readonly verb: CommandVerb
-  /** The ref the verb acts on (click, type, menu); null for the rest. */
+  /** The ref the verb acts on (click, type, menu, media; a scroll's Scroll Region, #383); null for the rest. */
   readonly target: number | null
   /**
    * The Slot: the Utterance's own words the Command carries verbatim — the
@@ -90,6 +91,13 @@ export interface Command {
   readonly music?: MusicAction
   /** For `media` (#372, ADR 0080): the Media Op on the target ref's element — a seek's rung and seconds, a volume's or a speed's level. */
   readonly mediaOp?: MediaOpAction
+  /**
+   * For `scroll_up` and `scroll_down` (#383, ADR 0085): how far, as the
+   * Extent read it — a Scroll Op's on the region `target` names, or the
+   * page's own; absent for a page scroll the grammar's line made, which
+   * moves its fixed three notches.
+   */
+  readonly extent?: ScrollExtent
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
   /** The Mark Ask chose the target (#382, ADR 0084): the control the words named on the image of the page, which "Done so far" says. */
@@ -108,6 +116,8 @@ export interface CommandRef {
   readonly states?: readonly string[]
   /** A media ref's own facts (#372, ADR 0080): its line's state, and what its Media Ops are gated by; absent for every other kind. */
   readonly media?: MediaFacts
+  /** A Scroll Region's own facts (#383, ADR 0085): its line's position and length, and what a Scroll Op moved; absent for every other kind. */
+  readonly region?: RegionFacts
   /** The host of the frame it was read in (#377, ADR 0081); absent for the top document's own. */
   readonly frame?: string
 }
@@ -133,7 +143,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */
@@ -272,9 +282,12 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     case 'media':
       return `${command.mediaOp !== undefined ? describeMediaOp(command.mediaOp) : 'media'}${label(command.target)}`
     case 'scroll_up':
-      return 'scroll up'
-    case 'scroll_down':
-      return 'scroll down'
+    case 'scroll_down': {
+      // A Scroll Op names its region (#383, ADR 0085); either scroll names its Extent when it has one.
+      const op = command.verb === 'scroll_down' ? 'down' : 'up'
+      const how = command.extent !== undefined ? ` ${describeExtent(command.extent, op)}` : ''
+      return `scroll${label(command.target)} ${op}${how}`
+    }
     case 'press': {
       const key = command.key?.key ?? command.slot ?? 'Enter'
       return `press ${key}${(command.times ?? 1) > 1 ? ` ×${command.times}` : ''}`

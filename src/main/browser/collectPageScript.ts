@@ -373,8 +373,61 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     while (next < hosts.length) candidatesIn(hosts[next++].shadowRoot, out)
     return out
   }
+  // Scroll Regions (#383, ADR 0085): Vimium's scroll cue without its ±1 px
+  // probe — a div, ol or ul whose content overflows a view whose overflow-y
+  // scrolls — that passes ADR 0062's rect rule, with at least half its box
+  // in the viewport and at least half a view of content hidden. Vertical
+  // only; never the body, whose scroll is the page's own.
+  const REGION_TAGS = 'div, ol, ul'
+  const isScrollRegion = (el) => {
+    const view = el.clientHeight
+    if (view < 1 || el.scrollHeight - view < view / 2) return false
+    const overflowY = window.getComputedStyle(el).overflowY
+    if ((overflowY !== 'auto' && overflowY !== 'scroll') || !rectVisible(el) || insideInertDeep(el)) return false
+    const rect = el.getBoundingClientRect()
+    const shown = (Math.min(rect.bottom, vh) - Math.max(rect.top, 0)) * (Math.min(rect.right, vw) - Math.max(rect.left, 0))
+    return shown * 2 >= rect.width * rect.height
+  }
+  // Every Scroll Region of a tree and the open shadow roots under it.
+  const regionsIn = (root, out) => {
+    for (const el of root.querySelectorAll(REGION_TAGS)) if (isScrollRegion(el)) out.push(el)
+    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) regionsIn(el.shadowRoot, out)
+    return out
+  }
+  // Document order across open shadow roots, as candidatesIn walks it: a
+  // host before its shadow tree, its shadow tree before its light children.
+  const treeChain = (el) => {
+    const chain = [el]
+    for (let host = hostOf(el); host !== null; host = hostOf(host)) chain.unshift(host)
+    return chain
+  }
+  const precedes = (a, b) => {
+    const [first, second] = [treeChain(a), treeChain(b)]
+    for (let level = 0; level < Math.min(first.length, second.length); level++) {
+      if (first[level] !== second[level]) return (first[level].compareDocumentPosition(second[level]) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    }
+    return first.length < second.length
+  }
+  // A region's label (ADR 0085): its accessible name, else the first
+  // heading inside it, else the first 60 characters of its text — never
+  // the whole region's text; none makes a Textless Ref (ADR 0084).
+  const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6, [role="heading"]'
+  const regionLabelOf = (el) => {
+    const parts = [el.getAttribute('aria-label')]
+    const labelledBy = el.getAttribute('aria-labelledby')
+    if (labelledBy) for (const id of labelledBy.split(/\\s+/)) parts.push((document.getElementById(id) || {}).textContent)
+    parts.push(el.getAttribute('title'))
+    const named = parts.filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ').trim()
+    if (named) return named.slice(0, 300)
+    const heading = el.querySelector(HEADING_SELECTOR)
+    const headingText = heading ? textOf(heading) : ''
+    return headingText ? headingText.slice(0, 300) : textOf(el).slice(0, 60).trim()
+  }
   // The collect's Unmarked Controls: kinded as buttons, with no flag of their own.
   let unmarked = new WeakSet()
+  // The collect's Scroll Regions: labelled and described as regions.
+  let regions = new WeakSet()
+  const labelFor = (el) => (regions.has(el) ? regionLabelOf(el) : labelOf(el))
   const MAX_COLLECTED = 400
   const collectElements = (dialogRoot) => {
     const shown = []
@@ -412,13 +465,32 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       }
       return true
     })
+    // Each Scroll Region at its place in document order, unless it is a ref already.
+    const refsKept = new Set(kept.map((entry) => entry.el))
+    const all = kept.slice()
+    for (const el of regionsIn(document, [])) {
+      if (refsKept.has(el)) continue
+      const at = all.findIndex((entry) => precedes(el, entry.el))
+      all.splice(at < 0 ? all.length : at, 0, { el, marked: false, cue: 'region', dialog: dialogRoot !== null && containsDeep(dialogRoot, el) })
+    }
     // Dialog controls first, so they survive the cap; marked elements take
-    // the 400 places first, and Unmarked Controls the room left, each where
-    // it sits in document order.
-    const ordered = kept.filter((entry) => entry.dialog).concat(kept.filter((entry) => !entry.dialog))
+    // the 400 places first, Unmarked Controls the room left, and Scroll
+    // Regions what room is left after them, each where it sits in document
+    // order.
+    const ordered = all.filter((entry) => entry.dialog).concat(all.filter((entry) => !entry.dialog))
     let room = MAX_COLLECTED - ordered.filter((entry) => entry.marked).length
-    const taken = ordered.filter((entry) => entry.marked || room-- > 0).slice(0, MAX_COLLECTED)
-    unmarked = new WeakSet(taken.filter((entry) => !entry.marked).map((entry) => entry.el))
+    const allowed = new Set()
+    for (const cue of ['unmarked', 'region']) {
+      for (const entry of ordered) {
+        if (room > 0 && !entry.marked && (entry.cue === 'region') === (cue === 'region')) {
+          allowed.add(entry)
+          room--
+        }
+      }
+    }
+    const taken = ordered.filter((entry) => entry.marked || allowed.has(entry)).slice(0, MAX_COLLECTED)
+    unmarked = new WeakSet(taken.filter((entry) => !entry.marked && entry.cue !== 'region').map((entry) => entry.el))
+    regions = new WeakSet(taken.filter((entry) => entry.cue === 'region').map((entry) => entry.el))
     return taken.map((entry) => entry.el)
   }
   const renderedText = (el) => el.innerText || el.textContent || ''
@@ -572,7 +644,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       tag: el.tagName.toLowerCase(),
       role: unmarked.has(el) ? 'button' : el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
       inputType: el.tagName === 'INPUT' ? el.type : null,
-      label: labelOf(el),
+      label: labelFor(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       src: el.tagName === 'IFRAME' ? crossOriginIframeSrc(el) : null,
       // An iframe's slot and content-box origin (#377): its frame's refs take its place, offset by it.
@@ -598,7 +670,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       ariaPressed: el.getAttribute('aria-pressed'),
       className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
       // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
-      ...(el.tagName === 'VIDEO' || el.tagName === 'AUDIO' ? { media: mediaFactsOf(el) } : {})
+      ...(el.tagName === 'VIDEO' || el.tagName === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
+      // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
+      ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }
   }
   window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())
@@ -657,7 +731,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const dialogRoot = currentDialogRoot()
     const refs = collectElements(dialogRoot).slice(0, 75)
     const truncateLabel = (label) => label.length <= 80 ? label : label.slice(0, 79) + '…'
-    const labels = refs.map((ref) => truncateLabel(labelOf(ref)))
+    const labels = refs.map((ref) => truncateLabel(labelFor(ref)))
     const target = labels[targetIndex] === targetLabel ? refs[targetIndex] : null
     return {
       target: target ? describeElement(target, dialogRoot) : null,

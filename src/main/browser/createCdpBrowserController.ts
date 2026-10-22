@@ -20,6 +20,7 @@ import {
   blockedActionHead,
   clickFlagsHead,
   mediaOpHead,
+  regionScrollHead,
   menuFlagsHead,
   NO_OBSERVABLE_CHANGE,
   PAGE_NOT_READ,
@@ -42,12 +43,14 @@ import {
   parseCollectedPage,
   parsePageLinks,
   parseMediaFacts,
+  parseRegionFacts,
   type CollectedPage,
   type PageLink,
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
+import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } from '../../core/browser/scrollOp'
 import { mediaChangesOf } from '../../core/command/mediaOp'
 import { MEDIA_FACTS_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
@@ -1084,14 +1087,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * new viewport — so the outcome carries the refs and text that entered
    * it, and `end of page` when nothing did.
    */
-  async function scroll(direction: 'up' | 'down'): Promise<string> {
+  async function scroll(direction: 'up' | 'down', extent?: ScrollExtent): Promise<string> {
     const before = await currentSnapshot()
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
     const x = Math.floor(before.viewport.width / 2)
     const y = Math.floor(before.viewport.height / 2)
     await armReadiness()
-    for (let tick = 0; tick < SCROLL_TICKS; tick++) {
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
+    if (extent !== undefined && extent.screens === undefined) {
+      // All the way (#383, ADR 0085): the browser's own End or Home key, which reaches the document's scroller — or, in an app shell whose body does not scroll, the focused region.
+      page.focus()
+      await dispatchShortcut(shortcutEventFor({ key: direction === 'down' ? 'End' : 'Home' }))
+    } else {
+      // The Extent's screens in wheel notches (#383); the grammar's line, with none, its fixed three.
+      const ticks = extent?.screens !== undefined ? notchesFor(extent.screens, before.viewport.height) : SCROLL_TICKS
+      for (let tick = 0; tick < ticks; tick++) {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
+      }
     }
     // The scroll's first effect, or the cap (#324); no tick is paced.
     await awaitReadiness('scroll')
@@ -2064,6 +2075,54 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
 
+  /**
+   * A Scroll Op (#383, ADR 0085): one evaluate in the ref's own frame on
+   * the registry node the number names, scrolling that element — never the
+   * page, since an explicit scroll on an element never chains — by the
+   * Extent's screens of its own view, instantly, or to its end or top. Its
+   * facts are read before and after in the same tick; a region that moved
+   * is waited for through the readiness watch, so its scroll event is the
+   * op's own, then read again to say what entered the view.
+   */
+  async function scrollRegionOn(ref: number, direction: 'up' | 'down', extent: ScrollExtent): Promise<string> {
+    const { snapshot: before, target } = await resolveRef(ref)
+    if (target.kind !== 'region') throw new Error(`ref ${ref} is no scroll region`)
+    const at = addressOfRef(target.ref)
+    const head = regionScrollHead(direction, ref)
+    await armReadiness(at.frame)
+    const read = await evaluateInFrame<{ before: unknown; after: unknown } | null>(at.frame, `((op) => {
+      /* SCROLL_REGION */
+      const el = (window.__bingbongRefs || [])[${at.index}]
+      if (!el || !el.isConnected || !(el instanceof Element)) return null
+      const facts = () => ({ top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight })
+      const before = facts()
+      const sign = op.direction === 'down' ? 1 : -1
+      if (op.screens === null) el.scrollTo({ top: sign > 0 ? el.scrollHeight : 0, behavior: 'instant' })
+      else el.scrollBy({ top: sign * op.screens * el.clientHeight, behavior: 'instant' })
+      return { before, after: facts() }
+    })(${JSON.stringify({ direction, screens: extent.screens ?? null })})`)
+    // A null comes back as undefined (`evaluateInPage`): either is no element.
+    if (read == null) throw new Error(`ref ${ref} is no scroll region`)
+    const [was, now] = [parseRegionFacts(read.before), parseRegionFacts(read.after)]
+    if (was === undefined || now === undefined) throw new Error(`ref ${ref}: the region's facts could not be read`)
+    const change = regionChangeOf(was, now)
+    if (change === null) return `${head}${SCROLL_END_OF_REGION}`
+    await awaitReadiness('scroll-region', at.frame)
+    // Rects inside the region moved, and its own facts: the refs are read anew.
+    lastSnapshot = undefined
+    try {
+      const after = await recollection('scroll-delta', () => collectSnapshot())
+      const delta = formatNewInView(before, after)
+      // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
+      if (delta) await overlayShown(delta.shownRefs)
+      return `${head}${change}${delta !== null ? `\n${delta.block}` : ''}`
+    } catch (error) {
+      // A collector hiccup must not fail a scroll that happened: the outcome is the position line.
+      reportFault('browser.createCdpBrowserController.scrollRegion', error)
+      return `${head}${change}`
+    }
+  }
+
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
       const { target } = await resolveRef(ref, { carryPage: false })
@@ -2248,6 +2307,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   const click = (ref: number) => holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref)))
   const mediaOp = (ref: number, op: MediaOpAction) => withRefusedStaleRef(() => mediaOpOn(ref, op))
+  const scrollRegion = (ref: number, direction: 'up' | 'down', extent: ScrollExtent) => withRefusedStaleRef(() => scrollRegionOn(ref, direction, extent))
   // A right-click (#363): the page's own menu, with the appliance's native one held back for the length of it.
   const openMenu = async (ref: number): Promise<string> => {
     const release = deps.holdContextMenu?.()
@@ -2268,6 +2328,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     mediaOp,
     type,
     scroll,
+    scrollRegion,
     screenshot,
     markedScreenshot,
     back,

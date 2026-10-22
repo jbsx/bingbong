@@ -1,4 +1,5 @@
 import type { Cover, CoverProbe } from './actionOutcome'
+import { regionStateOf } from './scrollOp'
 import {
   emptyPageReadLine,
   pageReadPartLine,
@@ -51,6 +52,8 @@ export interface CollectedElement {
   named?: true
   /** A video or audio element's own facts (#372); absent for every other element, and in older payloads. */
   media?: MediaFacts
+  /** A Scroll Region's own facts (#383, ADR 0085): the collect sends them only for an element its scroll cue took. */
+  region?: RegionFacts
   className?: string
   /**
    * Where this element sat in the collect before this one, or -1 when this
@@ -124,6 +127,18 @@ export interface MediaFacts {
   readonly failed: boolean
 }
 
+/**
+ * A Scroll Region's own facts (#383, ADR 0085), in CSS pixels: how far it
+ * is scrolled (`scrollTop`), how tall its content is (`scrollHeight`) and
+ * how tall its view (`clientHeight`). Its line's position and length, and
+ * a Scroll Op's change, are read off these.
+ */
+export interface RegionFacts {
+  readonly top: number
+  readonly height: number
+  readonly view: number
+}
+
 // Raw output of the in-page collector script: everything DOM-specific
 // (labeling, rects, visibility) is done in the page; everything policy-ish
 // (kind resolution, numbering, caps, formatting) happens here, fixture-tested.
@@ -159,7 +174,7 @@ export interface CollectedPage {
   origin?: string
 }
 
-export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe'
+export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region'
 
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
 // heuristics (autocomplete tokens, name/id matching, form association) are
@@ -196,6 +211,8 @@ export interface SnapshotRef {
   named?: true
   /** A media ref's own facts (#372, ADR 0080); absent for every other kind. */
   media?: MediaFacts
+  /** A Scroll Region's own facts (#383, ADR 0085); absent for every other kind. */
+  region?: RegionFacts
   /** The host of the frame the ref was read in (#377, ADR 0081); absent for the top document's own. */
   frame?: string
   className?: string
@@ -274,6 +291,8 @@ const CLICK_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio', 't
 export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
+  // The collect sends a region's facts only for an element its scroll cue took (#383, ADR 0085).
+  if (element.region !== undefined) return 'region'
   // An anchor with no address and a button's role goes nowhere (#381): an Unmarked Control <a onclick> is a button.
   const addressless = element.href === null && element.role === 'button'
   if (((element.tag === 'a' || element.tag === 'area') && !addressless) || element.role === 'link') return 'link'
@@ -374,10 +393,23 @@ function parseMedia(raw: unknown): PageMedia | null {
   return { title: media.title, paused: media.paused, currentTime: media.currentTime, duration, loop: media.loop, muted: media.muted }
 }
 
+/** A Scroll Region's facts as the page sends them (#383) — the collect's, or a Scroll Op's before and after — or undefined for none or ones that do not read as such. */
+export function parseRegionFacts(raw: unknown): RegionFacts | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const { top, height, view } = raw as Record<string, unknown>
+  return isFiniteNumber(top) && isFiniteNumber(height) && isFiniteNumber(view) && view > 0 ? { top, height, view } : undefined
+}
+
 /** The `media` entry of a collected element: its facts when it sent any that read, nothing otherwise. */
 function mediaFactsEntry(raw: unknown): { media: MediaFacts } | Record<string, never> {
   const media = parseMediaFacts(raw)
   return media !== undefined ? { media } : {}
+}
+
+/** The `region` entry of a collected element (#383): its facts when it sent any that read, nothing otherwise. */
+function regionFactsEntry(raw: unknown): { region: RegionFacts } | Record<string, never> {
+  const region = parseRegionFacts(raw)
+  return region !== undefined ? { region } : {}
 }
 
 function frameBoxEntry(raw: unknown): { frameBox: { x: number; y: number } } | Record<string, never> {
@@ -432,6 +464,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
       ...mediaFactsEntry(el.media),
+      ...regionFactsEntry(el.region),
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
       value: typeof el.value === 'string' ? el.value : null,
@@ -592,6 +625,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
       ...(element.named === true ? { named: true as const } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
+      ...(element.region !== undefined ? { region: element.region } : {}),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,
@@ -618,7 +652,9 @@ export function formatRefLine(ref: SnapshotRef): string {
   ]
   const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
-  return `[${ref.ref}] ${ref.kind}${subtype}${label}${frame}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
+  // A Scroll Region's position and length (#383, ADR 0085), as the action card's line carries them.
+  const region = ref.region !== undefined ? ` ${regionStateOf(ref.region)}` : ''
+  return `[${ref.ref}] ${ref.kind}${subtype}${label}${frame}${region}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
 }
 
 /** How many contained refs a labelled or unlabelled Cover names (ADR 0062). */

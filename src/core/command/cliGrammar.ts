@@ -9,7 +9,7 @@ export type CliCommand =
   | { type: 'click'; ref: number }
   | { type: 'menu'; ref: number }
   | { type: 'type'; ref: number; text: string }
-  | { type: 'scroll'; direction: 'up' | 'down' }
+  | { type: 'scroll'; direction: 'up' | 'down'; ref?: number }
   | { type: 'press'; press: KeyPress; times: number }
   | { type: 'screenshot'; path: string | undefined }
   | { type: 'back' }
@@ -68,7 +68,7 @@ export function grammarErrorOf(line: string): string | null {
     case 'type':
       return 'Type needs the number of a field and the words, like “type 3 hello”.'
     case 'scroll':
-      return 'I can scroll up or down.'
+      return 'I can scroll up or down, or a scrolling part of the page by its number, like “scroll 12 down”.'
     case 'press': {
       const key = rest.split(/\s+/)[0] ?? ''
       if (key !== '' && PRESS_KEYS[key.toLowerCase()] !== undefined) return 'Press takes a whole number of times, like “press down 3”.'
@@ -135,11 +135,13 @@ export function parseCliCommand(line: string): ParsedCliCommand {
       if (!refMatch) return { ok: false, error: "type: expected 'type <ref> <text>'" }
       return { ok: true, command: { type: 'type', ref: Number(refMatch[1]), text: unescape(refMatch[2]) } }
     }
-    case 'scroll':
-      if (rest !== 'up' && rest !== 'down') {
-        return { ok: false, error: "scroll: expected 'scroll up' or 'scroll down'" }
-      }
-      return { ok: true, command: { type: 'scroll', direction: rest } }
+    case 'scroll': {
+      if (rest === 'up' || rest === 'down') return { ok: true, command: { type: 'scroll', direction: rest } }
+      // A Scroll Region by its number (#383, ADR 0085): one screen, no ask.
+      const region = /^(\d+)\s+(up|down)$/.exec(rest)
+      if (region === null) return { ok: false, error: "scroll: expected 'scroll up', 'scroll down' or 'scroll <ref> up|down'" }
+      return { ok: true, command: { type: 'scroll', direction: region[2] as 'up' | 'down', ref: Number(region[1]) } }
+    }
     case 'press': {
       const parts = rest.split(/\s+/).filter(Boolean)
       const press = parts[0] !== undefined ? PRESS_KEYS[parts[0].toLowerCase()] : undefined

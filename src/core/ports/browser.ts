@@ -1,6 +1,7 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
+import type { ScrollExtent } from '../browser/scrollOp'
 import type { Mark } from '../browser/marks'
 
 /**
@@ -135,7 +136,21 @@ export interface BrowserController {
    * not shown, and for an element that is no video or audio.
    */
   mediaOp(ref: number, op: MediaOpAction): Promise<string>
-  scroll(direction: 'up' | 'down'): Promise<string>
+  /**
+   * Scroll the page (#194): with no Extent, three wheel notches at the
+   * viewport's centre, the grammar's line; with one (#383, ADR 0085), that
+   * many screens of notches, or `end` the browser's own End or Home key.
+   */
+  scroll(direction: 'up' | 'down', extent?: ScrollExtent): Promise<string>
+  /**
+   * A Scroll Op on a Scroll Region's own element (#383, ADR 0085): one
+   * evaluate in its frame scrolling it by the Extent, never the page. The
+   * outcome opens `scroll [N] down: ` and names the position it moved
+   * from and to, then what entered the view; `end of region` when it did
+   * not move. Rejects for a number not shown, and for an element that is
+   * no Scroll Region.
+   */
+  scrollRegion(ref: number, direction: 'up' | 'down', extent: ScrollExtent): Promise<string>
   /** The visible viewport as a JPEG; with options, one magnified region of it. */
   screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
   back(): Promise<string>
