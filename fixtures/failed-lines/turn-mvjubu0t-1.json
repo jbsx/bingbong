@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjubu0t-1",
+  "transcript": "Play",
+  "at": 1792691664792,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "The first utterance after wake, on about:blank: the STT span took 4312 ms (Parakeet cold; speechMs 640, the next turn's STT took 201 ms) and wake-to-transcript 6583 ms. The Local Match then read the Player's unpause, which found no video and answered 'Nothing is playing.' at once: the whole 4.3 s reaction was the transcription",
+  "meant": "Answer 'Nothing is playing.' within the usual sub-second reaction; a warm STT on the first line after wake",
+  "log": "decision-1792691664816-1.jsonl"
+}

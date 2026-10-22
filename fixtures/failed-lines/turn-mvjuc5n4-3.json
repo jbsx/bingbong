@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuc5n4-3",
+  "transcript": "resume",
+  "at": 1792691675537,
+  "source": "typed",
+  "stage": "local_match",
+  "happened": "Typed 'resume' 2.2 s into the 4.2 s 'Play highs and lows by Kanye West' Task, while the Player was still opening the watch page (the song started about 1 s later on its own). The CLI grammar's resume (reopen the Last Page) matched it in 2 ms and answered 'Back on …', changing nothing; the misfire detector flagged the play line as overrun. Intent not recorded; a resume while a song is loading reads as the Player's unpause, which the grammar word shadows",
+  "meant": "Most likely: start or resume the song; the line should at least not be read as reopening the page",
+  "log": "decision-1792691664816-1.jsonl"
+}
