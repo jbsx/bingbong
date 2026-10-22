@@ -158,8 +158,9 @@ An action a Scroll Region carries on the action card because of its kind,
 as a media ref carries its Media Ops: `down-N` and `up-N`, each a whole
 line, offered whatever the region's position (a scroll at the end changes
 nothing). Each is one evaluate on that element, on any site, and never
-moves the page. Its outcome is New In View or End of Region, and "Done so
-far" tells where the region moved to.
+moves the page. Its outcome names the position it moved from and to, then
+New In View; or End of Region. "Done so far" tells which way the region
+moved, and where to.
 _Avoid_: scroll command, focus and scroll, page scroll (for a region's)
 
 **Extent**:
@@ -1457,7 +1458,7 @@ _Avoid_: bottom reached, nothing new, no-op scroll
 
 **End of Region**:
 The one-line answer a Scroll Op gives in place of New In View when the
-region moved nothing new into view: it was at its end, or its top. A fact
+region did not move: it was at its end, or its top. A fact
 about the region, read as End of Page is, by the same rails.
 _Avoid_: end of page (for a region), bottom of the chat, nothing new
 

@@ -64,8 +64,13 @@ Textless Ref and falls to ADR 0084. The whole region's text is never its
 label.
 
 **Two Scroll Ops per region, `down-N` and `up-N`,** each a whole line on
-the action card ("scroll [12] "Live chat" down, the extent Choice saying
-how far"), offered whatever the region's position: a scroll at the end
+the action card that says what a region is, since its label never does:
+"scroll down inside [12] "Live chat", a part of the page that scrolls on
+its own — a sidebar, panel, feed or chat — not the page itself; the
+extent Choice saying how far". Measured on a live Reddit card: the
+sidebar's op went from 0.23–0.29 under the page's `scroll_down` to
+0.87–0.89, and "scroll down" stayed the page's at 1.00. They are offered
+whatever the region's position: a scroll at the end
 changes nothing and the next Hop's Verdict ends it. Each is one evaluate
 in the ref's frame: `scrollBy` on the element, `behavior: 'instant'`,
 `end` a `scrollTo` of its end or its top, armed and awaited through the
@@ -91,16 +96,24 @@ centre, since the browser's routing is already right: the fraction rungs
 become a number of notches (a screen is the viewport height over 120 px,
 rounded up); `end` is the browser's own End or Home key at the centre,
 which reaches the document scroller, or the focused region in an app
-shell whose body does not scroll. The exact grammar lines `scroll
+shell whose body does not scroll. A field or frame holding the focus is
+blurred first, so the key reaches the scroller and not a caret; the
+scroll is read where it stops, not on its first animated frame. The exact grammar lines `scroll
 up|down` stay local and fire today's 360 px unchanged (ADR 0076). The
 grammar gains `scroll <ref> up|down`, an exact line that scrolls that
 region one screen with no ask, for the harness and the tests.
 
-**The outcome is a scroll's.** New In View, or **End of Region** when
-nothing entered (the same mechanism as End of Page); "Done so far" names
-the position change ("scrolled Live chat from 0% to 35%"); the
-opposite-scroll Misfire signal and the no-progress rail read a region
-scroll as they read a page scroll.
+**The outcome is a scroll's.** The outcome names the position it moved
+from and to (`at top → scrolled 35%`, to the tenth of a percent when a
+long region moves less than one), then what entered the view; **End of
+Region** when the region did not move: it was at its end, or its top.
+"Done so far" names which way the scrolling part moved, and the change:
+`scroll down a screen "Live chat" (the scrolling part moved down: at top
+→ scrolled 35%)`. Measured on a live YouTube chat: yes 0.74–0.79 without
+the direction, 0.84–0.89 with it. The opposite-scroll Misfire signal and
+the no-progress rail read a region scroll as they read a page scroll, on
+the same scroller only: a page scroll followed by a region scroll is no
+recovery.
 
 **Order under the caps.** Regions take the collect's places after marked
 elements and after Unmarked Controls. On the card their lines sit with
