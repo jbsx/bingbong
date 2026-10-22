@@ -153,6 +153,25 @@ product's step in seconds; a live stream's fractions are of its seekable
 window. The record keeps the rung.
 _Avoid_: default, step size, offset
 
+**Scroll Op**:
+An action a Scroll Region carries on the action card because of its kind,
+as a media ref carries its Media Ops: `down-N` and `up-N`, each a whole
+line, offered whatever the region's position (a scroll at the end changes
+nothing). Each is one evaluate on that element, on any site, and never
+moves the page. Its outcome is New In View or End of Region, and "Done so
+far" tells where the region moved to.
+_Avoid_: scroll command, focus and scroll, page scroll (for a region's)
+
+**Extent**:
+How far a scroll moves when the Decision Model chooses one: a Choice on
+every Ask, read only when the action is a Scroll Op or the page's own
+scroll — `words` (the number the words carry, in screens), `little` (a
+third of a screen), `screen` (one view height, as Page Down is), `lot`
+(three screens), `end` (to the end, or to the top going up). `screen` when
+the words say nothing of how far. It is not the Amount: a scroll's unit is
+the view, a seek's the duration. The record keeps the rung.
+_Avoid_: amount (for a scroll), step, distance, pixels
+
 **Menu**:
 The browser verb that opens a ref's right-click menu to see what it
 offers: `menu <ref>` or "right-click the player" from the user, or the
@@ -1352,6 +1371,17 @@ an icon with no name, alt or title. The Mark Ask shows it to the Decision
 Model.
 _Avoid_: blank ref, unlabelled ref, icon ref
 
+**Scroll Region**:
+An element the page scrolls on its own — a feed, a chat pane, a side
+panel — found by Vimium's scroll cue (a `div`, `ol` or `ul` whose content
+overflows and whose overflow scrolls), with at least half its box in view
+and at least half a view hidden. A Ref of its own kind: it carries no
+click, only its Scroll Ops; its line carries its label, its position (at
+top, at end, or how far scrolled) and its length in screens. Never the
+document itself, whose scroll is the page's own, and never a horizontal
+scroller.
+_Avoid_: scrollable div, scroll container, pane (for the element), body
+
 **Mark Ask**:
 A re-ask of the action card that sends one screenshot of the pane with
 each Textless Ref's number drawn on it, those refs' options reading "the
@@ -1422,8 +1452,14 @@ _Avoid_: inherited page, cached page, already-read page, page in hand
 **End of Page**:
 The one-line answer a scroll gives in place of New In View when nothing entered
 the viewport. It is a fact about the page, not advice: the repeat rail reads it
-as the page not moving, so the next identical scroll is refused.
+as the page not moving, so the next identical scroll is refused. A Scroll Region's is End of Region.
 _Avoid_: bottom reached, nothing new, no-op scroll
+
+**End of Region**:
+The one-line answer a Scroll Op gives in place of New In View when the
+region moved nothing new into view: it was at its end, or its top. A fact
+about the region, read as End of Page is, by the same rails.
+_Avoid_: end of page (for a region), bottom of the chat, nothing new
 
 **On-Screen Principle**:
 Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.
