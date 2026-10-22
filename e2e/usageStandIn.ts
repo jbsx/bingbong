@@ -40,11 +40,15 @@ function usagePayload(count: number, now: number) {
 export interface UsageStandIn {
   /** The settings' `usageDashboard` that reads it: its address and its providers. */
   settings: { url: string; providers: string[] }
+  /** While held, the dashboard takes every request and answers none: a dashboard slow to answer. */
+  hold(held: boolean): void
   close(): Promise<void>
 }
 
 export async function startUsageStandIn(count: number): Promise<UsageStandIn> {
+  let held = false
   const server = createServer((request, response) => {
+    if (held) return
     const payload = usagePayload(count, Date.now())
     const body = request.url?.startsWith('/api/history') ? payload.history : request.url?.startsWith('/api/usage') ? payload.usage : null
     response.writeHead(body === null ? 404 : 200, { 'content-type': 'application/json' })
@@ -54,6 +58,13 @@ export async function startUsageStandIn(count: number): Promise<UsageStandIn> {
   const { port } = server.address() as AddressInfo
   return {
     settings: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) },
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    hold: (on) => {
+      held = on
+    },
+    close: () =>
+      new Promise((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      }),
   }
 }

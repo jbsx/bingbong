@@ -3,19 +3,28 @@ import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import type { WeighIn } from '../../core/scale/weighIns'
 import type { WeighInPopupState } from '../../core/scale/weighInPopup'
 import { reportRendererFault } from './diagnostics'
+import { keepAnswer, keptAnswer } from './idleCache'
 
-/** Every Weigh-in (CONTEXT.md), oldest first, pulled on mount and followed after; null until main answers. */
+/**
+ * Every Weigh-in (CONTEXT.md), oldest first: the last list known
+ * (idleCache) from the first frame, so the Weight card does not wait on a
+ * restart, then pulled on mount and followed after; null until either.
+ */
 export function useWeighIns(): WeighIn[] | null {
-  const [weighIns, setWeighIns] = useState<WeighIn[] | null>(null)
+  const [weighIns, setWeighIns] = useState<WeighIn[] | null>(() => keptAnswer<WeighIn[]>('weighIns', '', Infinity))
   useEffect(() => {
     let cancelled = false
+    const follow = (list: WeighIn[]): void => {
+      keepAnswer('weighIns', '', list)
+      setWeighIns(list)
+    }
     window.bingbong.weight.list().then(
       (list) => {
-        if (!cancelled) setWeighIns(list)
+        if (!cancelled) follow(list)
       },
       (error: unknown) => reportRendererFault('weight.list', error),
     )
-    const unsubscribe = window.bingbong.weight.onChange((list) => setWeighIns(list))
+    const unsubscribe = window.bingbong.weight.onChange(follow)
     return () => {
       cancelled = true
       unsubscribe()
