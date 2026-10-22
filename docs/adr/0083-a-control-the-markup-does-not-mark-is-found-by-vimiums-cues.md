@@ -4,8 +4,8 @@
 
 Accepted on 2026-10-21 by the owner, grilled from #381 (the companion of
 #380). Amends ADR 0007's selector-only collect. Leaves ADR 0062's
-visibility rule as it is. Amended on 2026-10-22 by the owner's ruling on
-#384.
+visibility rule as it is. Amended on 2026-10-22 by the owner's rulings on
+#384 and #386.
 
 ## Context
 
@@ -43,6 +43,16 @@ binds which elements the collect finds, not how many lines one element
 gets. A weak cue inside an Unmarked Control stays, as in Vimium: an
 `onclick` or `jsaction` container may hold a distinct control of its own.
 
+A second step is not Vimium's, ruled on #386. A `details` is acted on
+through its summary: the first `summary` child of a `details` is the ref,
+kinded `button` and labelled by its own text, and the `details` gives
+none. Vimium hints the `details` and sets its `open` in script. We act
+with a real click. Neither a click on the `details` nor its `click()`
+toggles it, and on an open one the click lands in its body, so it could
+be opened but never closed. The summary is the control the platform
+makes: a click toggles it, and it carries the `expanded` state Ref State
+reads. A `details` with no summary keeps the cue.
+
 The collect walks open shadow roots, for every ref kind, as Vimium does.
 An Unmarked Control is kinded `button` and carries no flag on its line.
 Marked elements take the collect's 400 places first. The cues run in
@@ -74,4 +84,13 @@ them, and a "scroll this region" op is a separate decision.
   distinct control would be a ledger miss and reopens this paragraph.
 - A pointer `div` with none of these cues is not a ref. That is Vimium's
   own false negative, accepted.
+- Three more of Vimium's reaches were measured on 2026-10-22 and left out
+  until a ledger line shows one. The first is a link whose own box is
+  empty but whose floated or absolutely positioned child shows (Vimium's
+  child-rect test). The second is an inline link at `font-size: 0`. The
+  third is an image map's `area`s, which have no box and which the
+  accessibility tree ignores. In headless Chrome, the first two occurred
+  nowhere, on the whole page, across eleven live pages (BBC News, the
+  Guardian, YouTube, Amazon, Wikipedia, HN, GitHub, Stack Overflow, IKEA,
+  GOV.UK, Booking). An image map occurred once in fifteen pages.
 - How such a ref is labelled when it has no text is ADR 0084.
