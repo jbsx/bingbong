@@ -256,15 +256,6 @@ export const RESULTS_POLL_MS = 250
  */
 export const MOUNTING_WAIT_MS = 3_000
 
-/**
- * How long a Task that reached a sure yes watches the page for a pop-up
- * opening over it before it ends (2026-10-19 23:42 run): Truth Social's
- * sign-up sheet opens some 1.8 s after the profile's navigation, after the
- * hop had read the profile clear and the Task had ended done, and "Close
- * the pop-up." was the user's to say. Polled at {@link RESULTS_POLL_MS}.
- */
-export const LATE_POPUP_WATCH_MS = 4_000
-
 /** How much of a Page Read the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
 
@@ -1279,8 +1270,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     last?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly stepAside?: true }
     /** Whether a reading was already read again because the page had moved under it: once per Task. */
     rechecked: boolean
-    /** Whether the Task already watched the page it reached for a late pop-up: once per Task. */
-    watched?: boolean
     /** The Obstacles the Task stepped aside from (#354): each dialog closed once; the same one raised again is the wall. */
     readonly obstacles: string[]
     /** The last action, when it raised a pop-up over a clear page (#354): its target is set aside when the Task steps past that pop-up. */
@@ -1472,20 +1461,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       current = await collectPage(null)
     }
     return current
-  }
-
-  /**
-   * Whether a pop-up opened over the page a Task reached, watched for
-   * {@link LATE_POPUP_WATCH_MS} after its sure yes: false once the wait
-   * runs out or the Task is superseded.
-   */
-  async function popupOpened(task: Task): Promise<boolean> {
-    for (let polls = Math.floor(LATE_POPUP_WATCH_MS / RESULTS_POLL_MS); polls > 0; polls -= 1) {
-      await sleep(RESULTS_POLL_MS)
-      if (superseded(task)) return false
-      if (await dialogOpenNow()) return true
-    }
-    return false
   }
 
   /** Whether a dialog is open over the page now, read in place where the browser can; a page that cannot be read is taken as clear. */
@@ -1774,21 +1749,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       if (ends) {
         const ended: TaskEnded = sureYes ? 'done' : 'unsure'
-        if (ended === 'done' && page.dialog === undefined && task.watched !== true) {
-          // The page reached may raise a pop-up after it was read clear (2026-10-19 23:42 run): watched once before the Task ends, and one that opens is read again, so the Step Aside closes it.
-          task.watched = true
-          if (await popupOpened(task)) {
-            if (task.last !== undefined) task.pending = { ...task.last, told: page }
-            log(record)
-            dropHop(turnId, task, placed, 'a pop-up opened: read again', 'done', firedAt)
-            continue
-          }
-          if (superseded(task)) {
-            log({ ...record, ended: 'superseded' })
-            dropHop(turnId, task, placed, abandonedAction(task.submission), 'cancelled', firedAt)
-            return endTask(task, 'superseded', hop + 1)
-          }
-        }
         if (ended === 'unsure' && (task.opened !== undefined || task.lookedAgain === true)) {
           // Look then act (#363): a dead end closes what the last hop opened and tries the reading before's runner-up, once.
           // It starts the run afresh (#373), or a struck-out Task would end on the runner-up's settle with what it opened left open.

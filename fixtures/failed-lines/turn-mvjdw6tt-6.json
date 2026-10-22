@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Spoken \"Turn on ambient mode.\" worked: the Where Ask clicked the player Settings 0.24, hop 1 clicked Ambient mode 0.99 (checked=false → true), hop 2 read the Verdict yes 0.92 with action none. The Task then sat in the late pop-up watch (LATE_POPUP_WATCH_MS 4 s, 16 polls) for 9.4 s with the Settings menu open, until \"Go full screen.\" superseded it; done was never said. Every hop-ended done Task since the watch landed waited 4.2–6.1 s after its sure yes (5 of 5, \"Go full screen\" turn-mvjdwe5g-7 among them, 5.6 s), on pages it never navigated to",
   "meant": "End done when the Verdict says yes, without a multi-second wait on a page the Task did not navigate to",
-  "log": "decision-1792664044313-1.jsonl"
+  "log": "decision-1792664044313-1.jsonl",
+  "case": "src/main/run/commandRunner.test.ts — AC4 shape: turn on ambient mode ends done with no sleeps"
 }
