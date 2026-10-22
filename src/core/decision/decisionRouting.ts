@@ -23,14 +23,38 @@ const DECISION_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
  */
 const DECISION_DEFAULT_MODEL = 'jev-1.14.0'
 const DECISION_DEFAULT_KEY_ENV = 'TYPESAFE_API_KEY'
+/** The most a Decision Model may cost a round (ADR 0068: "under a second"). */
+export const DECISION_DEFAULT_TIMEOUT_MS = 800
+const DECISION_TIMEOUT_ENV_KEY = `${DECISION_ENV_PREFIX}_TIMEOUT_MS`
+/**
+ * The wire protocol a Decision Model speaks. One today: `/v1/systemone`
+ * (state + typed questions), which TypeSafe, Baseten, OpenRouter and
+ * TrueFoundry all serve (#395); a second (OpenAI Decisions) is its own
+ * adapter when it comes.
+ */
+export const DECISION_PROTOCOLS = ['systemone'] as const
+export type DecisionProtocol = (typeof DECISION_PROTOCOLS)[number]
+const DECISION_PROTOCOL_ENV_KEY = `${DECISION_ENV_PREFIX}_PROTOCOL`
+/** Off for a text-only model: an ask that carries an image (the Mark Ask) is then never sent. */
+const DECISION_IMAGES_ENV_KEY = `${DECISION_ENV_PREFIX}_IMAGES`
 
 /** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */
 export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`
 
 /** Whether the decision role resolved, and to what; never thrown, since unconfigured is a valid state. */
 export type DecisionRouting =
-  | { readonly configured: true; readonly endpoint: ModelEndpointConfig }
+  | {
+      readonly configured: true
+      readonly endpoint: ModelEndpointConfig
+      readonly protocol: DecisionProtocol
+      /** How long one call may take before it is unavailable as a timeout. */
+      readonly timeoutMs: number
+      /** Whether the model reads images; when not, an ask that carries one is unavailable at once. */
+      readonly images: boolean
+    }
   | { readonly configured: false; readonly reason: string }
+
+export type ConfiguredDecisionRouting = Extract<DecisionRouting, { readonly configured: true }>
 
 /** Every env var that configures the decision role — what a hermetic harness unsets. */
 export function decisionEnvKeys(): string[] {
@@ -41,6 +65,9 @@ export function decisionEnvKeys(): string[] {
     `${DECISION_ENV_PREFIX}_API_KEY_ENV`,
     DECISION_DEFAULT_KEY_ENV,
     DECISION_SCRIPT_ENV_KEY,
+    DECISION_TIMEOUT_ENV_KEY,
+    DECISION_IMAGES_ENV_KEY,
+    DECISION_PROTOCOL_ENV_KEY,
   ]
 }
 
@@ -52,7 +79,9 @@ function readEnv(env: Record<string, string | undefined>, name: string): string 
 /**
  * Resolve the decision role: the key from `BINGBONG_DECISION_API_KEY`, the
  * env var named by `BINGBONG_DECISION_API_KEY_ENV`, or `TYPESAFE_API_KEY`;
- * the base URL and model by override or default.
+ * the protocol, base URL, model, per-call timeout and whether images are sent by
+ * override or default. A setting that does not parse leaves the role
+ * unconfigured with the reason, never a guess at what was meant.
  */
 export function resolveDecisionRouting(env: Record<string, string | undefined>): DecisionRouting {
   const explicitKey = readEnv(env, `${DECISION_ENV_PREFIX}_API_KEY`)
@@ -67,6 +96,20 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
         : `set ${DECISION_ENV_PREFIX}_API_KEY, ${DECISION_ENV_PREFIX}_API_KEY_ENV or ${DECISION_DEFAULT_KEY_ENV}`
     return { configured: false, reason: `no key: ${hint}` }
   }
+  const rawProtocol = readEnv(env, DECISION_PROTOCOL_ENV_KEY) ?? 'systemone'
+  const protocol = DECISION_PROTOCOLS.find((known) => known === rawProtocol)
+  if (protocol === undefined) {
+    return { configured: false, reason: `${DECISION_PROTOCOL_ENV_KEY} "${rawProtocol}" is not one this build speaks (${DECISION_PROTOCOLS.join(', ')})` }
+  }
+  const rawTimeout = readEnv(env, DECISION_TIMEOUT_ENV_KEY)
+  const timeoutMs = rawTimeout === undefined ? DECISION_DEFAULT_TIMEOUT_MS : Number(rawTimeout)
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    return { configured: false, reason: `${DECISION_TIMEOUT_ENV_KEY} must be a whole number of ms above 0, got "${rawTimeout}"` }
+  }
+  const rawImages = readEnv(env, DECISION_IMAGES_ENV_KEY)?.toLowerCase()
+  if (rawImages !== undefined && rawImages !== 'true' && rawImages !== 'false') {
+    return { configured: false, reason: `${DECISION_IMAGES_ENV_KEY} must be true or false, got "${readEnv(env, DECISION_IMAGES_ENV_KEY)}"` }
+  }
   return {
     configured: true,
     endpoint: {
@@ -74,5 +117,8 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
       model: readEnv(env, `${DECISION_ENV_PREFIX}_MODEL`) ?? DECISION_DEFAULT_MODEL,
       apiKey,
     },
+    protocol,
+    timeoutMs,
+    images: rawImages !== 'false',
   }
 }

@@ -1,10 +1,11 @@
 // Which Decision Model serves: the scripted stand-in when
 // `BINGBONG_DECISION_SCRIPT` is set (the pattern of the other `*_SCRIPT`
-// hooks, so tests and the e2e suites run without spend), else Jev when the
-// decision role resolves, else none.
+// hooks, so tests and the e2e suites run without spend), else the model
+// the decision role resolves to — Jev by default, any host of its
+// protocol by env (#395) — else none.
 
 import { createHash } from 'node:crypto'
-import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
+import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting, type ConfiguredDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   DECISION_UNAVAILABLE_REASONS,
   readDecisionAnswers,
@@ -88,12 +89,24 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
   }
 }
 
+/**
+ * The adapter for the routing's protocol, with its timeout and images
+ * setting; `timeoutMs` in place of the routing's for `pnpm jev:replay`,
+ * which costs no round.
+ */
+export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, overrides: { readonly timeoutMs?: number } = {}): DecisionModel {
+  switch (routing.protocol) {
+    case 'systemone':
+      return createJevDecisionModel(routing.endpoint, { timeoutMs: overrides.timeoutMs ?? routing.timeoutMs, images: routing.images })
+  }
+}
+
 export function createDecisionModel(env: Record<string, string | undefined>): DecisionModel | null {
   const script = env[DECISION_SCRIPT_ENV_KEY]?.trim()
   if (script) return createScriptedDecisionModel(script)
   const routing = resolveDecisionRouting(env)
   if (!routing.configured) return null
-  return createJevDecisionModel(routing.endpoint)
+  return createRoutedDecisionModel(routing)
 }
 
 /**

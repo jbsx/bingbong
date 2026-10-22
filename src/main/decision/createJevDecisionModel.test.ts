@@ -93,6 +93,35 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
     expect(files.map((file) => file.size)).toContain(jpeg.length)
   })
 
+  it('sends a large ask as plain JSON with no Content-Encoding, so any /v1/systemone host reads it (#395)', async () => {
+    const { fetch, calls } = fakeFetch(async () => json(200, { model: 'decision-models/baseten-mammoth-27b-latest', answers: ANSWERS }))
+    const state = '[p1] one\n[p2] two\n' + 'a line of page text that fills the card\n'.repeat(100)
+
+    const result = await createJevDecisionModel(ENDPOINT, { fetch }).ask({ state, questions: QUESTIONS })
+
+    expect(result.status).toBe('answered')
+    expect(new Headers(calls[0]?.init?.headers).get('content-encoding')).toBeNull()
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({ state })
+  })
+
+  it('with images off, answers an ask that carries one unavailable at once and sends nothing; a text ask still goes (#395)', async () => {
+    const { fetch, calls } = fakeFetch(async () => json(200, { model: 'decision-models/baseten-mammoth-27b-latest', answers: ANSWERS }))
+    const model = createJevDecisionModel(ENDPOINT, { fetch, images: false })
+
+    const marked = await model.ask({ state: 'The page: <marks>', questions: QUESTIONS, images: { '<marks>': new Uint8Array([0xff, 0xd8]) } })
+    const text = await model.ask({ state: 's', questions: QUESTIONS })
+
+    expect(marked).toEqual({
+      status: 'unavailable',
+      reason: 'failed',
+      message: 'this Decision Model reads no images (BINGBONG_DECISION_IMAGES=false)',
+      latencyMs: 0,
+      model: 'jev-1.13.0',
+    })
+    expect(text.status).toBe('answered')
+    expect(calls).toHaveLength(1)
+  })
+
   it('reports the model id the vendor answered with, not the one asked for', async () => {
     const { fetch } = fakeFetch(async () => json(200, { model: 'jev-1.13.1', answers: ANSWERS }))
     const result = await createJevDecisionModel(ENDPOINT, { fetch }).ask({ state: 's', questions: QUESTIONS })

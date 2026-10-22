@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DecisionQuestions } from '../../core/ports/decisionModel'
 import { createDecisionModel, createDecisionModelSource } from './createDecisionModel'
 
@@ -12,6 +12,21 @@ const ANSWERS = {
   any: { type: 'noul', noul: 0.9 },
 }
 
+/** A fetch that never answers until its signal aborts it. */
+function hangingFetch() {
+  return vi.fn(
+    (_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+  )
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
 describe('createDecisionModel', () => {
   it('is absent when the role is neither configured nor scripted', () => {
     expect(createDecisionModel({})).toBeNull()
@@ -21,6 +36,34 @@ describe('createDecisionModel', () => {
   it('serves the configured role with Jev at its pinned model', () => {
     const decision = createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret' })
     expect(decision?.model).toBe('jev-1.14.0')
+  })
+
+  it('gives each call the BINGBONG_DECISION_TIMEOUT_MS the env sets (#395)', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', hangingFetch())
+    const pending = createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret', BINGBONG_DECISION_TIMEOUT_MS: '1500' })?.ask({ state: 's', questions: QUESTIONS })
+    let settled = false
+    void pending?.then(() => (settled = true))
+
+    await vi.advanceTimersByTimeAsync(1499)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toMatchObject({ status: 'unavailable', reason: 'timeout' })
+  })
+
+  it('leaves the role unconfigured on a protocol this build does not speak (#395)', () => {
+    expect(createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret', BINGBONG_DECISION_PROTOCOL: 'openai-decisions' })).toBeNull()
+  })
+
+  it('never sends an ask that carries an image when BINGBONG_DECISION_IMAGES is false (#395)', async () => {
+    const fetch = hangingFetch()
+    vi.stubGlobal('fetch', fetch)
+    const decision = createDecisionModel({ BASETEN_API_KEY: 'b-secret', BINGBONG_DECISION_API_KEY_ENV: 'BASETEN_API_KEY', BINGBONG_DECISION_IMAGES: 'false' })
+    expect(await decision?.ask({ state: 'The page: <marks>', questions: QUESTIONS, images: { '<marks>': new Uint8Array([0xff, 0xd8]) } })).toMatchObject({
+      status: 'unavailable',
+      reason: 'failed',
+    })
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('serves BINGBONG_DECISION_SCRIPT in order, before any key, and never reaches the network', async () => {

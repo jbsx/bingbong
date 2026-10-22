@@ -21,7 +21,7 @@ import { reportFault } from '../../core/trace/fault.ts'
 import { collectDecisionRecords } from '../perf/collectDecisionRecords.ts'
 import { collectJsonlFamily } from '../perf/collectPerfRecords.ts'
 import { ASK_FILE_PATTERN } from '../perf/perfFiles.ts'
-import { createJevDecisionModel } from './createJevDecisionModel.ts'
+import { createRoutedDecisionModel } from './createDecisionModel.ts'
 
 // The Jev corpus on disk (#338): a folder of case files, each a recorded
 // ask and the answer each question should get, which `pnpm jev:replay`
@@ -78,7 +78,7 @@ export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Repla
   if (model === undefined) {
     const routing = resolveDecisionRouting(deps.env)
     if (!routing.configured) return { code: 2, report: `jev:replay asks the real Jev and needs its key — ${routing.reason}` }
-    model = createJevDecisionModel(routing.endpoint, { timeoutMs: REPLAY_TIMEOUT_MS })
+    model = createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS })
   }
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
