@@ -54,7 +54,12 @@ export function hubTaskReadings(): Reading[] {
   ]
 }
 
-/** The env that scripts these readings, in the order they are typed: one entry per ask, a Task's hops each their own. */
+/**
+ * The env that scripts these readings, in the order they are typed: one
+ * entry per ask, a Task's hops each their own. Every question an ask may
+ * carry is answered (scriptedJev.test.ts holds it to `commandQuestions`):
+ * one left out makes the stand-in read every ask as malformed.
+ */
 export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRIPT: string } {
   const entries = readings.map((reading) => ({
     when: JSON.stringify(reading.line),
@@ -62,7 +67,9 @@ export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRI
       action: choice(reading.action),
       slot: choice(reading.slot ?? 'none'),
       amount: choice(reading.amount ?? 'little'),
+      extent: choice('screen'),
       where: choice('web'),
+      steps: choice('none'),
       ...(reading.outcome !== undefined ? { outcome: choice(reading.outcome) } : {}),
       ...(reading.progress !== undefined ? { progress: { type: 'noul', noul: reading.progress } } : {}),
     },

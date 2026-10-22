@@ -326,7 +326,9 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
   await submit('pause')
   await shown('.idle-music-card--full.idle-music-card--paused')
   await shoot(run, '26-idle-music-paused')
-  await submit('skip')
+  // The song runs out: a `skip` with nothing queued leaves it playing (d4c123e), so it resumes in its last second.
+  await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = Math.max(0, v.duration - 1) })()`)
+  await submit('play')
   await shown('.idle-music-card--full.idle-music-card--ended')
   await shoot(run, '26-idle-music-ended')
 
