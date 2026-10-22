@@ -1,0 +1,114 @@
+{
+  "turnId": "cli-3-mvihhicn",
+  "transcript": "open page information",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792609624129,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-15"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"open page information\"\nPage: https://en.wikipedia.org/wiki/Pomme_(singer) — \"Pomme (singer) - Wikipedia\"\nRefs (number, kind, label, address, states):\n[1] button \"Main menu Main menu\" hasPopup=menu menu holds \"Move Main menu to sidebar\", \"Main page\", \"Contents\", \"Current events\", \"Random article\", \"About Wikipedia\", \"Contact us\", \"Help\", \"Learn to edit\", \"Community portal\", \"Recent changes\", \"Upload file\", \"Special pages\"\n[2] link \"\" https://en.wikipedia.org/wiki/Main_Page\n[3] link \"Search Search Wikipedia [alt-f]\" https://en.wikipedia.org/wiki/Special:Search keyshortcuts=\"Alt+f\"\n[4] button \"Appearance Appearance\" hasPopup=menu\n[5] link \"Donate\" https://donate.wikimedia.org/?wmf_source=donate&wmf_medium=sidebar&wmf_campaign=en.wikipedia.org&uselang=en\n[6] link \"Create account You are encouraged to create an account and log in; however, it …\" https://en.wikipedia.org/w/index.php?title=Special:CreateAccount&returnto=Pomme+%28singer%29\n[7] link \"Log in You're encouraged to log in; however, it's not mandatory. [alt-o]\" https://en.wikipedia.org/w/index.php?title=Special:UserLogin&returnto=Pomme+%28singer%29 keyshortcuts=\"Alt+o\"\n[8] button \"Toggle the table of contents Toggle the table of contents\" hasPopup=menu\n[9] button \"23 languages 23 languages\" description=\"Go to an article in another language. Available in 23 languages\" hasPopup=menu menu holds \"مصرى\", \"Català\", \"Deutsch\", \"Español\", \"Eesti\", \"Euskara\", \"Français\", \"עברית\", \"Magyar\", \"Հայերեն\", \"Interlingua\", \"Bahasa Indonesia\", \"Italiano\", \"한국어\", \"Македонски\", \"Polski\"\n[10] link \"Article View the content page [alt-c]\" https://en.wikipedia.org/wiki/Pomme_(singer) keyshortcuts=\"Alt+c\"\n[11] link \"Talk Discuss improvements to the content page [alt-t]\" https://en.wikipedia.org/wiki/Talk:Pomme_(singer) keyshortcuts=\"Alt+t\"\n[12] link \"Read\" https://en.wikipedia.org/wiki/Pomme_(singer)\n[13] link \"Edit Edit this page [alt-e]\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=edit keyshortcuts=\"Alt+e\"\n[14] link \"View history Past revisions of this page [alt-h]\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=history keyshortcuts=\"Alt+h\"\n[15] button \"Tools Tools\" hasPopup=menu menu holds \"Move Tools to sidebar\", \"What links here\", \"Related changes\", \"Permanent link\", \"Page information\", \"Cite this page\", \"Get shortened URL\", \"Switch to legacy parser\", \"Expand all\", \"Edit interlanguage links\", \"Download as PDF\", \"Printable version\", \"Wikimedia Commons\", \"Wikidata item\"\n[16] link \"Pomme performing in 2024\" https://en.wikipedia.org/wiki/File:2024-06-16_Spectacle_de_Pomme_aux_Francos_de_Montr%C3%A9al_18.jpg\n[17] link \"[klɛːʁ pɔmɛ] Help:IPA/French\" https://en.wikipedia.org/wiki/Help:IPA/French\n[18] link \"[pɔm] Help:IPA/French\" https://en.wikipedia.org/wiki/Help:IPA/French\n[19] link \"Lyon Lyon\" https://en.wikipedia.org/wiki/Lyon\n[20] link \"À peu près À peu près\" https://en.wikipedia.org/wiki/%C3%80_peu_pr%C3%A8s\n[21] link \"pop Pop music\" https://en.wikipedia.org/wiki/Pop_music\n[22] link \"folk music Folk music\" https://en.wikipedia.org/wiki/Folk_music\n[23] link \"French album charts Syndicat National de l'Édition Phonographique\" https://en.wikipedia.org/wiki/Syndicat_National_de_l'%C3%89dition_Phonographique\n[24] link \"Les Failles Les Failles\" https://en.wikipedia.org/wiki/Les_Failles\n[25] link \"record charts Record charts\" https://en.wikipedia.org/wiki/Record_charts\n[26] link \"Consolation Consolation (album)\" https://en.wikipedia.org/wiki/Consolation_(album)\n[27] link \"edit Edit section: Life and career\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=edit&section=1",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] button \"Main menu Main menu\" hasPopup=menu menu holds \"Move Main menu to sidebar\", \"Main page\", \"Contents\", \"Current events\", \"Random article\", \"About Wikipedia\", \"Contact us\", \"Help\", \"Learn to edit\", \"Community portal\", \"Recent changes\", \"Upload file\", \"Special pages\"",
+          "click-2": "click [2] link \"\" https://en.wikipedia.org/wiki/Main_Page",
+          "click-3": "click [3] link \"Search Search Wikipedia [alt-f]\" https://en.wikipedia.org/wiki/Special:Search keyshortcuts=\"Alt+f\"",
+          "click-4": "click [4] button \"Appearance Appearance\" hasPopup=menu",
+          "click-5": "click [5] link \"Donate\" https://donate.wikimedia.org/?wmf_source=donate&wmf_medium=sidebar&wmf_campaign=en.wikipedia.org&uselang=en",
+          "click-6": "click [6] link \"Create account You are encouraged to create an account and log in; however, it …\" https://en.wikipedia.org/w/index.php?title=Special:CreateAccount&returnto=Pomme+%28singer%29",
+          "click-7": "click [7] link \"Log in You're encouraged to log in; however, it's not mandatory. [alt-o]\" https://en.wikipedia.org/w/index.php?title=Special:UserLogin&returnto=Pomme+%28singer%29 keyshortcuts=\"Alt+o\"",
+          "click-8": "click [8] button \"Toggle the table of contents Toggle the table of contents\" hasPopup=menu",
+          "click-9": "click [9] button \"23 languages 23 languages\" description=\"Go to an article in another language. Available in 23 languages\" hasPopup=menu menu holds \"مصرى\", \"Català\", \"Deutsch\", \"Español\", \"Eesti\", \"Euskara\", \"Français\", \"עברית\", \"Magyar\", \"Հայերեն\", \"Interlingua\", \"Bahasa Indonesia\", \"Italiano\", \"한국어\", \"Македонски\", \"Polski\"",
+          "click-10": "click [10] link \"Article View the content page [alt-c]\" https://en.wikipedia.org/wiki/Pomme_(singer) keyshortcuts=\"Alt+c\"",
+          "click-11": "click [11] link \"Talk Discuss improvements to the content page [alt-t]\" https://en.wikipedia.org/wiki/Talk:Pomme_(singer) keyshortcuts=\"Alt+t\"",
+          "click-12": "click [12] link \"Read\" https://en.wikipedia.org/wiki/Pomme_(singer)",
+          "click-13": "click [13] link \"Edit Edit this page [alt-e]\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=edit keyshortcuts=\"Alt+e\"",
+          "click-14": "click [14] link \"View history Past revisions of this page [alt-h]\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=history keyshortcuts=\"Alt+h\"",
+          "click-15": "click [15] button \"Tools Tools\" hasPopup=menu menu holds \"Move Tools to sidebar\", \"What links here\", \"Related changes\", \"Permanent link\", \"Page information\", \"Cite this page\", \"Get shortened URL\", \"Switch to legacy parser\", \"Expand all\", \"Edit interlanguage links\", \"Download as PDF\", \"Printable version\", \"Wikimedia Commons\", \"Wikidata item\"",
+          "click-16": "click [16] link \"Pomme performing in 2024\" https://en.wikipedia.org/wiki/File:2024-06-16_Spectacle_de_Pomme_aux_Francos_de_Montr%C3%A9al_18.jpg",
+          "click-17": "click [17] link \"[klɛːʁ pɔmɛ] Help:IPA/French\" https://en.wikipedia.org/wiki/Help:IPA/French",
+          "click-18": "click [18] link \"[pɔm] Help:IPA/French\" https://en.wikipedia.org/wiki/Help:IPA/French",
+          "click-19": "click [19] link \"Lyon Lyon\" https://en.wikipedia.org/wiki/Lyon",
+          "click-20": "click [20] link \"À peu près À peu près\" https://en.wikipedia.org/wiki/%C3%80_peu_pr%C3%A8s",
+          "click-21": "click [21] link \"pop Pop music\" https://en.wikipedia.org/wiki/Pop_music",
+          "click-22": "click [22] link \"folk music Folk music\" https://en.wikipedia.org/wiki/Folk_music",
+          "click-23": "click [23] link \"French album charts Syndicat National de l'Édition Phonographique\" https://en.wikipedia.org/wiki/Syndicat_National_de_l'%C3%89dition_Phonographique",
+          "click-24": "click [24] link \"Les Failles Les Failles\" https://en.wikipedia.org/wiki/Les_Failles",
+          "click-25": "click [25] link \"record charts Record charts\" https://en.wikipedia.org/wiki/Record_charts",
+          "click-26": "click [26] link \"Consolation Consolation (album)\" https://en.wikipedia.org/wiki/Consolation_(album)",
+          "click-27": "click [27] link \"edit Edit section: Life and career\" https://en.wikipedia.org/w/index.php?title=Pomme_(singer)&action=edit&section=1",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "menu-22": "right-click [22] to open its menu",
+          "menu-23": "right-click [23] to open its menu",
+          "menu-24": "right-click [24] to open its menu",
+          "menu-25": "right-click [25] to open its menu",
+          "menu-26": "right-click [26] to open its menu",
+          "menu-27": "right-click [27] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "open",
+          "s0-1": "open page",
+          "s0-2": "open page information",
+          "s1-1": "page",
+          "s1-2": "page information",
+          "s2-2": "information"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on en.wikipedia.org that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on en.wikipedia.org but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

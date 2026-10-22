@@ -55,6 +55,13 @@ describe('the state Jev reads', () => {
     expect(commandQuestions('turn off captions', page).action.options['click-4']).toBe('click [4] button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"')
   })
 
+  it("names what a closed trigger opens after its states (#388), so the words behind it are on the card", () => {
+    const settings = { ref: 4, kind: 'button' as const, label: 'Settings', href: null, inputType: null, states: ['hasPopup=menu', 'expanded=false'], holds: ['Ambient mode', 'Sleep timer Off'] }
+    const state = commandState('turn on ambient mode', { ...PAGE, refs: [...PAGE.refs, settings] })
+    expect(state.split('\n').slice(-1)).toEqual(['[4] button "Settings" hasPopup=menu expanded=false menu holds "Ambient mode", "Sleep timer Off"'])
+    expect(commandQuestions('turn on ambient mode', { ...PAGE, refs: [...PAGE.refs, settings] }).action.options['click-4']).toBe('click [4] button "Settings" hasPopup=menu expanded=false menu holds "Ambient mode", "Sleep timer Off"')
+  })
+
   it("names the host of the frame a ref was read in after its label (#377, ADR 0081): the embedded video is another site's", () => {
     const play = { ref: 4, kind: 'button' as const, label: 'Play', href: null, inputType: null, frame: 'youtube.com', states: ['pressed=false'] }
     const state = commandState('play the video', { ...PAGE, refs: [...PAGE.refs, play] })

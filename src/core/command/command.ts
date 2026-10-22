@@ -118,6 +118,8 @@ export interface CommandRef {
   readonly media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085): its line's position and length, and what a Scroll Op moved; absent for every other kind. */
   readonly region?: RegionFacts
+  /** What a closed trigger opens (#388): the names of its hidden panel's controls, its line's "menu holds"; absent for every other ref. */
+  readonly holds?: readonly string[]
   /** The host of the frame it was read in (#377, ADR 0081); absent for the top document's own. */
   readonly frame?: string
 }
@@ -145,7 +147,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */

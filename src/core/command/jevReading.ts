@@ -160,6 +160,8 @@ export function slotSpans(text: string): SlotSpan[] {
 function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<number>): string {
   const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
   const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
+  // What a closed trigger opens rides its line (#388): the words the user names are often behind it.
+  const holds = ref.holds !== undefined && ref.holds.length > 0 ? ` menu holds ${ref.holds.map((name) => JSON.stringify(name)).join(', ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
   const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
   // A Scroll Region's position and length ride its line (#383, ADR 0085): what its ops move, and what the Verdict reads.
@@ -168,7 +170,7 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
   // A Textless Ref the Mark Ask boxed on the image (#382, ADR 0084) is named by its mark, the one thing Jev can find it by.
   const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}${region}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${holds}${media}${region}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */

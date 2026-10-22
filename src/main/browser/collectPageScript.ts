@@ -652,8 +652,65 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   if (textRoot) walk(textRoot)
 
+  // What a closed trigger opens (#388): the names of the controls in the
+  // panel it shows, read while that panel is hidden, by kind and never by
+  // site. The panel is the element its aria-controls names (YouTube's
+  // player Settings, empty until first opened); a trigger without one has
+  // the hidden panel beside it in its nearest container (Wikipedia's
+  // dropdowns: a checkbox and a sibling panel). An open panel's controls
+  // are refs of their own, so it names none.
+  const HELD_SELECTOR = '[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], a[href], button, [role="button"], [role="link"]'
+  const MAX_HELD = 16
+  const opensSomething = (el) => {
+    const popup = el.getAttribute('aria-haspopup')
+    return (popup !== null && popup !== 'false') || el.getAttribute('aria-expanded') === 'false'
+  }
+  const isHidden = (el) => (typeof el.checkVisibility === 'function' ? !el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) : el.getClientRects().length === 0)
+  const panelOf = (el) => {
+    const controls = (el.getAttribute('aria-controls') || '').split(/\\s+/).filter((id) => id !== '')
+    if (controls.length > 0) {
+      const tree = typeof el.getRootNode().getElementById === 'function' ? el.getRootNode() : document
+      return controls.map((id) => tree.getElementById(id)).find((panel) => panel) || null
+    }
+    // The nearest container: the first ancestor that holds more than the trigger's own wrappers.
+    let child = el
+    let parent = el.parentElement
+    while (parent !== null && parent !== document.body && parent.children.length === 1) [child, parent] = [parent, parent.parentElement]
+    if (parent === null || parent === document.body) return null
+    return Array.from(parent.children).find((sibling) => sibling !== child && isHidden(sibling) && sibling.querySelector(HELD_SELECTOR) !== null) || null
+  }
+  // A hidden element has no rendered text, so its words are its text nodes, spaced: "Sleep timer" "Off" is not "Sleep timerOff".
+  const spacedText = (el) => {
+    const words = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) words.push(walker.currentNode.nodeValue)
+    return words.join(' ').replace(/\\s+/g, ' ').trim()
+  }
+  const hiddenInside = (el, panel) => {
+    // display alone: visibility inherits, so a panel hidden by it would hide every row.
+    for (let node = el; node !== null && node !== panel; node = node.parentElement) if (window.getComputedStyle(node).display === 'none') return true
+    return false
+  }
+  const heldBy = (el) => {
+    if (!opensSomething(el)) return []
+    const panel = panelOf(el)
+    if (panel === null || panel.contains(el) || !isHidden(panel)) return []
+    const held = []
+    for (const item of panel.querySelectorAll(HELD_SELECTOR)) {
+      // A control inside another is the outer one's words, once.
+      const outer = item.parentElement.closest(HELD_SELECTOR)
+      if (outer !== null && panel.contains(outer)) continue
+      // A row the panel hides on its own would not show when it opens either.
+      if (hiddenInside(item, panel)) continue
+      const name = (item.getAttribute('aria-label') || spacedText(item) || item.title || '').replace(/\\s+/g, ' ').trim()
+      if (name !== '' && !held.includes(name)) held.push(name)
+      if (held.length === MAX_HELD) break
+    }
+    return held
+  }
   const mediaFactsOf = ${MEDIA_FACTS_FN}
   const describeElement = (el, dialogRoot) => {
+    const held = heldBy(el)
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
@@ -689,6 +746,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
       // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
       ...(tag === 'VIDEO' || tag === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
+      // What a closed trigger opens (#388): its line's "menu holds".
+      ...(held.length > 0 ? { holds: held } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }

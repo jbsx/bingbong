@@ -54,6 +54,8 @@ export interface CollectedElement {
   media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085): the collect sends them only for an element its scroll cue took. */
   region?: RegionFacts
+  /** The names of the controls a closed trigger opens (#388), read while its panel is hidden; absent for every other element. */
+  holds?: readonly string[]
   className?: string
   /**
    * Where this element sat in the collect before this one, or -1 when this
@@ -215,6 +217,8 @@ export interface SnapshotRef {
   media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085); absent for every other kind. */
   region?: RegionFacts
+  /** What a closed trigger opens (#388): the names of its hidden panel's controls, label-cut; absent for every other ref. */
+  holds?: readonly string[]
   /** The host of the frame the ref was read in (#377, ADR 0081); absent for the top document's own. */
   frame?: string
   className?: string
@@ -418,6 +422,12 @@ function regionFactsEntry(raw: unknown): { region: RegionFacts } | Record<string
   return region !== undefined ? { region } : {}
 }
 
+/** The `holds` entry of a collected element (#388): the names it sent, nothing for none. */
+function holdsEntry(raw: unknown): { holds: string[] } | Record<string, never> {
+  const holds = Array.isArray(raw) ? raw.filter((name): name is string => typeof name === 'string' && name !== '') : []
+  return holds.length > 0 ? { holds } : {}
+}
+
 function frameBoxEntry(raw: unknown): { frameBox: { x: number; y: number } } | Record<string, never> {
   if (typeof raw !== 'object' || raw === null) return {}
   const { x, y } = raw as Record<string, unknown>
@@ -471,6 +481,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
+      ...holdsEntry(el.holds),
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
       value: typeof el.value === 'string' ? el.value : null,
@@ -634,6 +645,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ...(element.named === true ? { named: true as const } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.region !== undefined ? { region: element.region } : {}),
+      ...(element.holds !== undefined ? { holds: element.holds.map(truncateLabel) } : {}),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,
