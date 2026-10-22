@@ -705,25 +705,21 @@ export interface StepContext {
 /** Where the Mark Ask's image stands in its state (#382, ADR 0084): the reference the ask's `images` holds it under. */
 export const MARKS_IMAGE = '<marks>'
 
-/** The most the `Text in view:` line holds (#390): it competes with the refs on the card. */
-const TEXT_IN_VIEW_CAP = 1200
-
 /**
  * The text in view as one line under the page (#390): each block quoted,
- * in reading order, up to the last whole block that keeps the line within
- * {@link TEXT_IN_VIEW_CAP}. A forecast, a score or a definition is text,
- * not a control, and the Verdict cannot see it is on screen without it.
- * No line when no block fits.
+ * in reading order. A forecast, a score or a definition is text, not a
+ * control, and the Verdict cannot see it is on screen without it. The
+ * screen is the bound, as the collect keeps it (#392): no cap of its own,
+ * which cut the page from the top and spent itself on the masthead; a block
+ * that is a label already on the card (a nav link, a button) is left out;
+ * the blocks the collect could not keep are said, so a cut never reads as
+ * a page with nothing more on it. No line when no block is left.
  */
-function textInViewLine(blocks: readonly string[]): string[] {
-  const prefix = 'Text in view: '
-  let line = ''
-  for (const block of blocks) {
-    const next = `${line === '' ? prefix : `${line} · `}${JSON.stringify(block)}`
-    if (next.length > TEXT_IN_VIEW_CAP) break
-    line = next
-  }
-  return line === '' ? [] : [line]
+function textInViewLine(page: CommandPage, onCard: ReadonlySet<string>): string[] {
+  const blocks = (page.viewportText ?? []).filter((block) => !onCard.has(block)).map((block) => JSON.stringify(block))
+  const more = page.viewportTextMore ?? 0
+  if (more > 0) blocks.push(`… (${more} more ${more === 1 ? 'block' : 'blocks'} in view)`)
+  return blocks.length === 0 ? [] : [`Text in view: ${blocks.join(' · ')}`]
 }
 
 /** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands; for the Mark Ask, the marked refs and the image of them. */
@@ -739,7 +735,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
         ? [`Done so far: ${done.join('; ')}`]
         : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
-    ...textInViewLine(page.viewportText ?? []),
+    ...textInViewLine(page, new Set([...shown.page.refs, ...shown.links].map((named) => named.label))),
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.fullScreen !== undefined ? [`Full screen: ${page.fullScreen ? 'on' : 'off'}`] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),

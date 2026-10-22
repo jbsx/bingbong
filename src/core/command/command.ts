@@ -133,6 +133,8 @@ export interface CommandPage {
   readonly terms?: readonly string[]
   /** The text in view (#390), block by block in reading order: what every ask, the Verdict's among them, sees the page show; absent for a page read without it. */
   readonly viewportText?: readonly string[]
+  /** How many more blocks were in view past those the collect keeps (#392): the line says the cut; absent when none. */
+  readonly viewportTextMore?: number
   /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
   readonly dialog?: PageDialog
   /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
@@ -160,6 +162,7 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     refs: snapshot.refs.map(commandRefOf),
     terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
     viewportText: snapshot.viewportText,
+    ...(snapshot.viewportTextMore !== undefined ? { viewportTextMore: snapshot.viewportTextMore } : {}),
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),

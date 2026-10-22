@@ -84,9 +84,15 @@ describe('renderPageText — tables, pre and definition lists are text (#235/AC3
       { kind: 'row', cells: ['a', 'b'], inView: true },
       ...Array.from({ length: 80 }, (_, index): CollectedTextBlock => ({ kind: 'text', text: `p${index}`, inView: true })),
     ]
-    const { viewportText } = renderPageText(collected)
+    const { viewportText, viewportTextMore } = renderPageText(collected)
     expect(viewportText.slice(0, 3)).toEqual(['a | b', 'x'.repeat(300), 'p0'])
     expect(viewportText).toHaveLength(60)
+    // 82 distinct blocks in view, the repeated row once: 60 kept, 22 counted past the cap (#392).
+    expect(viewportTextMore).toBe(22)
+  })
+
+  it('counts nothing past the cap when every block in view is kept (#392)', () => {
+    expect(renderPageText([{ kind: 'text', text: 'Clear', inView: true }]).viewportTextMore).toBe(0)
   })
 })
 

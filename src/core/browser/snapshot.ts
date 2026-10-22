@@ -250,6 +250,8 @@ export interface PageSnapshot {
   textCut: boolean
   /** Text blocks intersecting the viewport when this snapshot was taken (#194). */
   viewportText: string[]
+  /** How many more blocks were in view past those kept (#392); absent when none. */
+  viewportTextMore?: number
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
@@ -569,9 +571,9 @@ export function parsePageLinks(raw: unknown): PageLink[] {
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */
-function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText'> {
+function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText' | 'viewportTextMore'> {
   if (page.textBlocks !== undefined) {
-    const { blocks, viewportText } = renderPageText(page.textBlocks)
+    const { blocks, viewportText, viewportTextMore } = renderPageText(page.textBlocks)
     const whole = blocks.join('\n')
     return {
       textBlocks: blocks,
@@ -579,6 +581,7 @@ function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'tex
       textLength: whole.length,
       textCut: page.textCut === true,
       viewportText,
+      ...(viewportTextMore > 0 ? { viewportTextMore } : {}),
     }
   }
   // An older payload sent only the capped digest: it is all the text there is.

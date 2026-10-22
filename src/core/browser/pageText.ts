@@ -59,6 +59,8 @@ export const MAX_VIEWPORT_TEXT_BLOCK_LENGTH = 300
 export interface PageText {
   blocks: string[]
   viewportText: string[]
+  /** How many more distinct blocks were in view past MAX_VIEWPORT_TEXT_BLOCKS (#392): the card says the cut. */
+  viewportTextMore: number
 }
 
 function renderPre(text: string): string {
@@ -122,6 +124,7 @@ function renderBlock(block: CollectedTextBlock): string[] {
 export function renderPageText(collected: readonly CollectedTextBlock[]): PageText {
   const blocks: string[] = []
   const viewportText: string[] = []
+  const pastCap = new Set<string>()
   const prose = new Set<string>()
   for (const block of collected) {
     const lines = renderBlock(block)
@@ -132,12 +135,14 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
     } else {
       blocks.push(...lines)
     }
-    if (block.inView === true && viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) {
+    if (block.inView === true) {
       const inView = lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH)
-      if (!viewportText.includes(inView)) viewportText.push(inView)
+      if (viewportText.includes(inView)) continue
+      if (viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) viewportText.push(inView)
+      else pastCap.add(inView)
     }
   }
-  return { blocks, viewportText }
+  return { blocks, viewportText, viewportTextMore: pastCap.size }
 }
 
 /**

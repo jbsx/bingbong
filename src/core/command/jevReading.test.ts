@@ -75,16 +75,26 @@ describe('the text in view in the state Jev reads (#390)', () => {
     expect(state.split('\n').slice(1, 3)).toEqual(['Page: https://example.com/ — "Example"', 'Text in view: "Clear" · "Gurugram, India" · "4 PM 30°" · "Say \\"hi\\""'])
   })
 
-  it('stops at the last whole block that keeps the line within 1200 characters', () => {
-    const block = 'x'.repeat(98)
-    const line = commandState('read it', { ...PAGE, viewportText: Array.from({ length: 20 }, () => block) }).split('\n')[2]!
-    // "Text in view: " is 14 characters, each quoted block 100 and each separator 3: eleven fit in 1144, a twelfth would make 1247.
-    expect(line).toBe(`Text in view: ${Array.from({ length: 11 }, () => JSON.stringify(block)).join(' · ')}`)
+  it('carries every block the collect kept, with no cap of its own (#392): the forecast below the masthead stays on the card', () => {
+    const blocks = Array.from({ length: 60 }, (_, index) => `${index} `.padEnd(300, 'x'))
+    const line = commandState('read it', { ...PAGE, viewportText: blocks }).split('\n')[2]!
+    expect(line).toBe(`Text in view: ${blocks.map((block) => JSON.stringify(block)).join(' · ')}`)
   })
 
-  it('writes no line when no text is in view, or its first block alone is past the cap', () => {
+  it('leaves out a block that is a label already on the card, a ref or a link further down (#392)', () => {
+    const page = { ...PAGE, viewportText: ['Home', 'Sign in', 'News', 'Sunny intervals', 'Sign in to comment'] }
+    const hop: HopContext = { hop: 1, visited: ['https://example.com/'], actions: ['search weather'], links: [{ label: 'News', href: 'https://example.com/news' }] }
+    expect(commandState('what is the weather', page, hop).split('\n')[4]).toBe('Text in view: "Sunny intervals" · "Sign in to comment"')
+  })
+
+  it('says how many blocks in view the collect could not keep, so a cut never reads as all there is (#392)', () => {
+    expect(commandState('read it', { ...PAGE, viewportText: ['Clear'], viewportTextMore: 3 }).split('\n')[2]).toBe('Text in view: "Clear" · … (3 more blocks in view)')
+    expect(commandState('read it', { ...PAGE, viewportText: ['Clear'], viewportTextMore: 1 }).split('\n')[2]).toBe('Text in view: "Clear" · … (1 more block in view)')
+  })
+
+  it('writes no line when no text is in view, or every block is a label on the card', () => {
     expect(commandState('read it', { ...PAGE, viewportText: [] })).toBe(commandState('read it', PAGE))
-    expect(commandState('read it', { ...PAGE, viewportText: ['y'.repeat(1300)] })).toBe(commandState('read it', PAGE))
+    expect(commandState('read it', { ...PAGE, viewportText: ['Home', 'Search'] })).toBe(commandState('read it', PAGE))
   })
 
   it('stands before the dialog line, on a hop as on the first ask', () => {
