@@ -540,6 +540,11 @@ export function doneLine(command: Command, page: CommandPage, result: DoneResult
 export function doneAction(command: Command, page: CommandPage): string {
   const label = targetLabel(command, page)
   if (label === undefined) return describeCommand(command)
+  // A target with no words is named by its number, and one the Mark Ask found by the image (#382): `click ""` told the
+  // Verdict nothing (replay 2026-10-22 of a gear click's hop 1: yes 0.52–0.64; `click [6]` 0.83–0.84; the image's wording 0.95–0.97).
+  if (label.trim() === '' && (command.verb === 'click' || command.verb === 'menu' || command.verb === 'type')) {
+    return command.marked === true ? `${describeCommand(command)}, the control the user's words named on the image of the page` : describeCommand(command)
+  }
   if (command.verb === 'type') return `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
   // A Media Op by what it did (#372): `skip forward 10 s "Title"`, `mute "Title"`.
   if (command.verb === 'media' && command.mediaOp !== undefined) return `${describeMediaOp(command.mediaOp)} ${JSON.stringify(label)}`

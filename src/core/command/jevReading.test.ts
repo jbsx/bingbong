@@ -97,6 +97,15 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
     expect(doneFacts(after, { ...after, media: { ...SONG, currentTime: 0.4, paused: true } }, { changed: true })).toEqual({ changed: true, media: ['the video went back to 0:00', 'the video paused'] })
     expect(doneFacts(before, before, { changed: false })).toEqual({ changed: false })
   })
+
+  // Replay 2026-10-22 of a gear click's hop 1: `click ""` left the Verdict's yes at 0.52–0.64, `click [6]` 0.83–0.84, the Mark Ask's wording 0.95–0.97 (#382).
+  it('names a target with no words by its number in Done so far, and one the Mark Ask found by the image', () => {
+    const page = { ...PAGE, refs: [...PAGE.refs, { ref: 6, kind: 'button' as const, label: '', href: null, inputType: null }] }
+    const opened = { changed: true as const, appeared: ['Dark theme'] }
+    expect(doneLine({ verb: 'click', target: 6, slot: null }, page, opened)).toBe('click [6] (the address did not change; "Dark theme" appeared)')
+    expect(doneLine({ verb: 'click', target: 6, slot: null, marked: true }, page, opened)).toBe(`click [6], the control the user's words named on the image of the page (the address did not change; "Dark theme" appeared)`)
+    expect(doneLine({ verb: 'click', target: 2, slot: null, marked: true }, page, opened)).toBe('click "Sign in" (the address did not change; "Dark theme" appeared)')
+  })
 })
 
 describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops on the action card, on any site', () => {

@@ -812,7 +812,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       `${first.ask ?? turnId}-mark`,
       { [MARKS_IMAGE]: shot.jpeg },
     )
-    return { ...readingOf(result, text, page), markAsk: true }
+    const read = readingOf(result, text, page)
+    // The command it reads knows it was found on the image, which its "Done so far" line says.
+    return { ...read, command: read.command.target === null ? read.command : { ...read.command, marked: true }, markAsk: true }
   }
 
   /** Whether a Where Ask's reading is followed by a Mark Ask (#382): Jev answered it, and its top choice was `none`, at any probability. */

@@ -92,6 +92,8 @@ export interface Command {
   readonly mediaOp?: MediaOpAction
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
+  /** The Mark Ask chose the target (#382, ADR 0084): the control the words named on the image of the page, which "Done so far" says. */
+  readonly marked?: true
 }
 
 /** What the reading sees of one ref: the number, its kind, its label and, for a link, its address. */
