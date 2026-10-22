@@ -1353,9 +1353,11 @@ _Avoid_: blank ref, unlabelled ref, icon ref
 **Mark Ask**:
 A re-ask of the action card that sends one screenshot of the pane with
 each Textless Ref's number drawn on it, those refs' options reading "the
-control marked N". Made only when the line would otherwise end without
-acting (the Where Ask's second `none`) and a Textless Ref is on the card;
-its best reading fires as that hop, and a `none` ends the line as before.
+control marked N". Made when the line would otherwise end without
+acting (the Where Ask's second `none`) and a Textless Ref is on the card,
+and when hop 0's reading is an unsure click on a Textless Ref (ADR 0084 as
+amended); its best reading fires as that hop, and a `none` ends the line as
+before.
 The marks are drawn on the image, never on the page.
 _Avoid_: vision ask, screenshot ask, set-of-marks
 

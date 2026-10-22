@@ -17,6 +17,7 @@ import {
   whereQuestions,
   markQuestions,
   textlessRefsOf,
+  isTextlessGuess,
   MARKS_IMAGE,
   type CommandQuestions,
   commandState,
@@ -816,6 +817,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** Whether a Where Ask's reading is followed by a Mark Ask (#382): Jev answered it, and its top choice was `none`, at any probability. */
   const asksMarks = (where: Reading): boolean => where.whereAsk === true && asksWhere(where)
+
+  /** Whether a hop 0 reading is an unsure click on a Textless Ref (owner ruling 2026-10-22, ADR 0084 amended), which the Mark Ask is asked in place of. */
+  const guessesTextless = (first: Reading, text: string): boolean =>
+    first.reading === 'jev' && first.action !== undefined && isTextlessGuess(first.action, whereQuestions(text, first.page, { appliance: appliance() }), first.page, DEFAULT_DECISION_THRESHOLDS.choice)
 
   /** Whether a hop 0 reading is followed by a Where Ask (#379): Jev read the line, and its top choice was `none`, at any probability. */
   const asksWhere = (first: Reading): boolean => first.reading === 'jev' && first.action?.choice === 'none'
@@ -1993,9 +1998,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let heard = first
     // The Where Ask's reading, when one was made: a line that ends on none says it, whether a Mark Ask followed or not.
     let whereRead: Reading | null = null
+    // The line's extra fields go on hop 0's first record: the first reading's, when another reading followed it.
+    let extraLogged = false
     if (asksWhere(first) && submission === submitted) {
       // A none at hop 0 asks where (#379, ADR 0082): its record stays, and the Where Ask's reading is hop 0's, with a record of its own.
       log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
+      extraLogged = true
       reading = { turnId, submission }
       heard = await readWhere(turnId, words, first, options.step)
       whereRead = heard
@@ -2008,13 +2016,25 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
       }
       if (reading?.turnId === turnId) reading = null
+    } else if (submission === submitted && guessesTextless(first, words)) {
+      // An unsure click on a Textless Ref (owner ruling 2026-10-22, ADR 0084 amended): the Mark Ask is asked before the guess fires.
+      // Its answer is hop 0's reading, the guess keeping its record; no answer, or no capture, leaves the guess to fire as read.
+      reading = { turnId, submission }
+      const marked = await readMarks(turnId, words, first, first, options.step)
+      if (reading?.turnId === turnId) reading = null
+      if (marked?.reading === 'jev') {
+        log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
+        extraLogged = true
+        heard = marked
+      } else if (marked !== null) {
+        log({ ...recordOf(turnId, at(), source, words, marked, marked.command, null, truncated), task: hop0 })
+      }
     }
     const firedAt = at()
     if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-    // The line's extra fields went on the first reading's record when a Where Ask followed it.
-    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(whereRead !== null ? {} : extra), task: hop0 }
+    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(extraLogged ? {} : extra), task: hop0 }
     const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
 
     if (submission !== submitted) {
@@ -2036,7 +2056,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // a greyed entry of the words, and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
       publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
       // After a Where Ask, both readings are the reason; a Mark Ask's none adds nothing to them.
-      const where = whereRead !== null ? { where: whereRead.jev } : {}
+      const where = whereRead !== null ? { where: whereRead.jev } : heard.markAsk === true ? { marked: heard.jev } : {}
       answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }

@@ -3903,4 +3903,74 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
       [true, 'terminal'],
     ])
   })
+
+  describe('the second trigger (owner ruling 2026-10-22, ADR 0084 amended): an unsure hop-0 click on a Textless Ref is replaced by the Mark Ask', () => {
+    /** The text reading's guess: the bare gear at 0.35. */
+    const GUESS = reading({ 'click-1': 0.35, 'click-2': 0.3, none: 0.2 })
+
+    it("asks with marks instead of firing the guess, and fires the Mark Ask's reading as hop 0", async () => {
+      const { browser, records, asks, decision, runner, captured } = playerHarness(TEXTLESS_REFS)
+      decision.script.push(GUESS, reading({ 'click-3': 0.92 }), SURE_YES)
+      await runner.run('click the cog wheel', { source: 'spoken', turnId: 't1' })
+
+      expect(captured).toEqual([[1, 3]])
+      expect(browser.clicks).toEqual([3])
+      const [first, mark] = decision.requests
+      expect(isMarkAsk(first!)).toBe(false)
+      expect(isMarkAsk(mark!)).toBe(true)
+      expect(Object.keys(cardOf(mark!).options).filter((label) => label.startsWith('click-'))).toEqual(Object.keys(cardOf(first!).options).filter((label) => label.startsWith('click-')))
+      // The guess keeps its record; the Mark Ask's is hop 0's, and no Where Ask was made.
+      expect(decisions(records).slice(0, 2).map((record) => [record.verb, record.target, record.whereAsk, record.markAsk, record.ask, record.ended])).toEqual([
+        ['click', 1, undefined, undefined, 't1', undefined],
+        ['click', 3, undefined, true, 't1-mark', undefined],
+      ])
+      expect(asks.map((ask) => ask.kind).slice(0, 2)).toEqual(['command', 'mark'])
+    })
+
+    it('leaves a sure click on a Textless Ref, and an unsure click on a ref with words, to fire as read', async () => {
+      const sure = playerHarness(TEXTLESS_REFS)
+      sure.decision.script.push(reading({ 'click-1': 0.8, none: 0.1 }))
+      await sure.runner.run('click the cog wheel', { source: 'spoken' })
+      expect(sure.decision.requests.some(isMarkAsk)).toBe(false)
+      expect(sure.browser.clicks).toEqual([1])
+
+      const worded = playerHarness(TEXTLESS_REFS)
+      worded.decision.script.push(reading({ 'click-2': 0.4, 'click-1': 0.3 }))
+      await worded.runner.run('make the player wider', { source: 'spoken' })
+      expect(worded.decision.requests.some(isMarkAsk)).toBe(false)
+      expect(worded.captured).toEqual([])
+      expect(worded.browser.clicks).toEqual([2])
+    })
+
+    it('a Mark Ask that reads none ends "No response.", saying the guess was unsure and the page showed no command', async () => {
+      const { browser, events, records, runner, decision } = playerHarness(TEXTLESS_REFS)
+      decision.script.push(GUESS, NONE)
+      await runner.run('the cog wheel thing', { source: 'spoken', turnId: 't1' })
+
+      expect(browser.clicks).toEqual([])
+      expect(displays(events)).toEqual(['No response.\n\nJev was unsure of “click [1]”, and shown the page it read no command.'])
+      expect(decisions(records).map((record) => [record.verb, record.markAsk, record.ended])).toEqual([
+        ['click', undefined, undefined],
+        ['none', true, 'terminal'],
+      ])
+    })
+
+    it('a Mark Ask that times out, or no capture, fires the guess as it would have fired', async () => {
+      const unanswered = playerHarness(TEXTLESS_REFS)
+      unanswered.decision.script.push(GUESS, { unavailable: 'timeout' })
+      await unanswered.runner.run('click the cog wheel', { source: 'spoken', turnId: 't1' })
+      expect(unanswered.browser.clicks).toEqual([1])
+      expect(decisions(unanswered.records).slice(0, 2).map((record) => [record.verb, record.markAsk, record.ask])).toEqual([
+        ['none', true, 't1-mark'],
+        ['click', undefined, 't1'],
+      ])
+
+      const uncaptured = playerHarness(TEXTLESS_REFS, { fails: true })
+      uncaptured.decision.script.push(GUESS)
+      await uncaptured.runner.run('click the cog wheel', { source: 'spoken', turnId: 't1' })
+      expect(uncaptured.browser.clicks).toEqual([1])
+      expect(uncaptured.decision.requests.some(isMarkAsk)).toBe(false)
+      expect(decisions(uncaptured.records)[0]).toMatchObject({ verb: 'click', target: 1, ask: 't1' })
+    })
+  })
 })

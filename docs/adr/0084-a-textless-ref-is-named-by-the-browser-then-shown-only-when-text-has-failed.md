@@ -4,7 +4,9 @@
 
 Accepted on 2026-10-21 by the owner, grilled beside #381 (ADR 0083).
 Amends ADR 0082: the Where Ask's second `none` makes a Mark Ask before it
-ends, when a Textless Ref is on the card.
+ends, when a Textless Ref is on the card. Amended on 2026-10-22 by the
+owner's ruling on #382: an unsure hop-0 click on a Textless Ref makes a
+Mark Ask too (Decision 2).
 
 ## Context
 
@@ -38,6 +40,16 @@ on a YouTube watch-page card measured the forms:
    N". Its best reading fires as hop 0, and a `none` ends "No response." as
    before. No other point makes a Mark Ask until a ledger line shows text
    running dry there.
+
+   *Amended 2026-10-22.* The Mark Ask is also made at hop 0 when the
+   reading's top choice is a click on a Textless Ref below the Choice bar:
+   the guess is replaced by the Mark Ask's reading, which fires as hop 0.
+   A Mark Ask that gets no answer, or no capture, leaves the guess to fire
+   as it was read. The ledger lines that showed it (cli-4-mviqbp8w,
+   cli-6-mviqcayg): on cards of Textless Refs Jev never read `none`; it
+   guessed one at 0.20–0.74 and fired the wrong icon. The same three lines
+   asked with marks chose the right icon 3 of 3 at 0.84–1.00, for 0.3–0.5 s
+   more.
 3. **Marks are drawn off the page.** The textless refs' rects are read
    again right before the capture, scaled from CSS pixels to the bitmap,
    with frame offsets added. The page is never written to (Vimium #2997).
@@ -51,7 +63,8 @@ on a YouTube watch-page card measured the forms:
 - A line that succeeds on text, or a card where every ref has words, never
   pays for an image.
 - The worst case for a line becomes three Jev calls (reading, Where Ask,
-  Mark Ask), about 0.3 s more than today's two.
+  Mark Ask), about 0.3 s more than today's two. An unsure guess at a
+  Textless Ref costs one call more than firing it did.
 - The Mark Ask has its own `asks-*.jsonl` line with the image saved beside
   it, and a `markAsk` field in the Decision Record; `jev:case` and
   `jev:replay` carry the image.

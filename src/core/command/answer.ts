@@ -41,6 +41,8 @@ export interface NoResponseFacts {
   readonly jev?: JevDetail | JevUnavailable
   /** The Where Ask's reading (#379, ADR 0082), when the first read `none` and the Where Ask was asked. */
   readonly where?: JevDetail | JevUnavailable
+  /** The Mark Ask's reading (#382, ADR 0084 amended), when it was asked in place of the first reading's unsure click on a Textless Ref. */
+  readonly marked?: JevDetail | JevUnavailable
 }
 
 /** An action card label in words (#370): `click-12` is "click [12]", `open-3` "open link 3", `scroll_down` "scroll down". */
@@ -58,6 +60,8 @@ function noResponseReason(facts: NoResponseFacts): string {
   const jev = facts.jev
   if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
   const top = topAction(jev)
+  // An unsure click on a Textless Ref asked again with the marked page (#382): the guess, and the page showing no command.
+  if (facts.marked !== undefined && facts.where === undefined) return `Jev was unsure of “${actionWords(top)}”, and shown the page it read no command.`
   const first = top === 'none' ? 'Jev read no command in the words' : `Jev read “${actionWords(top)}”, but nothing on this page fits it`
   const where = facts.where
   // After a Where Ask (#379, ADR 0082), both readings: the first's none, then the Where Ask's.

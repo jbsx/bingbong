@@ -826,6 +826,18 @@ export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): 
 }
 
 /**
+ * Whether a reading is an unsure guess at a Textless Ref (owner ruling
+ * 2026-10-22, ADR 0084 amended): its top choice a click on one, under the
+ * Choice bar. Text ran dry there — Jev guessed among controls it could not
+ * tell apart (the 2026-10-22 ledger lines) — so the Mark Ask is asked
+ * instead of firing the guess.
+ */
+export function isTextlessGuess(action: DecisionChoiceAnswer, questions: CommandQuestions, page: CommandPage, bar: number): boolean {
+  const acted = refActionOf(action.choice)
+  return action.confidence < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
+}
+
+/**
  * The Mark Ask's questions (#382, ADR 0084): the Where Ask's card asked
  * once more with the page's image beside it, every option as it was but
  * a marked ref's, which reads "the control marked N"; no `steps`.
