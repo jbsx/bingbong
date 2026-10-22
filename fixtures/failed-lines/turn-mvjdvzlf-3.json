@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjdvzlf-3",
+  "transcript": "Look.",
+  "at": 1792664047793,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "A 352 ms fragment \"Look.\" (turn unfinished 0.06, cut at the 2 s cap) read none 0.64, the Where Ask none 0.71, and the card had textless buttons, so the Mark Ask fired: HTTP 400 \"Invalid image dimensions.\" in 377 ms, ended unavailable. The marks JPEG was 2560x1440 (the real display, device pixels); every corpus Mark image is 1246x706 (Xvfb). Replayed: 1569x883 and wider fail 400 every time, 1568x882 and smaller answer (none 0.51–0.66). Every Mark Ask on the owner display fails. No stage names the ask failing; reading is the nearest",
+  "meant": "The Mark Ask answers (none here), the image scaled to a long edge of at most 1568 px",
+  "log": "decision-1792664044313-1.jsonl"
+}
