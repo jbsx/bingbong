@@ -1,0 +1,102 @@
+{
+  "turnId": "cli-8-mvisvw90",
+  "transcript": "open the three dots menu",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792628771410,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-5"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"open the three dots menu\"\nPage: https://truthsocial.com/@realDonaldTrump — \"Donald J. Trump (@realDonaldTrump) | Truth Social\"\nRefs (number, kind, label, address, states):\n[1] link \"Home\" https://truthsocial.com/\n[2] button \"Back Back\"\n[3] link \"Profile header\" https://static-assets-1.truthsocial.com/tmtg:prime-ts-assets/accounts/headers/107/780/257/626/128/497/original/ba3b910ba387bf4e.jpeg\n[4] link \"Avatar\" https://static-assets-1.truthsocial.com/tmtg:prime-ts-assets/accounts/avatars/107/780/257/626/128/497/original/454286ac07a6f6e6.jpeg\n[5] button, the control marked 5\n[6] link \"donaldjtrump.com\" https://www.donaldjtrump.com/\n[7] button \"13.1M Followers 13,126,818\"\n[8] button \"69 Following 69\"\n[9] button \"Truths\" role=tab selected=true\n[10] button \"Replies\" role=tab selected=false\n[11] button \"Media\" role=tab selected=false\n[12] link \"Donald J. Trump, , Oct 21, 09:43 PM, realDonaldTrump Donald J. Trump @realDonal…\"\n[13] link \"realDonaldTrump\" https://truthsocial.com/@realDonaldTrump\n[14] link \"Donald J. Trump realDonaldTrump\" https://truthsocial.com/@realDonaldTrump\n[15] link \"3h\" https://truthsocial.com/@realDonaldTrump/posts/117480841773137630\nThe page now, each control with no words boxed in red with its number: <marks>",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? A control with no words is found by its number on the image. Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"Home\" https://truthsocial.com/",
+          "click-2": "click [2] button \"Back Back\"",
+          "click-3": "click [3] link \"Profile header\" https://static-assets-1.truthsocial.com/tmtg:prime-ts-assets/accounts/headers/107/780/257/626/128/497/original/ba3b910ba387bf4e.jpeg",
+          "click-4": "click [4] link \"Avatar\" https://static-assets-1.truthsocial.com/tmtg:prime-ts-assets/accounts/avatars/107/780/257/626/128/497/original/454286ac07a6f6e6.jpeg",
+          "click-5": "click [5] button, the control marked 5",
+          "click-6": "click [6] link \"donaldjtrump.com\" https://www.donaldjtrump.com/",
+          "click-7": "click [7] button \"13.1M Followers 13,126,818\"",
+          "click-8": "click [8] button \"69 Following 69\"",
+          "click-9": "click [9] button \"Truths\" role=tab selected=true",
+          "click-10": "click [10] button \"Replies\" role=tab selected=false",
+          "click-11": "click [11] button \"Media\" role=tab selected=false",
+          "click-12": "click [12] link \"Donald J. Trump, , Oct 21, 09:43 PM, realDonaldTrump Donald J. Trump @realDonal…\"",
+          "click-13": "click [13] link \"realDonaldTrump\" https://truthsocial.com/@realDonaldTrump",
+          "click-14": "click [14] link \"Donald J. Trump realDonaldTrump\" https://truthsocial.com/@realDonaldTrump",
+          "click-15": "click [15] link \"3h\" https://truthsocial.com/@realDonaldTrump/posts/117480841773137630",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "open",
+          "s0-1": "open the",
+          "s0-2": "open the three",
+          "s0-3": "open the three dots",
+          "s0-4": "open the three dots menu",
+          "s1-1": "the",
+          "s1-2": "the three",
+          "s1-3": "the three dots",
+          "s1-4": "the three dots menu",
+          "s2-2": "three",
+          "s2-3": "three dots",
+          "s2-4": "three dots menu",
+          "s3-3": "dots",
+          "s3-4": "dots menu",
+          "s4-4": "menu"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on truthsocial.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on truthsocial.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    },
+    "images": {
+      "<marks>": "cli-8-mvisvw90-mark.jpg"
+    }
+  }
+}

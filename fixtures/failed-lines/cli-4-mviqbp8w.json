@@ -6,5 +6,8 @@
   "stage": "reading",
   "happened": "hop 0 clicked [6], the gear, at 0.42: three icon buttons with no words, Jev guessed one from text and never read none, so no Mark Ask was made (ADR 0084's one trigger)",
   "meant": "click [5], the bin; the Mark Ask over the same card chose click-5 at 1.00 (case cli-4-mviqm3mc-mark)",
-  "log": "decision-1792624433583-1.jsonl"
+  "log": "decision-1792624433583-1.jsonl",
+  "claimedBy": "#382",
+  "fixedBy": "d282e33",
+  "case": "cli-4-mviqm3mc-mark"
 }
