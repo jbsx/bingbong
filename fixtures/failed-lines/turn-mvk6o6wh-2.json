@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvk6o6wh-2",
+  "transcript": "Open Voice Studio GitHub",
+  "at": 1792712392433,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet's partial heard 'Advice studio GitHub.' for 'Open Voice Studio GitHub' (the Endpoint's final transcript was right); Mammoth read the partial complete (noul 0.78) and the Early Fire searched 'Advice studio GitHub' 204 ms before the Endpoint. No right result existed: hop 1 clicked soundadvicestudio, hop 2 none, hop 3 back (its Hearing matched 'Studio' to the page term 'tuesday tue', a false hearing), hop 4 clicked audio-studio-mcp, ended unsure after 5.4 s. Same class as turn-mvjue289-g: an Early Fire carrying a partial's free words the Endpoint re-hears",
+  "meant": "search 'Voice Studio GitHub' and open the GitHub result",
+  "log": "decision-1792712385451-1.jsonl"
+}

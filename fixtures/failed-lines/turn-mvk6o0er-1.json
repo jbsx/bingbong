@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvk6o0er-1",
+  "transcript": "Open Voice Studio",
+  "at": 1792712385451,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "The session's first Mammoth call took 1236 ms (later calls 251-778 ms); read as search 'Voice Studio' (navigate 0.47 off a blank page) and superseded 1.2 s after the transcript with nothing fired, before the next wake 5 s later; the logs do not show what superseded it",
+  "meant": "search 'Voice Studio' within the usual sub-second reaction",
+  "log": "decision-1792712385451-1.jsonl"
+}
