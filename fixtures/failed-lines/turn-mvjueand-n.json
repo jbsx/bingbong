@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjueand-n",
+  "transcript": "Search blinder stack dips",
+  "at": 1792691775337,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet heard 'Linus Tech Tips' as 'liner steps' (partial) and 'blinder stack dips' (final). Mammoth read search with where=site 0.43, and on the Media Engine a search pointing at the site is a Site Scope: duckduckgo.com/?q=site:youtube.com+liner+steps, the road siteScope.ts itself calls worse than the site's own search (it exempts play only). Hop 1 unsure",
+  "meant": "Search YouTube for Linus Tech Tips, on YouTube's own search",
+  "log": "decision-1792691664816-1.jsonl"
+}

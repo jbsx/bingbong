@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuf0rk-w",
+  "transcript": "Search NKBH D",
+  "at": 1792691810381,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet heard 'MKBHD' as 'NKBH D'. Mammoth read none 0.33 with where=web 0.02; the Where Ask read none again (0.37) and the Task ended with nothing done. Gate 2026-10-22: the same card with the words meant ('Search MKBHD') passes on Mammoth (action not none, where not web) and fails on Elephant (web 0.47)",
+  "meant": "Search YouTube for MKBHD",
+  "log": "decision-1792691664816-1.jsonl"
+}

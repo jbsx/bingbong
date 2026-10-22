@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjue289-g",
+  "transcript": "Search Linus Decs",
+  "at": 1792691764425,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet heard 'Linus Tech Tips' as 'lines tactic' (partial) and 'Linus Decs' (final). The early fire typed the partial's words 250 ms before the Endpoint (type-4 0.71, right action) and hop 1 submitted them; hop 2's Clear click left the value ('its state did not change'); hop 3's type appended, since type never clears a field that holds a value: 'lines tacticLinus Decs'; hop 4 timed out",
+  "meant": "Search YouTube for Linus Tech Tips",
+  "log": "decision-1792691664816-1.jsonl"
+}

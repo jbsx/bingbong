@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuf7e5-x",
+  "transcript": "Search NK BH D",
+  "at": 1792691819112,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet heard 'MKBHD' as 'NK BH D'. Mammoth read search with where=web 0.45 (site 0.33) and the browser opened duckduckgo.com/?q=NK+BH+D; hop 1 clicked the GitHub result 'nk-BH-D (Burning_Head)' (0.42) before the owner's 'Go back to YouTube' superseded it",
+  "meant": "Search YouTube for MKBHD",
+  "log": "decision-1792691664816-1.jsonl"
+}

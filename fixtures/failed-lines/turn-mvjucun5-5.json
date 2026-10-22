@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjucun5-5",
+  "transcript": "Turn on ambient mode.",
+  "at": 1792691709806,
+  "source": "spoken",
+  "stage": "runner",
+  "happened": "First live run on Mammoth (root .env, 2026-10-22 18:54; earlier sessions today ran Jev at p50 ~250 ms). Hop 0 clicked Settings (0.60), the right first step; the hop-1 read timed out at 1502 ms (BINGBONG_DECISION_TIMEOUT_MS=1500, set for Jev; Mammoth's hop cards took p50 1171 ms, max 1503 ms this session) and the Task ended unavailable with nothing said (ENDS_UNSAID), the Settings menu left open. The menu showed Ambient mode checked=true: it was already on",
+  "meant": "Say ambient mode is already on and close the menu, or end done",
+  "log": "decision-1792691664816-1.jsonl"
+}

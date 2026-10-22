@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjufxbt-18",
+  "transcript": "Click on the Submit button.",
+  "at": 1792691852718,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Mammoth read none 0.82 and the Where Ask none 0.92 with the button [6] 'Search Search' on the card. Gate 2026-10-22: Elephant clicks [6] on the card as logged and with the label deduped to 'Search'; Mammoth reads none 0.87 even deduped; with the kind button[submit] 'Search' (a fact by kind: the form's submit button) both models click [6]",
+  "meant": "Click the Search button [6]",
+  "log": "decision-1792691664816-1.jsonl"
+}

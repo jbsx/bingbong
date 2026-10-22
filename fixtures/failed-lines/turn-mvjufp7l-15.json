@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjufp7l-15",
+  "transcript": "Pressed search.",
+  "at": 1792691840865,
+  "source": "spoken",
+  "stage": "local_match",
+  "happened": "The Local Match read press + the label 'Search': exactly one ref carries that label, the input [4] (the submit button [6] is labelled 'Search Search', its aria-label and rendered text joined), so it clicked the already-focused box and nothing happened. Said after the hop-2 timeout left NKBHD unsubmitted",
+  "meant": "Click the Search button [6] to submit NKBHD",
+  "log": "decision-1792691664816-1.jsonl"
+}

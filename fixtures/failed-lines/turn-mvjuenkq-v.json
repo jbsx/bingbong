@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuenkq-v",
+  "transcript": "Search Line Stack Tips",
+  "at": 1792691793682,
+  "source": "spoken",
+  "stage": "runner",
+  "happened": "Step 3 of 'Search Line Stack Tips': the hop-2 read timed out at 1502 ms on Mammoth after a type that appended ('lines tacticline tactics'); nothing said",
+  "meant": "Clear the box, type the words, submit",
+  "log": "decision-1792691664816-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjugmqn-1e",
+  "transcript": "Hide the Activity Panel.",
+  "at": 1792691885140,
+  "source": "spoken",
+  "stage": "missing_option",
+  "happened": "Mammoth read none 0.83 and the Where Ask none 0.75. The Activity feed is the app's own panel (Ctrl+Shift+F, OverlayPanel), not on the page, and the card carries no appliance verb for the app's panels, so no option could be right",
+  "meant": "Hide the app's activity feed panel",
+  "log": "decision-1792691664816-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuftt1-17",
+  "transcript": "Click on Search.",
+  "at": 1792691846946,
+  "source": "spoken",
+  "stage": "local_match",
+  "happened": "Same as turn-mvjufp7l-15: 'Click on Search' matched the input [4] 'Search' as the one ref carrying the label, not the button [6] 'Search Search'; clicking the focused box did nothing",
+  "meant": "Click the Search button [6]",
+  "log": "decision-1792691664816-1.jsonl"
+}

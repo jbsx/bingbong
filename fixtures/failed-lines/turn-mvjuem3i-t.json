@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjuem3i-t",
+  "transcript": "Search Line Stack Tips",
+  "at": 1792691790174,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Parakeet heard 'Linus Tech Tips' as 'line a stack' (partial) and 'Line Stack Tips' (final). Mammoth read search 0.69 with where=page 0.62, and the #353 rule (words that point at this page never search: the most probable click or open) clicked the Search button [6] with the stale 'lines tactic' in the box: nothing changed. Hop 1's Name Match turned 'Line Stack Tips' into the page term 'line tactics' (a suggestion of the earlier wrong search) and typed it, appended: 'lines tacticline tactics'. Hop 2 timed out",
+  "meant": "Type the words into the Search box and submit",
+  "log": "decision-1792691664816-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjugfd4-1d",
+  "transcript": "Play the first video.",
+  "at": 1792691876463,
+  "source": "spoken",
+  "stage": "page",
+  "happened": "Step 3 of 'Play the first video': hop 0 clicked the first result (right) and hop 1, 1.0 s after the click, read none with yes 0.94, short of sure. Hop 2's card carried the media ref as 'Unable to play media.' disabled=true paused live 0:00, the player between sources, so Mammoth chose play-11 (0.69) on a disabled element and the Task ended terminal. The video autoplayed on its own: playing 0:06/29:04 nine seconds later",
+  "meant": "End done once the video plays; no op on a player that is still loading",
+  "log": "decision-1792691664816-1.jsonl"
+}
