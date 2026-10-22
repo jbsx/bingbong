@@ -71,6 +71,7 @@ import {
   type CoverNaming,
   frameBoxScript,
   OWN_SLOT_SCRIPT,
+  TAG_OF_FN,
 } from './collectPageScript'
 import { readRefStates } from './readRefStates'
 import { mergeFrames, type CollectedFrame, type FrameAddress } from '../../core/browser/frames'
@@ -924,8 +925,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   const SCROLL_TICKS = 3
   /** Blur an editable element, or a frame, holding the page's focus (#383), so an End or Home key reaches the scroller. */
   const BLUR_FOCUSED_FIELD_JS = `(() => {
+    const tagOf = ${TAG_OF_FN}
     const el = document.activeElement
-    if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'IFRAME'].includes(el.tagName))) el.blur()
+    if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'IFRAME'].includes(tagOf(el)))) el.blur()
     return true
   })()`
   /** How long no scroll event says an Extent's page scroll has stopped (#383), and how long it is waited for at most. */

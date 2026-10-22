@@ -591,3 +591,38 @@ describe.skipIf(!canDriveChrome)("the collector finds Unmarked Controls by Vimiu
     expect(room.elements[0]?.label).toBe('Unmarked first')
   })
 })
+
+// A form's named controls override its own DOM properties (#385): with an
+// input named tagName inside, form.tagName is that input, and a method call
+// on it threw the whole collect away.
+const CLOBBER_PAGES: Record<string, string> = {
+  '/clobbered-form': `<body><main><h1>Sign up</h1>
+    <p>A sentence before the form, long enough that it is read as a run of prose.</p>
+    <form action="/join"><input name="tagName" aria-label="Tag"><input name="localName" aria-label="Local"><input name="nodeName" aria-label="Node"><button>Join</button></form>
+  </main></body>`,
+}
+
+describe.skipIf(!canDriveChrome)('the collector reads a form whose controls clobber its tag properties (#385)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(CLOBBER_PAGES, 'bingbong-collector-clobber-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it("collects its refs and its text, the form's own inputs and button among the refs", async () => {
+    await fixtures.open('/clobbered-form')
+    const page = await fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+    expect(buildPageSnapshot(parseCollectedPage(page)).refs.map((ref) => [ref.kind, ref.label])).toEqual([
+      ['input', 'Tag'],
+      ['input', 'Local'],
+      ['input', 'Node'],
+      ['button', 'Join'],
+    ])
+    expect(page.textBlocks.map((block) => (block.kind === 'text' ? block.text : block.kind))).toEqual([
+      'Sign up',
+      'A sentence before the form, long enough that it is read as a run of prose.',
+    ])
+  })
+})

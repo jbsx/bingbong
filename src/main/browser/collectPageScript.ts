@@ -15,6 +15,13 @@ const FRAME_BOX_FN = `((iframe) => {
   return { x: rect.left + iframe.clientLeft + (parseFloat(style.paddingLeft) || 0), y: rect.top + iframe.clientTop + (parseFloat(style.paddingTop) || 0) }
 })`
 
+/**
+ * A JS function source `(el) => tag`: an element's tagName read through
+ * `Element.prototype`'s getter (#385). A form's control named `tagName`
+ * overrides the form's own property; the prototype's getter it cannot.
+ */
+export const TAG_OF_FN = `((get) => (el) => get.call(el))(Object.getOwnPropertyDescriptor(Element.prototype, 'tagName').get)`
+
 /** A JS function source `(iframe) => slot`: the iframe's slot in `window.frames` (#377), -1 when its window is gone. */
 const FRAME_SLOT_FN = `((iframe) => {
   for (let i = 0; i < window.frames.length; i++) if (window.frames[i] === iframe.contentWindow) return i
@@ -35,6 +42,7 @@ export const OWN_SLOT_SCRIPT = `${OWN_SLOT_FN}()`
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
 export const COLLECT_PAGE_SCRIPT = `(() => {
+  const tagOf = ${TAG_OF_FN}
   const vw = window.innerWidth
   const vh = window.innerHeight
   const SELECTOR = [
@@ -111,7 +119,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       }
     }
     if (el.placeholder) parts.push(el.placeholder)
-    if ((el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'button' || el.type === 'reset')) || el.tagName === 'BUTTON') {
+    if ((tagOf(el) === 'INPUT' && (el.type === 'submit' || el.type === 'button' || el.type === 'reset')) || tagOf(el) === 'BUTTON') {
       if (typeof el.value === 'string' && el.value) parts.push(el.value)
     }
     const text = el.innerText || el.textContent
@@ -133,7 +141,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // facet checkbox named "Postcard" or filter_materials[card] is not a card
   // number (#237).
   const VALUELESS_INPUT_TYPES = ['submit', 'button', 'reset', 'image', 'hidden', 'checkbox', 'radio', 'file']
-  const isValuelessInput = (el) => el.tagName === 'INPUT' && VALUELESS_INPUT_TYPES.includes((el.type || 'text').toLowerCase())
+  const isValuelessInput = (el) => tagOf(el) === 'INPUT' && VALUELESS_INPUT_TYPES.includes((el.type || 'text').toLowerCase())
   // Search-flavored fields (ADR 0015): type="search", or the identifying
   // attributes matching /search|query|^q$/i — each attribute tested whole, so
   // Google's name=q matches while "qq" or a submit button named "search" do
@@ -143,7 +151,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // id/aria-label, so a click on their form's submit is exempt alike.
   const SEARCH_HINT_RE = /search|query|^q$/i
   const isEditableField = (el) => {
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true
+    if (tagOf(el) === 'INPUT' || tagOf(el) === 'TEXTAREA') return true
     if (el.isContentEditable) return true
     const role = el.getAttribute('role')
     return role === 'searchbox' || role === 'textbox'
@@ -151,12 +159,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const isSearchField = (el) => {
     if (!isEditableField(el)) return false
     if (isValuelessInput(el)) return false
-    if (el.tagName === 'INPUT' && el.type === 'search') return true
+    if (tagOf(el) === 'INPUT' && el.type === 'search') return true
     const hints = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder]
     return hints.some((hint) => typeof hint === 'string' && hint !== '' && SEARCH_HINT_RE.test(hint))
   }
   const isCredentialField = (el) => {
-    if (el.tagName === 'INPUT' && el.type === 'password') return true
+    if (tagOf(el) === 'INPUT' && el.type === 'password') return true
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
     return CREDENTIAL_AUTOCOMPLETE.includes(ac)
   }
@@ -170,8 +178,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const formOf = (el) => el.form || el.closest('form')
   const submitsFormOf = (el, form) => {
     if (!form) return false
-    if (el.tagName === 'INPUT') return el.type === 'submit' || el.type === 'image'
-    if (el.tagName === 'BUTTON') return !el.type || el.type === 'submit'
+    if (tagOf(el) === 'INPUT') return el.type === 'submit' || el.type === 'image'
+    if (tagOf(el) === 'BUTTON') return !el.type || el.type === 'submit'
     return false
   }
   const formFlagsOf = (form) => {
@@ -323,7 +331,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     // Vimium's test is truthy: an empty aria-disabled vetoes nothing.
     const ariaDisabled = el.getAttribute('aria-disabled')
     if (ariaDisabled && ariaDisabled.toLowerCase() === 'true') return null
-    const tag = el.tagName.toLowerCase()
+    const tag = tagOf(el).toLowerCase()
     const strong = (angular && NG_CLICK.some((name) => el.hasAttribute(name))) ||
       el.hasAttribute('onclick') ||
       (el.hasAttribute('jsaction') && jsactionClicks(el)) ||
@@ -392,7 +400,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const regionsIn = (root, out) => {
     for (const el of root.querySelectorAll('*')) {
       if (el.shadowRoot) regionsIn(el.shadowRoot, out)
-      if (REGION_TAGS.has(el.tagName) && isScrollRegion(el)) out.push(el)
+      if (REGION_TAGS.has(tagOf(el)) && isScrollRegion(el)) out.push(el)
     }
     return out
   }
@@ -436,7 +444,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const collectElements = (dialogRoot) => {
     const shown = []
     for (const el of candidatesIn(document, [])) {
-      if (el.tagName === 'INPUT' && el.type === 'hidden') continue
+      if (tagOf(el) === 'INPUT' && el.type === 'hidden') continue
       const marked = el.matches(SELECTOR)
       const cue = marked ? null : cueOf(el)
       if (!marked && cue === null) continue
@@ -526,7 +534,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   const inViewport = (el) => rectInView(el.getBoundingClientRect())
   const rawBlock = (el) => {
-    switch (el.tagName) {
+    switch (tagOf(el)) {
       case 'TR':
         return { kind: 'row', cells: Array.from(el.cells).map(textOf) }
       case 'PRE':
@@ -536,7 +544,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
           kind: 'definitions',
           items: Array.from(el.querySelectorAll('dt, dd'))
             .filter((item) => item.closest('dl') === el)
-            .map((item) => ({ term: item.tagName === 'DT', text: textOf(item) }))
+            .map((item) => ({ term: tagOf(item) === 'DT', text: textOf(item) }))
         }
       default:
         return { kind: 'text', text: textOf(el) }
@@ -591,7 +599,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // descended, so the heading stays a block of its own as it was before
   // runs existed and the h1 is never read again. One around an iframe — an
   // embed's <span> — is descended too, so the frame keeps its place (#378).
-  const joinsRun = (el) => INLINE.has(el.tagName) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR + ', iframe') === null
+  const joinsRun = (el) => INLINE.has(tagOf(el)) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR + ', iframe') === null
   const runInView = (nodes) => {
     const range = document.createRange()
     range.setStartBefore(nodes[0])
@@ -602,7 +610,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // rendered text, unpadded, so H<sub>4</sub> reads H4.
   const runText = (nodes) =>
     nodes
-      .map((node) => (node.nodeType === Node.TEXT_NODE ? node.data : node.tagName === 'BR' ? ' ' : renderedText(node)))
+      .map((node) => (node.nodeType === Node.TEXT_NODE ? node.data : tagOf(node) === 'BR' ? ' ' : renderedText(node)))
       .join('')
       .replace(/\\s+/g, ' ')
       .trim()
@@ -627,7 +635,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       closeRun()
       // tagName is upper-case for HTML elements only; an <svg> or <math>
       // keeps its case.
-      const tag = node.tagName.toUpperCase()
+      const tag = tagOf(node).toUpperCase()
       if (tag === 'IFRAME') markFrame(node)
       if (node === heading || NEVER_PROSE.has(tag)) continue
       if (TAG_BLOCKS.has(tag)) {
@@ -645,14 +653,14 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
     return {
-      tag: el.tagName.toLowerCase(),
+      tag: tagOf(el).toLowerCase(),
       role: unmarked.has(el) ? 'button' : el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
-      inputType: el.tagName === 'INPUT' ? el.type : null,
+      inputType: tagOf(el) === 'INPUT' ? el.type : null,
       label: labelFor(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      src: el.tagName === 'IFRAME' ? crossOriginIframeSrc(el) : null,
+      src: tagOf(el) === 'IFRAME' ? crossOriginIframeSrc(el) : null,
       // An iframe's slot and content-box origin (#377): its frame's refs take its place, offset by it.
-      ...(el.tagName === 'IFRAME' ? { frameIndex: frameSlotOf(el), frameBox: ${FRAME_BOX_FN}(el) } : {}),
+      ...(tagOf(el) === 'IFRAME' ? { frameIndex: frameSlotOf(el), frameBox: ${FRAME_BOX_FN}(el) } : {}),
       href: absoluteHref(el),
       downloadsFile: el.hasAttribute('download'),
       submitsForm: submitsFormOf(el, form),
@@ -665,16 +673,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       formHasSearch: formFlags.formHasSearch,
       layer: dialogRoot !== null && containsDeep(dialogRoot, el) ? 'dialog' : 'page',
       checked: typeof el.checked === 'boolean' ? el.checked : null,
-      selectedOption: el.tagName === 'SELECT' && el.selectedOptions.length > 0
+      selectedOption: tagOf(el) === 'SELECT' && el.selectedOptions.length > 0
         ? textOf(el.selectedOptions[0]).slice(0, 160)
         : null,
-      value: typeof el.value === 'string' && !(el.tagName === 'INPUT' && el.type === 'password')
+      value: typeof el.value === 'string' && !(tagOf(el) === 'INPUT' && el.type === 'password')
         ? el.value.slice(0, 160)
         : (el.isContentEditable ? textOf(el).slice(0, 160) : null),
       ariaPressed: el.getAttribute('aria-pressed'),
       className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
       // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
-      ...(el.tagName === 'VIDEO' || el.tagName === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
+      ...(tagOf(el) === 'VIDEO' || tagOf(el) === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }
@@ -952,6 +960,7 @@ const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
  */
 export function clickPrepScript(index: number, naming: CoverNaming): string {
   return `(() => {
+    const tagOf = ${TAG_OF_FN}
     const el = (window.__bingbongRefs || [])[${index}]
     if (!el || !el.isConnected) return { ok: false }
     const scrollers = [${ROOT_SCROLLER}]
@@ -1043,7 +1052,7 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
       SIDES.some((side) => parseFloat(style['border' + side + 'Width']) > 0 && style['border' + side + 'Style'] !== 'none' && alphaOf(style['border' + side + 'Color']) > 0) ||
       (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0)
     const paintsNothingAt = (entry, px, py) => {
-      if (!(entry instanceof Element) || PAINTED_TAGS.includes(entry.tagName.toUpperCase())) return false
+      if (!(entry instanceof Element) || PAINTED_TAGS.includes(tagOf(entry).toUpperCase())) return false
       const role = entry.getAttribute('role')
       if (role === 'dialog' || role === 'alertdialog') return false
       const style = getComputedStyle(entry)
@@ -1102,10 +1111,10 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     const IMPLICIT_ROLES = { DIALOG: 'dialog', NAV: 'navigation', ASIDE: 'complementary', HEADER: 'banner', FOOTER: 'contentinfo', MAIN: 'main', FORM: 'form', SECTION: 'region', IMG: 'img', A: 'link', BUTTON: 'button', UL: 'list', OL: 'list', TABLE: 'table' }
     for (const entry of above) {
       const name = nameOf(entry)
-      if (name) return covered({ role: entry.getAttribute('role') || IMPLICIT_ROLES[entry.tagName] || entry.tagName.toLowerCase(), name, contains: contained(entry) })
+      if (name) return covered({ role: entry.getAttribute('role') || IMPLICIT_ROLES[tagOf(entry)] || tagOf(entry).toLowerCase(), name, contains: contained(entry) })
     }
     const first = above.length > 0 ? above[0] : stack[0]
-    return covered({ tag: first.tagName.toLowerCase(), contains: contained(first) })
+    return covered({ tag: tagOf(first).toLowerCase(), contains: contained(first) })
   })()`
 }
 
@@ -1124,11 +1133,12 @@ const POPUP_CLOSE_MS = 500
 export function blurFocusedFieldScript(index: number, x: number, y: number): string {
   return `(() => {
     /* BLUR_FOCUSED_FIELD */
+    const tagOf = ${TAG_OF_FN}
     const el = (window.__bingbongRefs || [])[${index}]
     const field = document.activeElement
     if (!el || !field || field === document.body || field === el || field.contains(el) || el.contains(field)) return false
     const TEXT_TYPES = ['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number']
-    const textual = field.isContentEditable || field.tagName === 'TEXTAREA' || (field.tagName === 'INPUT' && TEXT_TYPES.includes((field.getAttribute('type') || '').toLowerCase()))
+    const textual = field.isContentEditable || tagOf(field) === 'TEXTAREA' || (tagOf(field) === 'INPUT' && TEXT_TYPES.includes((field.getAttribute('type') || '').toLowerCase()))
     if (!textual) return false
     field.blur()
     const reaches = () => { const hit = el.getRootNode().elementFromPoint(${x}, ${y}); return hit === el || (hit !== null && el.contains(hit)) }
@@ -1290,9 +1300,10 @@ export function flashRefScript(index: number): string {
 export function clearFocusedScript(): string {
   return `(() => {
     /* CLEAR_FOCUSED */
+    const tagOf = ${TAG_OF_FN}
     const el = document.activeElement
     if (!el || el === document.body) return null
-    const tag = el.tagName ? el.tagName.toLowerCase() : ''
+    const tag = tagOf(el).toLowerCase()
     if (tag === 'input' || tag === 'textarea') {
       const proto = tag === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype
       const descriptor = Object.getOwnPropertyDescriptor(proto, 'value')
