@@ -8,6 +8,7 @@ Accepted on 2026-10-21 by the owner, grilled from the post mortem of the
 Narrows ADR 0079's Capability: the ops a media element can take come from
 the ref, not from the Player's list, and the list's retirement is #374. Built as two tickets in this order: the progress Noul (#373), then
 the media ops (#372). The progress bar that reads the Noul is #375.
+Amended on 2026-10-22 by the owner's ruling on #389.
 
 ## Context
 
@@ -72,10 +73,23 @@ the ledger. A live stream maps the fractions onto its seekable window.
 
 **A media ref's state rides on its line.** playing, paused or ended;
 elapsed/duration, or `live`; volume as a percentage, or `muted`; loop;
-rate when not 1; `captions off` or `captions <lang>` when the element has
-text tracks; buffering; failed. The same facts tell "Done so far" what an
-op changed (elapsed moved from 0:16 to 0:26). Autoplay, controls, source
-and size stay off the line.
+rate when not 1; `captions <lang>` when a text track is showing, `captions
+off` when every track is disabled; buffering; failed. The same facts tell
+"Done so far" what an op changed (elapsed moved from 0:16 to 0:26).
+Autoplay, controls, source and size stay off the line.
+
+**A media ref's line also carries its player's switches** (ruled on
+#389). A switch is a two-state control (a button pressed or not, a
+switch, a checkbox; never one choice among several) that sits with this
+media and no other: the smallest part of the page holding both holds no
+other video or audio. Each rides on the ref's line by its own label and
+`on` or `off`, so Jev reads what it switches. The line names nothing
+itself: a player that draws its own captions shows `"Subtitles/closed
+captions unavailable" on`, and Jev reads that the captions are on. A
+track in `hidden` mode says nothing, because a hidden track is on at
+Vimeo and BBC but off at Plyr. The switches go on the ref's line only,
+never on the `Playing:` line. Jev acts on a switch by clicking its ref,
+so no new op is offered.
 
 **Several media refs: each its own lines, Jev picks the element.** Two
 playing videos mean `pause-7` and `pause-12`, each line naming its title
@@ -118,6 +132,18 @@ same thing, and an op or a ref-less verb can be set aside too.
   question Jev answers.
 - **Progress acted on under the 0.7 bar.** Would set aside every
   intermediate step reading 0.5. Rejected for the sure-no at 0.3.
+- **A captions fact picked by a word list** (`captions on` from the
+  control named caption, subtitle or CC; #389). It measured best on
+  "disable captions" (0.95–0.98), but it is code deciding which control
+  means captions. Rejected for the switches by kind, which measured
+  0.82–0.95 on disable and 0.90–0.93 on enable (3 replays, 17 YouTube
+  cases).
+- **The button's `pressed=` alone** (Ref State). It left "disable
+  captions" at 0.67–0.91 and the Verdict at 0.68–0.73.
+- **Captions text drawn over the video.** Nothing is drawn between lines
+  of speech: 12.5% blank during speech, and blank for the whole intro.
+- **The switches on the `Playing:` line too.** One case failed and the
+  Verdict dropped to 0.75–0.81.
 
 ## Consequences
 
@@ -127,8 +153,9 @@ same thing, and an op or a ref-less verb can be set aside too.
   is more, never the pairs.
 - A non-YouTube page with a native `<video>` joins the e2e fixtures, so
   the media ops are proven on a site the Player never touches. YouTube
-  draws its captions itself, not through text tracks: its captions stay
-  the page's button, and the captions ops serve sites on the standard.
+  draws its captions itself, not through text tracks: its captions button
+  rides on the media ref's line as a switch (#389), and the captions ops
+  serve sites on the standard.
 - ADR 0079's Capability narrows to the Player's own: a song to play, the
   Queue's walk, show. #374 retires the layer, the Player's own as Appliance
   Verbs.

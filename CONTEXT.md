@@ -139,9 +139,19 @@ whatever its state (mute on a muted element changes nothing); only what it
 cannot do is withheld (no seek on a stream with no seekable range). Each
 is one evaluate on that element, on any site. The ref's line carries its
 state — playing, paused or ended, elapsed/duration or live, volume or
-muted, loop, rate when not 1, captions, buffering, failed — and "Done so
+muted, loop, rate when not 1, captions when a track is showing or every
+track is off, buffering, failed, and its Player Switches — and "Done so
 far" tells what an op changed. Several media refs each carry their own.
 _Avoid_: capability (for these), control, command (for the op itself)
+
+**Player Switch**:
+An on/off control that belongs to one media element's player: a button
+pressed or not, a switch, or a checkbox, never one choice among several.
+It is told on the media ref's line by its own label and `on` or `off`, so
+the Decision Model reads what it switches (captions, autoplay, ambient).
+It belongs to a media element when no other media sits in the smallest
+part of the page holding both.
+_Avoid_: captions button, toggle, player control
 
 **Amount**:
 How far a seek moves when the Decision Model chooses one: a Choice on
