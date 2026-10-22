@@ -342,8 +342,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     return tabIndex >= 0 ? 'tabindex' : null
   }
   // The refs a click acts on whole (#380's click roles among them): a weak
-  // cue inside one is that ref's own icon or text.
-  const WHOLE_CLICK_SELECTOR = 'a[href], area[href], button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="option"]'
+  // cue inside one is that ref's own icon or text. Every <a>, address or
+  // not: YouTube's top-bar icon buttons are addressless anchors.
+  const WHOLE_CLICK_SELECTOR = 'a, area[href], button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="option"]'
   // ADR 0062's inert rule and the dialog layer, across open shadow roots:
   // an element inside a shadow tree is inside its host's ancestors too.
   const hostOf = (node) => {
@@ -395,10 +396,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const kept = hints.filter((entry, position) => {
       if (entry.cue === 'tabindex') return false
       if (entry.cue !== 'weak') return true
-      // Not Vimium's (measured on a YouTube watch page, 2026-10-21): a weak
-      // cue inside a ref a click acts on whole is that ref's own icon or
-      // text — 24 of the 29 controls Vimium's cues added there, each a
-      // second line for one button.
+      // Not Vimium's (ADR 0083, #384): a weak cue inside a ref a click acts
+      // on whole is that ref's own icon or text. Measured 2026-10-22 on
+      // clean pages, first viewport: a YouTube watch page 48 refs with this
+      // line, 65 without — the 17 dropped, 14 textless icons and 3 spans
+      // within the parent's label, none a distinct control; BBC News 45 and
+      // the Guardian 48 either way.
       if (entry.el.parentElement !== null && entry.el.parentElement.closest(WHOLE_CLICK_SELECTOR) !== null) return false
       for (let index = position + 1; index < hints.length && index <= position + 6; index++) {
         let node = hints[index].el

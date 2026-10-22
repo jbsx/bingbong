@@ -527,6 +527,11 @@ const UNMARKED_PAGES: Record<string, string> = {
     <div id="host"></div>
     <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow button</button><div onclick="void 0">Shadow onclick</div>'</script>
   </body>`,
+  '/inside-whole': `<body>
+    <a href="/feed"><div class="btn-label">Feed</div></a>
+    <a aria-label="Settings"><div class="yt-icon-button" style="display:inline-block;width:24px;height:24px"></div></a>
+    <div role="checkbox" aria-checked="false" aria-label="Autoplay"><div class="toggle-button" style="display:inline-block;width:24px;height:24px"></div></div>
+  </body>`,
   '/crowded-400': `<body><div onclick="void 0">Unmarked first</div>${NARROW_BUTTON.repeat(400)}</body>`,
   '/crowded-399': `<body><div onclick="void 0">Unmarked first</div>${NARROW_BUTTON.repeat(399)}</body>`,
 }
@@ -564,6 +569,15 @@ describe.skipIf(!canDriveChrome)("the collector finds Unmarked Controls by Vimiu
       ['button', 'Empty aria-disabled'],
       ['button', 'Shadow button'],
       ['button', 'Shadow onclick'],
+    ])
+  })
+
+  it('drops a weak cue inside a link, an addressless anchor or a click role, as inside a button (#384)', async () => {
+    const snapshot = buildPageSnapshot(await collect('/inside-whole'))
+    expect(snapshot.refs.map((ref) => [ref.kind, ref.label])).toEqual([
+      ['link', 'Feed'],
+      ['button', 'Settings'],
+      ['button', 'Autoplay'],
     ])
   })
 
