@@ -2,6 +2,7 @@ import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
 import type { ScrollExtent } from '../browser/scrollOp'
+import type { TextBelow } from '../browser/pageText'
 import type { Mark } from '../browser/marks'
 
 /**
@@ -151,6 +152,13 @@ export interface BrowserController {
    * no Scroll Region.
    */
   scrollRegion(ref: number, direction: 'up' | 'down', extent: ScrollExtent): Promise<string>
+  /**
+   * A Show Op (#393, ADR 0086): one evaluate in the block's own frame
+   * scrolling its node into view, on any site. The outcome reads as a page
+   * scroll's: where the page stands, then what entered the view. Rejects
+   * for a block no longer on the page.
+   */
+  showText(block: TextBelow): Promise<string>
   /** The visible viewport as a JPEG; with options, one magnified region of it. */
   screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
   back(): Promise<string>

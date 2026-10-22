@@ -51,6 +51,7 @@ import {
 } from '../../core/browser/snapshot'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } from '../../core/browser/scrollOp'
+import type { TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
 import { MEDIA_FACTS_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
@@ -2145,6 +2146,60 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  /**
+   * A Show Op (#393, ADR 0086): one evaluate in the block's own frame on
+   * the text registry's node — the one the collect numbered, or, when the
+   * page has redrawn since, the one that carries the block's words —
+   * brought a quarter down the view, so the heading over it shows and a
+   * sticky header does not cover it: an element by its own scrollIntoView,
+   * which reaches the scroller it sits in, a prose run by the page's
+   * scroll to its Range, by its container's when the page did not move it.
+   * The outcome reads as a page scroll's, which the Verdict judges it as.
+   */
+  async function showTextOn(block: TextBelow): Promise<string> {
+    const before = await currentSnapshot()
+    await armReadiness(block.frame)
+    const shown = await evaluateInFrame<boolean | null>(block.frame, `((at) => {
+      /* SHOW_TEXT */
+      const words = (text) => text.replace(/[^\\p{L}\\p{N}]+/gu, '')
+      const wanted = words(at.text).slice(0, 40)
+      const fits = (box) => {
+        if (!box) return false
+        const node = box instanceof Range ? box.startContainer : box
+        return node.isConnected === true && words(box instanceof Range ? box.toString() : box.textContent || '').includes(wanted)
+      }
+      const registry = window.__bingbongText || []
+      const box = fits(registry[at.node]) ? registry[at.node] : registry.find(fits)
+      if (!box) return null
+      const vh = window.innerHeight
+      const inView = () => { const rect = box.getBoundingClientRect(); return rect.bottom > 0 && rect.top < vh }
+      if (box instanceof Element) box.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' })
+      const top = box.getBoundingClientRect().top
+      if (top < vh / 4 || top >= vh) window.scrollBy({ top: top - vh / 4, behavior: 'instant' })
+      if (!inView() && box instanceof Range && box.startContainer.parentElement) box.startContainer.parentElement.scrollIntoView({ block: 'start', behavior: 'instant' })
+      return true
+    })(${JSON.stringify({ text: block.text, node: block.node })})`)
+    // A null comes back as undefined (`evaluateInPage`): either is no block.
+    if (shown == null) throw new Error('the text block is no longer on the page')
+    await awaitReadiness('show-text', block.frame)
+    // Viewport-relative rects shifted: the refs are read anew.
+    lastSnapshot = undefined
+    try {
+      const after = await recollection('scroll-delta', () => collectSnapshot())
+      const direction = after.viewport.scrollY < before.viewport.scrollY ? 'up' : 'down'
+      const header = scrollHeader(direction, after.viewport.scrollX ?? 0, after.viewport.scrollY)
+      const delta = formatNewInView(before, after)
+      // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
+      if (delta) await overlayShown(delta.shownRefs)
+      return delta === null ? header : `${header}\n${delta.block}`
+    } catch (error) {
+      // A collector hiccup must not fail a scroll that happened: the outcome is the position line.
+      reportFault('browser.createCdpBrowserController.showText', error)
+      const { signature } = await probeAction(null)
+      return scrollHeader('down', signature.scrollX, signature.scrollY)
+    }
+  }
+
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
       const { target } = await resolveRef(ref, { carryPage: false })
@@ -2351,6 +2406,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     type,
     scroll,
     scrollRegion,
+    showText: showTextOn,
     screenshot,
     markedScreenshot,
     back,

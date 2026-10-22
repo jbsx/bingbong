@@ -1,6 +1,7 @@
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
-import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
+import type { TextBelow } from '../browser/pageText'
+import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
@@ -268,7 +269,13 @@ type RefAct = 'click' | 'type' | 'menu' | MediaOp | ScrollOp
  * keeps its other actions; a ref-less verb or an Appliance Verb
  * (`scroll_down`, `skip`) by its name.
  */
-export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly verb: string }
+export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly verb: string } | ShowAside
+
+/** A Show Op set aside (#393, ADR 0086): by its block's text and the page's address, never as the page's own scroll. */
+interface ShowAside {
+  readonly show: string
+  readonly address: string
+}
 
 /**
  * The set-aside of the action a Command fired on a page; null when the
@@ -277,6 +284,7 @@ export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly ver
  * never offered again anyway (a visited address).
  */
 export function setAsideOf(command: Command, page: CommandPage): SetAside | null {
+  if (command.show !== undefined) return { show: command.show.text, address: pageAddressOf(page.url) }
   if (command.verb === 'play') {
     const verb = command.music === undefined ? null : applianceVerbOf(command.music)
     return verb === null ? null : { verb }
@@ -295,9 +303,11 @@ function scrollOpOf(command: Command): ScrollOp | undefined {
   return command.target === null ? undefined : (scrollOpOfVerb(command.verb) ?? undefined)
 }
 
-/** Whether the Task set aside what a card label names on this page. */
-function isAside(label: string, page: CommandPage, setAside: readonly SetAside[]): boolean {
+/** Whether the Task set aside what a card label names on this page; a `show-N` by the block `texts` numbers N. */
+function isAside(label: string, page: CommandPage, setAside: readonly SetAside[], texts: readonly TextTarget[]): boolean {
   if (setAside.length === 0) return false
+  const shown = showOf(label, texts)
+  if (shown !== null) return setAside.some((aside) => 'show' in aside && aside.show === shown.text && aside.address === pageAddressOf(page.url))
   const acted = refActionOf(label)
   if (acted === null) return setAside.some((aside) => 'verb' in aside && aside.verb === label)
   if (acted.act === 'open') return false
@@ -628,7 +638,7 @@ export const RUNNER_UP_FLOOR = 0.05
 export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[], kind: 'click' | 'menu' = 'click'): RefIdentity | null {
   const firedRef = page.refs.find((ref) => ref.ref === fired)
   const firedIdentity = firedRef !== undefined ? refIdentityOf(firedRef, page) : null
-  for (const label of rankedOffered(action, page, setAside)) {
+  for (const label of rankedOffered(action, page, setAside, NO_SHOW_OPS)) {
     const acted = refActionOf(label)
     const ref = acted?.act === kind ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
     if (ref === undefined) continue
@@ -639,9 +649,9 @@ export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fire
 }
 
 /** The card labels an answer gives {@link RUNNER_UP_FLOOR} or over, most probable first, none the Task set aside. */
-function rankedOffered(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[]): string[] {
+function rankedOffered(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[], texts: readonly TextTarget[]): string[] {
   return Object.entries(action.probabilities)
-    .filter(([label, probability]) => probability >= RUNNER_UP_FLOOR && !isAside(label, page, setAside))
+    .filter(([label, probability]) => probability >= RUNNER_UP_FLOOR && !isAside(label, page, setAside, texts))
     .sort((a, b) => b[1] - a[1])
     .map(([label]) => label)
 }
@@ -690,6 +700,53 @@ function describeLink(link: PageLink): string {
   return `link ${JSON.stringify(link.label)} ${link.href}`
 }
 
+/** A block of Text Further Down as the card numbers it: its `[text-N]` entry and its `show-N` option. */
+interface TextTarget {
+  readonly n: number
+  readonly block: TextBelow
+}
+
+/** How many characters of entry lines Text Further Down holds (ADR 0086): at 2000 RecipeTin's ingredients were out of reach. */
+const MAX_TEXT_FURTHER_DOWN = 6000
+
+/** A Text Further Down entry's line in the state: `[text-2] "…"`. */
+function textEntry(target: TextTarget): string {
+  return `[text-${target.n}] ${JSON.stringify(target.block.text)}`
+}
+
+/**
+ * Text Further Down (#393, ADR 0086): the blocks below the view a hop can
+ * offer, numbered in reading order, none repeating a label on the card or
+ * a block in view, up to {@link MAX_TEXT_FURTHER_DOWN} characters of entry
+ * lines. The numbers never hang on what the Task set aside — a set-aside
+ * is read against them on the very call that answered, and a renumbering
+ * there would fire another block — so a set-aside block leaves a gap.
+ */
+function textTargetsOf(pageRead: CommandPage, hop: HopContext | undefined): TextTarget[] {
+  const shown = offered(pageRead, hop)
+  const onCard = new Set([...shown.page.refs, ...shown.links].map((named) => named.label))
+  const inView = new Set(pageRead.viewportText ?? [])
+  const targets: TextTarget[] = []
+  let used = 0
+  for (const block of pageRead.textBelow ?? []) {
+    if (onCard.has(block.text) || inView.has(block.text)) continue
+    const target = { n: targets.length + 1, block }
+    used += textEntry(target).length
+    if (used > MAX_TEXT_FURTHER_DOWN) break
+    targets.push(target)
+  }
+  return targets
+}
+
+/** No numbered targets: for a reader that only resolves clicks, right-clicks and opens, to which a `show-N` is never one. */
+const NO_SHOW_OPS: readonly TextTarget[] = []
+
+/** The block a `show-N` label names among the numbered targets; null for any other label, or a number none carries. */
+function showOf(label: string, texts: readonly TextTarget[]): TextBelow | null {
+  const match = /^show-(\d+)$/.exec(label)
+  return match === null ? null : (texts.find((target) => target.n === Number(match[1]))?.block ?? null)
+}
+
 /**
  * Where a Step stands in its line (#364, ADR 0076 "a line is Steps"): the
  * whole line, which Step this is, and what the Steps before it did — so a
@@ -724,8 +781,24 @@ function textInViewLine(page: CommandPage, onCard: ReadonlySet<string>): string[
   return blocks.length === 0 ? [] : [`Text in view: ${blocks.join(' · ')}`]
 }
 
-/** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands; for the Mark Ask, the marked refs and the image of them. */
-export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>): string {
+/**
+ * Text Further Down at the card's end (#393, ADR 0086): the entries the
+ * action card it is asked beside offers a Show Op for, each whole — never
+ * an entry without its op, which the Verdict read as text on screen.
+ */
+function textFurtherDownLines(page: CommandPage, hop: HopContext | undefined, card: { readonly action: DecisionChoiceQuestion } | undefined): string[] {
+  if (card === undefined) return []
+  const entries = textTargetsOf(page, hop).filter((target) => Object.hasOwn(card.action.options, `show-${target.n}`))
+  return entries.length === 0 ? [] : ['Text further down the page, not on screen yet (number, text):', ...entries.map(textEntry)]
+}
+
+/**
+ * The state the questions are asked over; at a hop past the first, where
+ * the Task stands; in a Step, where the line stands; for the Mark Ask, the
+ * marked refs and the image of them; and, given the `card` asked beside
+ * it, the Text Further Down it offers.
+ */
+export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>, card?: { readonly action: DecisionChoiceQuestion }): string {
   const shown = offered(page, hop)
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
@@ -745,6 +818,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page, marked)}`),
     ...(marked !== undefined ? [`The page now, each control with no words boxed in red with its number: ${MARKS_IMAGE}`] : []),
     ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
+    ...textFurtherDownLines(page, hop, card),
   ].join('\n')
 }
 
@@ -851,7 +925,7 @@ export function commandQuestions(
   options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number> } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
@@ -953,12 +1027,13 @@ function actionQuestion(
   page: CommandPage,
   pageRead: CommandPage,
   links: readonly OfferedLink[],
+  texts: readonly TextTarget[],
   asked: CardAsk,
   offeredVerbs: readonly ApplianceVerb[],
   setAside: readonly SetAside[],
   marked?: ReadonlySet<number>,
 ): { question: DecisionChoiceQuestion; mediaOps: boolean } {
-  const kept = (label: string): boolean => !isAside(label, page, setAside)
+  const kept = (label: string): boolean => !isAside(label, page, setAside, texts)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
   // Each Scroll Region's Scroll Ops the Task has not set aside (#383, ADR 0085).
@@ -983,6 +1058,10 @@ function actionQuestion(
   const scrolls = take(reached.flatMap(scrollsOf))
   const opened = take(links)
   const menus = take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`)))
+  // The Show Ops take what room is left (ADR 0086): on a full card the refs win. They stand just before the page's own scroll.
+  const showOps = take(texts.filter((target) => kept(`show-${target.n}`))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
+  const scrollAt = refLess.findIndex(([verb]) => verb === 'scroll_up' || verb === 'scroll_down')
+  const verbs = scrollAt < 0 ? [...refLess, ...showOps] : [...refLess.slice(0, scrollAt), ...showOps, ...refLess.slice(scrollAt)]
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
@@ -999,7 +1078,7 @@ function actionQuestion(
       ...Object.fromEntries(scrolls.map(([op, ref]) => [`${op}-${ref.ref}`, scrollOpDescription(op, ref.ref, ref.label, marked?.has(ref.ref) === true)])),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
-      ...Object.fromEntries(refLess),
+      ...Object.fromEntries(verbs),
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
     },
   }
@@ -1272,7 +1351,7 @@ function fallbackTargets(page: CommandPage, links: readonly OfferedLink[]): { re
 /** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}); never a click the Task set aside. */
 function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[], setAside: readonly SetAside[]): Command | null {
   const targets = fallbackTargets(page, links)
-  return mostProbable<Command>(answer, (label) => (isAside(label, page, setAside) ? null : openingOf(refActionOf(label), page, targets.links, targets.refs)))
+  return mostProbable<Command>(answer, (label) => (isAside(label, page, setAside, NO_SHOW_OPS) ? null : openingOf(refActionOf(label), page, targets.links, targets.refs)))
 }
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
@@ -1331,15 +1410,19 @@ const isRefLessVerb = (label: string): label is RefLessVerb => (REFLESS_VERBS as
  * probable label still offered, at {@link RUNNER_UP_FLOOR} or over —
  * `none` under it.
  */
-function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[]): string {
-  return isAside(action.choice, page, setAside) ? (rankedOffered(action, page, setAside)[0] ?? 'none') : action.choice
+function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[], texts: readonly TextTarget[]): string {
+  return isAside(action.choice, page, setAside, texts) ? (rankedOffered(action, page, setAside, texts)[0] ?? 'none') : action.choice
 }
 
 /** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them. */
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
-  const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [])
+  const texts = textTargetsOf(pageRead, hop)
+  const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [], texts)
   if (isApplianceVerb(label)) return applianceCommand(label, answers.slot, text, answers, pageRead.url, hop)
+  // A Show Op (#393, ADR 0086) is a scroll down that brings its block into view.
+  const show = showOf(label, texts)
+  if (show !== null) return { verb: 'scroll_down', target: null, slot: null, show }
   const { page, links } = offered(pageRead, hop)
   const acted = refActionOf(label)
   // A ref or a link the hop does not offer is no Command.

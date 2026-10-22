@@ -550,6 +550,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // block is taken whole, so an element inside it is that block's text — a
   // paragraph in a table cell, a nested list.
   const textBlocks = []
+  // The text registry (#393, ADR 0086): each block's element, or a prose
+  // run's Range, at the index its block's node names — where a Show Op
+  // finds it. Replaced by every collect, as the ref registry is.
+  const textNodes = []
+  window.__bingbongText = textNodes
   let collectedText = 0
   let textCut = false
   // Whether a block is in the viewport right now, so a scroll can report
@@ -561,7 +566,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (rect.width < 1 || rect.height < 1) return false
     return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
-  const inViewport = (el) => rectInView(el.getBoundingClientRect())
+  // Rendered and wholly below the viewport (#393): a hidden block has no box and is never below.
+  const rectBelow = (rect) => rect.width >= 1 && rect.height >= 1 && rect.top >= vh
   const rawBlock = (el) => {
     switch (tagOf(el)) {
       case 'TR':
@@ -586,9 +592,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (block.kind === 'definitions') return block.items.reduce((total, item) => total + item.text.length, 0)
     return block.text.trim().length
   }
-  const take = (block, inView) => {
+  // The box is the block's element, or a prose run's Range: where it is, and what a Show Op scrolls to.
+  const take = (block, box) => {
     const length = lengthOf(block)
     if (length === 0) return
+    const rect = box.getBoundingClientRect()
+    const inView = rectInView(rect)
     // Past the collected-text bound only blocks in view still ride the
     // payload — a scroll's New In View needs them; a read ends at the bound.
     if (collectedText > ${MAX_COLLECTED_PAGE_TEXT} && !inView) {
@@ -597,10 +606,13 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     collectedText += length + 1
     if (inView) block.inView = true
+    else if (rectBelow(rect)) block.below = true
+    block.node = textNodes.length
+    textNodes.push(box)
     textBlocks.push(block)
   }
   // A frame's h1 is its first block at its iframe's place, not the page's.
-  if (heading) take({ kind: 'text', text: textOf(heading), ...(inFrame ? {} : { heading: true }) }, inViewport(heading))
+  if (heading) take({ kind: 'text', text: textOf(heading), ...(inFrame ? {} : { heading: true }) }, heading)
   // An iframe's place in the text (#378, ADR 0081): the page merge puts its
   // frame's own text here. The iframe itself carries no prose; one inside a
   // tag block takes the place just after it. Past the collected-text bound
@@ -617,7 +629,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // words of an <em> or <a> included, whitespace collapsed — and enters as
   // a text block when it reaches MIN_PROSE_RUN, where it sits: a container
   // holding an intro sentence and two paragraphs reads all three in order.
-  // A run is in view by a Range over its own nodes, never by its container.
+  // A run is placed by a Range over its own nodes, never by its container.
   const TAG_BLOCK_SELECTOR = 'p, li, h2, h3, tr, pre, dl'
   const TAG_BLOCKS = new Set(TAG_BLOCK_SELECTOR.split(', ').map((tag) => tag.toUpperCase()))
   const NEVER_PROSE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'SELECT', 'OPTION', 'SVG', 'MATH', 'IFRAME', 'OBJECT'])
@@ -629,11 +641,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // runs existed and the h1 is never read again. One around an iframe — an
   // embed's <span> — is descended too, so the frame keeps its place (#378).
   const joinsRun = (el) => INLINE.has(tagOf(el)) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR + ', iframe') === null
-  const runInView = (nodes) => {
+  const runRange = (nodes) => {
     const range = document.createRange()
     range.setStartBefore(nodes[0])
     range.setEndAfter(nodes[nodes.length - 1])
-    return rectInView(range.getBoundingClientRect())
+    return range
   }
   // A line break renders as a space; any other inline element as its own
   // rendered text, unpadded, so H<sub>4</sub> reads H4.
@@ -648,7 +660,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const closeRun = () => {
       if (run.length === 0) return
       const text = runText(run)
-      if (text.length >= MIN_PROSE_RUN) take({ kind: 'text', text }, runInView(run))
+      if (text.length >= MIN_PROSE_RUN) take({ kind: 'text', text }, runRange(run))
       run = []
     }
     for (const node of parent.childNodes) {
@@ -668,7 +680,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       if (tag === 'IFRAME') markFrame(node)
       if (node === heading || NEVER_PROSE.has(tag)) continue
       if (TAG_BLOCKS.has(tag)) {
-        take(rawBlock(node), inViewport(node))
+        take(rawBlock(node), node)
         node.querySelectorAll('iframe').forEach(markFrame)
       } else walk(node)
     }

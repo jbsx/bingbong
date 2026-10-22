@@ -3,7 +3,7 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -1384,5 +1384,87 @@ describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
     expect(readProgress({ action: choice('none'), slot: choice('none'), outcome: choice('not_yet'), progress: { type: 'noul', noul: 0.18 } })).toBe(0.18)
     expect(readProgress({ action: choice('none'), slot: choice('none'), outcome: choice('not_yet') })).toBeNull()
     expect(readProgress({ action: choice('none'), slot: choice('none') })).toBeNull()
+  })
+})
+
+describe('Text Further Down (#393, ADR 0086): the blocks below the view are targets, each with a Show Op, never page content', () => {
+  const DOCS: CommandPage = {
+    ...PAGE,
+    url: 'https://docs.python.org/3/library/json.html',
+    viewportText: ['json — JSON encoder and decoder'],
+    textBelow: [
+      { text: 'Basic Usage', frame: null, node: 4 },
+      { text: 'Sign in', frame: null, node: 5 },
+      { text: 'json — JSON encoder and decoder', frame: null, node: 6 },
+      { text: `Pretty printing: >>> print(json.dumps({'4': 5, '6': 7}, sort_keys=True, indent=4)) ${'x'.repeat(60)}`, frame: 'docs-frame', node: 7 },
+      { text: 'News', frame: null, node: 8 },
+    ],
+  }
+  const HOP: HopContext = { hop: 1, visited: [DOCS.url], actions: ['scroll down a screen (the address did not change)'], links: [{ label: 'News', href: 'https://docs.python.org/news' }] }
+  const pretty = DOCS.textBelow![3]!
+  const options = (page: CommandPage, hop?: HopContext) => commandQuestions('show me how to pretty print', page, hop).action.options
+  const shows = (offered: Readonly<Record<string, unknown>>) => Object.keys(offered).filter((label) => label.startsWith('show-'))
+  const button = (_: unknown, index: number): CommandRef => ({ ref: index + 1, kind: 'button', label: `B${index}`, href: null, inputType: null })
+
+  it('offers a show-N per block left after the labels and text already on the card, just before the page scroll, saying the first 80 characters', () => {
+    const offered = options(DOCS, HOP)
+    const labels = Object.keys(offered)
+    expect(shows(offered)).toEqual(['show-1', 'show-2'])
+    expect(labels.indexOf('show-2') + 1).toBe(labels.indexOf('scroll_up'))
+    expect(offered['show-1']).toBe('scroll until [text-1] "Basic Usage" is in view')
+    expect(offered['show-2']).toBe(`scroll until [text-2] ${JSON.stringify(pretty.text.slice(0, 80))} is in view`)
+  })
+
+  it('ends the state with the entries the card offers a Show Op for, each whole, after everything else', () => {
+    const questions = hopQuestions('show me how to pretty print', DOCS, HOP)
+    expect(commandState('show me how to pretty print', DOCS, HOP, undefined, undefined, questions).split('\n').slice(-3)).toEqual([
+      'Text further down the page, not on screen yet (number, text):',
+      '[text-1] "Basic Usage"',
+      `[text-2] ${JSON.stringify(pretty.text)}`,
+    ])
+  })
+
+  it('puts no entry on the state without the card it is asked beside, and none for a page with nothing below', () => {
+    expect(commandState('show me how to pretty print', DOCS)).not.toContain('Text further down')
+    const bare = { ...DOCS, textBelow: [] }
+    expect(commandState('x', bare, undefined, undefined, undefined, commandQuestions('x', bare))).not.toContain('Text further down')
+  })
+
+  it('stops the entries at 6000 characters of the lines they make', () => {
+    const page = { ...DOCS, textBelow: Array.from({ length: 30 }, (_, index) => ({ text: `${index}`.padEnd(300, 'w'), frame: null, node: index })) }
+    // `[text-N] "…"` is 312 characters for N under 10 and 313 past it: nineteen lines come to 5938, a twentieth to 6251.
+    expect(shows(options(page))).toHaveLength(19)
+  })
+
+  it('takes only the room the Choice has left under its 255 options: the refs win', () => {
+    // 120 buttons' clicks and right-clicks and the 12 ref-less options leave 3 of the 4 blocks room.
+    const roomy = options({ ...DOCS, refs: Array.from({ length: 120 }, button) })
+    expect(Object.keys(roomy)).toHaveLength(255)
+    expect(shows(roomy)).toEqual(['show-1', 'show-2', 'show-3'])
+    const full = { ...DOCS, refs: Array.from({ length: 130 }, button) }
+    expect(shows(options(full))).toEqual([])
+    expect(commandState('x', full, undefined, undefined, undefined, commandQuestions('x', full))).not.toContain('Text further down')
+  })
+
+  it('reads a show-N as a scroll down that brings that block into view, and names it so in "Done so far"', () => {
+    const answers = { action: choice('show-2'), slot: choice('none'), extent: choice('screen'), outcome: choice('not_yet') }
+    const command = readCommandAnswers(answers, 'show me how to pretty print', DOCS, HOP)
+    expect(command).toEqual({ verb: 'scroll_down', target: null, slot: null, show: pretty })
+    expect(doneAction(command, DOCS)).toBe(`scroll until ${JSON.stringify(pretty.text.slice(0, 80))} is in view`)
+    expect(readCommandAnswers({ ...answers, action: choice('show-9') }, 'x', DOCS, HOP).verb).toBe('none')
+  })
+
+  it('sets a Show Op aside by its block, never as the page scroll: the next card keeps the scroll and the other blocks, numbered as before', () => {
+    const shown = readCommandAnswers({ action: choice('show-1'), slot: choice('none'), extent: choice('screen') }, 'x', DOCS, HOP)
+    const aside = setAsideOf(shown, DOCS)
+    expect(aside).toEqual({ show: 'Basic Usage', address: 'https://docs.python.org/3/library/json.html' })
+    const hop = { ...HOP, setAside: [aside!] }
+    const questions = hopQuestions('show me how to pretty print', DOCS, hop)
+    expect(Object.keys(questions.action.options)).toEqual(expect.arrayContaining(['show-2', 'scroll_down']))
+    expect(Object.keys(questions.action.options)).not.toContain('show-1')
+    expect(commandState('x', DOCS, hop, undefined, undefined, questions).split('\n').slice(-2)).toEqual(['Text further down the page, not on screen yet (number, text):', `[text-2] ${JSON.stringify(pretty.text)}`])
+    // Set aside on the very call that answered it (#373): the next most probable label still offered.
+    const reread = readCommandAnswers({ action: { type: 'choice', choice: 'show-1', confidence: 0.7, probabilities: { 'show-1': 0.7, 'show-2': 0.2 } }, slot: choice('none'), extent: choice('screen') }, 'x', DOCS, hop)
+    expect(reread.show).toEqual(pretty)
   })
 })

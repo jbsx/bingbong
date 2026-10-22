@@ -133,6 +133,16 @@ describe("mergeFrames: a frame's text (#378, ADR 0081)", () => {
     expect(textsOf(mergeFrames(top, [inner, outer]).page)).toEqual(['Intro', 'First comment', 'Quoted tweet', 'Last comment', 'Outro'])
   })
 
+  it("names the frame each of a frame's blocks was read in, so a Show Op finds its node there; the top's own name none (#393)", () => {
+    const top = page('https://news.example/a', [iframe(0, { x: 0, y: 0 })], { textBlocks: [{ kind: 'text', text: 'Intro', below: true, node: 0 }, at(0)] })
+    const outer = withText(frame('outer', null, 0, 'https://comments.example/', []), [{ kind: 'text', text: 'A comment', below: true, node: 0 }])
+
+    expect(mergeFrames(top, [outer]).page.textBlocks).toEqual([
+      { kind: 'text', text: 'Intro', below: true, node: 0 },
+      { kind: 'text', text: 'A comment', below: true, node: 0, frame: 'outer' },
+    ])
+  })
+
   it('takes no text from a frame not read, a frame 2×2 px or smaller, or a nested frame outside the top viewport', () => {
     const top = page('https://a.example/', [iframe(0, { x: 0, y: 0 }), iframe(1, { x: 0, y: 400, width: 2, height: 2 })], { textBlocks: [at(0), at(1), at(2), text('Body')] })
     const outer = withText(frame('outer', null, 0, 'https://o.example/', [iframe(0, { x: 0, y: 2000 })]), [text('Outer'), at(0)])

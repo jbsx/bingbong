@@ -8,6 +8,7 @@ import {
   renderPageText,
   splitPageRead,
   type CollectedTextBlock,
+  type TextBelow,
 } from './pageText'
 
 export interface CollectedRect {
@@ -276,6 +277,8 @@ export interface PageSnapshot {
   viewportText: string[]
   /** How many more blocks were in view past those kept (#392); absent when none. */
   viewportTextMore?: number
+  /** Text Further Down (#393, ADR 0086): the rendered blocks below the view, each with where its node is; absent for a page read without it. */
+  textBelow?: TextBelow[]
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
@@ -363,16 +366,17 @@ function nullableBoolean(value: unknown): boolean | null {
 function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   if (typeof entry !== 'object' || entry === null) return null
   const block = entry as Record<string, unknown>
-  const inView = block.inView === true ? { inView: true } : {}
+  // Where the block is (#194, #393), and its node in its document's text registry.
+  const placement = { ...(block.inView === true ? { inView: true } : {}), ...(block.below === true ? { below: true } : {}), ...(isFiniteNumber(block.node) ? { node: block.node } : {}) }
   const text = (value: unknown): string => (typeof value === 'string' ? value : '')
   switch (block.kind) {
     case 'text':
       if (typeof block.text !== 'string') return null
-      return { kind: 'text', text: block.text, ...(block.heading === true ? { heading: true } : {}), ...inView }
+      return { kind: 'text', text: block.text, ...(block.heading === true ? { heading: true } : {}), ...placement }
     case 'pre':
-      return typeof block.text === 'string' ? { kind: 'pre', text: block.text, ...inView } : null
+      return typeof block.text === 'string' ? { kind: 'pre', text: block.text, ...placement } : null
     case 'row':
-      return Array.isArray(block.cells) ? { kind: 'row', cells: block.cells.map(text), ...inView } : null
+      return Array.isArray(block.cells) ? { kind: 'row', cells: block.cells.map(text), ...placement } : null
     case 'definitions':
       if (!Array.isArray(block.items)) return null
       return {
@@ -382,7 +386,7 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
           const { term, text: value } = item as Record<string, unknown>
           return typeof value === 'string' ? [{ term: term === true, text: value }] : []
         }),
-        ...inView,
+        ...placement,
       }
     case 'frame':
       return isFiniteNumber(block.slot) ? { kind: 'frame', slot: block.slot } : null
@@ -610,9 +614,9 @@ export function parsePageLinks(raw: unknown): PageLink[] {
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */
-function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText' | 'viewportTextMore'> {
+function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText' | 'viewportTextMore' | 'textBelow'> {
   if (page.textBlocks !== undefined) {
-    const { blocks, viewportText, viewportTextMore } = renderPageText(page.textBlocks)
+    const { blocks, viewportText, viewportTextMore, textBelow } = renderPageText(page.textBlocks)
     const whole = blocks.join('\n')
     return {
       textBlocks: blocks,
@@ -621,6 +625,7 @@ function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'tex
       textCut: page.textCut === true,
       viewportText,
       ...(viewportTextMore > 0 ? { viewportTextMore } : {}),
+      textBelow,
     }
   }
   // An older payload sent only the capped digest: it is all the text there is.

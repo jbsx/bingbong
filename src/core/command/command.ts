@@ -1,5 +1,6 @@
 import type { KeyPress } from '../ports/browser'
 import type { MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
+import type { TextBelow } from '../browser/pageText'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
@@ -98,6 +99,8 @@ export interface Command {
    * moves its fixed three notches.
    */
   readonly extent?: ScrollExtent
+  /** For `scroll_down`, a Show Op (#393, ADR 0086): the block of Text Further Down it brings into view, in place of an Extent. */
+  readonly show?: TextBelow
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
   /** The Mark Ask chose the target (#382, ADR 0084): the control the words named on the image of the page, which "Done so far" says. */
@@ -137,6 +140,8 @@ export interface CommandPage {
   readonly viewportText?: readonly string[]
   /** How many more blocks were in view past those the collect keeps (#392): the line says the cut; absent when none. */
   readonly viewportTextMore?: number
+  /** Text Further Down (#393, ADR 0086): the blocks below the view, the action card's targets; absent for a page read without them. */
+  readonly textBelow?: readonly TextBelow[]
   /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
   readonly dialog?: PageDialog
   /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
@@ -165,6 +170,7 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
     viewportText: snapshot.viewportText,
     ...(snapshot.viewportTextMore !== undefined ? { viewportTextMore: snapshot.viewportTextMore } : {}),
+    ...(snapshot.textBelow !== undefined ? { textBelow: snapshot.textBelow } : {}),
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
@@ -296,6 +302,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return `${command.mediaOp !== undefined ? describeMediaOp(command.mediaOp) : 'media'}${label(command.target)}`
     case 'scroll_up':
     case 'scroll_down': {
+      if (command.show !== undefined) return showOpAction(command.show)
       // A Scroll Op names its region (#383, ADR 0085); either scroll names its Extent when it has one.
       const op = scrollOpOfVerb(command.verb)!
       const how = command.extent !== undefined ? ` ${describeExtent(command.extent, op)}` : ''
@@ -318,6 +325,16 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     default:
       return command.verb
   }
+}
+
+/**
+ * A Show Op in words (#393, ADR 0086), the block by its first 80
+ * characters: the card's option with the entry's number `n`, and without
+ * it as the Feed and "Done so far" name what was done — one sentence, so
+ * the two never drift apart.
+ */
+export function showOpAction(block: TextBelow, n?: number): string {
+  return `scroll until ${n !== undefined ? `[text-${n}] ` : ''}${JSON.stringify(block.text.slice(0, 80))} is in view`
 }
 
 /** A music line as the Feed names it (#343): `play <words>`, `queue <words>`, `play <words> next`, `skip`, `loop off`, `volume 40`. */

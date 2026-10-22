@@ -407,7 +407,7 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'media', args: { ref: command.target, ...command.mediaOp } }
     case 'scroll_up':
     case 'scroll_down':
-      return { name: 'scroll', args: { direction: scrollOpOfVerb(command.verb), ...(command.target !== null ? { ref: command.target } : {}), ...command.extent } }
+      return { name: 'scroll', args: { direction: scrollOpOfVerb(command.verb), ...(command.target !== null ? { ref: command.target } : {}), ...command.extent, ...(command.show !== undefined ? { show: command.show.text } : {}) } }
     case 'press':
       return { name: 'press', args: { key: command.key?.key ?? 'Enter', times: command.times ?? 1, ...(command.key?.shift ? { shift: true } : {}) } }
     case 'read':
@@ -709,7 +709,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
     const questions = model === null ? null : dismissPhraseQuestions(text, page, { appliance: appliance() })
-    const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
+    const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page, undefined, undefined, undefined, questions), questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
     const [first, ...rest] = ladder
@@ -749,7 +749,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance() }), options.askId)
+    const questions = commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance() })
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step, undefined, questions), questions, options.askId)
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
     return { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
@@ -782,7 +783,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { page } = first
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
-    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step), whereQuestions(text, page, { appliance: appliance() }), `${first.ask ?? turnId}-where`)
+    const questions = whereQuestions(text, page, { appliance: appliance() })
+    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions), questions, `${first.ask ?? turnId}-where`)
     return { ...readingOf(result, text, page), whereAsk: true }
   }
 
@@ -805,12 +807,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const shot = await capture(textless)
     if (shot === null || shot.marks.length === 0) return null
     const marked = new Set(shot.marks.map((mark) => mark.ref))
+    const questions = markQuestions(text, page, { appliance: appliance(), marked })
     const result = await askJev(
       model,
       'mark',
       turnId,
-      commandState(text, page, undefined, step, marked),
-      markQuestions(text, page, { appliance: appliance(), marked }),
+      commandState(text, page, undefined, step, marked, questions),
+      questions,
       `${first.ask ?? turnId}-mark`,
       { [MARKS_IMAGE]: shot.jpeg },
     )
@@ -938,6 +941,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'scroll_up':
       case 'scroll_down': {
         const direction = scrollOpOfVerb(command.verb)!
+        // A Show Op (#393, ADR 0086): one evaluate bringing its block into view, never a wheel on the page.
+        if (command.show !== undefined) return browser.showText(command.show)
         if (command.target === null) return browser.scroll(direction, command.extent)
         // A Scroll Op (#383, ADR 0085): one evaluate on the region's own element, never the page.
         const result = await browser.scrollRegion(command.target, direction, command.extent ?? ONE_SCREEN)
@@ -1649,7 +1654,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { appliance: appliance() }))
+      const questions = hopQuestions(task.text, page, context, { appliance: appliance() })
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step, undefined, questions), questions)
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1927,7 +1933,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { appliance: appliance() }))
+    const questions = partialQuestions(words, page, { appliance: appliance() })
+    const result = await askJev(model, 'partial', null, commandState(words, page, undefined, undefined, undefined, questions), questions)
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.

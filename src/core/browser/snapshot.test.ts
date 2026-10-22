@@ -75,6 +75,20 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
     expect(snapshot.viewportText).toEqual(['Luggage', 'Ticket | Allowance'])
   })
 
+  it('carries the blocks below the view to the page a Command is read against, each with its node (#393)', () => {
+    const parsed = parseCollectedPage(
+      page({
+        textBlocks: [
+          { kind: 'text', text: 'Luggage', heading: true, inView: true, node: 0 },
+          { kind: 'pre', text: 'indent=4', below: true, node: 1 },
+          { kind: 'text', text: 'Bad node', below: true, node: 'x' } as never,
+        ],
+      }),
+    )
+
+    expect(commandPageOf(buildPageSnapshot(parsed)).textBelow).toEqual([{ text: 'indent=4', frame: null, node: 1 }])
+  })
+
   it('reads an older payload’s digest as the whole collected text', () => {
     const snapshot = buildPageSnapshot(page({ textDigest: 'Heading\nParagraph', viewportText: ['Paragraph'] }))
 

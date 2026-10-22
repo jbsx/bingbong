@@ -1865,6 +1865,25 @@ describe('a Scroll Op (#383, ADR 0085): one evaluate on the Scroll Region, the E
   })
 })
 
+describe('a Show Op (#393, ADR 0086): a block of Text Further Down scrolled into view', () => {
+  const EXAMPLE = { text: ">>> print(json.dumps({'4': 5, '6': 7}, sort_keys=True, indent=4))", frame: null, node: 7 }
+
+  it('"show me how to pretty print" reads show-1, brings that block into view and never scrolls the page, the next hop told what it did', async () => {
+    const { browser, decision, events, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, url: 'https://docs.python.org/3/library/json.html', title: 'json', textBelow: [EXAMPLE] }
+    decision.script.push({ answers: { action: choice('show-1'), slot: choice('none') } }, SURE_YES)
+
+    await runner.run('show me how to pretty print', { source: 'spoken', turnId: 'voice-1' })
+
+    expect(browser.shownTexts).toEqual([EXAMPLE])
+    expect(browser.scrolls).toEqual([])
+    expect(decision.requests[0]!.state.split('\n').slice(-2)).toEqual(['Text further down the page, not on screen yet (number, text):', `[text-1] ${JSON.stringify(EXAMPLE.text)}`])
+    const action = `scroll until ${JSON.stringify(EXAMPLE.text.slice(0, 80))} is in view`
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ action })
+    expect(decision.requests[1]!.state).toContain(`Done so far: ${action}`)
+  })
+})
+
 describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)', () => {
   const SEARCH = 'https://duckduckgo.com/?q=latest%20elon%20musk%20tweet'
   const POST = 'https://x.com/elonmusk/status/latest'

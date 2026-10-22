@@ -115,7 +115,8 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
   let textCut = top.textCut === true
   const textOf = (page: CollectedPage, key: string | null): CollectedTextBlock[] =>
     (page.textBlocks ?? []).flatMap((block) => {
-      if (block.kind !== 'frame') return [block]
+      // A frame's block keeps the frame it was read in (#393): its Show Op finds the node in that frame's registry.
+      if (block.kind !== 'frame') return [key === null ? block : { ...block, frame: key }]
       const child = childOf(key, block.slot)
       if (child === undefined || !joined.has(child.key)) return []
       if (child.page.textCut === true) textCut = true

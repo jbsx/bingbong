@@ -96,6 +96,26 @@ describe('renderPageText — tables, pre and definition lists are text (#235/AC3
   })
 })
 
+describe('renderPageText — Text Further Down (#393, ADR 0086)', () => {
+  it('lists the rendered blocks below the view in reading order with their node, held to 300 characters, never a hidden one, one in view, or a repeat', () => {
+    const collected: CollectedTextBlock[] = [
+      { kind: 'text', text: 'On screen', inView: true, node: 0 },
+      { kind: 'text', text: 'Hidden tab panel', node: 1 },
+      { kind: 'row', cells: ['flour', '200 g'], below: true, node: 2 },
+      { kind: 'text', text: 'y'.repeat(400), below: true, node: 3 },
+      { kind: 'text', text: 'On screen', below: true, node: 4 },
+      { kind: 'row', cells: ['flour', '200 g'], below: true, node: 5 },
+      { kind: 'pre', text: 'json.dumps(x, indent=4)\n', below: true, node: 6, frame: 'f1' },
+      { kind: 'text', text: 'No node', below: true },
+    ]
+    expect(renderPageText(collected).textBelow).toEqual([
+      { text: 'flour | 200 g', frame: null, node: 2 },
+      { text: 'y'.repeat(300), frame: null, node: 3 },
+      { text: 'json.dumps(x, indent=4)', frame: 'f1', node: 6 },
+    ])
+  })
+})
+
 describe('renderPageText — a prose run is a text block like any other (#265)', () => {
   it('renders a text block the collector took from a container as a paragraph, repeats dropped, and cuts it into parts', () => {
     const run = 'Wooden carrying case for both H4 and K1, probably made in 1938 for transporting them both to the Empire Exhibition.'

@@ -39,6 +39,24 @@ export type CollectedTextBlock = (
 ) & {
   /** Whether the block intersects the viewport right now (#194). */
   inView?: boolean
+  /** Whether the block is rendered and lies wholly below the viewport (#393, ADR 0086): a hidden block has no box and is never below. */
+  below?: boolean
+  /** The block's index in its document's text registry (#393): where a Show Op finds its node. */
+  node?: number
+  /** The frame the block was read in (#393, ADR 0081): set by the page merge; absent for the top document's own. */
+  frame?: string
+}
+
+/**
+ * A block of Text Further Down (#393, ADR 0086, CONTEXT.md): its text as
+ * the card quotes it, held to 300 characters, and where its Show Op finds
+ * it — the frame it was read in (null for the top document) and its index
+ * in that frame's text registry.
+ */
+export interface TextBelow {
+  readonly text: string
+  readonly frame: string | null
+  readonly node: number
 }
 
 /** The most text one Page Read result carries (ADR 0047). */
@@ -61,6 +79,8 @@ export interface PageText {
   viewportText: string[]
   /** How many more distinct blocks were in view past MAX_VIEWPORT_TEXT_BLOCKS (#392): the card says the cut. */
   viewportTextMore: number
+  /** The rendered blocks below the view (#393), in reading order, none repeating one before it or one in view. */
+  textBelow: TextBelow[]
 }
 
 function renderPre(text: string): string {
@@ -126,6 +146,7 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
   const viewportText: string[] = []
   const pastCap = new Set<string>()
   const prose = new Set<string>()
+  const below: TextBelow[] = []
   for (const block of collected) {
     const lines = renderBlock(block)
     if (lines.length === 0) continue
@@ -140,9 +161,19 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
       if (viewportText.includes(inView)) continue
       if (viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) viewportText.push(inView)
       else pastCap.add(inView)
+    } else if (block.below === true && block.node !== undefined) {
+      below.push({ text: lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH), frame: block.frame ?? null, node: block.node })
     }
   }
-  return { blocks, viewportText, viewportTextMore: pastCap.size }
+  // A block below that repeats one before it, or one in view, is said once: where it first is.
+  const said = new Set([...viewportText, ...pastCap])
+  const textBelow: TextBelow[] = []
+  for (const entry of below) {
+    if (said.has(entry.text)) continue
+    said.add(entry.text)
+    textBelow.push(entry)
+  }
+  return { blocks, viewportText, viewportTextMore: pastCap.size, textBelow }
 }
 
 /**
