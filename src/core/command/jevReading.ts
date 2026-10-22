@@ -83,6 +83,19 @@ const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAct
  */
 const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click play" — they name a button on the page: choose its click, never an op on the video or audio itself.'
 
+/**
+ * What the card's instructions add beside the Show Ops (ADR 0086): a
+ * question a block further down answers takes that block's show, where
+ * `none`'s "a question" kept it (replay 2026-10-22, "how do i install it"
+ * on the Playwright repo: none 0.27–0.35 10/10 → show-31, the README's
+ * Install table, 0.34–0.43 5/5; on 278 real asks 18 steady changes
+ * against a noise floor of 32). Saying "or read when it is in view" too
+ * made `read` a lure ("open page information", "show me the
+ * ingredients"), and narrowing `none` to "a question this page does not
+ * answer" beside it dropped clicks on wordless buttons to `none`.
+ */
+const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
+
 /** What the appliance holds that its verbs act on (#374): whether the Queue holds a current song. Absent when no Player is wired. */
 export interface Appliance {
   readonly queued: boolean
@@ -1066,7 +1079,7 @@ function actionQuestion(
   const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: ops.length === 0 ? instructions : `${instructions} ${CLICK_NAMES_A_BUTTON}`,
+    instructions: [instructions, ...(ops.length === 0 ? [] : [CLICK_NAMES_A_BUTTON]), ...(showOps.length === 0 || asked === 'where' ? [] : [QUESTION_TAKES_ITS_SHOW])].join(' '),
     options: {
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {
