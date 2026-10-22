@@ -1052,6 +1052,11 @@ details.feed-entry {
   color: var(--warn);
 }
 
+/* Unsure is tinted as the Task bar holds on it: peach, never the action's own grey. */
+.feed-progress--held {
+  color: var(--accent);
+}
+
 /* The Command being worked on: the loud bubble, edged in peach. */
 .feed-entry--working .feed-bubble {
   border: 1.5px solid var(--accent-edge);
@@ -1714,12 +1719,7 @@ details[open] > .settings-summary::before {
   padding: 0 0 34px 46px;
 }
 
-/* An address in a heading's line is set in mono; a Person's name in their colour. */
-.settings-hint-mono {
-  font-family: var(--font-mono);
-  font-size: 17px;
-}
-
+/* A Person's name in a heading's line is set in their colour. */
 .settings-hint-person[data-person='jaish'] {
   color: var(--jaish);
 }
@@ -2946,6 +2946,11 @@ button.idle-line {
   line-height: 0.95;
   letter-spacing: -0.03em;
   color: var(--fg);
+}
+
+/* Three digits keep inside the inner ring's free width. */
+.usage-ring-pct--wide {
+  font-size: calc(var(--ring) * 0.22);
 }
 
 .usage-ring-pct small {
@@ -4210,7 +4215,7 @@ button.idle-line {
 }
 
 /* A window's name stays on one line, cut short rather than wrapped, so its
-   figure keeps beside it like every other window's ("7-Day (Fable)"). */
+   figure keeps beside it like every other window's ("7d Fable"). */
 .usage-set-name {
   min-width: 0;
   overflow: hidden;

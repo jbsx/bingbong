@@ -444,6 +444,7 @@ async function createWindow(): Promise<BrowserWindow> {
     speech: speakingGate.tts,
     // `resume` reopens the Last Page when a restart lost it.
     lastPage: () => lastPageStore.get(),
+    dropLastPage: (url) => lastPageStore.drop(url),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.

@@ -82,6 +82,13 @@ describe('pageReadCard (#333)', () => {
     expect(card).toBe('## Lighthouse\n\nKeepers of the light.\n\nSay hello below.')
   })
 
+  it('leaves out a first line that only repeats the title, case and spaces aside (2026-10-22 audit)', () => {
+    expect(cardText(read(['# clipped drawer fixture — https://example.com/'], ['Clipped  Drawer fixture', 'The drawer opens.']))).toBe('## clipped drawer fixture\n\nThe drawer opens.')
+    expect(cardText(read(['# story fixture — https://example.com/'], ['The lighthouse', 'Keepers.']))).toBe('## story fixture\n\nThe lighthouse\n\nKeepers.')
+    // A page whose only words are its title keeps them.
+    expect(cardText(read(['# Hi — https://example.com/'], ['Hi']))).toBe('## Hi\n\nHi')
+  })
+
   it('carries the same words the Page Read speaks', () => {
     const result = read(['# Lighthouse — https://example.com/', 'signature 1a2b'], ['One.', 'Two.'])
     expect(cardText(result).replace(/^## .*\n\n/, '').split('\n\n')).toEqual(pageReadText(result).split('\n'))
@@ -128,19 +135,19 @@ describe('noResponseAnswer', () => {
   const jev = (action: Record<string, number>) => ({ model: 'jev', latencyMs: 1, confidence: { action: 0.9, slot: 0.9 }, probabilities: { action, slot: {} } })
 
   it('says what Jev read off its action card when nothing on the page fits it, and that it read nothing otherwise (#370)', () => {
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ 'click-9': 0.8, none: 0.2 }) })).toBe('No response.\n\nJev read “click [9]”, but nothing on this page fits it.')
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ volume: 0.7, none: 0.3 }) })).toBe('No response.\n\nJev read “volume”, but nothing on this page fits it.')
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ 'click-9': 0.8, none: 0.2 }) })).toBe('No response.\n\nNo command found. (Jev read “click [9]”, but nothing on this page fits it.)')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ volume: 0.7, none: 0.3 }) })).toBe('No response.\n\nNo command found. (Jev read “volume”, but nothing on this page fits it.)')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nNo command found. (Jev read none in the words.)')
   })
 
   it('names both readings after a Where Ask (#379, ADR 0082): the first none, then what the Where Ask read or why it gave nothing', () => {
     const first = jev({ none: 0.55, 'click-13': 0.2 })
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words, and nothing on this page to look for.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ none: 0.9 }) })).toBe('No response.\n\nNo command found. (A second look found nothing on this page to look for.)')
     expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ 'click-9': 0.6, none: 0.4 }) })).toBe(
-      'No response.\n\nJev read no command in the words, and where it would be read “click [9]”, but nothing on this page fits it.',
+      'No response.\n\nNo command found. (A second look read “click [9]”, but nothing on this page fits it.)',
     )
     expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: { model: 'jev', latencyMs: 800, reason: 'timeout' } })).toBe(
-      "No response.\n\nJev read no command in the words; asked where it would be, Jev didn't answer in time.",
+      "No response.\n\nNo command found. (Jev didn't answer in time on a second look.)",
     )
   })
 

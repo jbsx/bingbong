@@ -24,14 +24,14 @@ export const STOPPED_ANSWERS = {
   nothing: 'Nothing to stop.',
 } as const
 
-/** Why Jev gave no reading, in the words "No response." is followed by. */
+/** Why Jev gave no reading, as the "No command found." line gives it. */
 const JEV_UNAVAILABLE: Record<DecisionUnavailableReason, string> = {
-  timeout: "Jev didn't answer in time.",
-  transport: "Jev couldn't be reached.",
-  http: "Jev's service answered with an error.",
-  malformed: "Jev's answer couldn't be read.",
-  cancelled: "Jev's call was cancelled.",
-  failed: "Jev's call failed.",
+  timeout: "Jev didn't answer in time",
+  transport: "Jev couldn't be reached",
+  http: "Jev's service answered with an error",
+  malformed: "Jev's answer couldn't be read",
+  cancelled: "Jev's call was cancelled",
+  failed: "Jev's call failed",
 }
 
 /** What a reading that settled no Command was made of: the grammar's own error, and Jev's part in it. */
@@ -55,22 +55,30 @@ function actionWords(label: string): string {
     .replace(/_/g, ' ')
 }
 
-/** Why nothing was done: the most specific of the grammar's error, Jev being off or not answering, and Jev's reading off its action card. */
+/**
+ * Why nothing was done: the grammar's own error for a verb it knows, else
+ * one shape for every other case (2026-10-22 audit) — what happened, then
+ * why in a few words: Jev off or not answering, or Jev's reading off its
+ * action card, and the Where Ask's second look when there was one.
+ */
 function noResponseReason(facts: NoResponseFacts): string {
   if (facts.grammarError !== null) return facts.grammarError
-  if (!facts.jevAsked) return "Jev is off, and the words aren't a command the grammar knows — try “help”."
+  return `No command found. (${noCommandWhy(facts)}.)`
+}
+
+function noCommandWhy(facts: NoResponseFacts): string {
+  if (!facts.jevAsked) return "Jev is off, and the grammar doesn't know these words — try “help”"
   const jev = facts.jev
   if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
   const top = topAction(jev)
   // An unsure click on a Textless Ref asked again with the marked page (#382): the guess, and the page showing no command.
-  if (facts.marked !== undefined && facts.where === undefined) return `Jev was unsure of “${actionWords(top)}”, and shown the page it read no command.`
-  const first = top === 'none' ? 'Jev read no command in the words' : `Jev read “${actionWords(top)}”, but nothing on this page fits it`
+  if (facts.marked !== undefined && facts.where === undefined) return `Jev was unsure of “${actionWords(top)}”, and the marked page showed it none`
   const where = facts.where
-  // After a Where Ask (#379, ADR 0082), both readings: the first's none, then the Where Ask's.
-  if (where === undefined) return `${first}.`
-  if ('reason' in where) return `${first}; asked where it would be, ${JEV_UNAVAILABLE[where.reason]}`
+  if (where === undefined) return top === 'none' ? 'Jev read none in the words' : `Jev read “${actionWords(top)}”, but nothing on this page fits it`
+  // After a Where Ask (#379, ADR 0082), the second look's reading: the first read none.
+  if ('reason' in where) return `${JEV_UNAVAILABLE[where.reason]} on a second look`
   const found = topAction(where)
-  return found === 'none' ? `${first}, and nothing on this page to look for.` : `${first}, and where it would be read “${actionWords(found)}”, but nothing on this page fits it.`
+  return found === 'none' ? 'A second look found nothing on this page to look for' : `A second look read “${actionWords(found)}”, but nothing on this page fits it`
 }
 
 /** The action card label a reading gave the most probability; `none` when it gave none. */
@@ -208,7 +216,8 @@ export function controlsOnlyLine(result: string): string | null {
 export function pageReadCard(result: string): { text: string; failure: boolean } {
   const words = pageReadText(result)
   const controls = controlsOnlyLine(result)
-  const lines = words !== '' ? words.split('\n') : [controls ?? SPOKEN_FAILURES.empty]
+  const name = pageName(pageReadHead(result))
+  const lines = words !== '' ? withoutTitleLine(words.split('\n'), name) : [controls ?? SPOKEN_FAILURES.empty]
   const part = pageReadPart(result)
   if (part !== null && part.part < part.of) lines.push('…')
   const body = lines.reduce((text, line, index) => {
@@ -216,6 +225,11 @@ export function pageReadCard(result: string): { text: string; failure: boolean }
     const tableRow = line.startsWith('|') && lines[index - 1]!.startsWith('|')
     return `${text}${tableRow ? '\n' : '\n\n'}${line}`
   }, '')
-  const name = pageName(pageReadHead(result))
   return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' && controls === null }
+}
+
+/** The page's lines without a first that only repeats the Card's heading, case and spaces aside (2026-10-22 audit); a page with no other words keeps it. */
+function withoutTitleLine(lines: string[], name: string): string[] {
+  const bare = (text: string): string => text.toLowerCase().replace(/\s+/g, '')
+  return lines.length > 1 && name !== '' && bare(lines[0]!) === bare(name) ? lines.slice(1) : lines
 }

@@ -51,6 +51,15 @@ describe('the Idle Prompt reply', () => {
     expect(idleReplyDone(NO_REPLY)).toBe(false)
   })
 
+  it('holds a "No response." as it holds a failure: the Answer of a line read as no Command (2026-10-22 audit)', () => {
+    const reply = fold(sentReply('zorblax quux'), [
+      { type: 'command', turnId: 't1', text: 'zorblax quux', dropped: true, at: 1 },
+      { type: 'display', turnId: 't1', text: 'No response.\n\nNo command found in the words.', muted: true, at: 2 },
+    ])
+    expect(reply).toMatchObject({ kind: 'answer', answer: 'No response.\n\nNo command found in the words.', muted: true })
+    expect(idleReplyDone(reply)).toBe(false)
+  })
+
   it('stays none with nothing sent', () => {
     expect(fold(NO_REPLY, [{ type: 'display', turnId: 't1', text: 'x', at: 1 }])).toBe(NO_REPLY)
   })

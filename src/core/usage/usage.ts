@@ -17,7 +17,7 @@ export const USAGE_STALE_MS = 5 * 60 * 1000
 export interface UsageWindow {
   /** The dashboard's window id: `5h`, `7d`, `7d-fable`, `monthly`… */
   key: string
-  /** Its short caption: `5h`, `7d`, `7d-fab`, `mo`. */
+  /** Its one short name (`windowCaption`): `5h`, `7d`, `7d Fable`, `mo`. */
   caption: string
   /** The dashboard's own name for it: `5-Hour`, `7-Day (Fable)`. */
   label: string
@@ -118,10 +118,16 @@ function windowKey(window: Record<string, unknown>): string {
   return typeof key === 'string' ? key : ''
 }
 
-/** The dashboard's caption rule: a duration key cut to six characters, `mo` for monthly. */
+/**
+ * A window's one short name, on the Idle Screen and in Settings alike
+ * (2026-10-22 audit): a duration key as is, its qualifier a word after it
+ * (`7d-fable` is "7d Fable"); `mo` for monthly; else the key's last word.
+ */
 export function windowCaption(key: string): string {
   const lower = key.toLowerCase()
   if (lower.startsWith('month')) return 'mo'
+  const qualified = /^(\d+(?:h|d|mo|y))[-–_ ]+(.+)$/.exec(lower)
+  if (qualified !== null) return [qualified[1], ...qualified[2]!.split(/[-–_ ]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1))].join(' ')
   if (/^(\d+(h|d|mo|y)|month|day|week)/.test(lower)) return lower.slice(0, 6)
   return key.split(/[-– ]/).filter(Boolean).pop() ?? lower.slice(0, 6)
 }

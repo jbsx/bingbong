@@ -66,7 +66,7 @@ import {
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
-import { SPOKEN_FAILURES, failureLineOf, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
+import { DEAD_END_LANDINGS, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
@@ -227,6 +227,8 @@ export interface CommandRunnerDeps {
   speech?: Pick<TtsSpeaker, 'speak' | 'stop'>
   /** The Last Page (CONTEXT.md), for `resume`; absent, or null, leaves `resume` nothing to reopen. */
   lastPage?(): LastPage | null
+  /** A landing on no page worth going back to (not found, unavailable, empty): the Last Page leaves it (2026-10-22 audit). */
+  dropLastPage?(url: string): void
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
@@ -1177,6 +1179,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
         const covered = landedFailure === null && !stayed && reacting.tellsPopup === true && (await dialogOpenNow())
         const failure = landedFailure ?? (stayed ? 'dialogStayed' : covered ? 'popup' : null)
+        const deadEnd = landedFailure !== null && DEAD_END_LANDINGS.has(landedFailure) ? (landedUrl(result) ?? state.url) : undefined
+        if (deadEnd) deps.dropLastPage?.(deadEnd)
         if (!current()) return ended('superseded')
         if (stayed && reacting.deferStay === true) {
           // The next rung of the Dismissal Ladder is the runner's to fire (#354): nothing is said of this one.

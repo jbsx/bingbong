@@ -28,7 +28,7 @@ describe('settings page e2e', () => {
   let usage: UsageStandIn
 
   beforeAll(async () => {
-    // The owner's two providers, so the AI usage section lists their windows, "7-Day (Fable)" among them.
+    // The owner's two providers, so the AI usage section lists their windows, "7d Fable" among them.
     usage = await startUsageStandIn(2)
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-settings-'))
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ usageDashboard: usage.settings }), 'utf8')
@@ -136,7 +136,7 @@ describe('settings page e2e', () => {
         const found = await harness.dashboardEval<{ label: string; nameTop: number; figureTop: number; height: number; lineHeight: number }[]>(
           `[...document.querySelectorAll('.usage-set-label')].map((label) => { const name = label.querySelector('.usage-set-name'); const figure = label.querySelector('.usage-set-hint'); return { label: name.textContent, nameTop: Math.round(name.getBoundingClientRect().top), figureTop: Math.round(figure.getBoundingClientRect().top), height: name.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(name).lineHeight) || parseFloat(getComputedStyle(name).fontSize) * 1.5 } })`,
         )
-        return found.some((row) => row.label === '7-Day (Fable)') ? found : undefined
+        return found.some((row) => row.label === '7d Fable') ? found : undefined
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )

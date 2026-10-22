@@ -560,6 +560,13 @@ function WeightSection({
   )
 }
 
+/** The AI usage heading's line: the providers the card shows, in words, as every other heading speaks (2026-10-22 audit); the address stays in its field. */
+function usageHint(providers: readonly string[]): string {
+  if (providers.length === 0) return 'No providers shown'
+  const named = providers.length === 1 ? providers[0]! : `${providers.slice(0, -1).join(', ')} and ${providers.at(-1)!}`
+  return `${named} shown`
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -814,7 +821,7 @@ export function SettingsPage({
           }}
         />
 
-        <Section id="ai usage" title="AI usage" hint={draft.usageDashboard.url.trim() === '' ? 'No dashboard — the card is hidden' : <span className="settings-hint-mono">{draft.usageDashboard.url.trim()}</span>}>
+        <Section id="ai usage" title="AI usage" hint={draft.usageDashboard.url.trim() === '' ? 'No dashboard — the card is hidden' : usageHint(draft.usageDashboard.providers)}>
           <Field label="Dashboard">
             <input
               type="text"

@@ -37,7 +37,9 @@ export function foldIdleReply(reply: IdleReply, event: PipelineEvent): IdleReply
     return { ...reply, turns: [...reply.turns, event.turnId] }
   }
   if (event.type === 'display' && reply.kind !== 'sent' && event.turnId !== undefined && reply.turns.includes(event.turnId)) {
-    return { kind: 'answer', text: reply.text, task: reply.task, turns: reply.turns, answer: event.text, failure: event.failure === true, muted: event.muted === true }
+    // A line read as no Command keeps that mark under its Answer ("No response." and why): it stays to be read as a failure does.
+    const dropped = reply.kind === 'answer' && reply.dropped === true ? { dropped: true as const } : {}
+    return { kind: 'answer', text: reply.text, task: reply.task, turns: reply.turns, answer: event.text, failure: event.failure === true, muted: event.muted === true, ...dropped }
   }
   return reply
 }

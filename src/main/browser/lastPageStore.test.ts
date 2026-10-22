@@ -42,6 +42,32 @@ describe('the Last Page store', () => {
     expect(createLastPageStore(path).get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 7 })
   })
 
+  it('goes back to the page before a dropped landing, and keeps it while the pane shows that address (2026-10-22 audit)', () => {
+    const store = createLastPageStore(path, { now: () => 9 })
+    const seen: unknown[] = []
+    store.record({ url: 'https://example.com/a', title: 'A' })
+    store.onChange((page) => seen.push(page))
+    store.record({ url: 'https://example.com/missing', title: '' })
+    store.drop('https://example.com/missing')
+    store.record({ url: 'https://example.com/missing', title: 'Page not found' })
+
+    expect(store.get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 9 })
+    expect(seen).toEqual([{ url: 'https://example.com/missing', title: '', at: 9 }, { url: 'https://example.com/a', title: 'A', at: 9 }])
+    expect(createLastPageStore(path).get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 9 })
+    // Another page moves it again.
+    store.record({ url: 'https://example.com/b', title: 'B' })
+    expect(store.get()).toMatchObject({ url: 'https://example.com/b' })
+  })
+
+  it('drops to no Last Page when the dropped landing was the first', () => {
+    const store = createLastPageStore(path)
+    store.record({ url: 'https://example.com/missing', title: '' })
+    store.drop('https://example.com/missing')
+
+    expect(store.get()).toBeNull()
+    expect(createLastPageStore(path).get()).toBeNull()
+  })
+
   it('treats a corrupt file as no Last Page', () => {
     writeFileSync(path.replace('/nested', ''), 'not json', 'utf8')
 

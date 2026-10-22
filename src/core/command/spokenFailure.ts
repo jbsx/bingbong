@@ -17,8 +17,16 @@ import { reportFault } from '../trace/fault'
 // thrown failure is told by failureLineOf (#329), the same words on the
 // Feed, the Peek Card and the spoken line.
 
+/** The address a landing's outcome carries on its first line; null without one (a click's arrival). */
+export function landedUrl(result: string): string | null {
+  return landingFacts(result)?.url ?? null
+}
+
 /** What went wrong, as the spoken line names it. */
 export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack' | 'noPage' | 'popup' | 'unsure' | 'notHere'
+
+/** The landings that leave the pane on no page worth going back to: never the Last Page (2026-10-22 audit). */
+export const DEAD_END_LANDINGS: ReadonlySet<SpokenFailure> = new Set(['notFound', 'unavailable', 'empty'])
 
 export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   failed: "That didn't work.",

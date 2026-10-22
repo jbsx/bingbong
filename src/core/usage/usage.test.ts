@@ -57,7 +57,7 @@ describe('readUsage', () => {
 
   it("gives each window its caption, length and history, oldest first", () => {
     const claude = readUsage(usage, history).providers[2]
-    expect(claude.windows.map((w) => w.caption)).toEqual(['7d', '5h', '7d-fab'])
+    expect(claude.windows.map((w) => w.caption)).toEqual(['7d', '5h', '7d Fable'])
     expect(claude.windows[1]).toMatchObject({ key: '5h', label: '5-Hour', usedPct: 2, durationMs: 5 * 3_600_000 })
     expect(claude.windows[1].history).toEqual([
       [1_000, 2],
@@ -131,9 +131,10 @@ describe('sanitizeUsagePrefs', () => {
 })
 
 describe('windowCaption', () => {
-  it('captions as the dashboard does', () => {
+  it('gives each window one short name, a qualifier a word after its duration (2026-10-22 audit)', () => {
     expect(windowCaption('5h')).toBe('5h')
-    expect(windowCaption('7d-fable')).toBe('7d-fab')
+    expect(windowCaption('7d-fable')).toBe('7d Fable')
+    expect(windowCaption('7d_opus_max')).toBe('7d Opus Max')
     expect(windowCaption('monthly')).toBe('mo')
     expect(windowCaption('GPT-5.3-Codex-Spark')).toBe('Spark')
   })

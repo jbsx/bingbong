@@ -135,7 +135,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -181,6 +181,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     },
     ...(options?.speech ? { speech: options.speech } : {}),
     ...(options?.timer ? { timer: options.timer } : {}),
+    ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(player ? { player } : {}),
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
@@ -771,7 +772,7 @@ describe('a Command the Local Match cannot settle', () => {
     decision.script.push({ unavailable: 'failed' })
     await runner.run('lovely weather in lisbon', { source: 'spoken' })
     expect(browser.navigations).toEqual([])
-    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: "No response.\n\nJev's call failed.", muted: true })])
+    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: "No response.\n\nNo command found. (Jev's call failed.)", muted: true })])
     expect(events.some((event) => event.type === 'speak' || event.type === 'error')).toBe(false)
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(speech.spoken).toEqual([])
@@ -795,7 +796,7 @@ describe('a Command the Local Match cannot settle', () => {
 
     expect(types(events)).toEqual(['command', 'display', 'done'])
     expect(events[0]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
-    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nJev read no command in the words, and nothing on this page to look for.', muted: true })
+    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nNo command found. (A second look found nothing on this page to look for.)', muted: true })
     expect(events[0]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
@@ -817,14 +818,14 @@ describe('an Utterance read as no Command answers "No response." and why (owner 
   it('says Jev is off when no Jev is configured', async () => {
     const { events, runner } = harness({ decision: null })
     await runner.run('zorblax the quux thing')
-    expect(answers(events)).toEqual(["No response.\n\nJev is off, and the words aren't a command the grammar knows — try “help”."])
+    expect(answers(events)).toEqual(["No response.\n\nNo command found. (Jev is off, and the grammar doesn't know these words — try “help”.)"])
   })
 
   it('says why Jev gave no reading', async () => {
     const { decision, events, runner } = harness()
     decision.script.push({ unavailable: 'timeout' })
     await runner.run('zorblax the quux thing')
-    expect(answers(events)).toEqual(["No response.\n\nJev didn't answer in time."])
+    expect(answers(events)).toEqual(["No response.\n\nNo command found. (Jev didn't answer in time.)"])
   })
 })
 
@@ -1718,13 +1719,16 @@ describe('a Command whose output is speech', () => {
       ['https://example.com/down', '503 Service Unavailable', SPOKEN_FAILURES.unavailable],
       ['https://accounts.example.com/signin', 'Sign in', SPOKEN_FAILURES.blocker],
     ]
+    const dropped: string[] = []
     for (const [url, title, line] of landings) {
       const speech = new FakeSpeech()
-      const { browser, runner } = harness({ speech })
+      const { browser, runner } = harness({ speech, dropLastPage: (page) => dropped.push(page) })
       browser.navigate = async () => `navigated: url=${url} title=${JSON.stringify(title)}\nsignature 1a2b3c4d\npage text:\nsome text`
       await runner.run(`open ${url}`)
       expect(speech.spoken.map((spoken) => spoken.text)).toEqual([line])
     }
+    // A page that names nothing, or is down, is no Last Page to resume (2026-10-22 audit); a wall stands in front of a real one.
+    expect(dropped).toEqual(['https://example.com/missing', 'https://example.com/down'])
     const speech = new FakeSpeech()
     const { browser, runner } = harness({ speech })
     browser.navigate = async () => 'navigated: url=https://example.com/ title="Home"\nsignature 1a2b3c4d'
@@ -1971,7 +1975,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decision.requests).toHaveLength(2)
     expect(commands(events)).toEqual([expect.objectContaining({ dropped: true, task: expect.objectContaining({ hop: 0 }) })])
     expect(commands(events)[0]).not.toHaveProperty('action')
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read no command in the words, and nothing on this page to look for.' })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nNo command found. (A second look found nothing on this page to look for.)' })
     expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'none' }), expect.objectContaining({ verb: 'none', whereAsk: true, ended: 'terminal' })])
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
@@ -1981,7 +1985,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     decision.script.push({ answers: { action: choice('click-9', 0.8, { 'click-9': 0.8, none: 0.2 }), slot: choice('none') } })
     await runner.run('the ninth thing please', { source: 'spoken' })
     expect(browser.clicks).toEqual([])
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read “click [9]”, but nothing on this page fits it.' })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nNo command found. (Jev read “click [9]”, but nothing on this page fits it.)' })
   })
 
   it('AC3: none at hop 1 with no sure yes ends unsure — the page stays, the line says so, the Feed says not sure', async () => {
@@ -3071,7 +3075,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     unfit.decision.script.push(reading({ 'click-9': 0.8, none: 0.2 }))
     await unfit.runner.run('the ninth thing', { source: 'spoken' })
     expect(unfit.decision.requests).toHaveLength(1)
-    expect(displays(unfit.events)).toEqual(['No response.\n\nJev read “click [9]”, but nothing on this page fits it.'])
+    expect(displays(unfit.events)).toEqual(['No response.\n\nNo command found. (Jev read “click [9]”, but nothing on this page fits it.)'])
   })
 
   it('AC5: a Where Ask that reads none ends the line "No response." with both readings in its reason', async () => {
@@ -3079,7 +3083,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     decision.script.push(NONE_OVER_SETTINGS, reading({ none: 0.9, 'click-1': 0.05 }))
     await runner.run('thank you', { source: 'spoken', turnId: 't1' })
     expect(browser.clicks).toEqual([])
-    expect(displays(events)).toEqual(['No response.\n\nJev read no command in the words, and nothing on this page to look for.'])
+    expect(displays(events)).toEqual(['No response.\n\nNo command found. (A second look found nothing on this page to look for.)'])
     expect(commands(events)).toEqual([expect.objectContaining({ turnId: 't1', dropped: true })])
     expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
       ['none', undefined, undefined],
@@ -3093,7 +3097,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
       decision.script.push(NONE_OVER_SETTINGS, { unavailable: reason })
       await runner.run('turn on ambient mode', { source: 'spoken', turnId: 't1' })
       expect(browser.clicks).toEqual([])
-      expect(displays(events)).toEqual([`No response.\n\nJev read no command in the words; asked where it would be, ${reason === 'timeout' ? "Jev didn't answer in time." : "Jev's service answered with an error."}`])
+      expect(displays(events)).toEqual([`No response.\n\nNo command found. (${reason === 'timeout' ? "Jev didn't answer in time" : "Jev's service answered with an error"} on a second look.)`])
       expect(decisions(records)[1]).toMatchObject({ whereAsk: true, verb: 'none', reading: 'best_guess', jevAsked: true, ask: 't1-where', jev: { reason }, ended: 'unavailable' })
     }
   })
@@ -3940,7 +3944,7 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
     await runner.run('thank you', { source: 'spoken', turnId: 't1' })
 
     expect(browser.clicks).toEqual([])
-    expect(displays(events)).toEqual(['No response.\n\nJev read no command in the words, and nothing on this page to look for.'])
+    expect(displays(events)).toEqual(['No response.\n\nNo command found. (A second look found nothing on this page to look for.)'])
     expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.markAsk, record.ended])).toEqual([
       ['none', undefined, undefined, undefined],
       ['none', true, undefined, undefined],
@@ -4005,7 +4009,7 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
       await runner.run('the cog wheel thing', { source: 'spoken', turnId: 't1' })
 
       expect(browser.clicks).toEqual([])
-      expect(displays(events)).toEqual(['No response.\n\nJev was unsure of “click [1]”, and shown the page it read no command.'])
+      expect(displays(events)).toEqual(['No response.\n\nNo command found. (Jev was unsure of “click [1]”, and the marked page showed it none.)'])
       expect(decisions(records).map((record) => [record.verb, record.markAsk, record.ended])).toEqual([
         ['click', undefined, undefined],
         ['none', true, 'terminal'],

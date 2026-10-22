@@ -53,12 +53,12 @@ function arc(radius: number, from: number, to: number): string {
   return `M${at(from)} A${radius},${radius} 0 ${end - from > 0.5 ? 1 : 0} 1 ${at(end)}`
 }
 
-/** A tick across the ring at a share of it: where the window has run to. */
-function Tick({ radius, share, length, className }: { radius: number; share: number; length: number; className: string }) {
+/** A tick across the ring at a share of it, from radius `from` out to `to`: where the window has run to. */
+function Tick({ from, to, share, className }: { from: number; to: number; share: number; className: string }) {
   const angle = -Math.PI / 2 + 2 * Math.PI * share
   const x = (r: number): number => 114 + r * Math.cos(angle)
   const y = (r: number): number => 114 + r * Math.sin(angle)
-  return <line className={className} x1={x(radius - length)} y1={y(radius - length)} x2={x(radius + length)} y2={y(radius + length)} />
+  return <line className={className} x1={x(from)} y1={y(from)} x2={x(to)} y2={y(to)} />
 }
 
 /**
@@ -81,13 +81,14 @@ function Ring({ gauge, inner, now }: { gauge: UsageWindow | null; inner: UsageWi
           <>
             <circle className="usage-ring-inner-track" cx={114} cy={114} r={76} />
             {innerUsed > 0 ? <path className="usage-ring-inner" d={arc(76, 0, innerUsed)} /> : null}
-            {innerRun !== null ? <Tick radius={76} share={innerRun} length={9} className="usage-ring-tick usage-ring-tick--inner" /> : null}
+            {/* From the band's inner edge outward, never into the number's room (2026-10-22 audit: at 9 o'clock it read as a minus before "100"). */}
+            {innerRun !== null ? <Tick from={72} to={88} share={innerRun} className="usage-ring-tick usage-ring-tick--inner" /> : null}
           </>
         ) : null}
-        {run !== null ? <Tick radius={100} share={run} length={14} className="usage-ring-tick" /> : null}
+        {run !== null ? <Tick from={86} to={114} share={run} className="usage-ring-tick" /> : null}
       </svg>
       <span className="usage-ring-middle">
-        <span className="usage-ring-pct">
+        <span className={used !== null && Math.round(gauge!.usedPct) >= 100 ? 'usage-ring-pct usage-ring-pct--wide' : 'usage-ring-pct'}>
           {used === null ? '–' : Math.round(gauge!.usedPct)}
           {used !== null ? <small>%</small> : null}
         </span>

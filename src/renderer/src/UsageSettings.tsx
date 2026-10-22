@@ -80,27 +80,28 @@ function ProviderMetrics({
           {provider.windows.map((window) => (
             <div key={window.key} className="usage-set-row">
               <span className="usage-set-label">
+                {/* The name the Idle Screen gives it; the dashboard's own in the tooltip. */}
                 <span className="usage-set-name" title={window.label}>
-                  {window.label}
+                  {window.caption}
                 </span>
                 <span className="usage-set-hint">{Math.round(window.usedPct)}%</span>
               </span>
               <input
                 type="checkbox"
-                aria-label={`Show ${provider.name} ${window.label}`}
+                aria-label={`Show ${provider.name} ${window.caption}`}
                 checked={!prefs.hidden.includes(window.key)}
                 onChange={(event) => onPrefs({ ...prefs, hidden: toggle(prefs.hidden, window.key, !event.target.checked) })}
               />
               <input
                 type="radio"
                 name={`usage-gauge-${provider.name}`}
-                aria-label={`Gauge ${provider.name} ${window.label}`}
+                aria-label={`Gauge ${provider.name} ${window.caption}`}
                 checked={gauge?.key === window.key}
                 onChange={() => onPrefs({ ...prefs, gauge: window.key, hidden: toggle(prefs.hidden, window.key, false) })}
               />
               <input
                 type="checkbox"
-                aria-label={`Chart ${provider.name} ${window.label}`}
+                aria-label={`Chart ${provider.name} ${window.caption}`}
                 checked={chart.includes(window.key)}
                 onChange={(event) => onPrefs({ ...prefs, chart: toggle(chart, window.key, event.target.checked) })}
               />
