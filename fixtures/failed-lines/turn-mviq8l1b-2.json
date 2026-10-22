@@ -7,5 +7,7 @@
   "happened": "Typed on the YouTube watch page (kt_0b4RwerY) on the #381 build, menus shut, 47 refs on the card: hop 0 none 0.47, the Where Ask read menu-11 (right-click the video) 0.25 over click-19 (the player Settings, hasPopup=menu expanded=false) 0.23; the context menu opened (Loop, Miniplayer, Copy video URL…), hop 1 none → Escape, the runner-up right-clicked the masthead Settings [7] (turn-mviq8n71-5), hop 3 right-clicked the video again 0.21, hops 4–5 none: not_found after 6 hops and 5 actions in 6.6 s. Fourth line of this shape after turn-mvilvxyb-2, cli-3-mvinjs78 and cli-3-mvinc2ox. Replayed unchanged 4×: click-19 won 3 of 4 at 0.21–0.31, so the read is a coin flip at the margin. Writing the ref's hasPopup=menu as 'opens a menu' and the right-click options as 'for the context menu on it' read click-19 in 6 of 6 at 0.33–0.40 (both cards), corpus 32/32",
   "meant": "Open the player Settings menu [19] and switch Ambient mode on",
   "log": "decision-1792624301937-1.jsonl",
-  "claimedBy": "#388"
+  "claimedBy": "#388",
+  "fixedBy": "c8c61f0",
+  "case": "turn-mviq8l1b-2"
 }

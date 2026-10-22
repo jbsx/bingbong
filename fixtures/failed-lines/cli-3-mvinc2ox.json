@@ -7,5 +7,7 @@
   "happened": "Live CLI under Xvfb with #380's collector, YouTube watch page, menus shut: hop 0 none 0.56, the Where Ask read menu-7 (right-click the video) 0.35 over click-13 (the player Settings) 0.17; hop 1 clicked the hidden 'Show cards InfoShopping' 0.81 (not clicked: inside a hidden container) and the Task ended wall",
   "meant": "Open the player Settings menu and switch Annotations off",
   "log": "decision-1792619435991-1.jsonl",
-  "claimedBy": "#388"
+  "claimedBy": "#388",
+  "fixedBy": "c8c61f0",
+  "case": "cli-3-mvinjs78"
 }
