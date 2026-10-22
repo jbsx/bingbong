@@ -144,3 +144,28 @@ Consequences: the remembered songs live in `songs.json` beside
 `lexicon.json` and survive a restart; the Queue still does not. The
 decision record marks a search's pick `remembered` or `searched`, and
 `pnpm perf:report` prints how often the search was skipped.
+
+## Amendment 2026-10-22 — the names a line sounds like go on the card (#396)
+
+The Name Match read the Slot after Jev chose it, so Jev read the words as
+heard: on "Search NKBH D" the free models read `none` where "Search MKBHD"
+passes the gate. The option this ADR deferred, giving Jev the candidates,
+is opened the cheap way.
+
+- **The Hearing.** Before the ask, the whole spoken transcript is read as
+  a Slot is: by sound, against the Page Terms then the Learned Terms, at
+  most three names, no two over the same words. Each goes on the card
+  beside the words as heard, on one line after the transcript and as a
+  mark on the Slot span it was heard in. Jev keeps the choice; the Name
+  Match rewrites the Slot it chose, as before. A typed line is exact and
+  hears nothing.
+- **A carried name settles its own words only.** A Slot that carried any
+  candidate as spelled was matched against nothing. Now the words a
+  candidate spells are left alone and the rest of the Slot is still read.
+
+Measured on the free models: the MKBHD search goes from failing on both
+to passing on both. The Canywast click passes Mammoth and stays red on
+Elephant under every wording tried; the one card it reads right is the
+corrected words with no line at all, on a three-line blank-page card. A
+weaker model thrown by any line is not a card problem to chase by
+removing lines.

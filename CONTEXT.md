@@ -390,7 +390,9 @@ Terms, by sound. The nearest within tolerance is the spelling the Command
 carries; what was heard stays on the decision record. An address and a key
 are never matched, a typed line never is, and nothing asks "did you mean":
 a wrong Name Match is a Misfire. It is how the recogniser is allowed to be
-wrong about a name.
+wrong about a name. Before the ask, the Hearing says on the card which of a
+spoken line's words sound like a name, and which; the match after the ask
+stays.
 _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
