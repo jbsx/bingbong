@@ -157,12 +157,9 @@ describe.skipIf(!canDriveChrome)('Scroll Regions in a real Chrome (#383)', () =>
     await chrome.evaluate('window.scrollTo(0, 0)')
     await controller.collectPage()
 
-    await controller.scroll('down', { rung: 'screen', screens: 1 })
-    // Six notches of 120 px: a 700 px screen over a notch, rounded up.
-    await until(() => chrome.evaluate<boolean>('window.scrollY === 720'), 'a screen of notches')
-    await controller.scroll('down', { rung: 'end' })
-    await until(() => chrome.evaluate<boolean>('window.scrollY === 2300'), 'the End key')
-    await controller.scroll('up', { rung: 'end' })
-    await until(() => chrome.evaluate<boolean>('window.scrollY === 0'), 'the Home key')
+    // Six notches of 120 px: a 700 px screen over a notch, rounded up. The outcome is read where the scroll stops, not on its first frame.
+    expect((await controller.scroll('down', { rung: 'screen', screens: 1 })).split('\n')[0]).toBe('scrolled down: x=0 y=720')
+    expect((await controller.scroll('down', { rung: 'end' })).split('\n')[0]).toBe('scrolled down: x=0 y=2300')
+    expect((await controller.scroll('up', { rung: 'end' })).split('\n')[0]).toBe('scrolled up: x=0 y=0')
   })
 })

@@ -854,13 +854,14 @@ export function whereQuestions(text: string, page: CommandPage, { appliance }: {
 
 /**
  * The Textless Refs on a card (#382, ADR 0084): the refs it offers a click
- * on whose label, as Jev is shown it, has no words — an icon the page
+ * on — or a Scroll Op, a region being found by its mark too (#383, ADR
+ * 0085) — whose label, as Jev is shown it, has no words: an icon the page
  * named nothing and the browser named nothing either.
  */
 export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): number[] {
   const offeredClicks = new Set(Object.keys(questions.action.options).flatMap((label) => {
     const acted = refActionOf(label)
-    return acted?.act === 'click' ? [acted.n] : []
+    return acted?.act === 'click' || acted?.act === 'down' ? [acted.n] : []
   }))
   return page.refs.filter((ref) => offeredClicks.has(ref.ref) && shownLabel(ref, page).trim() === '').map((ref) => ref.ref)
 }
@@ -945,7 +946,7 @@ function actionQuestion(
         }),
       ),
       ...Object.fromEntries(ops.map(([op, ref]) => [`${op}-${ref.ref}`, mediaOpDescription(op, ref.ref, shownLabel(ref, pageRead))])),
-      ...Object.fromEntries(scrolls.map(([op, ref]) => [`${op}-${ref.ref}`, scrollOpDescription(op, ref.ref, ref.label)])),
+      ...Object.fromEntries(scrolls.map(([op, ref]) => [`${op}-${ref.ref}`, scrollOpDescription(op, ref.ref, ref.label, marked?.has(ref.ref) === true)])),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(refLess),

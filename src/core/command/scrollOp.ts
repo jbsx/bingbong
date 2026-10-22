@@ -18,9 +18,20 @@ export function scrollOpsOf(_facts: RegionFacts): ScrollOp[] {
   return [...SCROLL_OPS]
 }
 
-/** Each op's line on the action card: a whole action naming the region by number and label (ADR 0085). */
-export function scrollOpDescription(op: ScrollOp, ref: number, label: string): string {
-  return `scroll [${ref}] ${JSON.stringify(label)} ${op}, the extent Choice saying how far`
+/**
+ * Each op's line on the action card: a whole action naming the region by
+ * number and label (ADR 0085), or by its mark on the Mark Ask's image (ADR
+ * 0084), and saying what kind of thing it is — a region's label is a
+ * heading or its first words, which never say "sidebar". Measured
+ * 2026-10-22 on a live Reddit card, three replays each: "scroll the
+ * sidebar to the bottom" read the region's op 0.23–0.29 under the page's
+ * `scroll_down` as `scroll [40] "COMMUNITY BOOKMARKS" down`, 0.87–0.89 as
+ * this; "scroll down" and "scroll to the bottom of the page" stayed the
+ * page's at 1.00 either way.
+ */
+export function scrollOpDescription(op: ScrollOp, ref: number, label: string, marked = false): string {
+  const named = marked ? `[${ref}], the control marked ${ref},` : `[${ref}] ${JSON.stringify(label)},`
+  return `scroll ${op} inside ${named} a part of the page that scrolls on its own — a sidebar, panel, feed or chat — not the page itself; the extent Choice saying how far`
 }
 
 /** The screens each fixed rung moves. */

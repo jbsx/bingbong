@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { RegionFacts } from '../browser/snapshot'
 import { describeCommand, type Command, type CommandPage, type CommandRef } from './command'
-import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, partialQuestions, readCommandAnswers, refIdentityOf, setAsideOf, type HopContext } from './jevReading'
+import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, markQuestions, partialQuestions, textlessRefsOf, readCommandAnswers, refIdentityOf, setAsideOf, type HopContext } from './jevReading'
 
 // Scroll Regions (#383, ADR 0085): an element the page scrolls on its own
 // is a ref of its own kind, with no click, carrying two Scroll Ops; how far
@@ -38,9 +38,16 @@ describe('Scroll Ops on the action card: down-N and up-N, whatever the position,
   it('offers both ops on every region, each a whole line naming the ref, at the top and at the end alike', () => {
     for (const facts of [{}, { top: 4400 }, { top: 1760 }]) {
       const card = commandQuestions('scroll the chat down', withFacts(facts)).action.options
-      expect(card['down-12']).toBe('scroll [12] "Live chat" down, the extent Choice saying how far')
-      expect(card['up-12']).toBe('scroll [12] "Live chat" up, the extent Choice saying how far')
+      expect(card['down-12']).toBe('scroll down inside [12] "Live chat", a part of the page that scrolls on its own — a sidebar, panel, feed or chat — not the page itself; the extent Choice saying how far')
+      expect(card['up-12']).toBe('scroll up inside [12] "Live chat", a part of the page that scrolls on its own — a sidebar, panel, feed or chat — not the page itself; the extent Choice saying how far')
     }
+  })
+
+  it('makes a region with no words a Textless Ref (ADR 0084): the Mark Ask names it by its mark', () => {
+    const blank = { ...PAGE, refs: [...PAGE.refs, { ...CHAT, ref: 13, label: '' }] }
+    expect(textlessRefsOf(commandQuestions('scroll that down', blank), blank)).toEqual([13])
+    expect(markQuestions('scroll that down', blank, { marked: new Set([13]) }).action.options['down-13']).toMatch(/^scroll down inside \[13\], the control marked 13, a part of the page/)
+    expect(commandState('scroll that down', blank, undefined, undefined, new Set([13])).split('\n')).toContain('[13] region, the control marked 13 at top 12 screens')
   })
 
   it('offers a region no click, no type and no right-click', () => {

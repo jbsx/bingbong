@@ -378,7 +378,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // scrolls — that passes ADR 0062's rect rule, with at least half its box
   // in the viewport and at least half a view of content hidden. Vertical
   // only; never the body, whose scroll is the page's own.
-  const REGION_TAGS = 'div, ol, ul'
+  const REGION_TAGS = new Set(['DIV', 'OL', 'UL'])
   const isScrollRegion = (el) => {
     const view = el.clientHeight
     if (view < 1 || el.scrollHeight - view < view / 2) return false
@@ -388,10 +388,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const shown = (Math.min(rect.bottom, vh) - Math.max(rect.top, 0)) * (Math.min(rect.right, vw) - Math.max(rect.left, 0))
     return shown * 2 >= rect.width * rect.height
   }
-  // Every Scroll Region of a tree and the open shadow roots under it.
+  // Every Scroll Region of a tree and the open shadow roots under it, in one walk.
   const regionsIn = (root, out) => {
-    for (const el of root.querySelectorAll(REGION_TAGS)) if (isScrollRegion(el)) out.push(el)
-    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) regionsIn(el.shadowRoot, out)
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) regionsIn(el.shadowRoot, out)
+      if (REGION_TAGS.has(el.tagName) && isScrollRegion(el)) out.push(el)
+    }
     return out
   }
   // Document order across open shadow roots, as candidatesIn walks it: a
@@ -1200,6 +1202,36 @@ export function readinessWaitScript(ms: number): string {
     const state = window.__bingbongReady
     return state && typeof state.wait === 'function' ? state.wait(${ms}) : 'none'
   })()`
+}
+
+/**
+ * A page scroll's end (#383): Chromium animates the End and Home keys and
+ * the wheel, and the readiness watch hears the first frame, so the scroll
+ * is read once it has stopped — at the first `scrollend` of any scroller,
+ * or once no scroll event has come for `stillMs` — and at `capMs` at most.
+ * Evaluated with `awaitPromise`.
+ */
+export function scrollSettledScript(stillMs: number, capMs: number): string {
+  return `new Promise((resolve) => {
+    /* SCROLL_SETTLED */
+    let still = null
+    const end = (settled) => {
+      window.removeEventListener('scroll', onScroll, { capture: true })
+      window.removeEventListener('scrollend', onEnd, { capture: true })
+      clearTimeout(still)
+      clearTimeout(cap)
+      resolve(settled)
+    }
+    const onEnd = () => end(true)
+    const onScroll = () => {
+      clearTimeout(still)
+      still = setTimeout(() => end(true), ${stillMs})
+    }
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    window.addEventListener('scrollend', onEnd, { capture: true, passive: true })
+    onScroll()
+    const cap = setTimeout(() => end(false), ${capMs})
+  })`
 }
 
 /**

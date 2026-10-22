@@ -65,6 +65,7 @@ import {
   overlayShownRefsScript,
   readinessArmScript,
   readinessWaitScript,
+  scrollSettledScript,
   refIsShownScript,
   type ClickPrep,
   type CoverNaming,
@@ -921,6 +922,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   const SCROLL_TICKS = 3
+  /** How long no scroll event says an Extent's page scroll has stopped (#383), and how long it is waited for at most. */
+  const SCROLL_STILL_MS = 150
+  const SCROLL_SETTLE_CAP_MS = 1000
   // One wheel-notch worth per tick (~120px in Chromium). Small steps matter:
   // a step larger than element height + viewport height skips past elements
   // entirely on short viewports, so they never appear in a snapshot.
@@ -1105,7 +1109,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       }
     }
     // The scroll's first effect, or the cap (#324); no tick is paced.
-    await awaitReadiness('scroll')
+    if ((await awaitReadiness('scroll')) === 'scroll' && extent !== undefined) {
+      // An Extent's scroll is long, and Chromium animates it (#383): it is read where it stops, not on its first frame.
+      await evaluateInPage(scrollSettledScript(SCROLL_STILL_MS, SCROLL_SETTLE_CAP_MS), { awaitPromise: true }).catch((error: unknown) => reportFault('browser.createCdpBrowserController.scrollSettled', error))
+    }
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
     try {
