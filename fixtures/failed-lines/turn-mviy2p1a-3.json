@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mviy2p1a-3",
+  "transcript": "scroll the chat up a bit",
+  "at": 1792637486694,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "after up-38 moved YouTube's live chat at end → scrolled 47%, hop 1's Verdict read yes at confidence 0.66 over the bare position change; up-38 fired again and the chat overshot to the top",
+  "meant": "done after one scroll up a bit",
+  "log": "decision-1792637449722-1.jsonl",
+  "claimedBy": "#383",
+  "fixedBy": "d89e7b1",
+  "case": "turn-mviy2p1a-3"
+}

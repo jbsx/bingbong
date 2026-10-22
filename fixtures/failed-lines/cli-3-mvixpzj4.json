@@ -1,0 +1,13 @@
+{
+  "turnId": "cli-3-mvixpzj4",
+  "transcript": "scroll the sidebar to the bottom",
+  "at": 1792636894054,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Reddit's sidebar was a region ref [40] \"COMMUNITY BOOKMARKS\" and down-40 was offered, but Jev read the page's scroll_down 0.76 over down-40 0.23: the op line named the region only by its heading, which never says sidebar",
+  "meant": "down-40 with the end Extent: the sidebar scrolled to its end",
+  "log": "decision-1792636879830-1.jsonl",
+  "claimedBy": "#383",
+  "fixedBy": "7d3bdb5",
+  "case": "cli-4-mvixvt10"
+}
