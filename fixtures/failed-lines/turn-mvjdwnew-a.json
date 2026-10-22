@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "Spoken on the YouTube watch page in full screen: hop 0 clicked \"Exit full screen keyboard shortcut f\" 1.00 and the page left full screen, but no line on the card says whether the page is in full screen, so hop 1 read the Verdict yes 0.68 (under the bar) and clicked \"Full screen (f)\" 0.54, back into full screen; the Task toggled five times (exit, enter, exit, enter, exit) to the cap and pressed Escape, 12.0 s. Replayed 3x unchanged: click-20 at 0.48–0.66. With \"Full screen: off\" under Playing and \"the page left full screen\" in Done so far: none 0.87–0.90, click-20 0.04–0.06, yes 1.00 (3/3); the hop-0 card with \"Full screen: on\" still clicks Exit 1.00 and \"Go full screen\" hop 1 still reads yes 1.00",
   "meant": "Click Exit full screen once and end done",
-  "log": "decision-1792664044313-1.jsonl"
+  "log": "decision-1792664044313-1.jsonl",
+  "claimedBy": "#387"
 }
