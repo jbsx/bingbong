@@ -675,6 +675,7 @@ const SCRIPT_TEXT_PAGES: Record<string, string> = {
   <button aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu">Settings</button>
   <div id="settings-menu" role="menu" style="display:none"><div role="menuitem">Sleep timer<script>var heldScript = 1</script><template>Template words</template></div></div>
   </body>`,
+  '/script-main': `<body><main><script>window.mainScript = "the only thing inside main"</script></main><p>The page's one sentence sits outside its main.</p></body>`,
   '/script-dialog': `<body><main><h1>Home</h1><p>The page under the sign-in sheet.</p></main>
     <div role="dialog" style="position:fixed;inset:20%;background:#fff"><p>Sign in to continue<script>var dialogScript = 1</script></p><style>.sheet { color: red }</style><button>Close</button></div>
   </body>`,
@@ -713,6 +714,11 @@ describe.skipIf(!canDriveChrome)('the collector reads no never-rendered text (#3
       ['Live chat', []],
       ['Settings', ['Sleep timer']],
     ])
+  })
+
+  it('reads the body when the main landmark holds only a script', async () => {
+    const page = await collect('/script-main')
+    expect(page.textBlocks.map((block) => (block.kind === 'text' ? block.text : block.kind))).toEqual(["The page's one sentence sits outside its main."])
   })
 
   it('keeps it out of the Dialog Text', async () => {

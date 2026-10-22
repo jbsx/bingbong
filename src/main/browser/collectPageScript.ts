@@ -38,14 +38,16 @@ export const OWN_SLOT_SCRIPT = `${OWN_SLOT_FN}()`
  */
 export const TAG_OF_FN = `((get) => (el) => get.call(el))(Object.getOwnPropertyDescriptor(Element.prototype, 'tagName').get)`
 
+/** What a page never renders (#391): a script's source, a stylesheet, a noscript fallback, a template. */
+const NEVER_RENDERED_TAGS = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']
+
 /**
  * A JS function source `(el, separator) => text`: an element's text nodes
- * joined, without what a page never renders (#391) — a script's source, a
- * stylesheet, a noscript fallback, a template. textContent keeps them all,
- * and so does innerText for an element that is not rendered.
+ * joined, without what a page never renders. textContent keeps it all, and
+ * so does innerText for an element that is not rendered.
  */
-export const SOURCE_FREE_TEXT_FN = `((tagOf) => {
-  const NEVER_RENDERED = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'])
+const SOURCE_FREE_TEXT_FN = `((tagOf) => {
+  const NEVER_RENDERED = new Set(${JSON.stringify(NEVER_RENDERED_TAGS)})
   const accept = (node) => (node.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT : NEVER_RENDERED.has(tagOf(node).toUpperCase()) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP)
   return (el, separator = '') => {
     const parts = []
@@ -61,9 +63,14 @@ export const SOURCE_FREE_TEXT_FN = `((tagOf) => {
 export const COLLECT_PAGE_SCRIPT = `(() => {
   const tagOf = ${TAG_OF_FN}
   const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
-  // An element's text as it shows (#391): a rendered one's innerText leaves
-  // the source out; an empty or unrendered one is read without it.
-  const renderedText = (el) => (el.getClientRects().length > 0 && el.innerText) || sourceFreeText(el)
+  // An element's text as it shows (#391). One that holds no source reads as
+  // innerText; one that does keeps innerText only while it is rendered,
+  // which leaves the source out, and is otherwise read without it.
+  const NEVER_RENDERED_SELECTOR = ${JSON.stringify(NEVER_RENDERED_TAGS.join(', ').toLowerCase())}
+  const renderedText = (el) => {
+    if (el.querySelector(NEVER_RENDERED_SELECTOR) === null) return el.innerText || el.textContent || ''
+    return (el.getClientRects().length > 0 && el.innerText) || sourceFreeText(el)
+  }
   const vw = window.innerWidth
   const vh = window.innerHeight
   const SELECTOR = [
@@ -238,7 +245,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const consentWallRoot = () => {
     let last = null
     for (const control of document.querySelectorAll(CONSENT_CONTROL_SELECTOR)) {
-      // Cheap text first: innerText lays out, and most controls are not consent choices.
+      // Text without layout first: innerText lays out, and most controls are not consent choices.
       const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
       if (!CONSENT_LABEL_RE.test(text) || !hasSize(control) || insideInert(control)) continue
       const root = pinnedAncestor(control)
@@ -535,7 +542,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // empty <main> puts its one sentence outside it ("The search service is
   // currently unavailable"), and that sentence is the page, not nothing.
   const landmark = document.querySelector('main, article')
-  const textRoot = landmark && /\\S/.test(landmark.textContent || '') ? landmark : document.body
+  const textRoot = landmark && /\\S/.test(sourceFreeText(landmark)) ? landmark : document.body
   // The page's text (ADR 0047): each block raw, in document order, for core
   // to render and cut (core/browser/pageText.ts). A table row, a pre block
   // and a definition list are blocks beside paragraphs, list items and
