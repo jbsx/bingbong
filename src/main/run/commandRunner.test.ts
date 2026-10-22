@@ -1982,11 +1982,13 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => record.ended)).toEqual(['terminal', 'terminal', 'terminal'])
   })
 
-  it('AC3: hop 0 asks no Verdict and never ends "already here" (#370): a none fires nothing, writes a record, is dropped with "No response.", and has no Reaction', async () => {
+  it('AC3: hop 0\'s first reading asks no Verdict and a none never ends "already here" (#370): a none fires nothing, writes a record, is dropped with "No response.", and has no Reaction', async () => {
     const { browser, events, records, decision, perf, runner } = harness()
     decision.script.push(answer('none'), answer('none'))
     await runner.run('pull up the example page', { source: 'spoken' })
-    for (const request of decision.requests) expect(request.questions).not.toHaveProperty('outcome')
+    // Only the Where Ask carries the Verdict (#394), and its none still ends "No response.".
+    expect(decision.requests[0]!.questions).not.toHaveProperty('outcome')
+    expect(decision.requests[1]!.questions).toHaveProperty('outcome')
     expect(Object.keys((decision.requests[0]!.questions.action as DecisionChoiceQuestion).options)).not.toContain('done')
     expect(browser.navigations).toEqual([])
     expect(browser.clicks).toEqual([])
@@ -3057,7 +3059,8 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     expect(Object.keys(cardOf(where!).options)).toEqual(Object.keys(cardOf(first!).options))
     expect(cardOf(where!).options.none).toBe('a remark or noise, nothing to look for')
     expect(where!.questions).not.toHaveProperty('steps')
-    expect(where!.questions).not.toHaveProperty('outcome')
+    // The Verdict rides the same call (#394), worded as every hop's.
+    expect(where!.questions.outcome).toEqual(decision.requests[2]!.questions.outcome)
 
     // The first reading's none record stays; the Where Ask is its own record, with its own ask.
     const read = decisions(records)
@@ -3095,6 +3098,42 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     await unfit.runner.run('the ninth thing', { source: 'spoken' })
     expect(unfit.decision.requests).toHaveLength(1)
     expect(displays(unfit.events)).toEqual(['No response.\n\nNo command found. (Jev read “click [9]”, but nothing on this page fits it.)'])
+  })
+
+  it('#394: a sure yes beside the Where Ask\'s action ends the Task done on the page as it is, nothing fired', async () => {
+    const { browser, events, records, runner, decision } = watchHarness()
+    // The passport-fees line: the first reading's none was right, the Where Ask's click would have left the answer.
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.6, none: 0.1 }, { outcome: choice('yes', 0.85) }))
+    await runner.run('how much is it to renew online', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([])
+    expect(decision.requests).toHaveLength(2)
+    expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
+      ['none', undefined, undefined],
+      ['click', true, 'done'],
+    ])
+    expect(commands(events)).toEqual([expect.objectContaining({ turnId: 't1', action: 'done', dropped: true, task: { id: 't1', hop: 0 } })])
+    expect(displays(events).some((text) => text.startsWith('No response.'))).toBe(false)
+  })
+
+  it('#394: a yes short of sure beside the Where Ask\'s action fires the action as before', async () => {
+    const { browser, runner, decision } = watchHarness()
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.53, none: 0.2 }, { outcome: choice('yes', 0.6) }), reading({ 'click-4': 0.9 }), SURE_YES)
+    await runner.run('Turn on ambient mode.', { source: 'spoken', turnId: 't1' })
+    expect(browser.clicks).toEqual([1, 4])
+  })
+
+  it('#394: a sure yes beside a Where Ask that reads none changes nothing: the line ends "No response."', async () => {
+    const { browser, events, records, runner, decision } = watchHarness()
+    // Noise reads as done when nothing was asked ("Look." 0.79 in the measurement): the none decides.
+    decision.script.push(NONE_OVER_SETTINGS, reading({ none: 0.7, 'click-1': 0.05 }, { outcome: choice('yes', 0.8) }))
+    await runner.run('look', { source: 'spoken', turnId: 't1' })
+    expect(browser.clicks).toEqual([])
+    expect(displays(events)).toEqual(['No response.\n\nNo command found. (A second look found nothing on this page to look for.)'])
+    expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
+      ['none', undefined, undefined],
+      ['none', true, 'terminal'],
+    ])
   })
 
   it('AC5: a Where Ask that reads none ends the line "No response." with both readings in its reason', async () => {

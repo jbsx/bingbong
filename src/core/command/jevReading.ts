@@ -965,14 +965,20 @@ const CARD_ASKS: Readonly<Record<CardAsk, { readonly question: string; readonly 
   mark: { question: "Which one action does the browser take for the user's words? A control with no words is found by its number on the image.", ...SAYS_NOT_A_COMMAND },
 }
 
+/** The Where Ask's questions: the Command's and the Verdict (#394). */
+export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion }
+
 /**
  * The Where Ask's questions (#379, ADR 0082): hop 0's, with the action
  * card asked where the thing the words name would be — every option it
  * offered, `search` and `where` as they were — and no `steps`: the first
- * reading already read the line as one Command.
+ * reading already read the line as one Command. The Verdict rides the
+ * same call (#394), worded as every hop's: a page that already shows what
+ * the words ask for is kept, not left for the Where Ask's action. Adding
+ * it moved none of 40 measured Where Ask picks.
  */
-export function whereQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): CommandQuestions {
-  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where' })
+export function whereQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): WhereQuestions {
+  return { ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where' }), outcome: outcomeQuestion() }
 }
 
 /**
@@ -1207,7 +1213,7 @@ export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: Co
   return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, confidence } : null
 }
 
-/** The Verdict a hop's answers carry; null when none was asked, or the answer names no outcome. */
+/** The Verdict a hop's answers, or a Where Ask's (#394), carry; null when none was asked, or the answer names no outcome. */
 export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {
   if (!('outcome' in answers)) return null
   const { choice, confidence } = answers.outcome

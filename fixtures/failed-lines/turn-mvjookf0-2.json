@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvjookf0-2",
+  "transcript": "how much is it to renew online",
+  "at": 1792682177131,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Typed on gov.uk/passport-fees on a first visit (cookie message hidden, not reloaded): hop 0's Text in view stopped at the fee table's header, so hop 0 read none 0.53 and the Where Ask scrolled down (0.61, its Verdict not_yet 0.91, right). At hop 1 the fee rows were in view (£102 online) and no banner was on the card, but the Verdict read yes 0.60 over not_yet 0.40, short of sure; the Task clicked Renew or replace your adult passport (0.52) and ended done on that page's 'It costs £102 to renew'. A run with the banner up read yes 0.52 at the same step and ended on a wall. The same card at hop 0 (#394's Where Ask) reads yes 0.85",
+  "meant": "End done at hop 1: the fee for renewing online is on screen",
+  "log": "decision-1792682155871-1.jsonl"
+}

@@ -665,6 +665,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     steps?: readonly string[]
     /** The Where Ask's reading (#379, ADR 0082), read after a hop 0 whose top choice was `none`. */
     whereAsk?: true
+    /** The Verdict asked beside the Where Ask (#394), when Jev answered it. */
+    verdict?: Verdict
     /** The Mark Ask's reading (#382, ADR 0084), read after a Where Ask whose top choice was `none`, over a card with a Textless Ref. */
     markAsk?: true
   }
@@ -777,7 +779,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * a line Jev read, is asked once more — the same card over the same
    * page, the question changed to where the thing the words name would
    * be. Its reading is hop 0's, fired with no bar; `none` again, or no
-   * answer, is no Command, and nothing guesses.
+   * answer, is no Command, and nothing guesses. The Verdict rides the
+   * same call (#394): the page may already show what the words ask for.
    */
   async function readWhere(turnId: string, text: string, first: Reading, step: StepContext | undefined): Promise<Reading> {
     const { page } = first
@@ -785,7 +788,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
     const questions = whereQuestions(text, page, { appliance: appliance() })
     const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions), questions, `${first.ask ?? turnId}-where`)
-    return { ...readingOf(result, text, page), whereAsk: true }
+    const verdict = result.status === 'answered' ? readVerdict(result.answers) : null
+    return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}) }
   }
 
   /**
@@ -2071,7 +2075,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const ending = endedByReading(heard.reading, command.verb, wordsPast)
     recordBeforeFiring(record, ending, command)
     if (command.verb === 'none') {
-      // An Utterance read as no Command — hop 0 has no Verdict, so never as the page already being what was asked (#370):
+      // An Utterance read as no Command — never as the page already being what was asked (#370), whatever a Where Ask's Verdict says (#394):
       // a greyed entry of the words, and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
       publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
       // After a Where Ask, both readings are the reason; a Mark Ask's none adds nothing to them.
@@ -2079,6 +2083,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }
+    }
+    if (heard.whereAsk === true && sure(heard.verdict ?? null) && heard.verdict!.outcome === 'yes') {
+      // The Where Ask would act, and the Verdict beside it is sure the page already shows what the words ask for (#394):
+      // the Task ends done on the page as it is, as a later hop's sure yes does, and the action is never fired.
+      log({ ...record, ended: 'done' })
+      dropHop(turnId, task, hop0, 'done', 'done', firedAt)
+      return { ended: endTask(task, 'done', 1), did: '' }
     }
 
     const ladder = heard.ladder ?? []

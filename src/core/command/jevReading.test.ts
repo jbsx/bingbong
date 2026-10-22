@@ -397,7 +397,9 @@ describe('the Where Ask (#379, ADR 0082): the same action card, asked where the 
   it('offers every option the first card offered, with the question and its none changed — the where beside it, never the steps', () => {
     const first = commandQuestions('turn on ambient mode and loop it', SITE)
     const where = whereQuestions('turn on ambient mode and loop it', SITE)
-    expect(Object.keys(where)).toEqual(['action', 'slot', 'extent', 'where'])
+    // The Verdict rides the Where Ask (#394), worded as a hop's.
+    expect(Object.keys(where)).toEqual(['action', 'slot', 'extent', 'where', 'outcome'])
+    expect(where.outcome).toEqual(hopQuestions('turn on ambient mode and loop it', SITE, { hop: 1, visited: [], actions: [], links: [] }).outcome)
     expect(Object.keys(where.action.options)).toEqual(Object.keys(first.action.options))
     expect(where.action.options['click-2']).toBe(first.action.options['click-2'])
     expect(where.action.options.search).toBe(first.action.options.search)

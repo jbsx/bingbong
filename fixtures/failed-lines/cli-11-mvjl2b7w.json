@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Typed on gov.uk/passport-fees: the answer (adult standard passport online £102) was on the card's Text in view line and hop 0 read none 0.46, which was right; the Where Ask then read click Renew or replace your adult passport (0.60) and the Task left the page that showed the answer",
   "meant": "Stay: the fee is on screen, so the Task ends with the page as it is",
-  "log": "decision-1792675954035-1.jsonl"
+  "log": "decision-1792675954035-1.jsonl",
+  "claimedBy": "#394"
 }
