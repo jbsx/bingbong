@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-2-mvjl5kd9",
+  "transcript": "show me the ingredients",
+  "at": 1792676251812,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Typed on recipetineats.com/chocolate-chip-cookies: the Task took four actions, the RECIPE jump link (0.60), two one-screen scrolls (Verdict not_yet 0.90, 0.87) and read, because the card names nothing below the view, so no action could go straight to the ingredients",
+  "meant": "One action to the ingredients list, then done",
+  "log": "decision-1792676242479-1.jsonl",
+  "claimedBy": "#393"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-4-mvjks2y0",
+  "transcript": "how do i install it",
+  "at": 1792675622674,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Typed on the microsoft/playwright repo page: hop 0 read none 0.61 for a question-form command, the Where Ask clicked playwright.dev (0.56), and four hops later the Task ended clicking Copy code; the README's Install section was on the page, two to three screens down. Replayed with the text further down on the card as targets (#393's reveal): still none 0.42-0.45, so the line is the reading of a question, not the missing text",
+  "meant": "Stay on the repo page and scroll to the README's Install section",
+  "log": "decision-1792675575839-1.jsonl"
+}

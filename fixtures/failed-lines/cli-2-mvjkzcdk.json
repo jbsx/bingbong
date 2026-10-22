@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvjkzcdk",
+  "transcript": "accept cookies",
+  "at": 1792675961678,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Typed on bbcgoodfood.com under its Sourcepoint consent-or-pay wall: accept cookies read click Store and/or access information on a device (0.51), a purpose toggle, not the accept button; the Task ended done and the next line found the pane on Contentpass's paid plan page",
+  "meant": "Click the wall's Accept cookies and read free content button",
+  "log": "decision-1792675954035-1.jsonl"
+}

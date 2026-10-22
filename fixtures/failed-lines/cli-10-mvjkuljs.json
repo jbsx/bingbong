@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-10-mvjkuljs",
+  "transcript": "show me the part about his death",
+  "at": 1792675740147,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Typed on en.wikipedia.org/wiki/Alan_Turing: in the pane the contents sidebar folds into the Toggle the table of contents button, whose menu holds line is cut after 3 Personal life, so 4 Death was never offered; Jev chose read 0.38 over scroll_down 0.37 and the Task ended terminal. The Death section is about 49k characters down, past any text bound on the card",
+  "meant": "Open the contents and go to 4 Death",
+  "log": "decision-1792675575839-1.jsonl"
+}
