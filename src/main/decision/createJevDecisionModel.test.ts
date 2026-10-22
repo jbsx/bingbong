@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DecisionQuestions } from '../../core/ports/decisionModel'
-import { createJevDecisionModel, DECISION_TIMEOUT_MS } from './createJevDecisionModel'
+import { DECISION_DEFAULT_TIMEOUT_MS } from '../../core/decision/decisionRouting'
+import { createJevDecisionModel } from './createJevDecisionModel'
 
 const ENDPOINT = { baseUrl: 'https://jev.example', model: 'jev-1.13.0', apiKey: 'ts-secret' }
 
@@ -128,14 +129,14 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
     expect(result).toMatchObject({ status: 'answered', model: 'jev-1.13.1' })
   })
 
-  it(`gives up at ${DECISION_TIMEOUT_MS} ms, once, as unavailable`, async () => {
+  it(`gives up at ${DECISION_DEFAULT_TIMEOUT_MS} ms, once, as unavailable`, async () => {
     vi.useFakeTimers()
     const fetch = hangingFetch()
     const pending = createJevDecisionModel(ENDPOINT, { fetch }).ask({ state: 's', questions: QUESTIONS })
     let settled = false
     void pending.then(() => (settled = true))
 
-    await vi.advanceTimersByTimeAsync(DECISION_TIMEOUT_MS - 1)
+    await vi.advanceTimersByTimeAsync(DECISION_DEFAULT_TIMEOUT_MS - 1)
     expect(settled).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
 

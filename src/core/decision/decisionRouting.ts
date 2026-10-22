@@ -34,6 +34,7 @@ const DECISION_TIMEOUT_ENV_KEY = `${DECISION_ENV_PREFIX}_TIMEOUT_MS`
  */
 export const DECISION_PROTOCOLS = ['systemone'] as const
 export type DecisionProtocol = (typeof DECISION_PROTOCOLS)[number]
+const DECISION_DEFAULT_PROTOCOL: DecisionProtocol = 'systemone'
 const DECISION_PROTOCOL_ENV_KEY = `${DECISION_ENV_PREFIX}_PROTOCOL`
 /** Off for a text-only model: an ask that carries an image (the Mark Ask) is then never sent. */
 const DECISION_IMAGES_ENV_KEY = `${DECISION_ENV_PREFIX}_IMAGES`
@@ -96,7 +97,7 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
         : `set ${DECISION_ENV_PREFIX}_API_KEY, ${DECISION_ENV_PREFIX}_API_KEY_ENV or ${DECISION_DEFAULT_KEY_ENV}`
     return { configured: false, reason: `no key: ${hint}` }
   }
-  const rawProtocol = readEnv(env, DECISION_PROTOCOL_ENV_KEY) ?? 'systemone'
+  const rawProtocol = readEnv(env, DECISION_PROTOCOL_ENV_KEY) ?? DECISION_DEFAULT_PROTOCOL
   const protocol = DECISION_PROTOCOLS.find((known) => known === rawProtocol)
   if (protocol === undefined) {
     return { configured: false, reason: `${DECISION_PROTOCOL_ENV_KEY} "${rawProtocol}" is not one this build speaks (${DECISION_PROTOCOLS.join(', ')})` }
@@ -106,9 +107,10 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
     return { configured: false, reason: `${DECISION_TIMEOUT_ENV_KEY} must be a whole number of ms above 0, got "${rawTimeout}"` }
   }
-  const rawImages = readEnv(env, DECISION_IMAGES_ENV_KEY)?.toLowerCase()
-  if (rawImages !== undefined && rawImages !== 'true' && rawImages !== 'false') {
-    return { configured: false, reason: `${DECISION_IMAGES_ENV_KEY} must be true or false, got "${readEnv(env, DECISION_IMAGES_ENV_KEY)}"` }
+  const rawImages = readEnv(env, DECISION_IMAGES_ENV_KEY)
+  const images = rawImages?.toLowerCase()
+  if (images !== undefined && images !== 'true' && images !== 'false') {
+    return { configured: false, reason: `${DECISION_IMAGES_ENV_KEY} must be true or false, got "${rawImages}"` }
   }
   return {
     configured: true,
@@ -119,6 +121,6 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
     },
     protocol,
     timeoutMs,
-    images: rawImages !== 'false',
+    images: images !== 'false',
   }
 }

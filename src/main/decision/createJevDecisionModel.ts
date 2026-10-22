@@ -28,9 +28,6 @@ import {
 } from '../../core/ports/decisionModel.ts'
 import { toErrorMessage } from '../../core/errors.ts'
 
-/** The timeout when the caller names none: the routing's default (ADR 0068: "under a second"). */
-export const DECISION_TIMEOUT_MS = DECISION_DEFAULT_TIMEOUT_MS
-
 /**
  * The opt-in to the SDK's experimental images (#382, ADR 0084), sent on an
  * ask that carries one and no other: a change to the experimental API
@@ -75,7 +72,7 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
     apiKey: endpoint.apiKey,
     baseURL: endpoint.baseUrl,
     defaultModel: endpoint.model,
-    timeout: deps.timeoutMs ?? DECISION_TIMEOUT_MS,
+    timeout: deps.timeoutMs ?? DECISION_DEFAULT_TIMEOUT_MS,
     retry: { maxRetries: 0 },
     // The SDK zstd-compresses a body over 1 KB by default, and not every
     // /v1/systemone host decompresses one (Baseten answers 400, #395).
