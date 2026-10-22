@@ -141,6 +141,44 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('PASS  b-latest')
   })
 
+  it('asks each case N times with --repeat and reports per question what was chosen how often: PASS, FLIP or FAIL per case', async () => {
+    saveCase('a-steady', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-flip', 'state-b', [{ question: 'target', label: 'ref-27' }])
+    saveCase('c-fail', 'state-c', [{ question: 'target', label: 'ref-27' }])
+    saveCase('d-unanswered', 'state-d', [{ question: 'target', label: 'ref-27' }])
+    let turn = 0
+    const wavering: DecisionModel = {
+      model: 'jev-fake',
+      async ask(request) {
+        turn += 1
+        if (request.state === 'state-d' && turn % 2 === 0) return { status: 'unavailable', reason: 'timeout', message: 'too slow', latencyMs: 1, model: 'jev-fake' }
+        // state-b is a coin flip at the margin: ref-27 on odd runs, ref-21 on even; the rest hold still.
+        const probabilities =
+          request.state === 'state-a' ? { 'ref-21': 0.9, 'ref-27': 0.1 }
+          : request.state === 'state-c' ? { 'ref-21': 0.8, 'ref-27': 0.2 }
+          : turn % 2 === 1 ? { 'ref-21': 0.45, 'ref-27': 0.55 }
+          : { 'ref-21': 0.52, 'ref-27': 0.48 }
+        const choice = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]![0]
+        const answers = { target: { type: 'choice', choice, confidence: probabilities[choice as keyof typeof probabilities], probabilities } }
+        return { status: 'answered', answers: answers as never, latencyMs: 1, model: 'jev-fake' }
+      },
+    }
+    const replay = await replayCorpus(dir, { env: {}, model: wavering }, { repeat: 4 })
+    expect(replay.code).toBe(1)
+    expect(turn).toBe(16)
+    const lines = replay.report.split('\n')
+    expect(lines).toContain('PASS  a-steady  4/4')
+    expect(lines).toContain('  target=ref-21  ref-21 ×4 0.90')
+    expect(lines).toContain('FLIP  b-flip  2/4')
+    expect(lines).toContain('  target=ref-27  ref-27 ×2 0.55 · ref-21 ×2 0.52')
+    expect(lines).toContain('FAIL  c-fail  0/4')
+    expect(lines).toContain('  target=ref-27  ref-21 ×4 0.80')
+    expect(lines).toContain('FLIP  d-unanswered  2/4')
+    expect(lines).toContain('  ×2 Jev did not answer: timeout (too slow)')
+    expect(lines).toContain('4 cases × 4 runs: 1 steady pass, 2 flip, 1 steady fail (jev-fake)')
+    expect(lines.at(-1)).toBe('Jev latency over 14 answers: p50 1ms, p90 1ms, max 1ms')
+  })
+
   it('says plainly that it needs TYPESAFE_API_KEY when no key is set, and asks nothing', async () => {
     saveCase('latest', 'state-a', [{ question: 'target', label: 'ref-27' }])
     const replay = await replayCorpus(dir, { env: {} })

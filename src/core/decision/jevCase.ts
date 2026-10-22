@@ -125,7 +125,8 @@ export type CaseVerdict =
 
 /** Judge a case against Jev's fresh answer: it passes when every expectation holds. */
 export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionResult<DecisionQuestions>): CaseVerdict {
-  if (result.status !== 'answered') return { name, pass: false, problem: `Jev did not answer: ${result.reason} (${result.message})` }
+  // One line, whatever came back: a host's 502 arrives as a whole HTML page.
+  if (result.status !== 'answered') return { name, pass: false, problem: `Jev did not answer: ${result.reason} (${result.message.replace(/\s+/g, ' ').trim().slice(0, 160)})` }
   const unanswered = jevCase.expect.find((expectation) => result.answers[expectation.question]?.type !== 'choice')
   if (unanswered !== undefined) return { name, pass: false, problem: `Jev gave no Choice for "${unanswered.question}"` }
   const outcomes = jevCase.expect.map((expectation): ExpectationOutcome => {
@@ -167,4 +168,66 @@ export function formatJevReplay(verdicts: readonly CaseVerdict[], model: string)
   const passed = verdicts.filter((verdict) => verdict.pass).length
   lines.push(`${verdicts.length} case${verdicts.length === 1 ? '' : 's'}: ${passed} passed, ${verdicts.length - passed} failed (${model})`)
   return lines.join('\n')
+}
+
+/** One case asked more than once (`--repeat N`): every run's verdict, in order. */
+export interface RepeatVerdict {
+  readonly name: string
+  readonly runs: readonly CaseVerdict[]
+}
+
+/** A case over its runs: steady when every run agreed, a flip when the model read it both ways. */
+export type RepeatStanding = 'pass' | 'flip' | 'fail'
+
+export function repeatStanding(repeat: RepeatVerdict): RepeatStanding {
+  const passed = repeat.runs.filter((run) => run.pass).length
+  return passed === repeat.runs.length ? 'pass' : passed === 0 ? 'fail' : 'flip'
+}
+
+const STANDING_HEAD: Readonly<Record<RepeatStanding, string>> = { pass: 'PASS', flip: 'FLIP', fail: 'FAIL' }
+
+/**
+ * The repeat's report: PASS, FLIP or FAIL per case with the runs that
+ * passed, then per question what was chosen how often and over what
+ * probabilities — a pick that moves between runs is noise at the margin,
+ * which a single replay cannot tell from a real move — then the tally.
+ */
+export function formatJevRepeat(repeats: readonly RepeatVerdict[], model: string): string {
+  const lines: string[] = []
+  for (const repeat of repeats) {
+    const passed = repeat.runs.filter((run) => run.pass).length
+    lines.push(`${STANDING_HEAD[repeatStanding(repeat)]}  ${repeat.name}  ${passed}/${repeat.runs.length}`)
+    const problems = new Map<string, number>()
+    const picks = new Map<string, Map<string, number[]>>()
+    for (const run of repeat.runs) {
+      if ('problem' in run) {
+        problems.set(run.problem, (problems.get(run.problem) ?? 0) + 1)
+        continue
+      }
+      for (const outcome of run.outcomes) {
+        const byChoice = picks.get(expectationText(outcome.expectation)) ?? new Map<string, number[]>()
+        byChoice.set(outcome.chosen, [...(byChoice.get(outcome.chosen) ?? []), outcome.chosenProbability])
+        picks.set(expectationText(outcome.expectation), byChoice)
+      }
+    }
+    for (const [expectation, byChoice] of picks) {
+      const spread = [...byChoice]
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([chosen, probabilities]) => `${chosen} ×${probabilities.length} ${range(probabilities)}`)
+      lines.push(`  ${expectation}  ${spread.join(' · ')}`)
+    }
+    for (const [problem, count] of problems) lines.push(`  ×${count} ${problem}`)
+  }
+  const standings = repeats.map(repeatStanding)
+  const count = (standing: RepeatStanding): number => standings.filter((each) => each === standing).length
+  const runs = repeats[0]?.runs.length ?? 0
+  lines.push(`${repeats.length} case${repeats.length === 1 ? '' : 's'} × ${runs} runs: ${count('pass')} steady pass, ${count('flip')} flip, ${count('fail')} steady fail (${model})`)
+  return lines.join('\n')
+}
+
+/** `0.21–0.40`, or the one value when every run agreed on it. */
+function range(probabilities: readonly number[]): string {
+  const low = Math.min(...probabilities)
+  const high = Math.max(...probabilities)
+  return p(low) === p(high) ? p(low) : `${p(low)}–${p(high)}`
 }

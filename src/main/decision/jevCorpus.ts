@@ -6,6 +6,7 @@ import { askImageFile, type AskRecord } from '../../core/decision/askRecord.ts'
 import { resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   expectationProblem,
+  formatJevRepeat,
   formatJevReplay,
   judgeJevCase,
   parseExpectation,
@@ -13,6 +14,7 @@ import {
   type CaseVerdict,
   type JevCase,
   type JevExpectation,
+  type RepeatVerdict,
 } from '../../core/decision/jevCase.ts'
 import type { DecisionModel } from '../../core/ports/decisionModel'
 import { formatMs, nearestRankPercentile } from '../../core/report/stats.ts'
@@ -72,8 +74,16 @@ export interface Replay {
   readonly report: string
 }
 
-/** `pnpm jev:replay [dir]`: every case in the folder asked again, in order, and judged. */
-export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Replay> {
+export interface ReplayOptions {
+  /** Ask each case this many times (`--repeat N`): the report then says how steady every pick is. One by default. */
+  readonly repeat?: number
+}
+
+/** A case's runs are asked this many at a time: enough to make a ×20 pass quick, few enough not to crowd the host. */
+const RUNS_AT_ONCE = 4
+
+/** `pnpm jev:replay [dir] [--repeat N]`: every case in the folder asked again, in order, and judged. */
+export async function replayCorpus(dir: string, deps: ReplayDeps, options: ReplayOptions = {}): Promise<Replay> {
   let model = deps.model
   if (model === undefined) {
     const routing = resolveDecisionRouting(deps.env)
@@ -82,23 +92,34 @@ export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Repla
   }
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
-  const verdicts: CaseVerdict[] = []
+  const repeat = Math.max(1, Math.floor(options.repeat ?? 1))
+  const repeats: RepeatVerdict[] = []
   const latencies: number[] = []
   for (const entry of entries) {
     if (typeof entry.case === 'string') {
-      verdicts.push({ name: entry.name, pass: false, problem: entry.case })
+      repeats.push({ name: entry.name, runs: [{ name: entry.name, pass: false, problem: entry.case }] })
       continue
     }
-    const images = caseImages(dir, entry.case)
+    const jevCase = entry.case
+    const images = caseImages(dir, jevCase)
     if (typeof images === 'string') {
-      verdicts.push({ name: entry.name, pass: false, problem: images })
+      repeats.push({ name: entry.name, runs: [{ name: entry.name, pass: false, problem: images }] })
       continue
     }
-    const result = await model.ask({ state: entry.case.ask.state, questions: entry.case.ask.questions, ...(images !== null ? { images } : {}) })
-    if (result.status === 'answered') latencies.push(result.latencyMs)
-    verdicts.push(judgeJevCase(entry.name, entry.case, result))
+    const runs: CaseVerdict[] = []
+    for (let from = 0; from < repeat; from += RUNS_AT_ONCE) {
+      const batch = Array.from({ length: Math.min(RUNS_AT_ONCE, repeat - from) }, () =>
+        model.ask({ state: jevCase.ask.state, questions: jevCase.ask.questions, ...(images !== null ? { images } : {}) }),
+      )
+      for (const result of await Promise.all(batch)) {
+        if (result.status === 'answered') latencies.push(result.latencyMs)
+        runs.push(judgeJevCase(entry.name, jevCase, result))
+      }
+    }
+    repeats.push({ name: entry.name, runs })
   }
-  const report = [formatJevReplay(verdicts, model.model), ...latencyLine(latencies)].join('\n')
+  const verdicts = repeats.flatMap((each) => each.runs)
+  const report = [repeat === 1 ? formatJevReplay(verdicts, model.model) : formatJevRepeat(repeats, model.model), ...latencyLine(latencies)].join('\n')
   return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report }
 }
 
