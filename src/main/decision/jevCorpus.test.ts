@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DecisionRecord } from '../../core/command/decisionRecord'
 import type { AskRecord } from '../../core/decision/askRecord'
 import type { DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult } from '../../core/ports/decisionModel'
-import { caseFromLog, formatCandidates, listCandidates, readCorpus, replayCorpus } from './jevCorpus'
+import { caseFromLog, formatCandidates, gateCorpus, listCandidates, readCorpus, replayCorpus } from './jevCorpus'
 
 // The Jev corpus (#338): saved asks with the answer each question should
 // get, replayed against a Decision Model — the real Jev from the CLI, a
@@ -151,7 +151,7 @@ describe('pnpm jev:replay over a corpus folder', () => {
       model: 'jev-fake',
       async ask(request) {
         turn += 1
-        if (request.state === 'state-d' && turn % 2 === 0) return { status: 'unavailable', reason: 'timeout', message: 'too slow', latencyMs: 1, model: 'jev-fake' }
+        if (request.state === 'state-d' && turn % 2 === 0) return { status: 'unavailable', reason: 'failed', message: 'no images', latencyMs: 1, model: 'jev-fake' }
         // state-b is a coin flip at the margin: ref-27 on odd runs, ref-21 on even; the rest hold still.
         const probabilities =
           request.state === 'state-a' ? { 'ref-21': 0.9, 'ref-27': 0.1 }
@@ -174,7 +174,7 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(lines).toContain('FAIL  c-fail  0/4')
     expect(lines).toContain('  target=ref-27  ref-21 ×4 0.80')
     expect(lines).toContain('FLIP  d-unanswered  2/4')
-    expect(lines).toContain('  ×2 Jev did not answer: timeout (too slow)')
+    expect(lines).toContain('  ×2 Jev did not answer: failed (no images)')
     expect(lines).toContain('4 cases × 4 runs: 1 steady pass, 2 flip, 1 steady fail (jev-fake)')
     expect(lines.at(-1)).toBe('Jev latency over 14 answers: p50 1ms, p90 1ms, max 1ms')
   })
@@ -185,6 +185,61 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.code).toBe(2)
     expect(replay.report).toContain('jev:replay asks the real Jev and needs its key')
     expect(replay.report).toContain('TYPESAFE_API_KEY')
+  })
+
+  it('jev:gate asks every model once and passes a case only when every model it was asked of does; an image case is not run on a model that reads none', async () => {
+    saveCase('a-both', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-one', 'state-b', [{ question: 'target', label: 'ref-27' }])
+    writeFileSync(join(dir, 'c-mark.jpg'), 'jpeg')
+    writeFileSync(join(dir, 'c-mark.json'), JSON.stringify({ expect: [{ question: 'target', label: 'ref-27' }], ask: { state: 'state-c <marks>', questions: QUESTIONS, images: { '<marks>': 'c-mark.jpg' } } }))
+    const textOnly = (model: string, targets: Record<string, Record<string, number>>) => Object.assign(new FakeJev(targets), { model, readsImages: false })
+    const mammoth = textOnly('host/mammoth', { 'state-a': { 'ref-21': 0.9 }, 'state-b': { 'ref-27': 0.6 } })
+    const elephant = textOnly('host/elephant', { 'state-a': { 'ref-21': 0.8 }, 'state-b': { none: 0.55, 'ref-27': 0.45 } })
+    const gate = await gateCorpus(dir, { env: {}, models: [mammoth, elephant] }, { models: [] })
+    expect(gate.code).toBe(1)
+    expect(gate.report).toBe(
+      [
+        'case    mammoth  elephant',
+        'a-both  PASS     PASS',
+        'b-one   PASS     FAIL      elephant: target=ref-27 chose none 0.55',
+        'c-mark  not run  not run   an image case: --with-jev asks Jev',
+        '3 cases: mammoth 2/2, elephant 1/2; through on every model 1; 1 not run on any',
+        'GATE FAIL — 1 case fails on at least one model',
+        'Jev latency over 4 answers: p50 1ms, p90 1ms, max 1ms',
+      ].join('\n'),
+    )
+    expect(mammoth.requests.map((request) => request.state)).toEqual(['state-a', 'state-b'])
+  })
+
+  it("asks once more when the host hiccups — a timeout or a 502 — and never when the model answered or refused the ask", async () => {
+    saveCase('a-slow', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-refused', 'state-b', [{ question: 'target', label: 'ref-21' }])
+    const asked: string[] = []
+    const flaky: DecisionModel = {
+      model: 'jev-fake',
+      async ask(request) {
+        asked.push(request.state)
+        if (request.state === 'state-b') return { status: 'unavailable', reason: 'failed', message: 'no images', latencyMs: 1, model: 'jev-fake' }
+        if (asked.filter((state) => state === 'state-a').length === 1) return { status: 'unavailable', reason: 'timeout', message: 'too slow', latencyMs: 1, model: 'jev-fake' }
+        const answers = { target: { type: 'choice', choice: 'ref-21', confidence: 0.9, probabilities: { 'ref-21': 0.9 } } }
+        return { status: 'answered', answers: answers as never, latencyMs: 1, model: 'jev-fake' }
+      },
+    }
+    const replay = await replayCorpus(dir, { env: {}, model: flaky })
+    expect(asked).toEqual(['state-a', 'state-a', 'state-b'])
+    expect(replay.report).toContain('PASS  a-slow')
+    expect(replay.report).toContain('FAIL  b-refused  Jev did not answer: failed (no images)')
+  })
+
+  it('jev:gate passes when every model passes every case it ran, and refuses to start with no model named', async () => {
+    saveCase('a-both', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    const one = Object.assign(new FakeJev({ 'state-a': { 'ref-21': 0.9 } }), { model: 'host/one' })
+    const gate = await gateCorpus(dir, { env: {}, models: [one] }, { models: [] })
+    expect(gate.code).toBe(0)
+    expect(gate.report).toContain('GATE PASS')
+    const unnamed = await gateCorpus(dir, { env: { BASETEN_API_KEY: 'k' } }, { models: [] })
+    expect(unnamed.code).toBe(2)
+    expect(unnamed.report).toContain('--models a,b or set BINGBONG_GATE_MODELS')
   })
 
   it('says so when the folder holds no case', async () => {

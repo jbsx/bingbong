@@ -225,6 +225,60 @@ export function formatJevRepeat(repeats: readonly RepeatVerdict[], model: string
   return lines.join('\n')
 }
 
+/** One model's pass over the corpus for the gate: a verdict per case in corpus order, or why the case was not asked of it. */
+export interface GateColumn {
+  readonly model: string
+  readonly cells: readonly GateCell[]
+}
+
+export type GateCell = { readonly name: string; readonly verdict: CaseVerdict } | { readonly name: string; readonly notRun: string }
+
+/**
+ * The gate's report (`pnpm jev:gate`): one row per case, one column per
+ * model, PASS, FAIL or `not run`; a failing row ends with what each
+ * failing model chose. A case counts as through the gate only when every
+ * model it was asked of passes it — the free models are deterministic,
+ * so one run each is exact, and a weaker model's miss is a card problem
+ * until shown otherwise.
+ */
+export function formatJevGate(columns: readonly GateColumn[]): string {
+  const names = columns[0]?.cells.map((cell) => cell.name) ?? []
+  const short = columns.map((column) => column.model.slice(column.model.lastIndexOf('/') + 1))
+  const nameWidth = Math.max('case'.length, ...names.map((name) => name.length))
+  const widths = short.map((head) => Math.max(head.length, 'not run'.length))
+  const row = (cells: readonly string[]): string => cells.map((cell, index) => cell.padEnd(index === 0 ? nameWidth : widths[index - 1]!)).join('  ')
+  const lines = [row(['case', ...short]).trimEnd()]
+  let failing = 0
+  let unrun = 0
+  for (const [index, name] of names.entries()) {
+    const cells = columns.map((column) => column.cells[index]!)
+    const marks = cells.map((cell) => ('notRun' in cell ? 'not run' : cell.verdict.pass ? 'PASS' : 'FAIL'))
+    const notes = cells.flatMap((cell, at) => ('notRun' in cell || cell.verdict.pass ? [] : [`${short[at]}: ${failureText(cell.verdict)}`]))
+    if (notes.length > 0) failing += 1
+    if (cells.every((cell) => 'notRun' in cell)) {
+      unrun += 1
+      notes.push((cells[0] as { notRun: string }).notRun)
+    }
+    lines.push([row([name, ...marks]), ...notes].join('  ').trimEnd())
+  }
+  const run = (column: GateColumn): number => column.cells.filter((cell) => !('notRun' in cell)).length
+  const passed = (column: GateColumn): number => column.cells.filter((cell) => !('notRun' in cell) && cell.verdict.pass).length
+  const every = names.filter((_, index) => columns.some((column) => !('notRun' in column.cells[index]!)) && columns.every((column) => 'notRun' in column.cells[index]! || column.cells[index]!.verdict.pass)).length
+  const tally = columns.map((column, index) => `${short[index]} ${passed(column)}/${run(column)}`).join(', ')
+  lines.push(`${names.length} case${names.length === 1 ? '' : 's'}: ${tally}; through on every model ${every}${unrun > 0 ? `; ${unrun} not run on any` : ''}`)
+  lines.push(failing === 0 ? 'GATE PASS' : `GATE FAIL — ${failing} case${failing === 1 ? '' : 's'} fail${failing === 1 ? 's' : ''} on at least one model`)
+  return lines.join('\n')
+}
+
+/** Why a case failed, on one line: the problem, or each expectation that did not hold. */
+function failureText(verdict: CaseVerdict): string {
+  if ('problem' in verdict) return verdict.problem
+  return verdict.outcomes
+    .filter((outcome) => !outcome.pass)
+    .map((outcome) => `${expectationText(outcome.expectation)} chose ${outcome.chosen} ${p(outcome.chosenProbability)}`)
+    .join(', ')
+}
+
 /** `0.21–0.40`, or the one value when every run agreed on it. */
 function range(probabilities: readonly number[]): string {
   const low = Math.min(...probabilities)

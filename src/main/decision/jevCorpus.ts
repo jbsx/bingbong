@@ -6,17 +6,20 @@ import { askImageFile, type AskRecord } from '../../core/decision/askRecord.ts'
 import { resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   expectationProblem,
+  formatJevGate,
   formatJevRepeat,
   formatJevReplay,
   judgeJevCase,
   parseExpectation,
   readJevCase,
   type CaseVerdict,
+  type GateCell,
+  type GateColumn,
   type JevCase,
   type JevExpectation,
   type RepeatVerdict,
 } from '../../core/decision/jevCase.ts'
-import type { DecisionModel } from '../../core/ports/decisionModel'
+import type { DecisionModel, DecisionQuestions, DecisionResult } from '../../core/ports/decisionModel'
 import { formatMs, nearestRankPercentile } from '../../core/report/stats.ts'
 import { toErrorMessage } from '../../core/errors.ts'
 import { reportFault } from '../../core/trace/fault.ts'
@@ -93,6 +96,14 @@ export async function replayCorpus(dir: string, deps: ReplayDeps, options: Repla
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
   const repeat = Math.max(1, Math.floor(options.repeat ?? 1))
+  const { repeats, latencies } = await askCorpus(dir, entries, model, repeat)
+  const verdicts = repeats.flatMap((each) => each.runs)
+  const report = [repeat === 1 ? formatJevReplay(verdicts, model.model) : formatJevRepeat(repeats, model.model), ...latencyLine(latencies)].join('\n')
+  return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report }
+}
+
+/** Every case asked of one model `repeat` times, in corpus order; a case that is not one, or whose image is gone, is one failed run. */
+async function askCorpus(dir: string, entries: readonly CorpusEntry[], model: DecisionModel, repeat: number): Promise<{ repeats: RepeatVerdict[]; latencies: number[] }> {
   const repeats: RepeatVerdict[] = []
   const latencies: number[] = []
   for (const entry of entries) {
@@ -107,10 +118,14 @@ export async function replayCorpus(dir: string, deps: ReplayDeps, options: Repla
       continue
     }
     const runs: CaseVerdict[] = []
+    const request = { state: jevCase.ask.state, questions: jevCase.ask.questions, ...(images !== null ? { images } : {}) }
+    // A host's hiccup — a timeout, a 502 — is asked once more; a wrong answer never is.
+    const ask = async (): Promise<DecisionResult<DecisionQuestions>> => {
+      const first = await model.ask(request)
+      return first.status === 'answered' || first.reason === 'failed' ? first : model.ask(request)
+    }
     for (let from = 0; from < repeat; from += RUNS_AT_ONCE) {
-      const batch = Array.from({ length: Math.min(RUNS_AT_ONCE, repeat - from) }, () =>
-        model.ask({ state: jevCase.ask.state, questions: jevCase.ask.questions, ...(images !== null ? { images } : {}) }),
-      )
+      const batch = Array.from({ length: Math.min(RUNS_AT_ONCE, repeat - from) }, ask)
       for (const result of await Promise.all(batch)) {
         if (result.status === 'answered') latencies.push(result.latencyMs)
         runs.push(judgeJevCase(entry.name, jevCase, result))
@@ -118,9 +133,74 @@ export async function replayCorpus(dir: string, deps: ReplayDeps, options: Repla
     }
     repeats.push({ name: entry.name, runs })
   }
-  const verdicts = repeats.flatMap((each) => each.runs)
-  const report = [repeat === 1 ? formatJevReplay(verdicts, model.model) : formatJevRepeat(repeats, model.model), ...latencyLine(latencies)].join('\n')
-  return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report }
+  return { repeats, latencies }
+}
+
+export interface GateDeps {
+  readonly env: Record<string, string | undefined>
+  /** Decision Models in place of the ones the env's host serves — tests only. */
+  readonly models?: readonly DecisionModel[]
+}
+
+export interface GateOptions {
+  /** The model ids the gate asks, each on the env's host and key (`--models a,b`, else `BINGBONG_GATE_MODELS`). */
+  readonly models: readonly string[]
+  /** Also ask Jev — the default endpoint, by TYPESAFE_API_KEY — which alone reads the image cases. Off unless asked: Jev is paid. */
+  readonly withJev?: boolean
+}
+
+/** The env var naming the gate's models, comma-separated. */
+export const GATE_MODELS_ENV_KEY = 'BINGBONG_GATE_MODELS'
+
+/** The prefix of every decision-routing setting (`decisionRouting.ts`): cleared to reach the default endpoint. */
+const DECISION_ENV_PREFIX = 'BINGBONG_DECISION_'
+
+/**
+ * `pnpm jev:gate [dir] [--models a,b] [--with-jev]`: the corpus asked once
+ * of every gate model and judged; a case is through only when every
+ * model it was asked of passes it. The gate models are the free,
+ * deterministic ones (owner, 2026-10-22: Jev spend stays minimal), so a
+ * case that needs an image is not run unless `--with-jev`.
+ */
+export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptions): Promise<Replay> {
+  let models = deps.models
+  if (models === undefined) {
+    if (options.models.length === 0) return { code: 2, report: `jev:gate needs its models — pass --models a,b or set ${GATE_MODELS_ENV_KEY}` }
+    const built: DecisionModel[] = []
+    for (const id of options.models) {
+      const routing = resolveDecisionRouting({ ...deps.env, BINGBONG_DECISION_MODEL: id })
+      if (!routing.configured) return { code: 2, report: `jev:gate cannot reach ${id} — ${routing.reason}` }
+      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS }))
+    }
+    if (options.withJev) {
+      // Jev is the default endpoint: the env with every BINGBONG_DECISION_* setting cleared, its own key (TYPESAFE_API_KEY) kept.
+      const routing = resolveDecisionRouting(Object.fromEntries(Object.entries(deps.env).filter(([key]) => !key.startsWith(DECISION_ENV_PREFIX))))
+      if (!routing.configured) return { code: 2, report: `jev:gate --with-jev asks the real Jev and needs its key — ${routing.reason}` }
+      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS }))
+    }
+    models = built
+  }
+  const entries = readCorpus(dir)
+  if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
+  const columns: GateColumn[] = []
+  const latencies: number[] = []
+  for (const model of models) {
+    // An image case is not asked of a model that reads no images: not run, not failed.
+    const asked = model.readsImages === false ? entries.filter((entry) => typeof entry.case === 'string' || Object.keys(entry.case.ask.images ?? {}).length === 0) : entries
+    const run = await askCorpus(dir, asked, model, 1)
+    latencies.push(...run.latencies)
+    const byName = new Map(run.repeats.map((repeat) => [repeat.name, repeat.runs[0]!]))
+    columns.push({
+      model: model.model,
+      cells: entries.map((entry): GateCell => {
+        const verdict = byName.get(entry.name)
+        return verdict === undefined ? { name: entry.name, notRun: 'an image case: --with-jev asks Jev' } : { name: entry.name, verdict }
+      }),
+    })
+  }
+  const report = [formatJevGate(columns), ...latencyLine(latencies)].join('\n')
+  const pass = columns.every((column) => column.cells.every((cell) => 'notRun' in cell || cell.verdict.pass))
+  return { code: pass ? 0 : 1, report }
 }
 
 /** Jev's latency over the asks it answered (#390): a widening is checked on the replay for what the card costs, as for what it reads; none when nothing was answered. */
