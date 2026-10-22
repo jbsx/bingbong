@@ -15,13 +15,6 @@ const FRAME_BOX_FN = `((iframe) => {
   return { x: rect.left + iframe.clientLeft + (parseFloat(style.paddingLeft) || 0), y: rect.top + iframe.clientTop + (parseFloat(style.paddingTop) || 0) }
 })`
 
-/**
- * A JS function source `(el) => tag`: an element's tagName read through
- * `Element.prototype`'s getter (#385). A form's control named `tagName`
- * overrides the form's own property; the prototype's getter it cannot.
- */
-export const TAG_OF_FN = `((get) => (el) => get.call(el))(Object.getOwnPropertyDescriptor(Element.prototype, 'tagName').get)`
-
 /** A JS function source `(iframe) => slot`: the iframe's slot in `window.frames` (#377), -1 when its window is gone. */
 const FRAME_SLOT_FN = `((iframe) => {
   for (let i = 0; i < window.frames.length; i++) if (window.frames[i] === iframe.contentWindow) return i
@@ -37,6 +30,13 @@ const OWN_SLOT_FN = `(() => {
 
 /** This frame's slot in its parent's `window.frames` now (#377): what its iframe is found by at click time. */
 export const OWN_SLOT_SCRIPT = `${OWN_SLOT_FN}()`
+
+/**
+ * A JS function source `(el) => tag`: an element's tagName read through
+ * `Element.prototype`'s getter (#385). A form's control named `tagName`
+ * overrides the form's own property; the prototype's getter it cannot.
+ */
+export const TAG_OF_FN = `((get) => (el) => get.call(el))(Object.getOwnPropertyDescriptor(Element.prototype, 'tagName').get)`
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -652,15 +652,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
+    const tag = tagOf(el)
     return {
-      tag: tagOf(el).toLowerCase(),
+      tag: tag.toLowerCase(),
       role: unmarked.has(el) ? 'button' : el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
-      inputType: tagOf(el) === 'INPUT' ? el.type : null,
+      inputType: tag === 'INPUT' ? el.type : null,
       label: labelFor(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      src: tagOf(el) === 'IFRAME' ? crossOriginIframeSrc(el) : null,
+      src: tag === 'IFRAME' ? crossOriginIframeSrc(el) : null,
       // An iframe's slot and content-box origin (#377): its frame's refs take its place, offset by it.
-      ...(tagOf(el) === 'IFRAME' ? { frameIndex: frameSlotOf(el), frameBox: ${FRAME_BOX_FN}(el) } : {}),
+      ...(tag === 'IFRAME' ? { frameIndex: frameSlotOf(el), frameBox: ${FRAME_BOX_FN}(el) } : {}),
       href: absoluteHref(el),
       downloadsFile: el.hasAttribute('download'),
       submitsForm: submitsFormOf(el, form),
@@ -673,16 +674,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       formHasSearch: formFlags.formHasSearch,
       layer: dialogRoot !== null && containsDeep(dialogRoot, el) ? 'dialog' : 'page',
       checked: typeof el.checked === 'boolean' ? el.checked : null,
-      selectedOption: tagOf(el) === 'SELECT' && el.selectedOptions.length > 0
+      selectedOption: tag === 'SELECT' && el.selectedOptions.length > 0
         ? textOf(el.selectedOptions[0]).slice(0, 160)
         : null,
-      value: typeof el.value === 'string' && !(tagOf(el) === 'INPUT' && el.type === 'password')
+      value: typeof el.value === 'string' && !(tag === 'INPUT' && el.type === 'password')
         ? el.value.slice(0, 160)
         : (el.isContentEditable ? textOf(el).slice(0, 160) : null),
       ariaPressed: el.getAttribute('aria-pressed'),
       className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
       // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
-      ...(tagOf(el) === 'VIDEO' || tagOf(el) === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
+      ...(tag === 'VIDEO' || tag === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }
