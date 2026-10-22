@@ -49,11 +49,13 @@ Create this layout on the first versioned update. Preserve the template's approv
 
 1. Read the repository's current agent instructions.
 2. Inspect HEAD, working-tree status, branches and existing worktrees.
-3. Create a dedicated worktree from the requested revision, or current HEAD when no revision was specified.
+3. For a standalone chart request, create a dedicated worktree from the requested revision, or current HEAD when no revision was specified. For a chart update accompanying an implementation change under the `AGENTS.md` pre-commit rule, use that implementation's existing worktree.
 4. Record the full source SHA and date.
 5. Locate the previous chart and its source SHA.
 
-By default, chart committed source. If the request includes uncommitted behavior, identify those additional changes in the version notes. Preserve unrelated work in the original checkout.
+For a standalone request, chart committed source by default. For a pre-commit update, chart the intended implementation changes as well as the base revision; inspect both staged and unstaged changes to establish that scope. Preserve unrelated work.
+
+A pre-commit chart cannot name its own containing commit in advance. Use the base SHA in the version directory with a descriptive change suffix to distinguish it from a chart of that base alone, and label the chart and change notes “base `<sha>` + accompanying implementation changes.” Describe those changes precisely; the eventual containing commit records the exact snapshot. Include the chart, change notes, index and affected screenshots in the implementation commit. Do not amend merely to replace this provenance with a self-referential SHA.
 
 **Done when:** the documented snapshot is unambiguous, work is isolated, and the previous chart remains intact.
 
@@ -246,7 +248,9 @@ For every view check:
 
 Exercise the view controls as well as directly loading each URL. Fix visual defects, recapture affected views, and inspect the new screenshots. Syntax checking alone does not verify layout or interaction.
 
-**Done when:** every final view has been visually inspected after its last layout change, and controls and direct URLs have been checked.
+For a pre-commit update, recapture and inspect every affected view; unchanged views may retain their previously verified screenshots. A shared layout change affects every view. Record which captures were refreshed or retained.
+
+**Done when:** every changed view has been visually inspected after its last layout change, unchanged views retain verified captures, and controls and direct URLs have been checked.
 
 ## 7. Preserve the version and report changes
 
