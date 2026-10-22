@@ -1,0 +1,151 @@
+{
+  "turnId": "turn-mvjhyuo4-1",
+  "transcript": "show me the weather in Gurgaon",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792670902545,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"show me the weather in Gurgaon\"\nThis is step 2 of the task. Done so far: search weather in Gurgaon (opened duckduckgo.com/?q=weather+in+Gurgaon&ia=web)\nPages visited: https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web\nPage: https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web — \"weather in Gurgaon at DuckDuckGo\"\nText in view: \"Clear\" · \"Gurugram, India\" · \"5 PM 28°\" · \"8 PM 25°\" · \"11 PM 23°\" · \"2 AM 21°\" · \"5 AM 19°\" · \"8 AM 22°\" · \"11 AM 29°\" · \"2 PM 31°\" · \"Humidity: 50%\" · \"Wind: 4 MPH NW\" · \"Thu\" · \"31° 19°\" · \"Fri\" · \"Sat\" · \"Sun\" · \"Mon\" · \"31° 18°\" · \"Tue\" · \"30° 17°\" · \"Wed\" · \"28° 16°\" · \"28° 17°\"\nRefs (number, kind, label, address, states):\n[1] link \"DuckDuckGo home DuckDuckGo\" https://duckduckgo.com/\n[2] input[text] \"Search privately\" value=\"weather in Gurgaon\" hasPopup=listbox expanded=false\n[3] button \"Search\"\n[4] button \"Open menu\"\n[5] link \"All\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web\n[6] link \"Images\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=images&iax=images\n[7] link \"News\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=news&iar=news\n[8] link \"Videos\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=videos&iax=videos\n[9] button \"More\" expanded=false\n[10] link \"Search Assist\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web&assist=true\n[11] link \"Duck.ai\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=chat&entry=serp\n[12] button \"Search Settings\"\n[13] button \"✀\" role=link\n[14] button \"Private\" expanded=false\n[15] button \"Filter by the selected region\" role=switch checked=true\n[16] button \"United Kingdom\" hasPopup=menu expanded=false\n[17] button \"Safe search: moderate\" hasPopup=menu expanded=false\n[18] button \"Any time\" hasPopup=menu expanded=false\n[19] button \"Positive feedback\" expanded=false\n[20] button \"Negative feedback\" expanded=false\n[21] button \"Share Feedback\"\nResult links further down the page (name, address):\n[link-1] link \"\" https://developer.apple.com/weatherkit/data-source-attribution/\n[link-2] link \"https://www.accuweather.com › en › in › gurgaon › 188408 › hourly-weather-forec…\" https://www.accuweather.com/en/in/gurgaon/188408/hourly-weather-forecast/188408\n[link-3] link \"https://www.bbc.com › weather › 1270642\" https://www.bbc.com/weather/1270642\n[link-4] link \"https://www.accuweather.com › en › in › gurgaon › 188408 › weather-forecast › 1…\" https://www.accuweather.com/en/in/gurgaon/188408/weather-forecast/188408\n[link-5] link \"https://www.meteoblue.com › en › weather › week › gurgaon_india_10592945\" https://www.meteoblue.com/en/weather/week/gurgaon_india_10592945\n[link-6] link \"https://www.timeanddate.com › weather › india › gurgaon\" https://www.timeanddate.com/weather/india/gurgaon\n[link-7] link \"https://weather.com › in › haryana › city › gurgaon › tenday\" https://weather.com/in/haryana/city/gurgaon/tenday\n[link-8] link \"https://www.easeweather.com › asia › india › haryana › gurgaon\" https://www.easeweather.com/asia/india/haryana/gurgaon\n[link-9] link \"https://www.timeanddate.com › weather › india › gurgaon › ext\" https://www.timeanddate.com/weather/india/gurgaon/ext\n[link-10] link \"https://www.easeweather.com › asia › india › haryana › gurgaon › today\" https://www.easeweather.com/asia/india/haryana/gurgaon/today\n[link-11] link \"https://www.ndtv.com › weather › gurgaon-weather-forecast-today\" https://www.ndtv.com/weather/gurgaon-weather-forecast-today\n[link-12] link \"Homepage\" https://start.duckduckgo.com/\n[link-13] link \"iOS Browser\" https://apps.apple.com/app/duckduckgo-private-browser/id663592361?platform=iphone&pt=866401&mt=8&ct=serp-atb-serp\n[link-14] link \"Android Browser\" https://play.google.com/store/apps/details?id=com.duckduckgo.mobile.android&referrer=utm_campaign%3Dserp-atb-serp%26origin%3Dfunnel_playstore_searchresults\n[link-15] link \"Duck.ai\" https://duck.ai/\n[link-16] link \"Podcast\" https://insideduckduckgo.substack.com/?showWelcome=true\n[link-17] link \"Community\" https://www.reddit.com/r/duckduckgo/",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"DuckDuckGo home DuckDuckGo\" https://duckduckgo.com/",
+          "type-2": "type the words into [2] input[text] \"Search privately\" value=\"weather in Gurgaon\" hasPopup=listbox expanded=false",
+          "click-2": "click [2] input[text] \"Search privately\" value=\"weather in Gurgaon\" hasPopup=listbox expanded=false",
+          "click-3": "click [3] button \"Search\"",
+          "click-4": "click [4] button \"Open menu\"",
+          "click-5": "click [5] link \"All\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web",
+          "click-6": "click [6] link \"Images\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=images&iax=images",
+          "click-7": "click [7] link \"News\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=news&iar=news",
+          "click-8": "click [8] link \"Videos\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=videos&iax=videos",
+          "click-9": "click [9] button \"More\" expanded=false",
+          "click-10": "click [10] link \"Search Assist\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=web&assist=true",
+          "click-11": "click [11] link \"Duck.ai\" https://duckduckgo.com/?q=weather+in+Gurgaon&ia=chat&entry=serp",
+          "click-12": "click [12] button \"Search Settings\"",
+          "click-13": "click [13] button \"✀\" role=link",
+          "click-14": "click [14] button \"Private\" expanded=false",
+          "click-15": "click [15] button \"Filter by the selected region\" role=switch checked=true",
+          "click-16": "click [16] button \"United Kingdom\" hasPopup=menu expanded=false",
+          "click-17": "click [17] button \"Safe search: moderate\" hasPopup=menu expanded=false",
+          "click-18": "click [18] button \"Any time\" hasPopup=menu expanded=false",
+          "click-19": "click [19] button \"Positive feedback\" expanded=false",
+          "click-20": "click [20] button \"Negative feedback\" expanded=false",
+          "click-21": "click [21] button \"Share Feedback\"",
+          "open-1": "open result link \"\" https://developer.apple.com/weatherkit/data-source-attribution/",
+          "open-2": "open result link \"https://www.accuweather.com › en › in › gurgaon › 188408 › hourly-weather-forec…\" https://www.accuweather.com/en/in/gurgaon/188408/hourly-weather-forecast/188408",
+          "open-3": "open result link \"https://www.bbc.com › weather › 1270642\" https://www.bbc.com/weather/1270642",
+          "open-4": "open result link \"https://www.accuweather.com › en › in › gurgaon › 188408 › weather-forecast › 1…\" https://www.accuweather.com/en/in/gurgaon/188408/weather-forecast/188408",
+          "open-5": "open result link \"https://www.meteoblue.com › en › weather › week › gurgaon_india_10592945\" https://www.meteoblue.com/en/weather/week/gurgaon_india_10592945",
+          "open-6": "open result link \"https://www.timeanddate.com › weather › india › gurgaon\" https://www.timeanddate.com/weather/india/gurgaon",
+          "open-7": "open result link \"https://weather.com › in › haryana › city › gurgaon › tenday\" https://weather.com/in/haryana/city/gurgaon/tenday",
+          "open-8": "open result link \"https://www.easeweather.com › asia › india › haryana › gurgaon\" https://www.easeweather.com/asia/india/haryana/gurgaon",
+          "open-9": "open result link \"https://www.timeanddate.com › weather › india › gurgaon › ext\" https://www.timeanddate.com/weather/india/gurgaon/ext",
+          "open-10": "open result link \"https://www.easeweather.com › asia › india › haryana › gurgaon › today\" https://www.easeweather.com/asia/india/haryana/gurgaon/today",
+          "open-11": "open result link \"https://www.ndtv.com › weather › gurgaon-weather-forecast-today\" https://www.ndtv.com/weather/gurgaon-weather-forecast-today",
+          "open-12": "open result link \"Homepage\" https://start.duckduckgo.com/",
+          "open-13": "open result link \"iOS Browser\" https://apps.apple.com/app/duckduckgo-private-browser/id663592361?platform=iphone&pt=866401&mt=8&ct=serp-atb-serp",
+          "open-14": "open result link \"Android Browser\" https://play.google.com/store/apps/details?id=com.duckduckgo.mobile.android&referrer=utm_campaign%3Dserp-atb-serp%26origin%3Dfunnel_playstore_searchresults",
+          "open-15": "open result link \"Duck.ai\" https://duck.ai/",
+          "open-16": "open result link \"Podcast\" https://insideduckduckgo.substack.com/?showWelcome=true",
+          "open-17": "open result link \"Community\" https://www.reddit.com/r/duckduckgo/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "show",
+          "s0-1": "show me",
+          "s0-2": "show me the",
+          "s0-3": "show me the weather",
+          "s0-4": "show me the weather in",
+          "s0-5": "show me the weather in Gurgaon",
+          "s1-1": "me",
+          "s1-2": "me the",
+          "s1-3": "me the weather",
+          "s1-4": "me the weather in",
+          "s1-5": "me the weather in Gurgaon",
+          "s2-2": "the",
+          "s2-3": "the weather",
+          "s2-4": "the weather in",
+          "s2-5": "the weather in Gurgaon",
+          "s3-3": "weather",
+          "s3-4": "weather in",
+          "s3-5": "weather in Gurgaon",
+          "s4-4": "in",
+          "s4-5": "in Gurgaon",
+          "s5-5": "Gurgaon"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      }
+    }
+  }
+}

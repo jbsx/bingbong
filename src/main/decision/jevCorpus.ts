@@ -15,6 +15,7 @@ import {
   type JevExpectation,
 } from '../../core/decision/jevCase.ts'
 import type { DecisionModel } from '../../core/ports/decisionModel'
+import { formatMs, nearestRankPercentile } from '../../core/report/stats.ts'
 import { toErrorMessage } from '../../core/errors.ts'
 import { reportFault } from '../../core/trace/fault.ts'
 import { collectDecisionRecords } from '../perf/collectDecisionRecords.ts'
@@ -82,6 +83,7 @@ export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Repla
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
   const verdicts: CaseVerdict[] = []
+  const latencies: number[] = []
   for (const entry of entries) {
     if (typeof entry.case === 'string') {
       verdicts.push({ name: entry.name, pass: false, problem: entry.case })
@@ -93,9 +95,18 @@ export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Repla
       continue
     }
     const result = await model.ask({ state: entry.case.ask.state, questions: entry.case.ask.questions, ...(images !== null ? { images } : {}) })
+    if (result.status === 'answered') latencies.push(result.latencyMs)
     verdicts.push(judgeJevCase(entry.name, entry.case, result))
   }
-  return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report: formatJevReplay(verdicts, model.model) }
+  const report = [formatJevReplay(verdicts, model.model), ...latencyLine(latencies)].join('\n')
+  return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report }
+}
+
+/** Jev's latency over the asks it answered (#390): a widening is checked on the replay for what the card costs, as for what it reads; none when nothing was answered. */
+function latencyLine(latencies: readonly number[]): string[] {
+  if (latencies.length === 0) return []
+  const sorted = [...latencies].sort((a, b) => a - b)
+  return [`Jev latency over ${sorted.length} answers: p50 ${formatMs(nearestRankPercentile(sorted, 50))}, p90 ${formatMs(nearestRankPercentile(sorted, 90))}, max ${formatMs(sorted.at(-1)!)}`]
 }
 
 /** A case's images read from beside it (#382), by reference; null for a text ask, a string for an image that is gone. */

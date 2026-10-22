@@ -101,6 +101,21 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('FAIL  sure\n  verb<0.90  chose click 0.90')
   })
 
+  it("ends with Jev's latency over the asks it answered (#390), so a widening's cost is read off the same replay", async () => {
+    for (let n = 1; n <= 10; n += 1) saveCase(`case-${String(n).padStart(2, '0')}`, `state-${n}`, [{ question: 'target', label: 'ref-27' }])
+    saveCase('case-11', 'state-slow', [{ question: 'target', label: 'ref-27' }])
+    const timed: DecisionModel = {
+      model: 'jev-fake',
+      async ask(request) {
+        if (request.state === 'state-slow') return { status: 'unavailable', reason: 'timeout', message: 'too slow', latencyMs: 15_000, model: 'jev-fake' }
+        const answers = { target: { type: 'choice', choice: 'ref-27', confidence: 0.9, probabilities: { 'ref-27': 0.9 } } }
+        return { status: 'answered', answers: answers as never, latencyMs: Number(request.state.slice('state-'.length)) * 100, model: 'jev-fake' }
+      },
+    }
+    const replay = await replayCorpus(dir, { env: {}, model: timed })
+    expect(replay.report.split('\n').at(-1)).toBe('Jev latency over 10 answers: p50 500ms, p90 900ms, max 1000ms')
+  })
+
   it('fails a case Jev did not answer, and one whose file cannot be read as a case', async () => {
     saveCase('slow', 'state-b', [{ question: 'target', label: 'ref-27' }])
     writeFileSync(join(dir, 'broken.json'), '{"ask": ')

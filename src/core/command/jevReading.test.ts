@@ -8,8 +8,8 @@ import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, done
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
-// 0076): the state is the transcript, the page's address and title and
-// its numbered refs — no page text; three Choices are asked in parallel —
+// 0076): the state is the transcript, the page's address and title, the
+// text in view (#390) and its numbered refs; three Choices are asked in parallel —
 // the verb (an action, never a spoken word, #353), the target among the
 // refs plus `none`, the Slot among the transcript's contiguous word spans.
 // The top Choice is acted on at any confidence; only `none` as the verb
@@ -30,7 +30,7 @@ function choice(label: string, confidence = 0.9): DecisionChoiceAnswer {
 }
 
 describe('the state Jev reads', () => {
-  it('carries the transcript, the page and the numbered refs with label, kind and href — no page text', () => {
+  it('carries the transcript, the page and the numbered refs with label, kind and href', () => {
     const state = commandState('click the first video', PAGE)
     expect(state).toBe(
       [
@@ -66,6 +66,31 @@ describe('the state Jev reads', () => {
     const play = { ref: 4, kind: 'button' as const, label: 'Play', href: null, inputType: null, frame: 'youtube.com', states: ['pressed=false'] }
     const state = commandState('play the video', { ...PAGE, refs: [...PAGE.refs, play] })
     expect(state.split('\n').slice(-2)).toEqual(['[3] input[search] "Search"', '[4] button "Play" in youtube.com pressed=false'])
+  })
+})
+
+describe('the text in view in the state Jev reads (#390)', () => {
+  it('gains one line under the page: each block quoted, in order, joined by a dot', () => {
+    const state = commandState('what is the weather', { ...PAGE, viewportText: ['Clear', 'Gurugram, India', '4 PM 30°', 'Say "hi"'] })
+    expect(state.split('\n').slice(1, 3)).toEqual(['Page: https://example.com/ — "Example"', 'Text in view: "Clear" · "Gurugram, India" · "4 PM 30°" · "Say \\"hi\\""'])
+  })
+
+  it('stops at the last whole block that keeps the line within 1200 characters', () => {
+    const block = 'x'.repeat(98)
+    const line = commandState('read it', { ...PAGE, viewportText: Array.from({ length: 20 }, () => block) }).split('\n')[2]!
+    // "Text in view: " is 14 characters, each quoted block 100 and each separator 3: eleven fit in 1144, a twelfth would make 1247.
+    expect(line).toBe(`Text in view: ${Array.from({ length: 11 }, () => JSON.stringify(block)).join(' · ')}`)
+  })
+
+  it('writes no line when no text is in view, or its first block alone is past the cap', () => {
+    expect(commandState('read it', { ...PAGE, viewportText: [] })).toBe(commandState('read it', PAGE))
+    expect(commandState('read it', { ...PAGE, viewportText: ['y'.repeat(1300)] })).toBe(commandState('read it', PAGE))
+  })
+
+  it('stands before the dialog line, on a hop as on the first ask', () => {
+    const page = { ...PAGE, viewportText: ['Clear'], dialog: { text: 'Sign in', refs: [2] } }
+    const hop: HopContext = { hop: 1, visited: ['https://example.com/'], actions: ['search weather'], links: [] }
+    expect(commandState('what is the weather', page, hop).split('\n').slice(3, 6)).toEqual(['Page: https://example.com/ — "Example"', 'Text in view: "Clear"', 'A dialog is open: "Sign in"'])
   })
 })
 

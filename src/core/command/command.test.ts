@@ -32,7 +32,7 @@ const SNAPSHOT = {
   title: 'X',
   dialogOpen: true,
   dialogText: 'Sign in to X',
-  viewportText: '',
+  viewportText: ['Clear', 'Gurugram, India'],
   refs: [ref(1, 'Home', 'page'), ref(2, 'Close', 'dialog'), ref(3, 'Sign in', 'dialog')],
 } as unknown as PageSnapshot
 
@@ -43,6 +43,10 @@ describe('commandPageOf', () => {
 
   it('carries no dialog when none is open', () => {
     expect(commandPageOf({ ...SNAPSHOT, dialogOpen: false, dialogText: '' }).dialog).toBeUndefined()
+  })
+
+  it('keeps the text in view (#390), so the Verdict can see what the page shows', () => {
+    expect(commandPageOf(SNAPSHOT).viewportText).toEqual(['Clear', 'Gurugram, India'])
   })
 
   it("carries a media ref's own facts (#372), and none for a ref that has none", () => {

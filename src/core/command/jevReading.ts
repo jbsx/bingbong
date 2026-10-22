@@ -10,8 +10,8 @@ import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeO
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
-// The state is the transcript, the page's address and title and its
-// numbered refs — label, kind, href, no page text. Jev reads the Command
+// The state is the transcript, the page's address and title, the text in
+// view (#390) and its numbered refs — label, kind, href. Jev reads the Command
 // as one whole action (#370): one Choice, the action card, whose every
 // option is an action — a click, a type or a right-click on a numbered
 // ref, an open of a link further down, a verb that needs no ref (an action
@@ -705,6 +705,27 @@ export interface StepContext {
 /** Where the Mark Ask's image stands in its state (#382, ADR 0084): the reference the ask's `images` holds it under. */
 export const MARKS_IMAGE = '<marks>'
 
+/** The most the `Text in view:` line holds (#390): it competes with the refs on the card. */
+const TEXT_IN_VIEW_CAP = 1200
+
+/**
+ * The text in view as one line under the page (#390): each block quoted,
+ * in reading order, up to the last whole block that keeps the line within
+ * {@link TEXT_IN_VIEW_CAP}. A forecast, a score or a definition is text,
+ * not a control, and the Verdict cannot see it is on screen without it.
+ * No line when no block fits.
+ */
+function textInViewLine(blocks: readonly string[]): string[] {
+  const prefix = 'Text in view: '
+  let line = ''
+  for (const block of blocks) {
+    const next = `${line === '' ? prefix : `${line} · `}${JSON.stringify(block)}`
+    if (next.length > TEXT_IN_VIEW_CAP) break
+    line = next
+  }
+  return line === '' ? [] : [line]
+}
+
 /** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands; for the Mark Ask, the marked refs and the image of them. */
 export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>): string {
   const shown = offered(page, hop)
@@ -718,6 +739,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
         ? [`Done so far: ${done.join('; ')}`]
         : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
+    ...textInViewLine(page.viewportText ?? []),
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.fullScreen !== undefined ? [`Full screen: ${page.fullScreen ? 'on' : 'off'}`] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),

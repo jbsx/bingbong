@@ -131,6 +131,8 @@ export interface CommandPage {
   readonly refs: readonly CommandRef[]
   /** The Page Terms (ADR 0077): the names the page shows, ranked, for the Name Match; absent for a page read without them. */
   readonly terms?: readonly string[]
+  /** The text in view (#390), block by block in reading order: what every ask, the Verdict's among them, sees the page show; absent for a page read without it. */
+  readonly viewportText?: readonly string[]
   /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
   readonly dialog?: PageDialog
   /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
@@ -150,13 +152,14 @@ export function commandRefOf(ref: SnapshotRef): CommandRef {
   return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
 }
 
-/** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */
+/** The page a Command is read against, off a collected snapshot: its refs, its Page Terms, its text in view and the dialog open over it. */
 export function commandPageOf(snapshot: PageSnapshot): CommandPage {
   return {
     url: snapshot.url,
     title: snapshot.title,
     refs: snapshot.refs.map(commandRefOf),
     terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
+    viewportText: snapshot.viewportText,
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
