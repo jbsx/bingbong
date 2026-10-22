@@ -1290,6 +1290,32 @@ describe('the Name Match (ADR 0077)', () => {
     expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotFrom: 'page' })
   })
 
+  it('puts the Hearing on the card before Jev reads a spoken line: the name the words sound like, beside the words as heard (#396)', async () => {
+    const { browser, decision: jev, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, title: 'Linus Tech Tips - YouTube', refs: NAMED_REFS }
+    jev.script.push(...searched('s1-3'))
+    await runner.run('search line stack tips', { source: 'spoken' })
+    const request = jev.requests[0]!
+    expect(request.state.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "line stack tips" sounds like "linus tech tips", a name on this page')
+    expect((request.questions.slot as DecisionChoiceQuestion).options['s1-3']).toBe('line stack tips (sounds like "linus tech tips")')
+  })
+
+  it('hears a Learned Term the page does not show, and a typed line hears nothing', async () => {
+    const { decision: jev, runner } = harness({ learned: ['kanye west'] })
+    jev.script.push(...searched('s1-1'), ...searched('s1-1'))
+    await runner.run('search canywast', { source: 'spoken' })
+    await runner.run('search canywast')
+    expect(jev.requests[0]!.state.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "canywast" sounds like "kanye west", a name the user taught the app')
+    expect(jev.requests[2]!.state.split('\n')[1]).not.toMatch(/^Heard by ear/)
+  })
+
+  it('carries the rest of a Slot that already names one Learned Term as spelled: "Highs and Lows by Canywast" is by Kanye West', async () => {
+    const { browser, records, runner } = harness({ learned: ['highs and lows', 'kanye west'] })
+    await runner.run('type Highs and Lows by Canywast in search', { source: 'spoken' })
+    expect(browser.typed).toEqual([{ ref: 3, text: 'Highs and Lows by kanye west' }])
+    expect(decision(records[0])).toMatchObject({ slotHeard: 'Canywast', slotFrom: 'learned' })
+  })
+
   it('tells the Learned Terms every spoken transcript, so the terms it carries stay in use', async () => {
     const { observed, runner } = harness()
     await runner.run('scroll down', { source: 'spoken' })

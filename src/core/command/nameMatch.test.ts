@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nameMatch, soundKey, soundsAlike, wordSoundKey } from './nameMatch'
+import { HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, wordSoundKey } from './nameMatch'
 
 // The Name Match (ADR 0077, #325): a Slot that sounds like a name the page
 // shows, or one the user taught the app, is carried as that name. The
@@ -64,6 +64,48 @@ describe('nameMatch', () => {
 
   it('reads a possessive as the name it inflects', () => {
     expect(nameMatch("Elon Musk's profile", candidates)).toEqual({ slot: 'Elon Musk profile', candidate: 'Elon Musk', heard: "Elon Musk's" })
+  })
+
+  // The 2026-10-21 line "Click Highs and Lows by Canywast." (#396): "kanye
+  // west" was a Learned Term, and so was "highs and lows" — the Slot
+  // carrying one name as spelled must not stop the other being matched.
+  it('matches the rest of a Slot that already carries one name as spelled', () => {
+    expect(nameMatch('Highs and Lows by Canywast', ['highs and lows', 'kanye west'])).toEqual({ slot: 'Highs and Lows by kanye west', candidate: 'kanye west', heard: 'Canywast' })
+  })
+
+  it('never rewrites the words a candidate spells, even to a nearer-sounding candidate', () => {
+    expect(nameMatch('linus tech tips', ['Linus Tech Tips', 'Linus Tech Tipz'])).toBeNull()
+    expect(nameMatch('linus tech tips', ['Linus Tech Tipz', 'Linus Tech Tips'])).toBeNull()
+  })
+})
+
+describe('hearNames', () => {
+  const page = ['Linus Tech Tips', 'MKBHD']
+  const learned = ['kanye west', 'highs and lows']
+
+  it('hears the names a transcript sounds like, in the order spoken, saying where each came from', () => {
+    expect(hearNames('Search NKBH D', page, learned)).toEqual([{ heard: 'NKBH D', candidate: 'MKBHD', from: 'page' }])
+    expect(hearNames('Click Highs and Lows by Canywast.', page, learned)).toEqual([{ heard: 'Canywast', candidate: 'kanye west', from: 'learned' }])
+    expect(hearNames('play line stack tips then canywast', page, learned)).toEqual([
+      { heard: 'line stack tips', candidate: 'Linus Tech Tips', from: 'page' },
+      { heard: 'canywast', candidate: 'kanye west', from: 'learned' },
+    ])
+  })
+
+  it('hears nothing in a transcript that sounds like no name, or carries every name as spelled', () => {
+    expect(hearNames('scroll down', page, learned)).toEqual([])
+    expect(hearNames('search linus tech tips', page, learned)).toEqual([])
+    expect(hearNames('', page, learned)).toEqual([])
+  })
+
+  it('hears each span once, the nearest name winning it, and the Page Terms before the Learned Terms on a tie', () => {
+    expect(hearNames('search linus tech dips', ['Linus Tech Tips'], ['Linus Tech Tipps'])).toEqual([{ heard: 'linus tech dips', candidate: 'Linus Tech Tips', from: 'page' }])
+    expect(hearNames('search linus tech dips', ['Linus Tech Tipps'], ['Linus Tech Tips'])).toEqual([{ heard: 'linus tech dips', candidate: 'Linus Tech Tipps', from: 'page' }])
+  })
+
+  it('hears at most the cap', () => {
+    const names = ['Alpha Bravo', 'Charlie Delta', 'Echo Foxtrot', 'Golf Hotel']
+    expect(hearNames('alfa brava charly delda eko foxtrat gulf hotell', names, [])).toHaveLength(HEARING_CAP)
   })
 })
 

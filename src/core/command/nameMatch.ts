@@ -1,4 +1,5 @@
 import { normalizeWords } from './command'
+import type { NameSource } from './decisionRecord'
 
 // The Name Match (CONTEXT.md, ADR 0077, #325): the recogniser is allowed
 // to be wrong about a name, and its output is matched afterwards against
@@ -12,6 +13,12 @@ import { normalizeWords } from './command'
 // The key is Metaphone-style: consonant classes with the vowels dropped
 // after a word's first letter, so "line stack tips", "Linus Tech dips" and
 // "liner stack tips" all key within an edit or two of "Linus Tech Tips".
+//
+// The Hearing (ADR 0077 as amended, #396): before Jev is asked, the whole
+// transcript is read the same way, and the names it sounds like go on the
+// card beside the words as heard — so Jev reads "Search NKBH D" as a
+// search for MKBHD and not as noise. Jev keeps the choice; the Name Match
+// rewrites the Slot it chose afterwards, as before.
 
 /** A Name Match: the Slot as it will be carried, and the words it replaced. */
 export interface NameMatch {
@@ -193,47 +200,135 @@ export function soundsAlike(a: string, b: string, slack = 0): boolean {
   return editDistance(keyA, keyB, limit) <= limit
 }
 
-/** Whether the phrase already carries the candidate word for word. */
-function carries(words: readonly string[], candidate: readonly string[]): boolean {
-  for (let start = 0; start + candidate.length <= words.length; start += 1) {
-    if (candidate.every((word, i) => words[start + i] === word)) return true
+/** A name the transcript was heard to carry (#396): the words as heard, the name they sound like, and where the name came from. */
+export interface NameHearing {
+  readonly heard: string
+  readonly candidate: string
+  readonly from: NameSource
+}
+
+/** How many names one transcript is heard to carry: the card has a cap, and every line on it competes. */
+export const HEARING_CAP = 3
+
+/** A candidate with its words and its sound key, in the rank it was given. */
+interface Keyed {
+  readonly candidate: string
+  readonly words: readonly string[]
+  readonly key: string
+  readonly rank: number
+}
+
+function wordsOf(text: string): string[] {
+  return normalizeWords(text)
+    .split(' ')
+    .filter((word) => word !== '')
+}
+
+/** The candidates keyed, in rank order; one keyed too short to tell names apart has no key and matches nothing. */
+function keyCandidates(candidates: readonly string[]): Keyed[] {
+  return candidates
+    .map((candidate, rank) => ({ candidate, words: wordsOf(candidate), rank }))
+    .filter((entry) => entry.words.length > 0)
+    .map((entry) => {
+      const key = soundKey(entry.words.join(' '))
+      return { ...entry, key: key.length < MIN_KEY_LENGTH ? '' : key }
+    })
+}
+
+/**
+ * The word positions some candidate occupies as spelled: those words are
+ * settled, and no span over them is rewritten — "linus tech tips" is left
+ * alone, and "Highs and Lows by Canywast" keeps its "Highs and Lows" while
+ * "Canywast" is still read against "Kanye West".
+ */
+function settledBy(words: readonly string[], keyed: readonly Keyed[]): Set<number> {
+  const settled = new Set<number>()
+  for (const { words: candidate } of keyed) {
+    for (let start = 0; start + candidate.length <= words.length; start += 1) {
+      if (!candidate.every((word, i) => words[start + i] === word)) continue
+      for (let i = 0; i < candidate.length; i += 1) settled.add(start + i)
+    }
   }
-  return false
+  return settled
+}
+
+interface SpanMatch {
+  readonly start: number
+  readonly length: number
+  readonly keyed: Keyed
+  readonly distance: number
+}
+
+/**
+ * Every span of the words that sounds like a candidate inside the
+ * tolerance — a span within a word of the candidate's length, off the
+ * settled words — nearest first; on a tie the first candidate, then the
+ * shorter and earlier span.
+ */
+function spanMatches(words: readonly string[], keyed: readonly Keyed[]): SpanMatch[] {
+  const settled = settledBy(words, keyed)
+  const matches: SpanMatch[] = []
+  for (const entry of keyed) {
+    if (entry.key === '') continue
+    for (let length = Math.max(1, entry.words.length - 1); length <= Math.min(words.length, entry.words.length + 1); length += 1) {
+      for (let start = 0; start + length <= words.length; start += 1) {
+        if (words.slice(start, start + length).some((_, i) => settled.has(start + i))) continue
+        const spanKey = soundKey(words.slice(start, start + length).join(' '))
+        const limit = tolerance(Math.max(entry.key.length, spanKey.length))
+        const distance = editDistance(spanKey, entry.key, limit)
+        if (distance > limit) continue
+        matches.push({ start, length, keyed: entry, distance })
+      }
+    }
+  }
+  return matches.sort((a, b) => a.distance - b.distance || a.keyed.rank - b.keyed.rank || a.length - b.length || a.start - b.start)
 }
 
 /**
  * The Name Match of a Slot against the candidates, in rank order: the
  * candidate whose sound key is nearest to the Slot's, or to a span of it
  * within a word of the candidate's length, inside the tolerance. The
- * first candidate wins a tie. Null when the Slot already carries a
- * candidate as spelled, or none sounds like it.
+ * first candidate wins a tie. A span the Slot already carries as some
+ * candidate spells it is settled and never rewritten; null when nothing
+ * else sounds like a candidate.
  */
 export function nameMatch(slot: string, candidates: readonly string[]): NameMatch | null {
-  const words = normalizeWords(slot).split(' ').filter((word) => word !== '')
+  const words = wordsOf(slot)
   if (words.length === 0) return null
+  const best = spanMatches(words, keyCandidates(candidates))[0]
+  if (best === undefined) return null
   const spoken = slot.trim().split(/\s+/)
   // The spoken words line up with the normalized ones only when nothing dropped out in normalizing; otherwise the whole Slot is one span.
   const aligned = spoken.length === words.length
-  let best: { match: NameMatch; distance: number } | null = null
-  for (const candidate of candidates) {
-    const candidateWords = normalizeWords(candidate).split(' ').filter((word) => word !== '')
-    if (candidateWords.length === 0) continue
-    if (carries(words, candidateWords)) return null
-    const key = soundKey(candidateWords.join(' '))
-    if (key.length < MIN_KEY_LENGTH) continue
-    for (let length = Math.max(1, candidateWords.length - 1); length <= Math.min(words.length, candidateWords.length + 1); length += 1) {
-      for (let start = 0; start + length <= words.length; start += 1) {
-        const span = words.slice(start, start + length)
-        const spanKey = soundKey(span.join(' '))
-        const limit = tolerance(Math.max(key.length, spanKey.length))
-        const distance = editDistance(spanKey, key, limit)
-        if (distance > limit) continue
-        if (best !== null && distance >= best.distance) continue
-        const heard = aligned ? spoken.slice(start, start + length).join(' ') : slot.trim()
-        const replaced = aligned ? [...spoken.slice(0, start), candidate.trim(), ...spoken.slice(start + length)].join(' ') : candidate.trim()
-        best = { match: { slot: replaced, candidate: candidate.trim(), heard }, distance }
-      }
-    }
+  const candidate = best.keyed.candidate.trim()
+  const { start, length } = best
+  const heard = aligned ? spoken.slice(start, start + length).join(' ') : slot.trim()
+  const replaced = aligned ? [...spoken.slice(0, start), candidate, ...spoken.slice(start + length)].join(' ') : candidate
+  return { slot: replaced, candidate, heard }
+}
+
+/**
+ * The Hearing of a transcript (#396): the names its words sound like, the
+ * Page Terms before the Learned Terms, nearest first and at most
+ * {@link HEARING_CAP}, no two over the same words, in the order spoken.
+ * Empty when the transcript sounds like no name, or carries every name it
+ * sounds like as spelled.
+ */
+export function hearNames(text: string, page: readonly string[], learned: readonly string[]): NameHearing[] {
+  const words = wordsOf(text)
+  if (words.length === 0) return []
+  const spoken = text.trim().split(/\s+/)
+  const aligned = spoken.length === words.length
+  const taken = new Set<number>()
+  const hearings: (NameHearing & { readonly start: number })[] = []
+  for (const match of spanMatches(words, keyCandidates([...page, ...learned]))) {
+    if (hearings.length >= HEARING_CAP) break
+    const positions = Array.from({ length: match.length }, (_, i) => match.start + i)
+    if (positions.some((position) => taken.has(position))) continue
+    for (const position of positions) taken.add(position)
+    // The heard words as spoken, shorn of the punctuation at their edges: a sentence's full stop is no part of a name.
+    const heard = (aligned ? spoken : words).slice(match.start, match.start + match.length).join(' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+    hearings.push({ heard, candidate: match.keyed.candidate.trim(), from: match.keyed.rank < page.length ? 'page' : 'learned', start: match.start })
   }
-  return best?.match ?? null
+  return hearings.sort((a, b) => a.start - b.start).map(({ start: _start, ...hearing }) => hearing)
 }

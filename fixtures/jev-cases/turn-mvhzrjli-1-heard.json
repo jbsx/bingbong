@@ -1,0 +1,78 @@
+{
+  "turnId": "turn-mvhzrjli-1-heard",
+  "transcript": "Click Highs and Lows by Canywast.",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792579859362,
+  "expect": [
+    {
+      "question": "action",
+      "label": "play"
+    },
+    {
+      "question": "slot",
+      "label": "s1-5"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Click Highs and Lows by Canywast.\"\nHeard by ear, so a word may be misheard: \"Canywast\" sounds like \"kanye west\", a name the user taught the app\nPage: about:blank — \"\"\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. The music options act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open; a ref that names what the words name is the page's own control for it. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose its click, never a music option.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Click",
+          "s0-1": "Click Highs",
+          "s0-2": "Click Highs and",
+          "s0-3": "Click Highs and Lows",
+          "s0-4": "Click Highs and Lows by",
+          "s0-5": "Click Highs and Lows by Canywast",
+          "s1-1": "Highs",
+          "s1-2": "Highs and",
+          "s1-3": "Highs and Lows",
+          "s1-4": "Highs and Lows by",
+          "s1-5": "Highs and Lows by Canywast",
+          "s2-2": "and",
+          "s2-3": "and Lows",
+          "s2-4": "and Lows by",
+          "s2-5": "and Lows by Canywast",
+          "s3-3": "Lows",
+          "s3-4": "Lows by",
+          "s3-5": "Lows by Canywast",
+          "s4-4": "by",
+          "s4-5": "by Canywast",
+          "s5-5": "Canywast (sounds like \"kanye west\")"
+        }
+      },
+      "steps": {
+        "type": "choice",
+        "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",
+        "options": {
+          "none": "one command: the whole line",
+          "w3": "Click Highs | Lows by Canywast."
+        }
+      }
+    }
+  }
+}

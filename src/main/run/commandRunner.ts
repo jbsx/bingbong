@@ -48,7 +48,7 @@ import {
 } from '../../core/command/jevReading'
 import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutcome'
 import { navigateAddress, searchAddress } from '../../core/command/openAddress'
-import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
+import { hearNames, nameMatch, soundsAlike, type NameHearing } from '../../core/command/nameMatch'
 import {
   MAX_TASK_ACTIONS,
   MISFIRE_WINDOW_MS,
@@ -742,8 +742,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const questions = commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance() })
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step, undefined, questions), questions, options.askId)
+    const heard = hearingOf(text, page, spoken)
+    const questions = commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance(), heard })
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step, undefined, questions, heard), questions, options.askId)
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
     return { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
@@ -773,12 +774,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * answer, is no Command, and nothing guesses. The Verdict rides the
    * same call (#394): the page may already show what the words ask for.
    */
-  async function readWhere(turnId: string, text: string, first: Reading, step: StepContext | undefined): Promise<Reading> {
+  async function readWhere(turnId: string, text: string, first: Reading, step: StepContext | undefined, heard: readonly NameHearing[]): Promise<Reading> {
     const { page } = first
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
-    const questions = whereQuestions(text, page, { appliance: appliance() })
-    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions), questions, `${first.ask ?? turnId}-where`)
+    const questions = whereQuestions(text, page, { appliance: appliance(), heard })
+    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions, heard), questions, `${first.ask ?? turnId}-where`)
     const verdict = result.status === 'answered' ? readVerdict(result.answers) : null
     return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}) }
   }
@@ -793,7 +794,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * it would have. Its reading is hop 0's,
    * fired with no bar; `none`, or no answer, is no Command.
    */
-  async function readMarks(turnId: string, text: string, first: Reading, where: Reading, step: StepContext | undefined): Promise<Reading | null> {
+  async function readMarks(turnId: string, text: string, first: Reading, where: Reading, step: StepContext | undefined, heard: readonly NameHearing[]): Promise<Reading | null> {
     const { page } = where
     const model = deps.decisionModel()
     const capture = browser.markedScreenshot?.bind(browser)
@@ -803,12 +804,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const shot = await capture(textless)
     if (shot === null || shot.marks.length === 0) return null
     const marked = new Set(shot.marks.map((mark) => mark.ref))
-    const questions = markQuestions(text, page, { appliance: appliance(), marked })
+    const questions = markQuestions(text, page, { appliance: appliance(), marked, heard })
     const result = await askJev(
       model,
       'mark',
       turnId,
-      commandState(text, page, undefined, step, marked, questions),
+      commandState(text, page, undefined, step, marked, questions, heard),
       questions,
       `${first.ask ?? turnId}-mark`,
       { [MARKS_IMAGE]: shot.jpeg },
@@ -996,6 +997,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name. */
+  /**
+   * The Hearing (#396, ADR 0077 as amended): the names a spoken line sounds
+   * like, read against the Page Terms and the Learned Terms before Jev is
+   * asked, so the card says them beside the words as heard. A typed line
+   * is exact and hears none.
+   */
+  function hearingOf(text: string, page: CommandPage, spoken: boolean): readonly NameHearing[] {
+    return spoken ? hearNames(text, page.terms ?? [], learnedTerms()) : []
+  }
+
   function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
     if (!spoken || !slotIsNameable(heard)) return { command: heard, matched: null }
     const pageTerms = page.terms ?? []
@@ -1634,8 +1645,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const questions = hopQuestions(task.text, page, context, { appliance: appliance() })
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step, undefined, questions), questions)
+      const heard = hearingOf(task.text, page, spoken)
+      const questions = hopQuestions(task.text, page, context, { appliance: appliance(), heard })
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step, undefined, questions, heard), questions)
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1898,8 +1910,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const questions = partialQuestions(words, page, { appliance: appliance() })
-    const result = await askJev(model, 'partial', null, commandState(words, page, undefined, undefined, undefined, questions), questions)
+    const heard = hearingOf(words, page, true)
+    const questions = partialQuestions(words, page, { appliance: appliance(), heard })
+    const result = await askJev(model, 'partial', null, commandState(words, page, undefined, undefined, undefined, questions, heard), questions)
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
@@ -1989,11 +2002,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
       extraLogged = true
       reading = { turnId, submission }
-      heard = await readWhere(turnId, words, first, options.step)
+      heard = await readWhere(turnId, words, first, options.step, hearingOf(words, first.page, source === 'spoken'))
       whereRead = heard
       if (asksMarks(whereRead) && submission === submitted) {
         // The Where Ask read none too (#382, ADR 0084): a card with a Textless Ref is asked once more with the marked page, and its record stays.
-        const marked = await readMarks(turnId, words, first, whereRead, options.step)
+        const marked = await readMarks(turnId, words, first, whereRead, options.step, hearingOf(words, whereRead.page, source === 'spoken'))
         if (marked !== null) {
           log({ ...recordOf(turnId, at(), source, words, whereRead, whereRead.command, null, truncated), task: hop0 })
           heard = marked
@@ -2004,7 +2017,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // An unsure click on a Textless Ref (owner ruling 2026-10-22, ADR 0084 amended): the Mark Ask is asked before the guess fires.
       // Its answer is hop 0's reading, the guess keeping its record; no answer, or no capture, leaves the guess to fire as read.
       reading = { turnId, submission }
-      const marked = await readMarks(turnId, words, first, first, options.step)
+      const marked = await readMarks(turnId, words, first, first, options.step, hearingOf(words, first.page, source === 'spoken'))
       if (reading?.turnId === turnId) reading = null
       if (marked?.reading === 'jev') {
         log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })

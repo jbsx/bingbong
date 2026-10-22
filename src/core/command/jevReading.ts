@@ -5,6 +5,7 @@ import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, sho
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
+import type { NameHearing } from './nameMatch'
 import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
@@ -798,11 +799,12 @@ function textFurtherDownLines(page: CommandPage, hop: HopContext | undefined, ca
  * marked refs and the image of them; and, given the `card` asked beside
  * it, the Text Further Down it offers.
  */
-export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>, card?: { readonly action: DecisionChoiceQuestion }): string {
+export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>, card?: { readonly action: DecisionChoiceQuestion }, heard?: readonly NameHearing[]): string {
   const shown = offered(page, hop)
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
+    ...heardLine(heard),
     ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(hop !== undefined
       ? [`This is step ${hop.hop + 1} of the task. Done so far: ${done.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
@@ -922,11 +924,11 @@ export function commandQuestions(
   text: string,
   pageRead: CommandPage,
   hop?: HopContext,
-  options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number> } = {},
+  options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[] } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
   const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
-  const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
+  const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
   const extended = { ...action, extent: extentQuestion() }
@@ -977,8 +979,8 @@ export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoi
  * the words ask for is kept, not left for the Where Ask's action. Adding
  * it moved none of 40 measured Where Ask picks.
  */
-export function whereQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): WhereQuestions {
-  return { ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where' }), outcome: outcomeQuestion() }
+export function whereQuestions(text: string, page: CommandPage, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): WhereQuestions {
+  return { ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where', heard }), outcome: outcomeQuestion() }
 }
 
 /**
@@ -1013,8 +1015,8 @@ export function isTextlessGuess(action: DecisionChoiceAnswer, questions: Command
  * once more with the page's image beside it, every option as it was but
  * a marked ref's, which reads "the control marked N"; no `steps`.
  */
-export function markQuestions(text: string, page: CommandPage, { appliance, marked }: { readonly appliance?: Appliance; readonly marked: ReadonlySet<number> }): CommandQuestions {
-  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'mark', marked })
+export function markQuestions(text: string, page: CommandPage, { appliance, marked, heard }: { readonly appliance?: Appliance; readonly marked: ReadonlySet<number>; readonly heard?: readonly NameHearing[] }): CommandQuestions {
+  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'mark', marked, heard })
 }
 
 /**
@@ -1091,11 +1093,31 @@ function actionQuestion(
   return { question, mediaOps: ops.length > 0 }
 }
 
-function slotQuestion(text: string): DecisionChoiceQuestion {
+/** Where a heard name came from, as the Hearing line says it. */
+const HEARD_FROM: Readonly<Record<NameHearing['from'], string>> = { page: 'a name on this page', learned: 'a name the user taught the app' }
+
+/**
+ * The Hearing line (#396, ADR 0077 as amended): the words were heard by
+ * ear, and these of them sound like names the page shows or the user
+ * taught — said before the card, so Jev reads a misheard name as the name
+ * and not as noise. No line when the transcript sounds like no name.
+ */
+export function heardLine(heard: readonly NameHearing[] | undefined): string[] {
+  if (heard === undefined || heard.length === 0) return []
+  return [`Heard by ear, so a word may be misheard: ${heard.map((hearing) => `${JSON.stringify(hearing.heard)} sounds like ${JSON.stringify(hearing.candidate)}, ${HEARD_FROM[hearing.from]}`).join('; ')}`]
+}
+
+/** A span's words as the Slot offers them: the span that was heard as a name says which (#396). */
+export function spanOption(words: string, heard: readonly NameHearing[] | undefined): string {
+  const hearing = heard?.find((candidate) => normalizeWords(candidate.heard) === normalizeWords(words))
+  return hearing === undefined ? words : `${words} (sounds like ${JSON.stringify(hearing.candidate)})`
+}
+
+function slotQuestion(text: string, heard?: readonly NameHearing[]): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. Choose none when it carries none.',
-    options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, span.words])) },
+    options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, spanOption(span.words, heard)])) },
   }
 }
 
@@ -1190,9 +1212,9 @@ export const PROGRESS_FLOOR = Math.round((1 - DEFAULT_DECISION_THRESHOLDS.choice
 /** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice. */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion }
 
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance }: { readonly appliance?: Appliance } = {}): HopQuestions {
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  return { ...commandQuestions(text, pageRead, hop, { appliance }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  return { ...commandQuestions(text, pageRead, hop, { appliance, heard }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
 }
 
 /** The answers to {@link HopQuestions}: the Command's, the Verdict's, the Progress Noul's and, when asked, the dismiss Choice's. */
@@ -1227,9 +1249,9 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
  */
 export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
 
-export function partialQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): PartialQuestions {
+export function partialQuestions(text: string, page: CommandPage, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): PartialQuestions {
   return {
-    ...commandQuestions(text, page, undefined, { steps: false, appliance }),
+    ...commandQuestions(text, page, undefined, { steps: false, appliance, heard }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
 }

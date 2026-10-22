@@ -1470,3 +1470,34 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
     expect(reread.show).toEqual(pretty)
   })
 })
+
+describe('the Hearing on the card (#396, ADR 0077 as amended)', () => {
+  const heard = [{ heard: 'NKBH D', candidate: 'MKBHD', from: 'page' as const }]
+
+  it('says after the transcript which words sound like a name, and where the name came from', () => {
+    const state = commandState('Search NKBH D', PAGE, undefined, undefined, undefined, undefined, heard)
+    expect(state.split('\n').slice(0, 2)).toEqual(['The user spoke to a web browser: "Search NKBH D"', 'Heard by ear, so a word may be misheard: "NKBH D" sounds like "MKBHD", a name on this page'])
+    const learned = commandState('play canywast', PAGE, undefined, undefined, undefined, undefined, [{ heard: 'canywast', candidate: 'kanye west', from: 'learned' }])
+    expect(learned.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "canywast" sounds like "kanye west", a name the user taught the app')
+  })
+
+  it('says nothing when nothing was heard as a name: a typed line, or one that sounds like none', () => {
+    expect(commandState('Search NKBH D', PAGE).split('\n')[1]).toBe('Page: https://example.com/ — "Example"')
+    expect(commandState('Search NKBH D', PAGE, undefined, undefined, undefined, undefined, []).split('\n')[1]).toBe('Page: https://example.com/ — "Example"')
+  })
+
+  it('marks the Slot span that was heard as a name, leaving every other span as spoken', () => {
+    const { slot } = commandQuestions('Search NKBH D', PAGE, undefined, { heard })
+    expect(slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
+    expect(slot.options['s0-2']).toBe('Search NKBH D')
+    expect(slot.options['s1-1']).toBe('NKBH')
+    expect(commandQuestions('Search NKBH D', PAGE).slot.options['s1-2']).toBe('NKBH D')
+  })
+
+  it('rides the Where Ask, the Mark Ask, a hop and a partial', () => {
+    const hop: HopContext = { hop: 1, visited: [], actions: [], links: [], setAside: [], searched: [], terms: [] }
+    expect(whereQuestions('Search NKBH D', PAGE, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
+    expect(hopQuestions('Search NKBH D', PAGE, hop, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
+    expect(partialQuestions('Search NKBH D', PAGE, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
+  })
+})
