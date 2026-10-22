@@ -34,8 +34,14 @@ the step. Each is another call, and the aim is still the fastest Task.
 
 Widening is measured, never assumed. The card has a cap and every line on
 it competes; a lure (the browser's `back` beside a media seek) is a real
-cost. A widening is checked with `jev:replay` and a case that used to pass
-and no longer does is a regression.
+cost. A widening is checked with `pnpm jev:gate`: the corpus asked once of
+every gate model (`BINGBONG_GATE_MODELS` — the free, deterministic ones, so
+one run each is exact), and a case is through only when every model passes
+it. A weaker model's miss is a card problem until shown otherwise: a card a
+weaker model reads right is one Jev cannot misread. A case that used to
+pass on any model and no longer does is a regression. Jev is paid and is
+asked only when the owner says so in the turn — `--with-jev`, never on a
+session's own judgement; live runs go to whatever the root `.env` names.
 
 Code keeps what is not a judgement: the facts (a media element's state, a
 seekable range) and the mechanisms (one evaluate that fires an op on any
