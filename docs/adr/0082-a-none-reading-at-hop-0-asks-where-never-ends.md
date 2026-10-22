@@ -11,7 +11,9 @@ the first action. The Question class ("what's the weather like in
 gurgaon") is not this decision: it shares the `none` reading and nothing
 after it, and is grilled on its own. Amended on 2026-10-21 by ADR 0084: a
 second `none` makes a Mark Ask before it ends, when a Textless Ref is on
-the card.
+the card. Amended on 2026-10-22 by #394: the Where Ask's call carries the
+Verdict, and a sure `yes` beside an action ends the Task done on the page
+as it is.
 
 ## Context
 
@@ -53,6 +55,36 @@ a Task. Nothing it finds is remembered: Jev decides each time.
 **The first ask is untouched.** Its instructions and its `none` line stay
 as measured; sure lines never see the Where Ask, so its question cannot
 lure them.
+
+## Amendment (#394): a page that already answers is kept
+
+A question whose answer is already on screen reads `none` at hop 0. The
+Where Ask then asks which action would reveal what the words name, as if
+it were not shown, and fires its best click away from the answer: on
+gov.uk passport fees, "how much is it to renew online" read `none` 0.46
+over a card whose `Text in view` held the £102 fee, and the Where Ask
+clicked "Renew or replace your adult passport" (0.60).
+
+**The Where Ask's call carries the Verdict, worded as every later hop's. A
+sure `yes` beside a Where Ask action ends the Task done on the page as it
+is, before the action fires.** A Where Ask that reads `none` goes on as
+above, whatever the Verdict says: noise reads as done when nothing was
+asked ("Look." `yes` 0.76–0.79), and a `none` never ends as the page
+already being what was asked (#370). The first reading still asks no
+Verdict. Done-ness stays the Verdict's; no reading on the action card says
+it.
+
+Measured on 40 Where Ask cards: adding the Verdict moved no Where Ask
+pick (0/40); passport `yes` 0.82–0.85 on three captures; every other sure
+`yes` was beside a Where Ask `none`. A `none` past hop 0 already ends the
+Task on the page as it is, so the Where Ask is the only place this class
+left an answer.
+
+Rejected on the way: rewording the first ask's `none` or `read` (every
+variant moved 15–30 of 278 real asks, the uncertain non-questions with
+them, such as "download it as an epub" → Download as PDF); and a `shown`
+reading on the Where Ask (passport 0.77 and 4 of 36 picks moved, but a
+done reading on the action card, against #370).
 
 ## Considered options
 
