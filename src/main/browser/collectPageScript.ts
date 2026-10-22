@@ -668,11 +668,10 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const isHidden = (el) => (typeof el.checkVisibility === 'function' ? !el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) : el.getClientRects().length === 0)
   const panelOf = (el) => {
     const controls = (el.getAttribute('aria-controls') || '').split(/\\s+/).filter((id) => id !== '')
-    if (controls.length > 0) {
-      const tree = typeof el.getRootNode().getElementById === 'function' ? el.getRootNode() : document
-      return controls.map((id) => tree.getElementById(id)).find((panel) => panel) || null
-    }
-    // The nearest container: the first ancestor that holds more than the trigger's own wrappers.
+    const tree = typeof el.getRootNode().getElementById === 'function' ? el.getRootNode() : document
+    const controlled = controls.map((id) => tree.getElementById(id)).find((panel) => panel)
+    if (controlled) return controlled
+    // An aria-controls that names nothing on the page is no answer: the structure still is. The nearest container: the first ancestor that holds more than the trigger's own wrappers.
     let child = el
     let parent = el.parentElement
     while (parent !== null && parent !== document.body && parent.children.length === 1) [child, parent] = [parent, parent.parentElement]
@@ -702,7 +701,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       if (outer !== null && panel.contains(outer)) continue
       // A row the panel hides on its own would not show when it opens either.
       if (hiddenInside(item, panel)) continue
-      const name = (item.getAttribute('aria-label') || spacedText(item) || item.title || '').replace(/\\s+/g, ' ').trim()
+      const name = (item.getAttribute('aria-label') || '').trim() || spacedText(item) || (item.title || '').trim()
       if (name !== '' && !held.includes(name)) held.push(name)
       if (held.length === MAX_HELD) break
     }

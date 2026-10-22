@@ -329,6 +329,20 @@ describe("a media element's own facts (#372, ADR 0080)", () => {
   })
 })
 
+describe("what a closed trigger opens (#388)", () => {
+  it('carries the names onto its ref label-cut, once each after the cut, and drops names that are not words', () => {
+    const long = 'x'.repeat(100)
+    const raw = ['Ambient mode', '', 7, `${long}a`, `${long}b`] as unknown as string[]
+    const parsed = parseCollectedPage(page({ elements: [element({ label: 'Settings', holds: raw }), element({ label: 'Plain', holds: [] }), element({ label: 'Odd', holds: 'Ambient mode' as unknown as string[] })] }))
+    const refs = buildPageSnapshot(parsed).refs
+    // The two long names differ only past the cut: one is left.
+    expect(refs[0]?.holds).toEqual(['Ambient mode', expect.stringMatching(/^x+…?$/)])
+    expect(refs[0]?.holds?.[1]?.length).toBeLessThanOrEqual(80)
+    expect(refs[1]).not.toHaveProperty('holds')
+    expect(refs[2]).not.toHaveProperty('holds')
+  })
+})
+
 describe('a ref read in a frame (#377, ADR 0081)', () => {
   it('carries its frame’s host onto its ref and names it on the line; a top ref names none', () => {
     const snapshot = buildPageSnapshot(page({ elements: [element({ label: 'Share' }), element({ label: 'Play', frameHost: 'youtube.com' })] }))

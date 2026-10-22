@@ -645,7 +645,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ...(element.named === true ? { named: true as const } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.region !== undefined ? { region: element.region } : {}),
-      ...(element.holds !== undefined ? { holds: element.holds.map(truncateLabel) } : {}),
+      ...(element.holds !== undefined ? { holds: [...new Set(element.holds.map(truncateLabel))] } : {}),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,

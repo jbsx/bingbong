@@ -16,7 +16,7 @@ import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChr
 // skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
 
 const PAGES: Record<string, string> = {
-  // YouTube's player Settings: aria-controls names a popup that keeps its items while closed.
+  // YouTube's player Settings: aria-controls names a popup, empty until first opened, that then keeps its items while closed.
   '/controls': `<body>
     <button aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu">Settings</button>
     <div id="settings-menu" role="menu" style="display:none">
@@ -41,6 +41,7 @@ const PAGES: Record<string, string> = {
         <ul><li><a href="/info"><span>Page information</span></a></li><li><a href="/cite"><span>Cite this page</span></a></li></ul>
       </div>
     </div>
+    <div class="stale"><button aria-haspopup="menu" aria-controls="gone">Share</button><ul style="display:none"><li><a href="/copy">Copy link</a></li></ul></div>
     <div class="row"><button>Plain</button><div style="display:none"><a href="/hidden">Hidden link</a></div></div>
   </body>`,
   '/open': `<body>
@@ -73,10 +74,11 @@ describe.skipIf(!canDriveChrome)("a closed menu's contents on its trigger's line
     ])
   })
 
-  it('names the links of the hidden panel beside a trigger with no aria-controls, and none beside a trigger that opens nothing', async () => {
+  it('names the links of the hidden panel beside a trigger with no aria-controls, or one naming nothing, and none beside a trigger that opens nothing', async () => {
     expect(await refLines('/structure')).toEqual([
       '[1] button "Tools Tools" hasPopup=menu menu holds "Read", "Edit", "Page information", "Cite this page"',
-      '[2] button "Plain"',
+      '[2] button "Share" hasPopup=menu menu holds "Copy link"',
+      '[3] button "Plain"',
     ])
   })
 
