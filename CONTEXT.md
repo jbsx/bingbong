@@ -183,6 +183,22 @@ the words say nothing of how far. It is not the Amount: a scroll's unit is
 the view, a seek's the duration. The record keeps the rung.
 _Avoid_: amount (for a scroll), step, distance, pixels
 
+**Text Further Down**:
+The blocks of a page's text below the view, listed at the end of the
+action card as numbered targets (`[text-N]`), never as page content: text
+the page does not show is something the Decision Model can act on, not
+something the Verdict reads as shown. In reading order, labels already on
+the card left out, up to 6000 characters, and only in the room the Choice
+has left.
+_Avoid_: learn more, read further, more text
+
+**Show Op**:
+The action each Text Further Down entry carries (`show-N`): one scroll
+that brings that block into view, on any site. It is a scroll: it counts
+against the Task's five actions, and the next Hop's Verdict judges what
+came into view.
+_Avoid_: jump, reveal, scroll to text
+
 **Menu**:
 The browser verb that opens a ref's right-click menu to see what it
 offers: `menu <ref>` or "right-click the player" from the user, or the
