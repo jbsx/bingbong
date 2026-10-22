@@ -355,6 +355,8 @@ interface PageSignature {
   dialogOpen: boolean
   /** The media element's flags (#363): a Loop ticked in a right-click menu changes nothing else. Null or absent with none; its time is left out, as it runs on by itself. */
   media?: MediaFlags | null
+  /** Whether the document is in full screen (#387): a press of `f` may change nothing else. Absent where it was not read. */
+  fullScreen?: boolean
 }
 
 /** The flags of a media element a control can toggle (#363). */
@@ -964,6 +966,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       labels: snapshot.refs.map(pageLabelOf),
       dialogOpen: snapshot.dialogOpen,
       media: snapshot.media != null ? { paused: snapshot.media.paused, loop: snapshot.media.loop, muted: snapshot.media.muted } : null,
+      ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     }
   }
 
@@ -1039,6 +1042,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       before.refCount === after.refCount &&
       before.dialogOpen === after.dialogOpen &&
       mediaFlagsEqual(before.media, after.media) &&
+      // Unread on either side is no change (#387).
+      (before.fullScreen === undefined || after.fullScreen === undefined || before.fullScreen === after.fullScreen) &&
       before.labels.length === after.labels.length &&
       before.labels.every((label, index) => label === after.labels[index])
   }

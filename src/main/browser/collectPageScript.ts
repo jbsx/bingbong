@@ -764,7 +764,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
         media: (() => {
           const media = mediaOf()
           return media === null ? null : { paused: media.paused, loop: media.loop, muted: media.muted }
-        })()
+        })(),
+        fullScreen: document.fullscreenElement !== null
       }
     }
   }

@@ -420,6 +420,7 @@ function targetMoved(change: TargetChange): boolean {
   return 'gone' in change || change.now !== undefined || change.flips.length > 0
 }
 
+/** What an action changed, for "Done so far": a full-screen change (#387) beside what the page shows of it. */
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
   // Full screen is the document's (#387): a change to it is told whatever else the action did, and first.
   const screen = fullScreenChange(before, after)
@@ -433,6 +434,7 @@ function fullScreenChange(before: CommandPage, after: CommandPage): boolean | un
   return before.fullScreen !== undefined && after.fullScreen !== undefined && before.fullScreen !== after.fullScreen ? after.fullScreen : undefined
 }
 
+/** What an action changed on the page: a Scroll Region's move, the target's own change, what appeared, a pop-up, the media element. */
 function pageDoneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
   // A Scroll Region tells what a scroll moved by its own facts (#383, ADR 0085): its position, never a state flip.
   const scrolled = regionRefChange(before, after, target)
@@ -555,8 +557,13 @@ function targetFacts(change: TargetChange): string {
 function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
   const page = pageFacts(result)
   // A change the target or the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
-  const told = [...(result.fullScreen !== undefined ? [result.fullScreen ? 'the page went full screen' : 'the page left full screen'] : []), ...(result.region !== undefined ? [result.region] : []), ...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
+  const told = [...(result.fullScreen !== undefined ? [fullScreenFact(result.fullScreen)] : []), ...(result.region !== undefined ? [result.region] : []), ...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
   return told.length > 0 ? told.join('; ') : page
+}
+
+/** A full-screen change (#387), told first: `the page went full screen`, `the page left full screen`. */
+function fullScreenFact(fullScreen: boolean): string {
+  return fullScreen ? 'the page went full screen' : 'the page left full screen'
 }
 
 /** What a changed page came to, in facts of the page alone. */

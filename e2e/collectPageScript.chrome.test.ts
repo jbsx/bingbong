@@ -426,6 +426,8 @@ describe.skipIf(!canDriveChrome)('the collector reads whether the document is in
     await fixtures.chrome.cdp.send('Runtime.evaluate', { expression: "document.getElementById('player').requestFullscreen()", userGesture: true, awaitPromise: true })
     await until(() => fixtures.chrome.evaluate<boolean>('document.fullscreenElement !== null'), 'the page to go full screen')
     expect(await read()).toBe('Full screen: on')
+    // The action probe reads it too: a press whose only effect is full screen changed the page.
+    expect((await fixtures.chrome.evaluate<{ signature: { fullScreen: boolean } }>('window.__bingbongPageProbe(0, "")')).signature.fullScreen).toBe(true)
     await fixtures.chrome.evaluate('document.exitFullscreen()')
     await until(() => fixtures.chrome.evaluate<boolean>('document.fullscreenElement === null'), 'the page to leave full screen')
     expect(await read()).toBe('Full screen: off')

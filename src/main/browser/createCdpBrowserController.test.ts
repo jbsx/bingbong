@@ -3146,6 +3146,19 @@ describe('createCdpBrowserController outcome heads the Search Loop rail reads (#
     expect(outcome.split('\n')[0]).toBe('clicked [3]: urlChanged=false dialogOpen=false; page signature changed')
   })
 
+  it('a click that only took the page into full screen changed the page: full screen is in the signature (#387)', async () => {
+    const cdp = new FakeCdp({ ...youtubeFixture, fullScreen: false })
+    const target = buildPageSnapshot(youtubeFixture).refs[2]!
+    const probe = probeFor(youtubeFixture, { checked: target.checked ?? null, selectedOption: target.selectedOption ?? null, value: target.value ?? null, ariaPressed: target.ariaPressed ?? null, className: target.className ?? '' }) as { target: unknown; signature: Record<string, unknown> }
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, fullScreen: false } }
+    expect(blockedOrInertAction(await controller.click(3))).toBe('inert')
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, fullScreen: true } }
+    expect((await controller.click(3)).split('\n')[0]).toBe('clicked [3]: urlChanged=false dialogOpen=false; page signature changed')
+  })
+
   it('a click that changed only the page signature carries settled state and consumed something (fix-258-259 pass 2 round 3)', async () => {
     const cdp = new FakeCdp()
     const target = buildPageSnapshot(youtubeFixture).refs[2]!
