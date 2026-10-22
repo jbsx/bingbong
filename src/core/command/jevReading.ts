@@ -461,15 +461,22 @@ function mediaRefChanges(before: CommandPage, after: CommandPage, ref: number | 
 }
 
 /**
- * What a scroll moved on the acted Scroll Region (#383): its position
- * change, or null when it did not move; undefined when the target is no
- * region read with its facts, or is gone from the page the action left.
+ * What a scroll moved on the acted Scroll Region (#383): the way it moved
+ * and its position change, or null when it did not move; undefined when
+ * the target is no region read with its facts, or is gone from the page
+ * the action left. Saying which way the scrolling part moved is what the
+ * Verdict reads the scroll as done by (measured 2026-10-22 on a live
+ * YouTube chat's hop 1, five replays each: yes 0.74–0.79 with the change
+ * alone, 0.84–0.89 with it; the ref line saying what a region is did not
+ * help).
  */
 function regionRefChange(before: CommandPage, after: CommandPage, ref: number | null | undefined): string | null | undefined {
   const target = ref === null || ref === undefined ? undefined : before.refs.find((one) => one.ref === ref)
   if (target === undefined || !isRegionRef(target)) return undefined
   const now = targetAfter(target, before, after)
-  return now === undefined || !isRegionRef(now) ? undefined : regionChangeOf(target.region, now.region)
+  if (now === undefined || !isRegionRef(now)) return undefined
+  const change = regionChangeOf(target.region, now.region)
+  return change === null ? null : `the scrolling part moved ${now.region.top > target.region.top ? 'down' : 'up'}: ${change}`
 }
 
 /** A media ref read with its facts (#372): the one kind that carries Media Ops. */

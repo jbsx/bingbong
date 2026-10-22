@@ -98,9 +98,9 @@ describe('a Scroll Op in "Done so far", the Feed and the set-asides', () => {
 
   it('tells the position change off the region\'s own facts, never a state flip', () => {
     const facts = doneFacts(PAGE, withFacts({ top: 1540 }), { changed: true }, 12)
-    expect(facts).toEqual({ changed: true, region: 'at top → scrolled 35%' })
-    expect(doneLine(DOWN, PAGE, facts)).toBe('scroll down a screen "Live chat" (at top → scrolled 35%)')
-    expect(doneFacts(withFacts({ top: 1540 }), withFacts({ top: 4400 }), { changed: true }, 12)).toMatchObject({ region: 'scrolled 35% → at end' })
+    expect(facts).toEqual({ changed: true, region: 'the scrolling part moved down: at top → scrolled 35%' })
+    expect(doneLine(DOWN, PAGE, facts)).toBe('scroll down a screen "Live chat" (the scrolling part moved down: at top → scrolled 35%)')
+    expect(doneFacts(withFacts({ top: 4400 }), withFacts({ top: 1540 }), { changed: true }, 12)).toMatchObject({ region: 'the scrolling part moved up: at end → scrolled 35%' })
     // A region that did not move, read unchanged, is nothing changed.
     expect(doneFacts(PAGE, PAGE, { changed: false }, 12)).toEqual({ changed: false })
     expect(doneLine({ ...DOWN, verb: 'scroll_up', extent: { rung: 'end' } }, PAGE, { changed: false })).toBe('scroll up to the top "Live chat" (nothing changed)')
