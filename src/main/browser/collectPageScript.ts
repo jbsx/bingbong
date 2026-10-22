@@ -73,6 +73,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     '[role="menuitemradio"]',
     '[role="treeitem"]',
     '[role="option"]',
+    // A details is acted on through its summary (#386, ADR 0083): the summary is the control the platform makes.
+    'details > summary:first-of-type',
     'iframe'
   ].join(',')
   // Read in a frame (#377, ADR 0081): this document is one of the page's
@@ -335,7 +337,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const strong = (angular && NG_CLICK.some((name) => el.hasAttribute(name))) ||
       el.hasAttribute('onclick') ||
       (el.hasAttribute('jsaction') && jsactionClicks(el)) ||
-      tag === 'a' || tag === 'object' || tag === 'embed' || tag === 'details' ||
+      tag === 'a' || tag === 'object' || tag === 'embed' ||
+      // A details with a summary gives none of its own (#386): its summary is the ref.
+      (tag === 'details' && el.querySelector(':scope > summary') === null) ||
       (tag === 'img' && ['zoom-in', 'zoom-out'].includes(el.style.cursor))
     if (strong) return tag === 'span' ? 'weak' : 'strong'
     if (tag === 'label' && el.control && !el.control.disabled) return 'label'
@@ -351,8 +355,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   // The refs a click acts on whole (#380's click roles among them): a weak
   // cue inside one is that ref's own icon or text. Every <a>, address or
-  // not: YouTube's top-bar icon buttons are addressless anchors.
-  const WHOLE_CLICK_SELECTOR = 'a, area[href], button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="option"]'
+  // not: YouTube's top-bar icon buttons are addressless anchors. A details'
+  // summary too (#386).
+  const WHOLE_CLICK_SELECTOR = 'a, area[href], details > summary:first-of-type, button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="option"]'
   // ADR 0062's inert rule and the dialog layer, across open shadow roots:
   // an element inside a shadow tree is inside its host's ancestors too.
   const hostOf = (node) => {

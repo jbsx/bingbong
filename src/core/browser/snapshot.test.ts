@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import challengeIframe from './fixtures/challenge-iframe.json'
 import youtubeHome from './fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from './snapshot'
+import { refStatesOf } from './refStates'
+import { commandPageOf } from '../command/command'
+import { commandState } from '../command/jevReading'
 import {
   MAX_HREF_LENGTH,
   buildPageSnapshot,
@@ -163,6 +166,21 @@ describe('refKindOf: an ARIA widget role kinds its ref (#380)', () => {
   it('a native text input stays an input whatever its role', () => {
     expect(refKindOf(element({ tag: 'input', role: 'combobox', inputType: 'text' }))).toBe('input')
     expect(refKindOf(element({ tag: 'input', role: null, inputType: 'search' }))).toBe('input')
+  })
+})
+
+describe("refKindOf: a details' summary is the details' button (#386, ADR 0083)", () => {
+  it("a details' summary is a button, its line the expanded state the tree gives it (#386)", () => {
+    const summary = element({ tag: 'summary', label: 'Language' })
+    expect(refKindOf(summary)).toBe('button')
+    const tree = (expanded: boolean) => ({ role: { type: 'role', value: 'DisclosureTriangle' }, properties: [{ name: 'expanded', value: { type: 'booleanOrUndefined', value: expanded } }] })
+    const lineOf = (expanded: boolean) => {
+      const { states } = refStatesOf(tree(expanded), { kind: 'button', label: 'Language', inputType: null })
+      const snapshot = buildPageSnapshot(page({ elements: [{ ...summary, states }] }))
+      return commandState('open the language menu', commandPageOf(snapshot)).split('\n').at(-1)
+    }
+    expect(lineOf(false)).toBe('[1] button "Language" expanded=false')
+    expect(lineOf(true)).toBe('[1] button "Language" expanded=true')
   })
 })
 

@@ -55,6 +55,8 @@ function roleRestates(role: string, shown: RefShown): boolean {
   if (NO_ROLE.has(said) || said === shown.kind || said === shown.inputType) return true
   if (shown.kind === 'input') return FIELD_ROLES.has(said)
   if (shown.kind === 'media') return said === 'video' || said === 'audio'
+  // A details' summary (#386): the tree's disclosure triangle is the button the ref already says.
+  if (shown.kind === 'button') return said === 'disclosuretriangle'
   return false
 }
 

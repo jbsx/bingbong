@@ -298,6 +298,8 @@ export function refKindOf(element: CollectedElement): RefKind {
   if (((element.tag === 'a' || element.tag === 'area') && !addressless) || element.role === 'link') return 'link'
   if (
     element.tag === 'button' ||
+    // A details' summary (#386, ADR 0083): a click on it opens and closes the details.
+    element.tag === 'summary' ||
     element.role === 'button' ||
     (element.role !== null && CLICK_ROLES.has(element.role)) ||
     (element.tag === 'input' && element.inputType !== null && BUTTON_INPUT_TYPES.has(element.inputType))

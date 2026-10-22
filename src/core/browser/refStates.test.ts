@@ -70,5 +70,8 @@ describe('refStatesOf', () => {
     expect(refStatesOf(checkbox, { kind: 'input', label: 'Remember me', inputType: 'checkbox' }).states).toEqual(['checked=true'])
     const field: AxNode = { role: { type: 'role', value: 'textbox' } }
     expect(refStatesOf(field, { kind: 'input', label: 'Email', inputType: 'email' }).states).toEqual([])
+    // A details' summary (#386): the tree's disclosure triangle is the button its kind says.
+    const summary: AxNode = { role: { type: 'role', value: 'DisclosureTriangle' }, properties: [{ name: 'expanded', value: { type: 'booleanOrUndefined', value: false } }] }
+    expect(refStatesOf(summary, { kind: 'button', label: 'Language', inputType: null }).states).toEqual(['expanded=false'])
   })
 })
