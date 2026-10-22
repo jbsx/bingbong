@@ -122,6 +122,20 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/do
 ADRs before 0076 are the orchestrator's history and many describe machinery this branch no longer
 has.
 
+### Input-to-output chart
+
+Before committing a change, check whether it changes the input-to-output
+flow: typed or spoken input, command selection, execution, visible/spoken
+output, Task or Step continuation, recovery, cancellation, or completion.
+When it does, update the chart as part of the same change using
+`docs/agents/input-output-chart.md`: preserve the previous version, record
+what changed, and capture and personally inspect the affected views before
+committing. Use the implementation's existing worktree. Internal refactors
+that preserve the depicted behavior do not require a new chart version.
+In the completion summary, state whether the chart was updated or why the
+change did not affect it. This is an agent pre-commit responsibility, not
+an automatic Git hook, and does not itself authorize a commit.
+
 ## Testing
 
 `pnpm test` is the unit suite. The `e2e/*.chrome.test.ts` collector tests
