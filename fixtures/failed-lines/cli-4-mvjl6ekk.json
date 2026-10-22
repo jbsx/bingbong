@@ -7,5 +7,7 @@
   "happened": "Typed on docs.python.org/3/library/json.html: the indent=4 example sits a few screens below on the same page, and nothing on the card reached it but a screen-at-a-time scroll; hop 0 typed into the site's Quick search (0.45), the search left the page for pprint, and two one-screen scrolls ran the Task to the cap",
   "meant": "Scroll the json page to its pretty-printing example (indent=4) in one action",
   "log": "decision-1792676242479-1.jsonl",
-  "claimedBy": "#393"
+  "claimedBy": "#393",
+  "fixedBy": "4aed2b2",
+  "case": "cli-2-mvjmwld2"
 }

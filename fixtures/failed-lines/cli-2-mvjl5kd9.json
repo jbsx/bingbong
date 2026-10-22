@@ -7,5 +7,7 @@
   "happened": "Typed on recipetineats.com/chocolate-chip-cookies: the Task took four actions, the RECIPE jump link (0.60), two one-screen scrolls (Verdict not_yet 0.90, 0.87) and read, because the card names nothing below the view, so no action could go straight to the ingredients",
   "meant": "One action to the ingredients list, then done",
   "log": "decision-1792676242479-1.jsonl",
-  "claimedBy": "#393"
+  "claimedBy": "#393",
+  "fixedBy": "4aed2b2",
+  "case": "cli-4-mvjmxhw0"
 }
