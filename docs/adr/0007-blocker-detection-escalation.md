@@ -31,3 +31,8 @@ cross-origin challenge iframe stays the opaque `iframe` ref only when
 it cannot be read in time; when its controls come through, they are on
 the card like any control. The challenge detection keeps reading the
 opaque ref where one remains.
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+The Google `/sorry` and Reddit query rules are removed; a blocker
+ends the Task without an ask on a challenge host or token alone.

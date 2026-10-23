@@ -449,15 +449,17 @@ _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
 A Command settled from the Utterance and the page alone, without asking the
-Decision Model — exact whole lines and numbered refs only: the CLI grammar,
+Decision Model: exact whole lines that have one reading whatever the page
+holds, and numbered refs (ADR 0089). A line whose words a ref on the page
+carries as its label is not one, and neither is a line that reads intent
+("the other one", "last page"). The Local Match covers the CLI grammar,
 the control words (scroll, back, reload, read, clear, stop, resume, a key),
 a phrase that takes no words matching only as the whole line — "stop
 showing captions" is not `stop`, "back to the results" not `back` (#368)
 — the Timer's and the Player's exact phrases ("loop", "pause", never `play
-<words>`), an opening phrase with an address-shaped Slot ("open youtube",
-"go to x.com"), and a plain verb with the one element the words name
-exactly — the label exactly one element carries, or the Nth result on a
-search page ("the first result"). A line with free
+<words>`), an opening phrase whose Slot is an address or a Known Address
+("open youtube" once youtube.com has been landed on, "go to x.com"), and a
+plain verb with the label exactly one element carries. A line with free
 words — search terms, a song's words, words about the page — is never its:
 it goes to the
 Decision Model with every option, Appliance Verbs included.
@@ -466,6 +468,12 @@ Model does not answer — a line it does not settle is then no Command. It
 never guesses: there is no lenient reading, no nearest label, no words
 turned into a search.
 _Avoid_: grammar hit, regex path, offline mode, best guess
+
+**Known Address**:
+A host the appliance has landed on. `open <one word>` goes to the Known
+Address the word names, without an ask, and a word that names none goes
+to the Decision Model.
+_Avoid_: history, bookmark, favourite
 
 **Early Fire**:
 Acting on a partial transcript, before the Endpoint, once the words so far
@@ -1222,7 +1230,10 @@ pause the Player did not make: the read sees the prompt and clicks Yes,
 and Now Playing never shows it paused. "show the video" / "show it" brings
 the dashboard up over the watch page (#344).
 The Player's exact phrases ("loop", "pause", "restart") are the grammar's
-first, and no partial fires them early; `play <words>` and every plain
+first, unless a ref on the page carries the line's words, and no partial
+fires them early. "not that one", "the other one" and "show it" are
+Jev's, which is offered `correct`, `forget` and `show` as Appliance Verbs
+(ADR 0089); `play <words>` and every plain
 music line ("put the song on loop") go to Jev. A song to play, the
 Queue's walk and `show` are the Player's Appliance Verbs on the card; the
 song's own ops — loop, restart, pause, volume and the rest — are the

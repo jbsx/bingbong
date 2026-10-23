@@ -176,3 +176,20 @@ same thing, and an op or a ref-less verb can be set aside too.
 - The browser's `back` and `forward` lines are lures for "go back a
   minute" and "skip ahead"; a replay regression on them is a reading to
   fix in wording, measured, not a rule.
+
+## Amendment 2026-10-23: volume and rate take Jev's direction (#408)
+
+A volume or rate change is Jev's in direction and in size, as a seek's is:
+code no longer reads up or down from the words. The op's shape is a tie
+measured at build by the gate: either split ops (`volume-up-N`,
+`volume-down-N`, `volume-set-N`, the same for rate) with the Amount Choice
+read for them, or one op with the direction riding the Amount Choice. The
+arms and numbers are recorded here when measured. The step each rung makes
+on a volume or a rate is a guess, kept cheap to reverse: what "a little
+louder" should mean only the owner's day can tell.
+
+The op sets and reads the element alone. It does not call `#movie_player`'s
+`setVolume` or `mute`, because a by-kind op names no site, and the level set
+must be the level the next read shows (it was not: set 53, read 23%,
+ledger cli-10/11/12-mvle*). The Player's exact lines keep their own
+YouTube calls: the Player is YouTube by design.

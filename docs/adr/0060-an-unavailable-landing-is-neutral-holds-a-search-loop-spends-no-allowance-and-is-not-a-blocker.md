@@ -224,3 +224,8 @@ recount, not a re-judgement, makes the marginal comparable.
   `fix-258-259` to move from 1 to 2 under the checkpoint hold alone; that
   figure was not re-derived, and the recount's own number is the one
   pinned.
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+An unavailable title or body goes to the Verdict; only the status ends
+the Task without an ask. The Cloudflare host rule is removed.

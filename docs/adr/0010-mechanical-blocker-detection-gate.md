@@ -59,3 +59,8 @@ times is not detection.
   `/sorry`, Reddit challenge/humanity/block pages) and negatives (pages
   that merely mention captchas).
 - Consent dialogs remain the auto-cleared exception (ADR 0007, unchanged).
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+The Google `/sorry` and Reddit query rules are removed; a blocker
+ends the Task without an ask on a challenge host or token alone.

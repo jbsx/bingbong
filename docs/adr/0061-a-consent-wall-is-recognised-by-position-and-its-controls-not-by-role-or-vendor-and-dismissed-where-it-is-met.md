@@ -159,3 +159,8 @@ reads computed style that jsdom cannot supply.
   is known, and the outcome reports the dismissal and the not-shown fact in
   one line. A Covered target retries as this ADR says. What a non-consent
   Cover is named by is ADR 0062's.
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+Jev's sure pick ranks above the consent-reject rung; the rung is the
+fallback under the bar.

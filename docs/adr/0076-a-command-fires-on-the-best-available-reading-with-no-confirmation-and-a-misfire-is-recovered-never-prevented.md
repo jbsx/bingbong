@@ -1353,3 +1353,10 @@ sure this is it." again.
 The dead end above ("nothing is spoken, the Feed shows `no next step`")
 already speaks "I'm not sure this is it." since #369; this amendment
 leaves that line as it is.
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+The Local Match fires an exact line only when it has one reading on
+every page; the intent lines, "the first result" and a bare word that
+is no Known Address go to Jev. The dismiss phrase, the close-label
+fallback and the through-veto stay, for the reasons ADR 0089 gives.

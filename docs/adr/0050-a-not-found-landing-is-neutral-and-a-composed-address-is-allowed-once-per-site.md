@@ -202,3 +202,8 @@ it.
   navigates to a shown href (`rewrittenShownAddresses`, keyed on the printed
   text's whole hrefs and cut prefixes), 4 on fix-257 (Voyager pass 2 rounds
   7, 10 and 21; Eurostar pass 3 round 4), and the fix gates on 0 (#258).
+
+## Amendment 2026-10-23: amended by ADR 0089 (#408)
+
+A not-found title or body goes to the Verdict; only the status ends
+the Task without an ask.
