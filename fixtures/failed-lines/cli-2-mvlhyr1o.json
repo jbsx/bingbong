@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-2-mvlhyr1o",
+  "transcript": "open the first result",
+  "at": 1792791828000,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'open the first result' on DuckDuckGo 'buy running shoes' with the adblocker off (#408 build, Mammoth): the ask was 50,148 tokens and the host refused it (422, max_len 16384); the in-view ad links' long y.js addresses are not cut by the Card Budget; no Command. The same on 'cheap flights to london' (25,942) and Bing 'car insurance quote' (17,523)",
+  "meant": "Open the first result: the card fits the Card Budget whatever the in-view refs carry",
+  "log": "decision-1792791813829-1.jsonl",
+  "claimedBy": "#408"
+}

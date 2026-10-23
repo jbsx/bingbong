@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-4-mvlhzm1g",
+  "transcript": "open the first result",
+  "at": 1792791868976,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'open the first result' on Bing 'buy running shoes' with the adblocker off (#408 build, Mammoth): Jev clicked [23], a shopping ad (bing.com/aclk), above the organic results; nothing on the card says a ref is an ad, only a separate 'Why this ad' link; hop 1 ended wall",
+  "meant": "Open the first organic result",
+  "log": "decision-1792791813829-1.jsonl",
+  "claimedBy": "#408"
+}
