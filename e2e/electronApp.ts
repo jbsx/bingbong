@@ -89,6 +89,8 @@ export async function launchApp({
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: buildEnv(process.env, {
       BINGBONG_USER_DATA_DIR: userDataDir,
+      // Every launch is silent on the developer's speakers: the app mutes its pane and plays speech, chime and alarm to ALSA's null device.
+      BINGBONG_MUTE_AUDIO: '1',
       // Every launch weighs on the stand-in scale, never the machine's Bluetooth: a test steps on by writing this file.
       BINGBONG_SCALE_FIXTURE: join(userDataDir, 'scale-frames.txt'),
       ELECTRON_OZONE_PLATFORM_HINT: 'x11',

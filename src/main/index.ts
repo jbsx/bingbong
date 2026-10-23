@@ -203,12 +203,13 @@ const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), set
 const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
-const chimePlayer = createAplayPlayer()
+// The chime and the alarm play through the same player as speech, so a muted run is silent.
+const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice })
 // The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
 // Screen; its alarm plays through its own aplay, so the chime and speech
 // never cut it.
 const timer = createTimer({ clock: systemClock })
-attachTimerAlarm(timer, createAplayPlayer(), createAlarmWav())
+attachTimerAlarm(timer, createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice }), createAlarmWav())
 
 // The Decision Model (Jev, ADR 0068, pinned to jev-1.14.0 by ADR 0076):
 // resolved from the live env on each read, kept while its config is
