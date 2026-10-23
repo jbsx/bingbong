@@ -116,7 +116,8 @@ _Avoid_: sub-task, chain, plan, sequence
 **Appliance Verb**:
 A ref-less option on the action card that acts on the appliance itself,
 never on the page: the Player's search (`play`, `play_next`, `queue`),
-the Queue's walk (`skip`, `previous`), `show`, and one per fact the
+the Queue's walk (`skip`, `previous`), `show`, the corrections of the last
+pick (`correct`, `correct_back`, `forget`, ADR 0089), and one per fact the
 appliance holds (`say_time`, `say_weather`, `say_playing`, `say_timer`),
 each line carrying the fact itself, offered on every ask but the Where
 Ask (#402). The Decision Model
@@ -124,7 +125,7 @@ chooses one as it would a ref, with its own line beside the browser's
 ref-less verbs; the Command is the one the grammar's exact lines make,
 the Player's action by whichever road. Each is offered while there is
 something for it to act on — a song to play whenever a Player is wired,
-the Queue's walk while the Queue holds a song, `show` while any song is
+the Queue's walk and the corrections while the Queue holds a song, `show` while any song is
 on, the Player's or the page's — withheld by ability, never by state
 (ADR 0080). A fixed small set that grows only with the appliance's own
 features (the Timer next), never per site: an action on a page's element
@@ -167,13 +168,15 @@ part of the page holding both.
 _Avoid_: captions button, toggle, player control
 
 **Amount**:
-How far a seek moves when the Decision Model chooses one: a Choice on
-every Ask that offers a media ref, read only when the action is a seek —
-`words` (the number the words carry, seconds or minutes as they say),
-`moment` (a hundredth of the duration), `little` (a twentieth), `chunk` (a
-tenth), `lot` (a quarter), `half`, `end` (the start, going back). No
-product's step in seconds; a live stream's fractions are of its seekable
-window. The record keeps the rung.
+How far a seek, a volume or a speed moves when the Decision Model chooses
+one: a Choice on every Ask that offers a media ref. For a seek, `words`
+(the number the words carry, seconds or minutes as they say), `moment` (a
+hundredth of the duration), `little` (a twentieth), `chunk` (a tenth),
+`lot` (a quarter), `half`, `end` (the start, going back); no product's step
+in seconds, and a live stream's fractions are of its seekable window. For
+a volume or a speed, its direction too (ADR 0080 as amended by #408): `to`
+the level the words carry, else `up-` or `down-` and `little`, `step`,
+`lot` or `all`. The words never say which way. The record keeps the rung.
 _Avoid_: default, step size, offset
 
 **Scroll Op**:
@@ -354,12 +357,13 @@ _Avoid_: retry, workaround, auto-dismiss, bypass
 
 **Dismissal Ladder**:
 The Commands that may close the pop-up over the page, best first, each
-once, Escape last: the consent policy's control (reject first, accept
-second), the control Jev chose when sure, a control whose label begins as a
-close does (close, dismiss, not now, skip, no thanks, ×…), Jev's choice when
-unsure, Escape. Never a link, a field or a way through (sign in, subscribe,
-accept, agree, install…), whoever chose it. A Dismiss Phrase fires the first
-rung; a Step Aside walks the ladder.
+once, Escape last: the control Jev chose when sure (ADR 0089), the consent
+policy's control (reject first, accept second), a control whose label
+begins as a close does (close, dismiss, not now, skip, no thanks, ×…),
+Jev's choice when unsure, Escape. Never a link, a field or a way through
+(sign in, subscribe, accept, agree, install…), whoever chose it — the
+policy's reject included: one that pays or subscribes is no reject. A
+Dismiss Phrase fires the first rung; a Step Aside walks the ladder.
 _Avoid_: close heuristic, fallback chain, label list
 
 **dismiss Choice**:
@@ -1600,7 +1604,11 @@ _Avoid_: 404, dead link, broken URL, soft 404
 A browser action settling on a Not-found Page. Its Action Outcome says so, as
 a fact about the page, on whatever action landed there; it is neutral to
 Progress; and it is not escape from a Search Loop. Only a Composed Address
-landing there spends the site's allowance.
+landing there spends the site's allowance. It ends the Task with its line,
+no one asked, only on the status the site served; a title that says not
+found goes to the Verdict, and the line is said when Jev does not answer
+(ADR 0089). The same holds for an Unavailable Landing (a 5xx) and a Blocker
+(a challenge host or token).
 _Avoid_: 404 hit, failed navigate, bad guess
 
 **Unavailable Page**:

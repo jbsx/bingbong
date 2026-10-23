@@ -183,9 +183,30 @@ A volume or rate change is Jev's in direction and in size, as a seek's is:
 code no longer reads up or down from the words. The op's shape is a tie
 measured at build by the gate: either split ops (`volume-up-N`,
 `volume-down-N`, `volume-set-N`, the same for rate) with the Amount Choice
-read for them, or one op with the direction riding the Amount Choice. The
-arms and numbers are recorded here when measured. The step each rung makes
-on a volume or a rate is a guess, kept cheap to reverse: what "a little
+read for them, or one op with the direction riding the Amount Choice.
+
+Measured 2026-10-23 on `pnpm jev:gate` (Mammoth ∩ Elephant), the corpus
+transformed for each arm, with the three ledger lines grown as cases
+(cli-10/11/12-mvle*) beside "turn the volume down" (cli-5-mvh3klxs):
+
+| Arm | Through on both models | Red | Direction cases |
+| --- | --- | --- | --- |
+| Untouched card (code read the words) | 133 / 156 | 19 | — |
+| Split ops: `louder-N`, `quieter-N`, `volume-N` (and `faster`, `slower`, `rate`) | 136 / 159 | the same 19 | 4 / 4 |
+| One op, the direction in the Amount Choice (`to`, `up-little` … `down-all`) | 136 / 159 | the same 19 | 4 / 4 |
+
+A measured tie: both arms pass every direction case on both models and
+lose nothing. The one-op arm landed, the cheaper to reverse: the card's
+labels stay as they were, it adds no ops, and it is about 266 characters
+shorter on a media card. Its margins (Mammoth / Elephant): "turn it down a
+bit more" `volume` 0.98/0.96, `down-little` 0.88/0.72; "make it less
+loud" 0.95/0.77, `down-little` 0.78/0.51; "a little louder" 0.99/0.96,
+`up-little` 0.96/0.98; "turn the volume down" 0.94/0.93, `down-step`
+0.52/0.67. The split arm's action margins were 0.92–0.99 on both models.
+A seek's rung on a volume reads the most probable level rung Jev gave any
+probability. The step each rung makes
+on a volume or a rate (little, step, lot: 5, 10 and 25 points; 0.25, 0.5
+and 1×; `all` to 100 or 0, 4× or 0.25×) is a guess, kept cheap to reverse: what "a little
 louder" should mean only the owner's day can tell.
 
 The op sets and reads the element alone. It does not call `#movie_player`'s
