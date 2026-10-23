@@ -196,6 +196,23 @@ the words say nothing of how far. It is not the Amount: a scroll's unit is
 the view, a seek's the duration. The record keeps the rung.
 _Avoid_: amount (for a scroll), step, distance, pixels
 
+**Action Card**:
+What one Ask of the Decision Model carries about the page and the appliance:
+the words heard, the page as read (its refs with their states, Text in
+view, the media's state, what is further down), what the Task has done so
+far, and every action on offer as a Choice, each a line the model can
+pick. Built by kind, never by site, and to its Card Budget.
+_Avoid_: prompt, card (alone, where the Answer's Card could be meant),
+context, menu
+
+**Card Budget**:
+The size, in the host's own tokens, that every section of an Action Card
+competes under by rule. One number for every model, the smallest host's,
+so the card the Decision Model gets is the card the gate measured. What
+makes the hop is never cut; what is further down yields first, nearest
+the view last.
+_Avoid_: cap, limit, max_len, context window, truncation
+
 **Text Further Down**:
 The blocks of a page's text below the view, listed at the end of the
 action card as numbered targets (`[text-N]`), never as page content: text
@@ -627,7 +644,9 @@ user is not told that a limit was reached (ADR 0034, #312).
 _Avoid_: speak line, voice line
 
 **Card**:
-The view-facing half of an Answer: markdown shown in the Feed. Replaces the
+The view-facing half of an Answer: markdown shown in the Feed.
+Orchestrator-era (ADR 0074); the machinery is gone from this branch, and
+the Decision Model's card is the **Action Card**. Replaces the
 live answer stream and the Spoken rendering. It is shown once what it is made
 from has been written, before the Answer Tail, and once shown it stands
 (ADR 0074).
