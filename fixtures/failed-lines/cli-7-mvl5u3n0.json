@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-7-mvl5u3n0",
+  "transcript": "exit full screen",
+  "at": 1792771457753,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'exit full screen' on the watch page (yield rerun 2026-10-23, main 413191a9): Mammoth's call timed out at 3002 ms (BINGBONG_DECISION_TIMEOUT_MS 3000); best guess none, 'not a command' said. 'set the speed to 1.5' two lines later timed out the same way (cli-8-mvl5uj4w, 3003 ms) though rate-10 was on the card",
+  "meant": "Read within the reaction; a timed-out hop call is retried once",
+  "log": "decision-1792771315796-1.jsonl"
+}

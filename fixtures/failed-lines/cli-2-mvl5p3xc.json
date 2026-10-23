@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvl5p3xc",
+  "transcript": "accept cookies",
+  "at": 1792771222762,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'accept cookies' typed on bbcgoodfood.com under its Sourcepoint consent-or-pay wall (yield rerun 2026-10-23, main 413191a9): Mammoth clicked [6] 'Personalised advertising and content' (0.64), a purpose accordion, as cli-2-mvjkzcdk did; then the consent dismissal's reject rule clicked [7] 'Reject & Pay' on its own, the pay-to-reject choice (the Guardian's class, cli-2-mvihb65g); hop 1 yes 0.86 under the bar, hop 2 back, hop 3 open-66 0.28: ended unsure after 6 s",
+  "meant": "Click the wall's 'Accept cookies and read free content' button; a reject regex never picks a pay-to-reject choice, Jev chooses with the wall's wording in front of it",
+  "log": "decision-1792771211478-1.jsonl"
+}

@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvl5kpp9-1",
+  "transcript": "show me the part about his death",
+  "at": 1792771017418,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'show me the part about his death' typed on en.wikipedia.org/wiki/Alan_Turing (yield rerun 2026-10-23, main 413191a9): hop 0 chose show-11 (0.48), the Death section's show op, the op cli-10-mvjkuljs had no road to, and scrolled to it; the hop-1 card ran 67,067 chars (327 options) and Mammoth answered HTTP in 548 ms: ended unavailable, nothing said. Same class as turn-mvl59cdi-1",
+  "meant": "The Verdict reads yes with the Death section in view; done, the passage said",
+  "log": "decision-1792771006407-1.jsonl",
+  "claimedBy": "#406"
+}

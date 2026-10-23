@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvl575cq-3",
+  "transcript": "show me the BBC weather forecast for London",
+  "at": 1792770385630,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'show me the BBC weather forecast for London' typed on about:blank (yield rerun 2026-10-23, main 413191a9): search, click 'London - BBC Weather', Accept additional cookies, then yes 0.95 with the hourly forecast in view ('17:00, 10°, 84% chance...'); the passage Choice read none 0.50 over 'London - Weather warnings issued' 0.30 and the forecast row 0.15, so the Task ended done with nothing of the forecast said",
+  "meant": "Say the forecast row in view: the Answer Passage (#401) states the forecast",
+  "log": "decision-1792770349187-1.jsonl"
+}

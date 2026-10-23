@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvl5nd6w",
+  "transcript": "read",
+  "at": 1792771140489,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'read' typed on theguardian.com/uk (yield rerun 2026-10-23, main 413191a9): the Tier-1 consent rule clicked 'Reject all and subscribe' again (cli-2-mvihb65g, still open), the Ad-Lite checkout opened; 'open the first headline' next clicked 'Return to the Guardian' (0.73) and landed back under the wall, ended wall (cli-4-mvihbdwk again)",
+  "meant": "Clear the wall with its free choice and read the front page; which control clears a wall is Jev's to choose",
+  "log": "decision-1792771129566-1.jsonl"
+}

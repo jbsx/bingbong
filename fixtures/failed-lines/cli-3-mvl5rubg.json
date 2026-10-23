@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvl5rubg",
+  "transcript": "turn off captions",
+  "at": 1792771350128,
+  "source": "typed",
+  "stage": "page",
+  "happened": "'turn off captions' on the watch page (yield rerun 2026-10-23, main 413191a9): click-16 (0.94) refused, 'not clicked: covered by [39] link Keyboard shortcuts'; the player's control bar was hidden and the footer link lay over the button's box; ended wall",
+  "meant": "The caption switch is toggled whether or not the control bar is showing: an op on the media line, as the Media Ops are",
+  "log": "decision-1792771315796-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvl5jmek",
+  "transcript": "Open the first video",
+  "at": 1792770967003,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'Open the first video' typed on youtube.com's home page in a fresh profile (yield rerun 2026-10-23, main 413191a9): Mammoth clicked [14] 'Update setting' (0.38), YouTube's consent prompt, which opened consent.youtube.com; hops 1-4 read show-2 and click-8 'Confirm your settings' (0.91, 0.73) with not_yet 0.58-0.75: ended unsure after 5 calls, no video opened",
+  "meant": "Click the first video on the home page; the consent prompt is a wall the Dismissal Ladder clears first",
+  "log": "decision-1792770937391-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-6-mvl5to4w",
+  "transcript": "go full screen",
+  "at": 1792771435317,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'go full screen' on the watch page (yield rerun 2026-10-23, main 413191a9): the only full-screen option on the card was click-17 button 'Full screen (f)' (0.99), refused 'inside a hidden or inert container' (the control bar hidden); no media op puts the player full screen; ended wall",
+  "meant": "A full-screen op on the media line (the element's requestFullscreen or the player's f key) fires with the control bar hidden",
+  "log": "decision-1792771315796-1.jsonl"
+}

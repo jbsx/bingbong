@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-4-mvl5y6wt",
+  "transcript": "hide the activity panel",
+  "at": 1792771645931,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'hide the activity panel' typed on about:blank (yield rerun 2026-10-23, main 413191a9): no Appliance Verb or option hides a panel of the app; Mammoth read none 0.95, the Where Ask none 0.86, 'not a command' said",
+  "meant": "Hide the Activity Panel (the panel scenario on the yield list)",
+  "log": "decision-1792771614416-1.jsonl"
+}

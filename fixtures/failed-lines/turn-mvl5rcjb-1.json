@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvl5rcjb-1",
+  "transcript": "turn on captions",
+  "at": 1792771327354,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'turn on captions' typed on the watch page (yield rerun 2026-10-23, main 413191a9, Mammoth): hop 0 clicked [16] 'Subtitles/closed captions unavailable' (0.99) and the page changed; hop 1's Verdict read yes 0.53, under the bar; hops 2-7 read not_yet 0.52-0.83 over click-16 and click-17 Settings, Escape and Settings fired, cap after 8 calls and 7 s. The media line said the captions switch 'off' and 'unavailable' throughout: this video has no caption track",
+  "meant": "Say the video has no captions (its button reads unavailable), or end done at hop 1 once the switch reads on",
+  "log": "decision-1792771315796-1.jsonl"
+}
