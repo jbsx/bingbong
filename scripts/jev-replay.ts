@@ -26,7 +26,7 @@ if (!Number.isInteger(repeat) || repeat < 1) {
   console.error(`--repeat needs a whole number of runs, got ${args[at + 1] ?? 'nothing'}`)
   process.exit(2)
 }
-const dir = args.filter((arg, index) => arg !== '--repeat' && index !== at + 1)[0] ?? JEV_CORPUS_DIR
+const dir = args.filter((arg, index) => arg !== '--repeat' && (at === -1 || index !== at + 1))[0] ?? JEV_CORPUS_DIR
 const replay = await replayCorpus(dir, { env: process.env }, { repeat })
 ;(replay.code === 2 ? console.error : console.log)(replay.report)
 process.exitCode = replay.code

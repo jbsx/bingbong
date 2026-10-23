@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -68,6 +68,16 @@ describe.skipIf(!stripsTypes)('the jev:* scripts', () => {
     expect(replay.code).toBe(2)
     expect(replay.stderr).toContain('jev:replay asks the real Jev and needs its key')
     expect(replay.stderr).toContain('TYPESAFE_API_KEY')
+  })
+
+  it('jev:replay and jev:gate read the corpus dir they are given, with no option beside it', () => {
+    const empty = join(dir, 'empty')
+    mkdirSync(empty)
+    const keyed = { ...keylessEnv(), TYPESAFE_API_KEY: 'not-a-key', BINGBONG_GATE_MODELS: 'decision-models/some-model' }
+    for (const name of ['jev-replay.ts', 'jev-gate.ts']) {
+      const result = spawnSync(process.execPath, [script(name), empty], { encoding: 'utf8', env: keyed })
+      expect(result.stdout).toContain(`no cases in ${empty}`)
+    }
   })
 
   it('jev:case refuses a label the ask does not offer, and exits non-zero', () => {

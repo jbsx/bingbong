@@ -23,7 +23,7 @@ const at = args.indexOf('--models')
 const named = at === -1 ? process.env[GATE_MODELS_ENV_KEY] : args[at + 1]
 const models = (named ?? '').split(',').map((id) => id.trim()).filter((id) => id !== '')
 const withJev = args.includes('--with-jev')
-const dir = args.filter((arg, index) => arg !== '--models' && arg !== '--with-jev' && index !== at + 1)[0] ?? JEV_CORPUS_DIR
+const dir = args.filter((arg, index) => arg !== '--models' && arg !== '--with-jev' && (at === -1 || index !== at + 1))[0] ?? JEV_CORPUS_DIR
 const gate = await gateCorpus(dir, { env: process.env }, { models, withJev })
 ;(gate.code === 2 ? console.error : console.log)(gate.report)
 process.exitCode = gate.code
