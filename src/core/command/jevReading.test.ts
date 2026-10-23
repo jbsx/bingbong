@@ -1530,18 +1530,26 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
     expect(commandState('x', bare, undefined, undefined, undefined, commandQuestions('x', bare))).not.toContain('Text further down')
   })
 
-  it('stops the entries at 6000 characters of the lines they make', () => {
+  it('offers every block below the view, however much text they make: the Card Budget is their bound (#407)', () => {
+    // Thirty blocks of 300 come to 9,400 characters of entries: past the 6000 that stopped them, which left jellyfin's port unread.
     const page = { ...DOCS, textBelow: Array.from({ length: 30 }, (_, index) => ({ text: `${index}`.padEnd(300, 'w'), frame: null, node: index })) }
-    // `[text-N] "…"` is 312 characters for N under 10 and 313 past it: nineteen lines come to 5938, a twentieth to 6251.
-    expect(shows(options(page))).toHaveLength(19)
+    expect(shows(options(page))).toHaveLength(30)
   })
 
-  it('takes only the room the Choice has left under its 255 options: the refs win', () => {
-    // 120 buttons' clicks and right-clicks and the 12 ref-less options leave 3 of the 4 blocks room.
+  it('takes the room the Choice leaves under its 255 options after the refs, before any right-click or open (#407)', () => {
+    // 120 buttons' clicks and the 12 ref-less options leave 123: the 4 blocks take theirs, the right-clicks the 119 left.
     const roomy = options({ ...DOCS, refs: Array.from({ length: 120 }, button) })
     expect(Object.keys(roomy)).toHaveLength(255)
-    expect(shows(roomy)).toEqual(['show-1', 'show-2', 'show-3'])
-    const full = { ...DOCS, refs: Array.from({ length: 130 }, button) }
+    expect(shows(roomy)).toEqual(['show-1', 'show-2', 'show-3', 'show-4'])
+    expect(Object.keys(roomy).filter((label) => label.startsWith('menu-'))).toHaveLength(119)
+    // At a hop, the links further down wait for the blocks too: on uptime-kuma's README a hundred links took the room its port was in.
+    const links = Array.from({ length: 250 }, (_, index) => ({ label: `Link ${index + 1}`, href: `https://docs.python.org/further/${index + 1}` }))
+    const hopped = options({ ...DOCS, refs: Array.from({ length: 120 }, button) }, { ...HOP, links })
+    expect(shows(hopped)).toEqual(['show-1', 'show-2', 'show-3', 'show-4'])
+    expect(Object.keys(hopped).filter((label) => label.startsWith('open-')).length).toBeGreaterThan(0)
+    expect(Object.keys(hopped).some((label) => label.startsWith('menu-'))).toBe(false)
+    // The refs win: 243 clicks and the 12 leave no room.
+    const full = { ...DOCS, refs: Array.from({ length: 243 }, button) }
     expect(shows(options(full))).toEqual([])
     expect(commandState('x', full, undefined, undefined, undefined, commandQuestions('x', full))).not.toContain('Text further down')
   })
@@ -1721,21 +1729,23 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     expect(labels(whole.questions, 'open')).toHaveLength(100)
   })
 
-  it('cuts what is further down to fit, shows first, then menus, then the farthest opens, and never what makes the hop', () => {
+  it('cuts what is further down to fit, the right-clicks and the farthest opens before any show, and never what makes the hop (#407)', () => {
     const whole = fitCard(undefined, build, stateOf)
     const budget = sizeOf(whole) - 6000
     const fitted = fitCard(budget, build, stateOf)
 
     expect(sizeOf(fitted)).toBeLessThanOrEqual(budget)
-    expect(labels(fitted.questions, 'show')).toEqual([])
+    // Every block below stays: a block holds what a link only leads to.
+    expect(labels(fitted.questions, 'show')).toEqual(Array.from({ length: 12 }, (_, index) => `show-${index + 1}`))
+    expect(fitted.state).toContain('[text-12] ')
     expect(labels(fitted.questions, 'menu')).toEqual([])
     const opens = labels(fitted.questions, 'open')
     expect(opens.length).toBeGreaterThan(50)
+    expect(opens.length).toBeLessThan(100)
     expect(opens).toEqual(opens.map((_, index) => `open-${index + 1}`))
     // The state names the links its card opens, and no other.
     expect(fitted.state).toContain(`[link-${opens.length}] `)
     expect(fitted.state).not.toContain(`[link-${opens.length + 1}] `)
-    expect(fitted.state).not.toContain('Text further down')
     // What makes the hop: the refs in view, Text in view, the Verdict, the passage and the verbs.
     expect(labels(fitted.questions, 'click')).toEqual(['click-1', 'click-2', 'click-3'])
     expect(fitted.state).toContain('Text in view: "npm init playwright@latest"')
@@ -1743,13 +1753,14 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     expect(fitted.questions.action.options).toHaveProperty('scroll_down')
   })
 
-  it('keeps the nearest shows when only some must go', () => {
-    const whole = fitCard(undefined, build, stateOf)
-    const fitted = fitCard(sizeOf(whole) - 300, build, stateOf)
+  it('keeps the nearest shows when even they must go, after every open and right-click', () => {
+    const bare = { questions: build(0), state: stateOf(build(0)) }
+    const fitted = fitCard(sizeOf(bare) + 1000, build, stateOf)
     const shows = labels(fitted.questions, 'show')
     expect(shows.length).toBeGreaterThan(0)
     expect(shows.length).toBeLessThan(12)
     expect(shows).toEqual(shows.map((_, index) => `show-${index + 1}`))
-    expect(labels(fitted.questions, 'open')).toHaveLength(100)
+    expect(labels(fitted.questions, 'open')).toEqual([])
+    expect(fitted.state).not.toContain('Links further down')
   })
 })

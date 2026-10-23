@@ -248,7 +248,7 @@ describe('pnpm jev:replay over a corpus folder', () => {
         'c-mark     73  not run  not run   an image case: --with-jev asks Jev',
         '3 cases: mammoth 2/2, elephant 1/2; through on every model 1; 1 not run on any',
         'GATE FAIL — 1 case fails on at least one model',
-        'Card Budget 100 tokens, 260 chars: no case over it',
+        'Card Budget 100 tokens, 238 chars: no case over it',
         'Jev latency over 4 answers: p50 1ms, p90 1ms, max 1ms',
       ].join('\n'),
     )
@@ -301,10 +301,10 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(gate.report).toContain('case     chars  mammoth')
     expect(gate.report).toContain('a-small     65  PASS')
     expect(gate.report).toContain('b-large   *466  PASS')
-    expect(gate.report).toContain('Card Budget 100 tokens, 260 chars: 1 case over it (marked *)')
+    expect(gate.report).toContain('Card Budget 100 tokens, 238 chars: 1 case over it (marked *)')
     expect(gate.report).toContain('mammoth counted 2 asks: 2.40–22.25 chars per token')
     const replay = await replayCorpus(dir, { env, model: counted })
-    expect(replay.report).toContain('Card Budget 100 tokens, 260 chars: 1 case over it: b-large 466 chars')
+    expect(replay.report).toContain('Card Budget 100 tokens, 238 chars: 1 case over it: b-large 466 chars')
   })
 
   it('says so when the folder holds no case', async () => {

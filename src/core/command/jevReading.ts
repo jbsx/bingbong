@@ -745,9 +745,6 @@ interface TextTarget {
   readonly block: TextBelow
 }
 
-/** How many characters of entry lines Text Further Down holds (ADR 0086): at 2000 RecipeTin's ingredients were out of reach. */
-const MAX_TEXT_FURTHER_DOWN = 6000
-
 /** A Text Further Down entry's line in the state: `[text-2] "…"`. */
 function textEntry(target: TextTarget): string {
   return `[text-${target.n}] ${target.block.kind !== undefined ? `${target.block.kind} ` : ''}${JSON.stringify(target.block.text)}`
@@ -756,23 +753,21 @@ function textEntry(target: TextTarget): string {
 /**
  * Text Further Down (#393, ADR 0086): the blocks below the view a hop can
  * offer, numbered in reading order, none repeating a label on the card or
- * a block in view, up to {@link MAX_TEXT_FURTHER_DOWN} characters of entry
- * lines. The numbers never hang on what the Task set aside — a set-aside
- * is read against them on the very call that answered, and a renumbering
- * there would fire another block — so a set-aside block leaves a gap.
+ * a block in view — every one: the Choice's room and the Card Budget are
+ * their bound (#407), as a count of characters stopped the jellyfin README
+ * before its port. The numbers never hang on what the Task set aside — a
+ * set-aside is read against them on the very call that answered, and a
+ * renumbering there would fire another block — so a set-aside block
+ * leaves a gap.
  */
 function textTargetsOf(pageRead: CommandPage, hop: HopContext | undefined): TextTarget[] {
   const shown = offered(pageRead, hop)
   const onCard = new Set([...shown.page.refs, ...shown.links].map((named) => named.label))
   const inView = new Set(pageRead.viewportText ?? [])
   const targets: TextTarget[] = []
-  let used = 0
   for (const block of pageRead.textBelow ?? []) {
     if (onCard.has(block.text) || inView.has(block.text)) continue
-    const target = { n: targets.length + 1, block }
-    used += textEntry(target).length
-    if (used > MAX_TEXT_FURTHER_DOWN) break
-    targets.push(target)
+    targets.push({ n: targets.length + 1, block })
   }
   return targets
 }
@@ -1127,17 +1122,19 @@ function actionQuestion(
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const ops = take(reached.flatMap(opsOf))
   const scrolls = take(reached.flatMap(scrollsOf))
-  // What is further down yields to the Card Budget (#406, ADR 0088): the first `further` of the opens, the right-clicks and the shows, in that order, each list nearest the view first.
+  // What is further down yields to the Choice's room and the Card Budget (#406, ADR 0088): the first `further` of the
+  // shows, the opens and the right-clicks, in that order, each list nearest the view first. The shows come first (#407):
+  // a block the page answers in has no other road to the card, while a link's page is a hop away.
   let toKeep = further
   const nearest = <T>(items: readonly T[]): readonly T[] => {
     const near = items.slice(0, Math.max(0, toKeep))
     toKeep -= near.length
     return near
   }
+  // The Show Ops stand just before the page's own scroll (ADR 0086); on a full card the refs win.
+  const showOps = nearest(take(texts.filter((target) => kept(`show-${target.n}`)))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
   const opened = nearest(take(links))
   const menus = nearest(take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`))))
-  // The Show Ops take what room is left (ADR 0086): on a full card the refs win. They stand just before the page's own scroll.
-  const showOps = nearest(take(texts.filter((target) => kept(`show-${target.n}`)))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
   const scrollAt = refLess.findIndex(([verb]) => verb === 'scroll_up' || verb === 'scroll_down')
   const refLessLines = showOps.length === 0 ? refLess : refLess.map(([verb, line]) => [verb, verb === 'scroll_down' ? SCROLL_DOWN_PAST_SHOWS : line] as const)
   const verbs = scrollAt < 0 ? [...refLessLines, ...showOps] : [...refLessLines.slice(0, scrollAt), ...showOps, ...refLessLines.slice(scrollAt)]

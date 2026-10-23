@@ -19,10 +19,11 @@ export const DEFAULT_CARD_BUDGET_TOKENS = 16_384
 
 /**
  * The characters a card is built to per token of the budget: the least
- * the hosts counted on a refused prompt (2.70, a link-heavy GitHub card),
- * less a margin (ADR 0088, "Measured at build").
+ * the hosts counted on a refused prompt, less a margin (ADR 0088,
+ * "Measured at build"). 2.70 at #406; live runs then saw link-heavy GitHub
+ * cards refused at 2.48–2.56, uptime-kuma's README the least (#407).
  */
-export const CARD_CHARS_PER_TOKEN = 2.6
+export const CARD_CHARS_PER_TOKEN = 2.38
 
 /** The Card Budget the env sets, in tokens: the default when unset or not a whole number above 0. */
 export function cardBudgetTokens(env: Record<string, string | undefined>): number {
