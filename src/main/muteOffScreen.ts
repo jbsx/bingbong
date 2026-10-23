@@ -1,13 +1,10 @@
 import type { App } from 'electron'
 
-// A test or an agent driving the app must never sound on the owner's
-// speakers: only the app the owner runs on their own screen plays. A muted
-// run is one under xvfb-run, or one asked for with BINGBONG_MUTE_AUDIO=1 (the
-// e2e harness and every agent session set it). --mute-audio silences
-// Chromium's output stream while every media element's own state (muted,
-// volume, paused) is untouched, so what the card reads and the media ops do
-// is the same as on a real screen; speech, the chime and the alarm play to
-// ALSA's null device (piperConfig's playerDevice).
+// A run on a virtual display is a test or an agent driving the app: Xvfb
+// hides its windows but not its sound, so YouTube in the pane would reach
+// the owner's speakers. --mute-audio silences Chromium's output stream while
+// every media element's own state (muted, volume, paused) is untouched, so
+// what the card reads and the media ops do is the same as on a real screen.
 
 /** Debian's xvfb-run hands its child XAUTHORITY=<tmp>/xvfb-run.XXXXXX/Xauthority. */
 const XVFB_RUN_AUTHORITY = /\/xvfb-run\.[^/]+\/Xauthority$/

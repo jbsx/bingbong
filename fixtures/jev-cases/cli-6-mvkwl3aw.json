@@ -120,7 +120,11 @@
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
-          "show": "music: show the video playing on the screen"
+          "show": "music: show the video playing on the screen",
+          "say_time": "appliance: say the time and date — 12:45, Friday 23 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
+          "say_playing": "appliance: say the song playing — \"YE - HIGHS AND LOWS - YouTube\", 0:10 of 1:51",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
         }
       },
       "slot": {

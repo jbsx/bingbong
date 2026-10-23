@@ -1,4 +1,4 @@
-import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
 import type { TextBelow } from '../browser/pageText'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
@@ -10,6 +10,7 @@ import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
+import { factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title, the text in
@@ -98,9 +99,10 @@ const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click 
 const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
 const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
 
-/** What the appliance holds that its verbs act on (#374): whether the Queue holds a current song. Absent when no Player is wired. */
+/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; and what it knows, each fact an option on the card (#402). */
 export interface Appliance {
-  readonly queued: boolean
+  readonly queued?: boolean
+  readonly facts?: ApplianceFacts
 }
 
 /**
@@ -111,7 +113,7 @@ export interface Appliance {
  * `show` while any song is on, the Player's or the page's.
  */
 function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): ApplianceVerb[] {
-  if (appliance === undefined) return []
+  if (appliance?.queued === undefined) return []
   const songOn = appliance.queued || page.media !== undefined
   return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : [])]
 }
@@ -962,7 +964,7 @@ export function commandQuestions(
   options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[] } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media))
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
@@ -1042,7 +1044,7 @@ export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): 
  */
 export function isTextlessGuess(action: DecisionChoiceAnswer, questions: CommandQuestions, page: CommandPage, bar: number): boolean {
   const acted = refActionOf(action.choice)
-  return choiceProbability(action) < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
+  return action.confidence < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
 }
 
 /**
@@ -1075,6 +1077,7 @@ function actionQuestion(
   offeredVerbs: readonly ApplianceVerb[],
   setAside: readonly SetAside[],
   marked?: ReadonlySet<number>,
+  facts?: ApplianceFacts,
 ): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside, texts)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
@@ -1084,10 +1087,14 @@ function actionQuestion(
   // A region carries no click (ADR 0085): a right-click is a click too.
   const clickable = (ref: CommandRef): boolean => ref.kind !== 'region'
   const applianceVerbs = offeredVerbs.filter(kept)
+  // What the appliance knows (#402): one option per fact, each line carrying it — never on the Where Ask, whose
+  // question is what would reveal or find the thing on the page: there the facts read Gurgaon's weather as the
+  // home city's (gate 2026-10-23), and the first ask already offered them.
+  const factOptions = facts === undefined || asked === 'where' ? [] : Object.entries(sayOptions(facts)).filter(([label]) => kept(label))
   const refLess = Object.entries(REFLESS_DESCRIPTIONS)
     .filter(([verb]) => kept(verb))
     .map(([verb, line]) => [verb, verb === 'none' ? CARD_ASKS[asked].none : line] as const)
-  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length)
+  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
@@ -1131,6 +1138,7 @@ function actionQuestion(
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(verbs),
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
+      ...Object.fromEntries(factOptions),
     },
   }
   return { question, mediaOps: ops.length > 0 }
@@ -1171,8 +1179,7 @@ export type Outcome = (typeof OUTCOMES)[number]
 /** The Verdict a hop's reading carries: where the Task stands on this page, and how sure Jev is. */
 export interface Verdict {
   readonly outcome: Outcome
-  /** The outcome's probability, the number the Choice bar reads (#403). */
-  readonly probability: number
+  readonly confidence: number
 }
 
 /**
@@ -1191,9 +1198,9 @@ function outcomeQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions:
-      'Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.',
+      'Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.',
     options: {
-      yes: 'done: the page shows it or its answer, or the action they asked for has happened',
+      yes: 'done: the page shows it, or the action they asked for has happened',
       in_the_way: 'a pop-up or prompt covers the page now',
       not_yet: 'not done: more to do, nothing covering the page',
     },
@@ -1271,22 +1278,21 @@ export function readProgress(answers: CommandAnswers | HopAnswers): number | nul
   return 'progress' in answers && answers.progress !== undefined ? answers.progress.noul : null
 }
 
-/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its probability. Null when it was not asked, or names nothing offered. */
+/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its confidence. Null when it was not asked, or names nothing offered. */
 export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
   if (!('dismiss' in answers) || answers.dismiss === undefined) return null
-  const { choice } = answers.dismiss
-  const probability = choiceProbability(answers.dismiss)
-  if (choice === 'escape') return { choice: 'escape', probability }
+  const { choice, confidence } = answers.dismiss
+  if (choice === 'escape') return { choice: 'escape', confidence }
   const match = /^ref-(\d+)$/.exec(choice)
   const ref = match === null ? NaN : Number(match[1])
-  return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, probability } : null
+  return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, confidence } : null
 }
 
 /** The Verdict a hop's answers, or a Where Ask's (#394), carry; null when none was asked, or the answer names no outcome. */
 export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {
   if (!('outcome' in answers)) return null
-  const { choice } = answers.outcome
-  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, probability: choiceProbability(answers.outcome) } : null
+  const { choice, confidence } = answers.outcome
+  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, confidence } : null
 }
 
 /**
@@ -1516,6 +1522,9 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   const texts = textTargetsOf(pageRead, hop)
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [], texts)
   if (isApplianceVerb(label)) return applianceCommand(label, answers.slot, text, answers, pageRead.url, hop)
+  // A fact the appliance holds (#402): said, the page untouched.
+  const fact = factOfLabel(label)
+  if (fact !== null) return { verb: 'say', target: null, slot: null, fact }
   // A Show Op (#393, ADR 0086) is a scroll down that brings its block into view.
   const show = showOf(label, texts)
   if (show !== null) return { verb: 'scroll_down', target: null, slot: null, show }

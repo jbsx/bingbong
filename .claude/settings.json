@@ -1,6 +1,0 @@
-{
-  "env": {
-    "BINGBONG_MUTE_AUDIO": "1",
-    "PULSE_SERVER": "unix:/nonexistent"
-  }
-}

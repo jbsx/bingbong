@@ -175,6 +175,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'help':
     // The Player writes its own Answer (#343): what it played or queued is known only once it has.
     case 'play':
+    // A fact's Answer (#402) is its own sentence, filled when it fires.
+    case 'say':
     case 'none':
       return null
   }

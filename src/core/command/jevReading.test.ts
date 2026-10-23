@@ -875,8 +875,8 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(hopQuestions('open elon musks latest tweet', PROFILE, hop).dismiss).toBeUndefined()
     // Only a way through, or links: nothing to offer beside Escape, so nothing is asked.
     expect(hopQuestions('open elon musks latest tweet', { ...covered, dialog: { text: 'Join', refs: [7, 8] } }, hop).dismiss).toBeUndefined()
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, probability: 0.8 })
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', probability: 0.6 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, confidence: 0.8 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', confidence: 0.6 })
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way') }, covered)).toBeNull()
   })
@@ -885,8 +885,8 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'extent', 'where'])
   })
 
-  it('reads the Verdict with its probability, null when none was asked or the answer names no outcome', () => {
-    expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', probability: 0.85 })
+  it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
+    expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', confidence: 0.85 })
     expect(readVerdict(reading)).toBeNull()
     expect(readVerdict({ ...reading, outcome: answer('maybe') })).toBeNull()
   })
@@ -1213,6 +1213,40 @@ describe('Appliance Verbs (#374)', () => {
 
   it('an Appliance Verb at a later hop is the same Command', () => {
     expect(readCommandAnswers({ action: choice('skip'), slot: choice('none'), outcome: choice('not_yet') }, 'next one', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
+  })
+
+  describe('what the appliance knows (#402): each fact an option, its line carrying the fact', () => {
+    const facts = { now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } }
+    const SAYS = ['say_time', 'say_weather', 'say_playing', 'say_timer']
+
+    it('offers the facts on the command, hop and partial asks, after the music verbs, with or without a Player; never on the Where Ask', () => {
+      for (const questions of [
+        commandQuestions("what's the time", WATCH, undefined, { appliance: { queued: true, facts } }),
+        hopQuestions("what's the time", WATCH, HOP, { appliance: { queued: true, facts } }),
+        partialQuestions("what's the time", WATCH, { appliance: { queued: true, facts } }),
+      ]) {
+        expect(Object.keys(questions.action.options).slice(-(APPLIANCE_VERBS.length + SAYS.length))).toEqual([...APPLIANCE_VERBS, ...SAYS])
+      }
+      expect(commandQuestions("what's the time", WATCH, undefined, { appliance: { queued: true, facts } }).action.options.say_time).toBe('appliance: say the time and date — 12:34, Friday 23 October')
+      // No Player wired: the facts, and no music verb.
+      const labels = Object.keys(commandQuestions("what's the time", WATCH, undefined, { appliance: { facts } }).action.options)
+      expect(labels.filter((label) => APPLIANCE_VERBS.includes(label))).toEqual([])
+      expect(labels).toEqual(expect.arrayContaining(SAYS))
+      // The Where Ask asks what would reveal or find the thing on the page: a fact is neither (gate 2026-10-23).
+      for (const label of SAYS) expect(Object.keys(whereQuestions("what's the weather like in gurgaon", WATCH, { appliance: { queued: true, facts } }).action.options)).not.toContain(label)
+    })
+
+    it('reserves their room under the 255 cap: a full page drops refs, never a fact', () => {
+      const refs: CommandRef[] = Array.from({ length: 300 }, (_, n) => ({ ref: n + 1, kind: 'button', label: `Ref ${n + 1}`, href: null, inputType: null }))
+      const labels = Object.keys(commandQuestions('do it', { ...PAGE, refs }, undefined, { appliance: { queued: true, facts } }).action.options)
+      expect(labels).toHaveLength(255)
+      expect(labels).toEqual(expect.arrayContaining(SAYS))
+    })
+
+    it('reads a fact as `say`: the page untouched, at hop 0 or a later hop', () => {
+      expect(readCommandAnswers({ action: choice('say_weather'), slot: choice('none') }, "what's the weather like", WATCH)).toEqual({ verb: 'say', target: null, slot: null, fact: 'weather' })
+      expect(readCommandAnswers({ action: choice('say_time'), slot: choice('none'), outcome: choice('not_yet') }, "what's the time", WATCH, HOP)).toEqual({ verb: 'say', target: null, slot: null, fact: 'time' })
+    })
   })
 
   describe('a song to play reads `where` as a search does (AGENTS.md, "Jev decides; code shapes the ask")', () => {

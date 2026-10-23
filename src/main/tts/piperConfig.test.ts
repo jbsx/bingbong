@@ -26,11 +26,6 @@ describe('resolvePiperConfig', () => {
     ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay' })
   })
 
-  it('plays to the null device when the run is muted', () => {
-    expect(resolvePiperConfig({ BINGBONG_MUTE_AUDIO: '1' }, '/data').playerDevice).toBe('null')
-    expect(resolvePiperConfig({ XAUTHORITY: '/tmp/xvfb-run.Ab12Cd/Xauthority' }, '/data').playerDevice).toBe('null')
-  })
-
   it('ignores blank env values', () => {
     expect(resolvePiperConfig({ BINGBONG_PIPER_BIN: '  ' }, '/data').bin).toBe('piper')
   })

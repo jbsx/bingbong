@@ -131,7 +131,7 @@ export function App() {
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
   // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.
   const hint = voiceHint(voice, { promptShown: panel.open && view === 'dashboard' })
-  const weather = useWeather(settings?.weather ?? null, showIdle)
+  const weather = useWeather(settings?.weather ?? null)
   const lastPage = useLastPage(showIdle)
   // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.
   const timer = useTimer()

@@ -62,6 +62,7 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
+import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
@@ -203,13 +204,15 @@ const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), set
 const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
-// The chime and the alarm play through the same player as speech, so a muted run is silent.
-const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice })
+const chimePlayer = createAplayPlayer()
 // The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
 // Screen; its alarm plays through its own aplay, so the chime and speech
 // never cut it.
 const timer = createTimer({ clock: systemClock })
-attachTimerAlarm(timer, createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice }), createAlarmWav())
+attachTimerAlarm(timer, createAplayPlayer(), createAlarmWav())
+// The weather the Idle Screen shows (#402): what the appliance knows, read
+// by the Command runner for a question it answers.
+const weatherFacts = registerWeatherIpc()
 
 // The Decision Model (Jev, ADR 0068, pinned to jev-1.14.0 by ADR 0076):
 // resolved from the live env on each read, kept while its config is
@@ -458,6 +461,14 @@ async function createWindow(): Promise<BrowserWindow> {
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.
     player: music.player,
+    // What the appliance knows (#402): a question one of them answers is said, not searched.
+    facts: () => ({
+      now: systemClock.now(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      weather: weatherFacts.latest(),
+      nowPlaying: music.player.nowPlaying(),
+      timer: timer.state(),
+    }),
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.

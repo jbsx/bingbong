@@ -300,8 +300,6 @@ function buildEnv(
   return {
     ...env,
     BINGBONG_USER_DATA_DIR: userDataDir,
-    // A screenshot run never sounds on the speakers (muteOffScreen).
-    BINGBONG_MUTE_AUDIO: '1',
     BINGBONG_LLM_SCRIPT: llmScript,
     BINGBONG_PIPER_BIN: tts.piperBin,
     BINGBONG_PIPER_VOICE_DIR: tts.voicesDir,

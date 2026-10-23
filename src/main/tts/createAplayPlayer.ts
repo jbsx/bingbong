@@ -5,8 +5,6 @@ import { parseWav, type ParsedWav } from '../../core/tts/wav'
 export interface AplayPlayerDeps {
   /** Default 'aplay' (PATH). */
   bin?: string
-  /** ALSA device (`-D`); default aplay's own. 'null' plays nothing, for a run off screen. */
-  device?: string
   spawnFn?: typeof nodeSpawn
 }
 
@@ -39,11 +37,10 @@ function rawArgs(format: Format): string[] {
 export function createAplayPlayer(deps: AplayPlayerDeps = {}): AudioPlayer & AudioStreamPlayer {
   const spawnFn = deps.spawnFn ?? nodeSpawn
   const bin = deps.bin ?? 'aplay'
-  const deviceArgs = deps.device ? ['-D', deps.device] : []
 
   /** One aplay child: resolves on its close, rejects on a failure unless it was stopped. */
   function startChild(args: string[], isStopped: () => boolean): { child: ChildProcess; closed: Promise<void> } {
-    const child = spawnFn(bin, [...deviceArgs, ...args])
+    const child = spawnFn(bin, args)
     const closed = new Promise<void>((resolve, reject) => {
       child.on('error', (err) => {
         if (isStopped()) resolve()

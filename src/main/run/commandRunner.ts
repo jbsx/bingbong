@@ -68,6 +68,7 @@ import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
+import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
@@ -235,6 +236,8 @@ export interface CommandRunnerDeps {
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
   player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'>
+  /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
+  facts?(): ApplianceFacts
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -409,6 +412,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'screenshot', args: command.slot ? { path: command.slot } : {} }
     case 'play':
       return { name: 'play', args: { ...command.music, ...(command.slot !== null ? { words: command.slot } : {}) } }
+    case 'say':
+      return { name: 'say', args: { fact: command.fact } }
     default:
       return { name: command.verb, args: {} }
   }
@@ -454,7 +459,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * card offers each verb by ability, the song's own ops being its media
    * ref's (ADR 0080).
    */
-  const appliance = (): Appliance | undefined => (deps.player === undefined ? undefined : { queued: deps.player.queue().current !== null })
+  const appliance = (): Appliance | undefined => {
+    if (deps.player === undefined && deps.facts === undefined) return undefined
+    return { ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}), ...(deps.facts !== undefined ? { facts: deps.facts() } : {}) }
+  }
 
   /** What plays on the page paused for a `stop` (#343, #376); whether anything was playing. A failure to reach it is no pause. */
   async function pauseAll(): Promise<boolean> {
@@ -901,7 +909,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
   }
 
-  async function perform(command: Command, resume: ReturnType<typeof resumePlan> | null, current: () => boolean, onPlayed: (outcome: PlayerOutcome) => void): Promise<string> {
+  async function perform(command: Command, page: CommandPage, resume: ReturnType<typeof resumePlan> | null, current: () => boolean, onPlayed: (outcome: PlayerOutcome) => void): Promise<string> {
     switch (command.verb) {
       case 'play': {
         if (deps.player === undefined) throw new Error('no player on this surface')
@@ -978,6 +986,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (command.durationMs === undefined) return deps.timer.cancel() ? 'timer off' : 'timer off: none was running'
         deps.timer.set(command.durationMs)
         return `timer set: ${describeDuration(command.durationMs)}`
+      }
+      case 'say': {
+        // A fact (#402): its sentence, filled from what the appliance holds as it fires.
+        if (deps.facts === undefined || command.fact === undefined) throw new Error('no facts on this surface')
+        return factAnswer(command.fact, withPageSong(deps.facts(), page.media))
       }
       case 'stop':
         return 'stopped'
@@ -1163,7 +1176,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(played?.pick !== undefined ? { pick: played.pick } : {}),
     })
     try {
-      const result = await perform(command, resume, current, (outcome) => (played = outcome))
+      const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
@@ -1180,6 +1193,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (!current()) return ended('superseded')
         // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
         react('display', shownAt)
+      } else if (command.verb === 'say') {
+        // A fact's Answer (#402) is its sentence: shown, and spoken where there is a voice.
+        answer(turnId, result)
+        if (deps.speech !== undefined) void say(deps.speech, turnId, result)
       } else if (played !== null) {
         // The Player's own Answer (#343): what it played, queued or did to the element — or, marked a failure, why it could not.
         const outcomeOfPlay: PlayerOutcome = played
@@ -1325,8 +1342,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return appeared.length > 0 ? { command, page: before, appeared } : undefined
   }
 
-  /** Whether the Verdict is sure: its outcome's probability clears the Choice bar (#403). */
-  const sure = (verdict: Verdict | null): verdict is Verdict => verdict !== null && verdict.probability >= DEFAULT_DECISION_THRESHOLDS.choice
+  /** Whether the Verdict is sure: its confidence clears the Choice bar. */
+  const sure = (verdict: Verdict | null): verdict is Verdict => verdict !== null && verdict.confidence >= DEFAULT_DECISION_THRESHOLDS.choice
 
   /** Whether the Command acts on the pop-up itself: a ref in the dialog's layer, or Escape. */
   function actsOnDialog(command: Command, page: CommandPage): boolean {
@@ -1953,6 +1970,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (command.verb === 'none') return null
     // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
     if (command.music?.kind === 'search') return null
+    // So does a fact (#402): "what's the weather" may yet be "what's the weather in Gurgaon", which the home city's does not answer.
+    if (command.verb === 'say') return null
     return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, action: result.answers.action, noul }
   }
 

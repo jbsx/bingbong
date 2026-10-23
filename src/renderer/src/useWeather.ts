@@ -29,22 +29,21 @@ function keptWeather(city: string, units: WeatherUnits): WeatherState {
 
 /**
  * Open-Meteo current weather for the manually configured city — no
- * geolocation, per spec. Only fetches while `active` (the idle screen is the
- * only consumer), so a device sitting on the dashboard makes no weather
- * calls; refetches on a slow interval and on city/units changes. Shows the
- * last report (idleCache) at once while the fetch is out, and keeps it
- * through a failed one while it is under an hour old.
+ * geolocation, per spec. Fetches whether or not the Idle Screen shows,
+ * since main answers "what's the weather like" from the same report
+ * (#402): every report shown is handed to main, null when none is.
+ * Refetches on a slow interval and on city/units changes. Shows the last
+ * report (idleCache) at once while the fetch is out, and keeps it through
+ * a failed one while it is under an hour old.
  */
 export function useWeather(
   weatherSettings: { city: string; units: WeatherUnits } | null,
-  active: boolean,
 ): WeatherState {
   const city = weatherSettings?.city.trim() ?? ''
   const units = weatherSettings?.units ?? 'metric'
   const [state, setState] = useState<WeatherState>(() => keptWeather(city, units))
 
   useEffect(() => {
-    if (!active) return
     setState(keptWeather(city, units))
     if (city === '') return
     let cancelled = false
@@ -67,7 +66,11 @@ export function useWeather(
       cancelled = true
       clearInterval(interval)
     }
-  }, [city, units, active])
+  }, [city, units])
+
+  useEffect(() => {
+    window.bingbong.weather.report(state.status === 'ready' ? state.report : null)
+  }, [state])
 
   return state
 }

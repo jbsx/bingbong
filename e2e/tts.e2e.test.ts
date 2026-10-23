@@ -62,7 +62,7 @@ describe('speech e2e', () => {
     const plays = lines.filter((line) => line.startsWith('aplay '))
     expect(plays).toHaveLength(1)
     // Four sentences of 0.1 s each, through the one stream.
-    expect(plays[0]).toBe('aplay -D null -q -t raw -f S16_LE -c 1 -r 22050 - bytes=17640')
+    expect(plays[0]).toBe('aplay -q -t raw -f S16_LE -c 1 -r 22050 - bytes=17640')
 
     await cli(harness, 'read', /^# story fixture — /)
     const again = await waitFor(async () => {

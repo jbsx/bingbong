@@ -1,6 +1,7 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import type { TimerState } from '../core/timer/timer'
+import type { WeatherReport } from '../core/weather/weather'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
@@ -51,6 +52,11 @@ export interface BingbongTimerApi {
   /** The Timer (CONTEXT.md): off, running to `endsAt`, or ringing. */
   get(): Promise<TimerState>
   onChange(listener: (state: TimerState) => void): () => void
+}
+
+export interface BingbongWeatherApi {
+  /** Hands main the report the Idle Screen shows (#402), null when it shows none: a spoken answer says the same. */
+  report(report: WeatherReport | null): void
 }
 
 export interface BingbongMusicApi {
@@ -163,6 +169,7 @@ export interface BingbongApi {
   browser: BingbongBrowserApi
   idle: BingbongIdleApi
   timer: BingbongTimerApi
+  weather: BingbongWeatherApi
   music: BingbongMusicApi
   usage: BingbongUsageApi
   calendar: BingbongCalendarApi

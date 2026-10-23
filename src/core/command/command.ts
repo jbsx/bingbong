@@ -4,6 +4,7 @@ import type { TextBelow } from '../browser/pageText'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
+import type { ApplianceFact } from './applianceFacts'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
 import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
 
@@ -20,8 +21,9 @@ import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
  * {@link JEV_VERBS} on its action card (#370) — a click, type or menu on
  * each ref, a media ref's Media Ops (#372, ADR 0080: the `media` verb,
  * its op on the Command), the rest as they are — and `play` through the
- * Appliance Verbs (#374); `screenshot`, `help`, `resume` and
- * `timer` are the CLI grammar's alone, reached only through the Local Match.
+ * Appliance Verbs (#374), and `say` through the facts' options (#402);
+ * `screenshot`, `help`, `resume` and `timer` are the CLI grammar's alone,
+ * reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
   'navigate',
@@ -45,6 +47,7 @@ export const COMMAND_VERBS = [
   'resume',
   'timer',
   'play',
+  'say',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
@@ -54,9 +57,10 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
 /**
  * The browser's verbs the Decision Model chooses among (#324), `none`
  * included. `play` is not one: Jev reaches the Player through the
- * Appliance Verbs, offered beside these while a Player is wired (#374).
+ * Appliance Verbs, offered beside these while a Player is wired (#374);
+ * nor `say`, reached through the option of the fact it says (#402).
  */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -90,6 +94,8 @@ export interface Command {
   readonly durationMs?: number
   /** For `play` (#343): what the line asks of the Player; a search's words are the Slot. */
   readonly music?: MusicAction
+  /** For `say` (#402): the fact the appliance holds that the Answer says. */
+  readonly fact?: ApplianceFact
   /** For `media` (#372, ADR 0080): the Media Op on the target ref's element — a seek's rung and seconds, a volume's or a speed's level. */
   readonly mediaOp?: MediaOpAction
   /**
@@ -215,13 +221,14 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
 /**
  * The verbs that need no pane on the screen — the Timer, a Stop,
  * `none`, the Player's (#344: the search and the watch page happen in
- * the hidden pane, and the music plays on there) and a Media Op (#372: one
+ * the hidden pane, and the music plays on there), a Media Op (#372: one
  * evaluate on the element, which plays on under the Idle Screen as a
- * song does). A Command carrying one leaves the Idle Screen up
- * (CONTEXT.md), save "show the video": see {@link commandKeepsIdle}.
+ * song does) and a fact the appliance says (#402). A Command carrying one
+ * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
+ * {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media'
+  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media' || verb === 'say'
 }
 
 /** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
@@ -339,6 +346,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return command.durationMs !== undefined ? `timer ${describeDuration(command.durationMs)}` : 'timer off'
     case 'play':
       return describeMusic(command.music, command.slot)
+    case 'say':
+      return `say ${command.fact === 'playing' ? 'the song playing' : `the ${command.fact ?? 'fact'}`}`
     case 'none':
       return 'not a command'
     default:

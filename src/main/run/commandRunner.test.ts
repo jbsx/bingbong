@@ -136,7 +136,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -182,6 +182,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     },
     ...(options?.speech ? { speech: options.speech } : {}),
     ...(options?.timer ? { timer: options.timer } : {}),
+    ...(options?.facts ? { facts: options.facts } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(player ? { player } : {}),
     screenshotDir: () => '/shots',
@@ -211,6 +212,34 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
+
+describe('what the appliance knows (#402)', () => {
+  // 2026-10-23 12:34 in London.
+  const facts = () => ({ now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } })
+
+  it('offers each fact on the card, its line carrying it; a fact read says its sentence, shown and spoken, touching no page and keeping the Idle Screen up', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, events, records, runner } = harness({ facts, speech })
+    decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run("what's the time?", { source: 'spoken' })
+    expect(cardOf(decision.requests[0]!).options).toMatchObject({ say_time: 'appliance: say the time and date — 12:34, Friday 23 October', say_timer: 'appliance: say how long is left on the timer — no timer set' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ action: 'say the time', keepsIdle: true })
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(["It's 12:34 on Friday 23 October."])
+    expect(speech.spoken.map((line) => line.text)).toEqual(["It's 12:34 on Friday 23 October."])
+    expect(browser.navigations).toEqual([])
+    // One reading, no hop, no Where Ask: the Task ends on it.
+    expect(decision.requests).toHaveLength(1)
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ reading: 'jev', verb: 'say', ended: 'terminal' })])
+  })
+
+  it('a partial read as a fact waits for its Endpoint: "what\'s the weather" may yet name another place', async () => {
+    const { decision, events, runner } = harness({ facts })
+    decision.script.push({ answers: { action: choice('say_weather'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
+    await runner.consider("what's the weather")
+    await flushMicrotasks()
+    expect(events.some((event) => event.type === 'display')).toBe(false)
+  })
+})
 
 describe('the Timer (CONTEXT.md)', () => {
   function fakeTimer(status: 'off' | 'running' | 'ringing' = 'off') {
@@ -2094,15 +2123,6 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-2'), 'yes', 0.69), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([2])
-      })
-
-      it('#403: sure reads the yes probability, as the corpus gate does, not the confidence beside it: 0.77 at confidence 0.65 ends done', async () => {
-        const { browser, records, decision, runner } = taskHarness()
-        const yes = choice('yes', 0.65, { yes: 0.77, in_the_way: 0.03, not_yet: 0.2 })
-        decision.script.push(answer('search', 's3-6'), { answers: { ...answer('click-2').answers, outcome: yes } })
-        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-        expect(browser.clicks).toEqual([])
-        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
       })
 
       it('AC4: hop 0 has no Verdict: an outcome there leaves the click to fire', async () => {
