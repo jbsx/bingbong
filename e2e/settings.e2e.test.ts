@@ -9,18 +9,24 @@ import { waitFor } from './waitFor'
 // Dashboard settings page smoke: open settings, edit values, save — the
 // changes must land in the profile's settings.json (survives restarts).
 
-function setWeatherCityScript(city: string): string {
+function typeWeatherCityScript(words: string): string {
   return `(async () => {
-    const select = document.querySelector('select[aria-label="Weather city"]')
-    if (!select) return 'no-city-select'
-    if (select.options[0]?.value !== '') return 'automatic-not-first'
-    select.focus()
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
-    setter.call(select, ${JSON.stringify(city)})
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-    await new Promise((r) => setTimeout(r, 100))
-    return select.value === ${JSON.stringify(city)} ? 'edited' : 'not-listed'
+    const input = document.querySelector('input[aria-label="Weather city"]')
+    if (!input) return 'no-city-input'
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(words)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return 'typed'
   })()`
+}
+
+// The geocoder stand-in: two Berlins for the search, so picking the second
+// shows the setting keeps the place picked and not the first of its name.
+const BERLINS = {
+  results: [
+    { name: 'Berlin', admin1: 'Land Berlin', country: 'Germany', latitude: 52.52, longitude: 13.41 },
+    { name: 'Berlin', admin1: 'New Hampshire', country: 'United States', latitude: 44.47, longitude: -71.19 },
+  ],
 }
 
 describe('settings page e2e', () => {
@@ -34,6 +40,24 @@ describe('settings page e2e', () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-settings-'))
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ usageDashboard: usage.settings }), 'utf8')
     harness = await startHarness({ userDataDir })
+    const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })
+    harness.cdp.on('Fetch.requestPaused', (params) => {
+      const { requestId } = params as { requestId: string }
+      void harness.cdp.send(
+        'Fetch.fulfillRequest',
+        {
+          requestId,
+          responseCode: 200,
+          responseHeaders: [
+            { name: 'content-type', value: 'application/json' },
+            { name: 'access-control-allow-origin', value: '*' },
+          ],
+          body: Buffer.from(JSON.stringify(BERLINS)).toString('base64'),
+        },
+        sessionId,
+      )
+    })
+    await harness.cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*geocoding-api.open-meteo.com*' }] }, sessionId)
   })
 
   afterAll(async () => {
@@ -74,9 +98,20 @@ describe('settings page e2e', () => {
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`document.querySelector('section[aria-label="${id}"] details').open`)) ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
     }
 
-    // The city dropdown is addressed by its aria-label; Automatic leads it.
-    const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))
-    expect(edited).toBe('edited')
+    // The city is a search box: typing lists the geocoder's places under Automatic, and a click picks one.
+    await harness.dashboardEval(`document.querySelector('input[aria-label="Weather city"]').scrollIntoView({ block: 'center' })`)
+    await harness.clickDashboardElement('input[aria-label="Weather city"]')
+    expect(await harness.dashboardEval<string>(typeWeatherCityScript('Berl'))).toBe('typed')
+    const offered = await waitFor(
+      async () => {
+        const names = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('[role="listbox"][aria-label="Weather city suggestions"] [role="option"]')].map((option) => option.textContent)`)
+        return names.length === 3 ? names : undefined
+      },
+      { timeoutMs: 5000, intervalMs: 100 },
+    )
+    expect(offered).toEqual(['Automatic (London until online)', 'BerlinLand Berlin, Germany', 'BerlinNew Hampshire, United States'])
+    await harness.dashboardEval(`document.querySelectorAll('[aria-label="Weather city suggestions"] [role="option"]')[2].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))`)
+    expect(await harness.dashboardEval<boolean>(`!document.querySelector('[aria-label="Weather city suggestions"]')`)).toBe(true)
 
     // The News card reads nothing a section could set (Top Repos), so there is none.
     expect(await harness.dashboardEval<boolean>(`!document.querySelector('section[aria-label="news"]')`)).toBe(true)
@@ -88,7 +123,7 @@ describe('settings page e2e', () => {
         const raw = await readFile(join(userDataDir, 'settings.json'), 'utf8').catch(() => undefined)
         if (!raw) return undefined
         const settings = JSON.parse(raw)
-        if (settings.weather?.city !== 'Berlin') return undefined
+        if (settings.weather?.city !== 'Berlin' || settings.weather?.latitude !== 44.47 || settings.weather?.longitude !== -71.19) return undefined
         // The retired maximum-round setting never persists (#129) — round
         // limits are the product-owned Effort Tier budgets, never a
         // setting. A lingering legacy key keeps the poll unresolved.

@@ -69,7 +69,12 @@ export interface AppSettings {
   adblockEnabled: boolean
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
-  weather: { city: string; units: WeatherUnits }
+  /**
+   * The weather's city ('' is the network's own place) and units; a city
+   * picked from the search keeps its coordinates, so the forecast is for the
+   * place picked and not the first of its name.
+   */
+  weather: { city: string; units: WeatherUnits; latitude?: number; longitude?: number }
   /**
    * The AI usage dashboard the Idle Screen reads gauges and history from
    * ('' hides the card), and which providers and windows it shows.
@@ -115,6 +120,15 @@ export function defaultSettings(): AppSettings {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+/** A picked city's coordinates, when both are finite numbers in range; else none, and the city is geocoded by name. */
+function weatherCoordinates(weather: Record<string, unknown> | null): { latitude?: number; longitude?: number } {
+  const latitude = weather?.latitude
+  const longitude = weather?.longitude
+  if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return {}
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return {}
+  return { latitude, longitude }
 }
 
 function asString(value: unknown, fallback: string): string {
@@ -238,6 +252,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     weather: {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
+      ...weatherCoordinates(weather),
     },
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
     idleCards: pinnedCards(record),

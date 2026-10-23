@@ -200,6 +200,36 @@ export async function detectPlace(fetchJson: FetchJson): Promise<WeatherPlace> {
   return { name: body.city.trim(), latitude: body.latitude, longitude: body.longitude }
 }
 
+/** A place the geocoder offers for typed words: the place, and where it is, for telling one Richmond from another. */
+export interface PlaceSuggestion extends WeatherPlace {
+  /** The region and country, comma-joined; empty when the geocoder gave neither. */
+  where: string
+}
+
+/** How many places a search offers. */
+export const PLACE_SUGGESTIONS = 8
+
+/**
+ * The places the geocoder offers for `query`, best first; empty under two
+ * letters, which the geocoder answers with nothing. Throws when it is
+ * unreachable.
+ */
+export async function searchPlaces(fetchJson: FetchJson, query: string): Promise<PlaceSuggestion[]> {
+  const words = query.trim()
+  if (words.length < 2) return []
+  const url = `${GEOCODE_URL}?name=${encodeURIComponent(words)}&count=${PLACE_SUGGESTIONS}&language=en&format=json`
+  const body = asRecord(await fetchJson(url))
+  const results = Array.isArray(body?.results) ? body.results : []
+  const places: PlaceSuggestion[] = []
+  for (const raw of results) {
+    const result = asRecord(raw)
+    if (!result || typeof result.name !== 'string' || typeof result.latitude !== 'number' || typeof result.longitude !== 'number') continue
+    const where = [result.admin1, result.country].filter((part): part is string => typeof part === 'string' && part !== '' && part !== result.name)
+    places.push({ name: result.name, latitude: result.latitude, longitude: result.longitude, where: where.join(', ') })
+  }
+  return places
+}
+
 async function geocode(fetchJson: FetchJson, city: string): Promise<WeatherPlace> {
   const url = `${GEOCODE_URL}?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
   const body = asRecord(await fetchJson(url))

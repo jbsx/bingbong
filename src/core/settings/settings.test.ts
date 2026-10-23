@@ -167,6 +167,12 @@ describe('sanitizeSettings', () => {
     expect('sttModel' in sanitizeSettings({ sttModel: 'medium' })).toBe(false)
   })
 
+  it("keeps a picked city's coordinates, and drops ones that are not a place on Earth", () => {
+    expect(sanitizeSettings({ weather: { city: 'Richmond', units: 'metric', latitude: 51.46, longitude: -0.3 } }).weather).toEqual({ city: 'Richmond', units: 'metric', latitude: 51.46, longitude: -0.3 })
+    expect(sanitizeSettings({ weather: { city: 'Richmond', units: 'metric', latitude: 91, longitude: -0.3 } }).weather).toEqual({ city: 'Richmond', units: 'metric' })
+    expect(sanitizeSettings({ weather: { city: 'Richmond', units: 'metric', latitude: '51', longitude: -0.3 } }).weather).toEqual({ city: 'Richmond', units: 'metric' })
+  })
+
   it('drops unknown weather units and non-string fields', () => {
     const settings = sanitizeSettings({
       weather: { city: 5, units: 'kelvin' },

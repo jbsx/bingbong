@@ -29,17 +29,17 @@ function keptWeather(placeName: string, units: WeatherUnits): WeatherState {
   return report === null ? { status: 'loading' } : { status: 'ready', report }
 }
 
-/** Where the weather is for: the typed city, else the place detected last, else {@link DEFAULT_CITY}. */
-function startingPlace(city: string): string | WeatherPlace {
-  if (city !== '') return city
+/** Where the weather is for: the picked city (by its coordinates when it kept them), else the place detected last, else {@link DEFAULT_CITY}. */
+function startingPlace(city: string, latitude?: number, longitude?: number): string | WeatherPlace {
+  if (city !== '') return latitude === undefined || longitude === undefined ? city : { name: city, latitude, longitude }
   return keptAnswer<WeatherPlace>('weatherPlace', 'detected', KEPT_PLACE_MAX_AGE_MS) ?? DEFAULT_CITY
 }
 
 const placeName = (where: string | WeatherPlace): string => (typeof where === 'string' ? where : where.name)
 
 /**
- * Open-Meteo current weather for the city typed in settings or, with none
- * typed, the place the network's IP address sits in — London until that
+ * Open-Meteo current weather for the city picked in settings or, with none
+ * picked, the place the network's IP address sits in — London until that
  * lookup answers, which it is asked on start, whenever the network comes
  * back, and on every refresh until it has. Fetches whether or not the Idle
  * Screen shows, since main answers "what's the weather like" from the same
@@ -50,16 +50,18 @@ const placeName = (where: string | WeatherPlace): string => (typeof where === 's
  * old.
  */
 export function useWeather(
-  weatherSettings: { city: string; units: WeatherUnits } | null,
+  weatherSettings: { city: string; units: WeatherUnits; latitude?: number; longitude?: number } | null,
 ): WeatherState {
   const city = weatherSettings?.city.trim() ?? ''
   const units = weatherSettings?.units ?? 'metric'
-  const [where, setWhere] = useState<string | WeatherPlace>(() => startingPlace(city))
+  const savedLatitude = weatherSettings?.latitude
+  const savedLongitude = weatherSettings?.longitude
+  const [where, setWhere] = useState<string | WeatherPlace>(() => startingPlace(city, savedLatitude, savedLongitude))
   const ready = weatherSettings !== null
   const [state, setState] = useState<WeatherState>(() => (ready ? keptWeather(placeName(where), units) : { status: 'unset' }))
 
   useEffect(() => {
-    setWhere(startingPlace(city))
+    setWhere(startingPlace(city, savedLatitude, savedLongitude))
     if (!ready || city !== '') return
     let cancelled = false
     let detected = false
@@ -82,7 +84,7 @@ export function useWeather(
       clearInterval(interval)
       window.removeEventListener('online', detect)
     }
-  }, [ready, city])
+  }, [ready, city, savedLatitude, savedLongitude])
 
   const name = placeName(where)
   const latitude = typeof where === 'string' ? null : where.latitude

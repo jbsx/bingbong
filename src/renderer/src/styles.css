@@ -1836,6 +1836,57 @@ details[open] > .settings-summary::before {
   box-shadow: var(--focus-ring);
 }
 
+/* The weather city's search box and the places it offers, hung under it. */
+.city-picker {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+}
+
+.city-picker-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+
+.city-picker-option {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: 18px;
+  color: var(--fgh);
+  cursor: pointer;
+}
+
+.city-picker-option[aria-selected='true'] {
+  background: var(--hair2);
+}
+
+.city-picker-where {
+  overflow: hidden;
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.city-picker-note {
+  padding: 10px 12px;
+  font-size: 16px;
+  color: var(--fg3);
+}
+
 /* A status line: green when what it names is working, coral when it is not. */
 .settings-role-status {
   margin: 0 0 12px;

@@ -8,6 +8,7 @@ import {
   temperatureHue,
   todayOf,
   outlookOf,
+  searchPlaces,
   upcomingHours,
   weatherDescription,
   type FetchJson,
@@ -72,6 +73,36 @@ describe('detectPlace', () => {
     await expect(detectPlace(scriptedFetch({ [IP_PLACE]: { success: false, message: 'reserved range' } }))).rejects.toThrow('no place for this network')
     await expect(detectPlace(scriptedFetch({ [IP_PLACE]: { success: true, city: '', latitude: 0, longitude: 0 } }))).rejects.toThrow('no place for this network')
     expect(DEFAULT_CITY).toBe('London')
+  })
+})
+
+describe('searchPlaces', () => {
+  it('offers each place with its region and country, so one Richmond reads apart from another', async () => {
+    const fetchJson = scriptedFetch({
+      [GEOCODE]: {
+        results: [
+          { name: 'Richmond', admin1: 'Virginia', country: 'United States', latitude: 37.55, longitude: -77.46 },
+          { name: 'Richmond', admin1: 'England', country: 'United Kingdom', latitude: 51.46, longitude: -0.3 },
+          { name: 'Singapore', admin1: 'Singapore', country: 'Singapore', latitude: 1.29, longitude: 103.85 },
+          { name: 'broken' },
+        ],
+      },
+    })
+
+    expect(await searchPlaces(fetchJson, ' Richm ')).toEqual([
+      { name: 'Richmond', where: 'Virginia, United States', latitude: 37.55, longitude: -77.46 },
+      { name: 'Richmond', where: 'England, United Kingdom', latitude: 51.46, longitude: -0.3 },
+      { name: 'Singapore', where: '', latitude: 1.29, longitude: 103.85 },
+    ])
+    expect(fetchJson.urls[0]).toContain('name=Richm')
+    expect(fetchJson.urls[0]).toContain('count=8')
+  })
+
+  it('asks nothing under two letters, and offers nothing when the geocoder has no results', async () => {
+    const fetchJson = scriptedFetch({ [GEOCODE]: {} })
+    expect(await searchPlaces(fetchJson, 'R')).toEqual([])
+    expect(fetchJson.urls).toEqual([])
+    expect(await searchPlaces(fetchJson, 'Qqqq')).toEqual([])
   })
 })
 
