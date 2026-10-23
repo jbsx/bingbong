@@ -31,8 +31,16 @@ describe("the wait for a scale's services (#397)", () => {
   it('does not throw later when the link drops after the services resolved', async () => {
     let drop: () => void = () => undefined
     const dropped = new Promise<void>((resolve) => (drop = resolve))
-    await waitForServices(async () => true, dropped, { timeoutMs: 1_000, intervalMs: 1 })
-    drop()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      await waitForServices(async () => true, dropped, { timeoutMs: 1_000, intervalMs: 1 })
+      drop()
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(unhandled).toEqual([])
   })
 })

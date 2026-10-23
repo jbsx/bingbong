@@ -8,7 +8,7 @@ import { FAULT_FILE_PATTERN } from '../perf/perfFiles'
 // sink they ride; main installs it once with `setFaultSink`. Read it with jq.
 
 /** One fault as the log keeps it: the report and when it was made. */
-export type FaultRecord = FaultReport & { readonly at: number }
+type FaultRecord = FaultReport & { readonly at: number }
 
 /** The fault sink over the logs dir; a write that fails is swallowed, as every log's is. */
 export function createFaultLogSink(logsDir: string, options: JsonlSinkOptions = {}): FaultSink {

@@ -155,7 +155,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         deviceProps.on('PropertiesChanged', onDevice)
         cleanups.push(() => deviceProps.removeListener('PropertiesChanged', onDevice))
         await device.Connect()
-        // A link that drops mid-resolve ends the session at once, so the next advert retries while the scale is awake (#397).
+        // A drop mid-resolve ends the session at once (#397).
         await waitForServices(async () => (await deviceProps.Get(DEVICE, 'ServicesResolved')).value === true, over, { timeoutMs: RESOLVE_MS })
         const all = await objects()
         const characteristics = new Map<string, string>()
@@ -201,7 +201,8 @@ export function createBluezScaleTransport(): ScaleTransport {
         }
         await over
       } catch (error) {
-        reportFault('scale.bluez.session', error)
+        // A stop ends the session too; only a link that failed on its own is a fault.
+        if (!stopped) reportFault('scale.bluez.session', error)
         await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
       } finally {
         for (const cleanup of cleanups) cleanup()

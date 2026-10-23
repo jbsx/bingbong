@@ -6,7 +6,7 @@
 
 export interface ServicesWaitOptions {
   /** How long the services may take to resolve after Connect returns. */
-  readonly timeoutMs?: number
+  readonly timeoutMs: number
   /** How often ServicesResolved is read. */
   readonly intervalMs?: number
 }
@@ -15,9 +15,9 @@ export interface ServicesWaitOptions {
 export async function waitForServices(
   resolved: () => Promise<boolean>,
   dropped: Promise<void>,
-  options: ServicesWaitOptions = {},
+  options: ServicesWaitOptions,
 ): Promise<void> {
-  const timeoutMs = options.timeoutMs ?? 10_000
+  const { timeoutMs } = options
   const intervalMs = options.intervalMs ?? 200
   const drop = dropped.then((): never => {
     throw new Error('the scale disconnected before its services resolved')
