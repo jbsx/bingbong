@@ -6,7 +6,7 @@
  * units, a dashboard URL, a calendar range), and a card's answer older than
  * the card allows reads as none.
  */
-export type IdleCacheCard = 'weather' | 'usage' | 'news' | 'calendar' | 'lastPage' | 'weighIns'
+export type IdleCacheCard = 'weather' | 'weatherPlace' | 'usage' | 'news' | 'calendar' | 'lastPage' | 'weighIns'
 
 /** The storage key a card's answer lives under; the version moves when a kept shape stops being read. */
 export function idleCacheKey(card: IdleCacheCard): string {

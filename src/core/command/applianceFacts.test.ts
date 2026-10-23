@@ -53,7 +53,7 @@ describe('the facts the appliance holds (#402)', () => {
     expect(factAnswer('playing', { ...FACTS, nowPlaying: null })).toBe('Nothing is playing.')
     expect(factAnswer('timer', FACTS)).toBe('8 minutes 20 seconds left on the timer.')
     expect(factAnswer('timer', { ...FACTS, timer: { status: 'off' } })).toBe('No timer is running.')
-    expect(factAnswer('weather', { ...FACTS, weather: null })).toBe("There's no forecast yet: set a weather city in settings.")
+    expect(factAnswer('weather', { ...FACTS, weather: null })).toBe("There's no forecast yet.")
   })
 
   it("takes the page's own song when the Player holds none, and never over the Player's", () => {

@@ -782,12 +782,12 @@ export function SettingsPage({
         <h2 className="settings-group">Idle screen</h2>
         <IdleCardsSection cards={draft.idleCards} onChange={(idleCards) => setDraft({ ...draft, idleCards })} />
 
-        <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? 'No city set' : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>
+        <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? `Detected · ${draft.weather.units === 'imperial' ? '°F' : '°C'}` : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>
           <Field label="City">
             <input
               type="text"
               value={draft.weather.city}
-              placeholder="e.g. Berlin"
+              placeholder="Detected from the network (London until online)"
               aria-label="Weather city"
               onChange={(event) => setDraft({ ...draft, weather: { ...draft.weather, city: event.target.value } })}
             />

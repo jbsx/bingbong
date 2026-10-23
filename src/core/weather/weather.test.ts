@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_CITY,
+  detectPlace,
   fetchWeather,
   formatWeather,
   skyOf,
@@ -57,7 +59,34 @@ const berlinDay = {
   },
 }
 
+const IP_PLACE = 'https://ipwho.is/'
+
+describe('detectPlace', () => {
+  it("names the network's city with its coordinates", async () => {
+    const fetchJson = scriptedFetch({ [IP_PLACE]: { success: true, city: ' London ', latitude: 51.51, longitude: -0.09 } })
+
+    expect(await detectPlace(fetchJson)).toEqual({ name: 'London', latitude: 51.51, longitude: -0.09 })
+  })
+
+  it('throws when the lookup fails or names no city, so the caller keeps London', async () => {
+    await expect(detectPlace(scriptedFetch({ [IP_PLACE]: { success: false, message: 'reserved range' } }))).rejects.toThrow('no place for this network')
+    await expect(detectPlace(scriptedFetch({ [IP_PLACE]: { success: true, city: '', latitude: 0, longitude: 0 } }))).rejects.toThrow('no place for this network')
+    expect(DEFAULT_CITY).toBe('London')
+  })
+})
+
 describe('fetchWeather', () => {
+  it('asks a detected place by its own coordinates, with no geocoding', async () => {
+    const fetchJson = scriptedFetch({ [FORECAST]: berlinForecast })
+
+    const report = await fetchWeather(fetchJson, { name: 'Leeds', latitude: 53.8, longitude: -1.55 }, 'metric')
+
+    expect(report.city).toBe('Leeds')
+    expect(fetchJson.urls).toHaveLength(1)
+    expect(fetchJson.urls[0]).toContain('latitude=53.8')
+    expect(fetchJson.urls[0]).toContain('longitude=-1.55')
+  })
+
   it('resolves the city, then fetches current weather in metric by default', async () => {
     const fetchJson = scriptedFetch({ [GEOCODE]: berlinGeocode, [FORECAST]: berlinForecast })
 

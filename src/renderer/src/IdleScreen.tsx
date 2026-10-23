@@ -387,7 +387,6 @@ function NoteCard({ label, children }: { label: string; children: React.ReactNod
 function weatherLine(weather: Exclude<WeatherState, { status: 'ready' }>): string {
   switch (weather.status) {
     case 'unset':
-      return 'Set a weather city in settings'
     case 'loading':
       return 'Loading weather…'
     case 'error':

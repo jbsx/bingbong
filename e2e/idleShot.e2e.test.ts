@@ -109,6 +109,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
   let session: string
   let fixture: FixtureServer | undefined
   const weatherCity = 'London'
+  const detectedCity = 'Leeds'
   const music = process.env.BINGBONG_IDLE_SHOT_MUSIC === '1'
   const outDir = process.env.BINGBONG_IDLE_SHOT_DIR ?? join(tmpdir(), 'bingbong-idle-shot')
   const count = Math.min(PROVIDERS.length, Math.max(1, Number(process.env.BINGBONG_IDLE_SHOT_PROVIDERS ?? 3)))
@@ -147,7 +148,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     session = sessionId
     harness.cdp.on('Fetch.requestPaused', (params) => {
       const { requestId, request } = params as { requestId: string; request: { url: string } }
-      const body = request.url.includes('geocoding') ? { results: [{ name: weatherCity, latitude: 51.5, longitude: -0.12 }] } : forecast()
+      const body = request.url.includes('ipwho.is')
+        ? { success: true, city: detectedCity, latitude: 53.8, longitude: -1.55 }
+        : request.url.includes('geocoding')
+          ? { results: [{ name: weatherCity, latitude: 51.5, longitude: -0.12 }] }
+          : forecast()
       void harness.cdp.send(
         'Fetch.fulfillRequest',
         {
@@ -162,7 +167,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
         session,
       )
     })
-    await harness.cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*open-meteo.com*' }] }, session)
+    await harness.cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*open-meteo.com*' }, { urlPattern: '*ipwho.is*' }] }, session)
     await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
     await harness.cdp.send('Page.reload', {}, session)
     await waitFor(
@@ -292,11 +297,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     }
   })
 
-  it('says what to do with the weather unset', async () => {
+  it('draws the weather for the detected place with no city typed', async () => {
     await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: '' } }))`)
     try {
-      await waitFor(async () => ((await text('.idle-home[data-card="weather"]')) === 'Set a weather city in settings' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
-      await held('weather-unset')
+      await waitFor(async () => ((await text('.wx-cond-city')).includes(detectedCity) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+      await held('weather-detected')
     } finally {
       await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: 'London' } }))`)
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })

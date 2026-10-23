@@ -135,7 +135,7 @@ export function factAnswer(fact: ApplianceFact, facts: ApplianceFacts): string {
       return `It's ${clockTime(facts.now, facts.timeZone)} on ${dayDate(facts.now, facts.timeZone)}.`
     case 'weather': {
       const report = facts.weather
-      if (report === null) return "There's no forecast yet: set a weather city in settings."
+      if (report === null) return "There's no forecast yet."
       const deg = (t: number): string => `${Math.round(t)} degrees`
       const today = report.today ? `, with a high of ${Math.round(report.today.high)} and a low of ${Math.round(report.today.low)}${report.today.precipitationChance !== null ? ` and a ${report.today.precipitationChance} percent chance of rain` : ''}` : ''
       return `In ${report.city} it's ${deg(report.temperature)} and ${report.description.toLowerCase()}${today}.`

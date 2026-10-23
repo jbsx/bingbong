@@ -1,8 +1,10 @@
-// Open-Meteo weather for the idle screen. The city comes from settings — the
-// spec is explicit: no geolocation. Two calls: geocoding resolves the city to
-// coordinates, then the forecast endpoint returns current conditions in the
-// configured units, with today's range and the coming hours riding the same
-// request (`timezone=auto`: every time is the city's own wall clock).
+// Open-Meteo weather for the idle screen. The city is the one typed in
+// settings; with none typed it is the place the network's IP address sits in
+// ({@link detectPlace}), and London until that lookup has answered. Two
+// calls: geocoding resolves a typed city to coordinates (a detected place
+// carries its own), then the forecast endpoint returns current conditions in
+// the configured units, with today's range and the coming hours riding the
+// same request (`timezone=auto`: every time is the city's own wall clock).
 
 import type { WeatherUnits } from '../settings/settings'
 
@@ -75,7 +77,12 @@ export const UPCOMING_HOURS = 6
 /** How many days after today the outlook carries. */
 export const OUTLOOK_DAYS = 3
 
+/** The city the weather is for while none is typed in settings and none has been detected. */
+export const DEFAULT_CITY = 'London'
+
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
+// Keyless, HTTPS, CORS-open; answers for the caller's own IP address.
+const IP_PLACE_URL = 'https://ipwho.is/?fields=success,city,latitude,longitude'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 
 // WMO weather interpretation codes, grouped to the labels the idle screen
@@ -171,13 +178,29 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
-interface ResolvedPlace {
+/** A place the forecast can be asked for: its name and coordinates. */
+export interface WeatherPlace {
   name: string
   latitude: number
   longitude: number
 }
 
-async function geocode(fetchJson: FetchJson, city: string): Promise<ResolvedPlace> {
+/** The place the network's IP address sits in; throws when the lookup is unreachable or names no city. */
+export async function detectPlace(fetchJson: FetchJson): Promise<WeatherPlace> {
+  const body = asRecord(await fetchJson(IP_PLACE_URL))
+  if (
+    body?.success !== true ||
+    typeof body.city !== 'string' ||
+    body.city.trim() === '' ||
+    typeof body.latitude !== 'number' ||
+    typeof body.longitude !== 'number'
+  ) {
+    throw new Error('no place for this network')
+  }
+  return { name: body.city.trim(), latitude: body.latitude, longitude: body.longitude }
+}
+
+async function geocode(fetchJson: FetchJson, city: string): Promise<WeatherPlace> {
   const url = `${GEOCODE_URL}?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
   const body = asRecord(await fetchJson(url))
   const first = Array.isArray(body?.results) ? asRecord(body.results[0]) : null
@@ -192,12 +215,13 @@ async function geocode(fetchJson: FetchJson, city: string): Promise<ResolvedPlac
   return { name: first.name, latitude: first.latitude, longitude: first.longitude }
 }
 
+/** The report for a city by name (geocoded first) or for a place that already has its coordinates. */
 export async function fetchWeather(
   fetchJson: FetchJson,
-  city: string,
+  where: string | WeatherPlace,
   units: WeatherUnits,
 ): Promise<WeatherReport> {
-  const place = await geocode(fetchJson, city)
+  const place = typeof where === 'string' ? await geocode(fetchJson, where) : where
   const temperatureUnit = units === 'imperial' ? 'fahrenheit' : 'celsius'
   const url =
     `${FORECAST_URL}?latitude=${place.latitude}&longitude=${place.longitude}` +
