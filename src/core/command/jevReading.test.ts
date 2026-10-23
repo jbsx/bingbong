@@ -1563,3 +1563,41 @@ describe('a search box (#398): its kind on its line, and searching it one op on 
     expect(labels).toContain('search-1')
   })
 })
+
+describe('a question is searched as asked (#400): the Slot keeps it, and a hop never searches the same words again', () => {
+  const TEXT = "What's the weather like in London?"
+  const LANDING: CommandPage = {
+    url: 'https://duckduckgo.com/?q=What%27s+the+weather+like+in+London%3F',
+    title: "What's the weather like in London? at DuckDuckGo",
+    refs: [
+      { ref: 2, kind: 'input', label: 'Search privately', href: null, inputType: 'search', searchBox: { holds: "What's the weather like in London?" } },
+      { ref: 3, kind: 'link', label: 'London - BBC Weather', href: 'https://www.bbc.com/weather/2643743', inputType: null },
+    ],
+  }
+  const hop: HopContext = { hop: 1, visited: [], actions: [], links: [], setAside: [], searched: [], terms: [TEXT] }
+  const action = (probabilities: Record<string, number>, top: string): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+
+  it('tells the Slot that a line with no command word carries itself', () => {
+    expect(commandQuestions(TEXT, LANDING).slot.instructions).toContain('A line with no command word, such as a question, carries itself: its search terms are the line as asked.')
+  })
+
+  it("reads a Search Op for words the Task already searched as a later hop's search: the most probable result, never the same search", () => {
+    const answers = { action: action({ 'search-2': 0.6, 'click-3': 0.3 }, 'search-2'), slot: choice('s0-5') }
+    expect(readCommandAnswers(answers, TEXT, LANDING, hop)).toEqual({ verb: 'click', target: 3, slot: null })
+    // The same words in another case and without the punctuation are the same search.
+    expect(readCommandAnswers(answers, TEXT, LANDING, { ...hop, terms: ['whats the weather like in london'] })).toEqual({ verb: 'click', target: 3, slot: null })
+    // With nothing else offered any probability, the hop has no next step.
+    expect(readCommandAnswers({ action: action({ 'search-2': 1 }, 'search-2'), slot: choice('s0-5') }, TEXT, LANDING, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('has no next step off a search landing when the words were already searched', () => {
+    const page: CommandPage = { ...LANDING, url: 'https://www.bbc.com/weather/2643743', title: 'London - BBC Weather' }
+    expect(readCommandAnswers({ action: action({ 'search-2': 0.6, 'click-3': 0.3 }, 'search-2'), slot: choice('s0-5') }, TEXT, page, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('keeps a Search Op for other words, and any Search Op at hop 0', () => {
+    const answers = { action: action({ 'search-2': 0.6, 'click-3': 0.3 }, 'search-2'), slot: choice('s5-5') }
+    expect(readCommandAnswers(answers, TEXT, LANDING, hop)).toEqual({ verb: 'type', target: 2, slot: 'London', submit: true })
+    expect(readCommandAnswers({ ...answers, slot: choice('s0-5') }, TEXT, LANDING)).toEqual({ verb: 'type', target: 2, slot: "What's the weather like in London", submit: true })
+  })
+})

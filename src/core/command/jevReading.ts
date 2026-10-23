@@ -1144,7 +1144,7 @@ export function spanOption(words: string, heard: readonly NameHearing[] | undefi
 function slotQuestion(text: string, heard?: readonly NameHearing[]): DecisionChoiceQuestion {
   return {
     type: 'choice',
-    instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. Choose none when it carries none.',
+    instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.',
     options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, spanOption(span.words, heard)])) },
   }
 }
@@ -1411,6 +1411,24 @@ function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: Command
   return mostProbable<Command>(answer, (label) => (isAside(label, page, setAside, NO_SHOW_OPS) ? null : openingOf(refActionOf(label), page, targets.links, targets.refs)))
 }
 
+/**
+ * A later hop's search (#332): on a search landing it opens the most
+ * probable click or open on the card — on a Web Engine's landing a result,
+ * never the engine's own chrome; off one the Task has reached a page and a
+ * target Jev barely offered would overrun it (#342), so the hop has no
+ * next step — nor on a landing with nothing to open.
+ */
+function laterHopOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[], hop: HopContext): Command {
+  if (!onResults(page.url, hop)) return { verb: 'none', target: null, slot: null }
+  return mostProbableFallbackOpening(answer, page, links, hop.setAside ?? []) ?? { verb: 'none', target: null, slot: null }
+}
+
+/** Whether the Task already searched for or typed exactly these words (#400): a fact of its record, never a judgement of the words. */
+function searchedBefore(words: string, hop: HopContext): boolean {
+  const asked = normalizeWords(words)
+  return asked !== '' && (hop.terms ?? []).some((term) => normalizeWords(term) === asked)
+}
+
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
 export function slotWords(answer: DecisionChoiceAnswer, text: string): string {
   const span = slotSpanOf(answer)
@@ -1484,6 +1502,8 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   if (show !== null) return { verb: 'scroll_down', target: null, slot: null, show }
   const { page, links } = offered(pageRead, hop)
   const acted = refActionOf(label)
+  // A Search Op for words the Task already searched (#400) searches nothing new: it reads as a later hop's search (#332).
+  if (acted?.act === 'search' && hop !== undefined && searchedBefore(slotWords(answers.slot, text), hop)) return laterHopOpening(answers.action, page, links, hop)
   // A ref or a link the hop does not offer is no Command.
   if (acted !== null) return refCommand(acted, answers, text, page, links) ?? none
   if (!isRefLessVerb(label)) return none
@@ -1509,13 +1529,8 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
       return { verb: 'search', target: null, slot }
     }
     // Past the first hop the words were already acted on (#332): a hop
-    // never searches again. On a search landing it opens the most probable
-    // click or open on the card — on a Web Engine's landing a result, never
-    // the engine's own chrome; off one the Task has reached a page and a
-    // target Jev barely offered would overrun it (#342), so the hop has no
-    // next step — nor on a landing with nothing to open.
-    if (!onResults(page.url, hop)) return none
-    return mostProbableFallbackOpening(answers.action, page, links, hop.setAside ?? []) ?? none
+    // never searches again.
+    return laterHopOpening(answers.action, page, links, hop)
   }
   // The page's own scroll reads the Extent when it was asked (#383, ADR 0085); unasked, it scrolls as the grammar's line does.
   if ((verb === 'scroll_down' || verb === 'scroll_up') && 'extent' in answers) return { verb, target: null, slot, extent: scrollExtent(extentOf(answers), text) }
