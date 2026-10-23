@@ -7,5 +7,7 @@
   "happened": "Typed on the microsoft/playwright repo page (live 2026-10-23, main 413191a9, Mammoth, CLI harness): hop 0 chose show-39 'Install' 0.58 (show-29 0.11, scroll_down 0.04) and put npm init playwright@latest in view in 1.9 s; hop 1's ask was 54.6k chars (255 options; 155 links further down, each on the state and as an open-N option) and the host answered 422 'prompt has 16645 tokens, exceeding max_len 16384' in 298 ms, so the Task ended unavailable with the answer on screen and nothing said. Elephant gives the same 422 on the same ask; the 17f82618 run (cli-2-mvkwcigu) died the same way at hop 3",
   "meant": "The Verdict reads the Install block in view as done and the Answer Passage says it; a hop's ask always fits the model",
   "log": "decision-1792771120098-1.jsonl",
-  "claimedBy": "#406"
+  "claimedBy": "#406",
+  "fixedBy": "b234ea25",
+  "case": "turn-mvl5n50y-1"
 }

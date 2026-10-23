@@ -7,5 +7,7 @@
   "happened": "'Open Voice Studio GitHub' typed on about:blank (yield rerun 2026-10-23, main 413191a9): search, then click 'GitHub - debpalash/VoiceStudio' (0.84, the right result); the hop-2 card on the repo page ran 59,183 chars (292 options) and Mammoth answered HTTP in 238 ms: ended unavailable, nothing said. Same class as turn-mvl59cdi-1",
   "meant": "The Verdict reads yes on the repo page and the Task ends done",
   "log": "decision-1792770740019-1.jsonl",
-  "claimedBy": "#406"
+  "claimedBy": "#406",
+  "fixedBy": "b234ea25",
+  "case": "turn-mvl5g89b-4"
 }

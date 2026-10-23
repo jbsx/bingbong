@@ -7,5 +7,7 @@
   "happened": "'Look up the Alan Turing wikipedia page' typed on about:blank (yield rerun 2026-10-23, main 413191a9): search, then click 'Alan Turing - Wikipedia' (0.88, right); the hop-2 card on the article ran 67,118 chars (328 options) and Mammoth answered HTTP in 252 ms: ended unavailable. Same class as turn-mvl59cdi-1",
   "meant": "The Verdict reads yes on the article and the Task ends done",
   "log": "decision-1792770628065-1.jsonl",
-  "claimedBy": "#406"
+  "claimedBy": "#406",
+  "fixedBy": "b234ea25",
+  "case": "turn-mvl5dtuv-4"
 }
