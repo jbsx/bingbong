@@ -8,3 +8,5 @@ export const PERF_FILE_PATTERN = /^perf-.*\.jsonl$/
 export const DECISION_FILE_PATTERN = /^decision-.*\.jsonl$/
 /** The asks-*.jsonl sidecar beside that (#338): every Jev call's whole ask, which a decision record names. */
 export const ASK_FILE_PATTERN = /^asks-.*\.jsonl$/
+/** The faults-*.jsonl family (#397): every swallowed failure `reportFault` names, app-wide. */
+export const FAULT_FILE_PATTERN = /^faults-.*\.jsonl$/

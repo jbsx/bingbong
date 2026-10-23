@@ -3,6 +3,7 @@ import type { QnCharacteristic } from '../../core/scale/qn'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import { createWakeGate } from '../../core/scale/wakeGate'
 import { reportFault } from '../../core/trace/fault'
+import { waitForServices } from './servicesWait'
 
 // The Scale Listener's Bluetooth (CONTEXT.md): BlueZ over the system D-Bus
 // with a pure-JS client (dbus-next) — no native module, no root, no Python.
@@ -154,11 +155,8 @@ export function createBluezScaleTransport(): ScaleTransport {
         deviceProps.on('PropertiesChanged', onDevice)
         cleanups.push(() => deviceProps.removeListener('PropertiesChanged', onDevice))
         await device.Connect()
-        const deadline = Date.now() + RESOLVE_MS
-        while ((await deviceProps.Get(DEVICE, 'ServicesResolved')).value !== true) {
-          if (Date.now() > deadline) throw new Error('the scale’s services did not resolve')
-          await new Promise((resolve) => setTimeout(resolve, 200))
-        }
+        // A link that drops mid-resolve ends the session at once, so the next advert retries while the scale is awake (#397).
+        await waitForServices(async () => (await deviceProps.Get(DEVICE, 'ServicesResolved')).value === true, over, { timeoutMs: RESOLVE_MS })
         const all = await objects()
         const characteristics = new Map<string, string>()
         for (const [charPath, ifaces] of Object.entries(all)) {
