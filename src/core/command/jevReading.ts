@@ -1,4 +1,4 @@
-import { DEFAULT_DECISION_THRESHOLDS, sureOf, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
 import type { TextBelow } from '../browser/pageText'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
@@ -1042,7 +1042,7 @@ export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): 
  */
 export function isTextlessGuess(action: DecisionChoiceAnswer, questions: CommandQuestions, page: CommandPage, bar: number): boolean {
   const acted = refActionOf(action.choice)
-  return sureOf(action) < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
+  return choiceProbability(action) < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
 }
 
 /**
@@ -1275,7 +1275,7 @@ export function readProgress(answers: CommandAnswers | HopAnswers): number | nul
 export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
   if (!('dismiss' in answers) || answers.dismiss === undefined) return null
   const { choice } = answers.dismiss
-  const probability = sureOf(answers.dismiss)
+  const probability = choiceProbability(answers.dismiss)
   if (choice === 'escape') return { choice: 'escape', probability }
   const match = /^ref-(\d+)$/.exec(choice)
   const ref = match === null ? NaN : Number(match[1])
@@ -1286,7 +1286,7 @@ export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: Co
 export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {
   if (!('outcome' in answers)) return null
   const { choice } = answers.outcome
-  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, probability: sureOf(answers.outcome) } : null
+  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, probability: choiceProbability(answers.outcome) } : null
 }
 
 /**

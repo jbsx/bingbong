@@ -4,7 +4,7 @@
 // the answer each question should have got, written as a case in the Jev
 // corpus for `pnpm jev:replay`. An expectation is a Choice label
 // (`action=click-27`), a label at a floor (`outcome=yes>=0.7`, #366), a
-// label it must not be (`action!=click-21`), nor at a floor
+// label it must not be (`action!=click-21`) or not at a floor
 // (`outcome!=yes>=0.7`, #403), or a ceiling on whatever it
 // chooses (`outcome<0.7`); each is checked against the ask's own
 // questions before anything is written.

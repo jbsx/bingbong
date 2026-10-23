@@ -885,7 +885,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'extent', 'where'])
   })
 
-  it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
+  it('reads the Verdict with its probability, null when none was asked or the answer names no outcome', () => {
     expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', probability: 0.85 })
     expect(readVerdict(reading)).toBeNull()
     expect(readVerdict({ ...reading, outcome: answer('maybe') })).toBeNull()

@@ -1,4 +1,4 @@
-import { sureOf, type DecisionChoiceAnswer, type DecisionQuestions, type DecisionResult } from '../ports/decisionModel.ts'
+import { choiceProbability, type DecisionChoiceAnswer, type DecisionQuestions, type DecisionResult } from '../ports/decisionModel.ts'
 
 // A Jev case (#338): one recorded ask and the answer each question should
 // get — a Choice label, or a label it must not be — promoted by the owner
@@ -49,11 +49,8 @@ export interface JevCase {
 /** A probability, as a floor or a ceiling takes it: from 0 to 1. */
 const isProbability = (value: unknown): value is number => typeof value === 'number' && value >= 0 && value <= 1
 
-/** A label the answer must be (`=`) or must not be (`!=`), at a floor when one is given. */
-function named(question: string, op: '=' | '!=', label: string, atLeast?: number): JevExpectation {
-  const floor = atLeast !== undefined ? { atLeast } : {}
-  return op === '=' ? { question, label, ...floor } : { question, not: label, ...floor }
-}
+/** A floor when one is given, to spread into a label or an exclusion. */
+const floorOf = (atLeast: number | undefined): { atLeast?: number } => (atLeast !== undefined ? { atLeast } : {})
 
 /** `action=click-27`, `outcome=yes>=0.7`, `action!=click-21`, `outcome!=yes>=0.7` or `outcome<0.7`, as the CLI takes it; a string is why it cannot be read. */
 export function parseExpectation(text: string): JevExpectation | string {
@@ -66,10 +63,10 @@ export function parseExpectation(text: string): JevExpectation | string {
     return isProbability(below) ? { question: question.trim(), below } : unread
   }
   const [label, floor] = said.split('>=') as [string, string | undefined]
-  const is = op as '=' | '!='
-  if (floor === undefined) return named(question.trim(), is, label.trim())
-  const atLeast = floor.trim() === '' ? NaN : Number(floor)
-  return isProbability(atLeast) ? named(question.trim(), is, label.trim(), atLeast) : unread
+  const atLeast = floor === undefined ? undefined : floor.trim() === '' ? NaN : Number(floor)
+  if (atLeast !== undefined && !isProbability(atLeast)) return unread
+  const named = { question: question.trim(), ...floorOf(atLeast) }
+  return op === '=' ? { ...named, label: label.trim() } : { ...named, not: label.trim() }
 }
 
 /** The label an expectation names, whether it must be the answer or must not; null for a ceiling, which names none. */
@@ -101,11 +98,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 function readExpectation(raw: unknown): JevExpectation | null {
   if (!isRecord(raw) || typeof raw.question !== 'string') return null
-  const label = typeof raw.label === 'string' ? raw.label : typeof raw.not === 'string' ? raw.not : null
-  if (label !== null) {
-    const op = typeof raw.label === 'string' ? '=' : '!='
-    if (raw.atLeast === undefined) return named(raw.question, op, label)
-    return isProbability(raw.atLeast) ? named(raw.question, op, label, raw.atLeast) : null
+  if (typeof raw.label === 'string' || typeof raw.not === 'string') {
+    if (raw.atLeast !== undefined && !isProbability(raw.atLeast)) return null
+    const named = { question: raw.question, ...floorOf(raw.atLeast as number | undefined) }
+    return typeof raw.label === 'string' ? { ...named, label: raw.label } : { ...named, not: raw.not as string }
   }
   if (isProbability(raw.below)) return { question: raw.question, below: raw.below }
   return null
@@ -152,7 +148,7 @@ export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionRes
   if (unanswered !== undefined) return { name, pass: false, problem: `Jev gave no Choice for "${unanswered.question}"` }
   const outcomes = jevCase.expect.map((expectation): ExpectationOutcome => {
     const answer = result.answers[expectation.question] as DecisionChoiceAnswer
-    const chosenProbability = sureOf(answer)
+    const chosenProbability = choiceProbability(answer)
     if ('below' in expectation) return { expectation, pass: chosenProbability < expectation.below, chosen: answer.choice, chosenProbability, labelProbability: chosenProbability }
     const label = labelOf(expectation)!
     const chosenIs = alternativesOf(label).includes(answer.choice)

@@ -124,7 +124,7 @@ export const DEFAULT_DECISION_THRESHOLDS: DecisionThresholds = { choice: 0.7, no
  * and, read by the runner while the gate read the probability, ended right
  * yeses unsure.
  */
-export function sureOf(answer: DecisionChoiceAnswer): number {
+export function choiceProbability(answer: DecisionChoiceAnswer): number {
   return answer.probabilities[answer.choice] ?? answer.confidence
 }
 
@@ -134,7 +134,7 @@ export function clearsDecisionThresholds(
   thresholds: DecisionThresholds = DEFAULT_DECISION_THRESHOLDS,
 ): boolean {
   return Object.values(answers).every((answer) =>
-    answer.type === 'choice' ? sureOf(answer) >= thresholds.choice : answer.noul >= thresholds.noul,
+    answer.type === 'choice' ? choiceProbability(answer) >= thresholds.choice : answer.noul >= thresholds.noul,
   )
 }
 
