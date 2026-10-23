@@ -1,6 +1,7 @@
 import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
 import type { TextBelow } from '../browser/pageText'
+import { isRealPage } from '../browser/lastPage'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
@@ -105,10 +106,21 @@ const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click 
 const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
 const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
 
-/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; and what it knows, each fact an option on the card (#402). */
+/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); and the Last Page's name, which `resume` reopens (#408). */
 export interface Appliance {
   readonly queued?: boolean
   readonly facts?: ApplianceFacts
+  readonly lastPage?: string
+}
+
+/**
+ * `resume` on the card (#408, ADR 0089): "where was i" and "last page" read
+ * intent and are Jev's, so the Last Page is offered where reopening it is an
+ * action — a blank pane, after a restart — its line naming the page. On a
+ * real page the pane is already on a page, and `back` is the browser's.
+ */
+function resumeOption(appliance: Appliance | undefined, page: CommandPage): [string, string][] {
+  return appliance?.lastPage === undefined || isRealPage(page.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`]]
 }
 
 /**
@@ -983,7 +995,7 @@ export function commandQuestions(
   options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[]; readonly further?: number } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), options.further)
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), resumeOption(options.appliance, pageRead), options.further)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
@@ -1099,6 +1111,7 @@ function actionQuestion(
   setAside: readonly SetAside[],
   marked?: ReadonlySet<number>,
   facts?: ApplianceFacts,
+  resume: readonly [string, string][] = [],
   further = Infinity,
 ): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside, texts)
@@ -1116,7 +1129,7 @@ function actionQuestion(
   const refLess = Object.entries(REFLESS_DESCRIPTIONS)
     .filter(([verb]) => kept(verb))
     .map(([verb, line]) => [verb, verb === 'none' ? CARD_ASKS[asked].none : line] as const)
-  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length)
+  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length + resume.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
@@ -1171,6 +1184,7 @@ function actionQuestion(
       ...Object.fromEntries(verbs),
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
       ...Object.fromEntries(factOptions),
+      ...Object.fromEntries(resume),
     },
   }
   return { question, mediaOps: ops.length > 0 }
@@ -1635,6 +1649,7 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   const texts = textTargetsOf(pageRead, hop)
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [], texts)
   if (isApplianceVerb(label)) return applianceCommand(label, answers.slot, text, answers, pageRead.url, hop)
+  if (label === 'resume') return { verb: 'resume', target: null, slot: null }
   // A fact the appliance holds (#402): said, the page untouched.
   const fact = factOfLabel(label)
   if (fact !== null) return { verb: 'say', target: null, slot: null, fact }

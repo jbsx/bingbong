@@ -1789,3 +1789,21 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     expect(fitted.state).not.toContain('Links further down')
   })
 })
+
+describe('resume on the card (#408, ADR 0089)', () => {
+  const BLANK: CommandPage = { url: 'about:blank', title: '', refs: [] }
+  const LAST = { lastPage: 'Alan Turing - Wikipedia' }
+
+  it('is offered on a blank pane with a Last Page to reopen, its line naming that page: "where was i" reads intent, and is Jev\'s', () => {
+    expect(commandQuestions('where was i', BLANK, undefined, { appliance: LAST }).action.options['resume']).toBe('reopen the last page the screen showed: "Alan Turing - Wikipedia"')
+  })
+
+  it('is not offered on a real page, nor with no Last Page', () => {
+    expect(commandQuestions('where was i', { ...BLANK, url: 'https://example.com/' }, undefined, { appliance: LAST }).action.options).not.toHaveProperty('resume')
+    expect(commandQuestions('where was i', BLANK).action.options).not.toHaveProperty('resume')
+  })
+
+  it('reads as the resume Command', () => {
+    expect(readCommandAnswers({ action: choice('resume'), slot: choice('none') }, 'where was i', BLANK)).toEqual({ verb: 'resume', target: null, slot: null })
+  })
+})

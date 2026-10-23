@@ -139,7 +139,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -187,6 +187,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.timer ? { timer: options.timer } : {}),
     ...(options?.facts ? { facts: options.facts } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
+    ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
     knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
@@ -750,6 +751,15 @@ describe('a Command the Local Match settles', () => {
     expect(browser.collects).toBe(1)
     await runner.run('click sign in')
     expect(browser.collects).toBe(2)
+  })
+
+  it('asks Jev for "where was i" on a blank pane, offered `resume`, which reopens the Last Page (ADR 0089)', async () => {
+    const { browser, decision, runner } = harness({ lastPage: () => ({ url: 'https://en.wikipedia.org/wiki/Alan_Turing', title: 'Alan Turing - Wikipedia', at: 1 }) })
+    browser.snapshot = { ...browser.snapshot, url: 'about:blank', title: '', refs: [] }
+    decision.script.push({ answers: { action: choice('resume'), slot: choice('none') } })
+    await runner.run('where was i')
+    expect(cardOf(decision.requests[0]!).options['resume']).toBe('reopen the last page the screen showed: "Alan Turing - Wikipedia"')
+    expect(browser.navigations).toEqual(['https://en.wikipedia.org/wiki/Alan_Turing'])
   })
 
   it('asks Jev for a whole line a ref on the page carries as its label: "next" beside a Next link may be the link (ADR 0089)', async () => {

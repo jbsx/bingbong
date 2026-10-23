@@ -474,8 +474,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * ref's (ADR 0080).
    */
   const appliance = (): Appliance | undefined => {
-    if (deps.player === undefined && deps.facts === undefined) return undefined
-    return { ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}), ...(deps.facts !== undefined ? { facts: deps.facts() } : {}) }
+    const last = deps.lastPage?.() ?? null
+    if (deps.player === undefined && deps.facts === undefined && last === null) return undefined
+    return {
+      ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}),
+      ...(deps.facts !== undefined ? { facts: deps.facts() } : {}),
+      // `resume` is Jev's to offer on a blank pane (#408): the Last Page by its title, else its address.
+      ...(last !== null ? { lastPage: last.title || last.url } : {}),
+    }
   }
 
   /** What plays on the page paused for a `stop` (#343, #376); whether anything was playing. A failure to reach it is no pause. */
