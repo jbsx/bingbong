@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createKnownAddressStore } from './knownAddressesStore'
+import { createKnownAddressStore } from './knownAddressStore'
 
 // The Known Addresses' persistence (#408): hosts.json in userData. The
 // ledger's rules live in core and are tested there; these pin the file: a
@@ -17,7 +17,7 @@ afterEach(async () => {
 async function hostsPath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'bingbong-hosts-'))
   dirs.push(dir)
-  return join(dir, 'hosts.json')
+  return join(dir, 'known-addresses.json')
 }
 
 describe('the Known Address store', () => {

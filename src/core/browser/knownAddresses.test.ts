@@ -19,8 +19,16 @@ describe('Known Addresses (#408, ADR 0089)', () => {
     expect(knownAddressOf(landedOn(EMPTY_KNOWN_ADDRESSES, 'https://en.wikipedia.org/wiki/Bing', 1), 'wikipedia')).toBe('en.wikipedia.org')
   })
 
-  it('never names a host by its last label alone', () => {
+  it('names a host by its own name alone: never a subdomain, a language or a suffix', () => {
     expect(knownAddressOf(landedOn(EMPTY_KNOWN_ADDRESSES, 'https://example.com/', 1), 'com')).toBeNull()
+    const known = landedOn(landedOn(EMPTY_KNOWN_ADDRESSES, 'https://news.bbc.co.uk/', 1), 'https://en.wikipedia.org/wiki/Bing', 2)
+    for (const word of ['news', 'co', 'uk', 'en', 'org']) expect(knownAddressOf(known, word)).toBeNull()
+    expect(knownAddressOf(known, 'bbc')).toBe('news.bbc.co.uk')
+    expect(knownAddressOf(landedOn(EMPTY_KNOWN_ADDRESSES, 'https://x.com/home', 1), 'x')).toBe('x.com')
+  })
+
+  it('learns nothing from a challenge: its host is no site the user went to', () => {
+    expect(landedOn(EMPTY_KNOWN_ADDRESSES, 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b', 1)).toBe(EMPTY_KNOWN_ADDRESSES)
   })
 
   it('names the host landed on last when a word names several', () => {

@@ -1529,8 +1529,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** A hop that fires nothing: its words greyed in the Feed with what it came to, and its turn closed. */
-  function dropHop(turnId: string, task: Task, place: TaskHop, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
+  function dropHop(turnId: string, task: Task, place: TaskHop, action: string, outcome: 'done' | 'cancelled', firedAt: number, failure?: string): void {
     publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: place, at: firedAt })
+    if (failure !== undefined) answerFailure(turnId, failure)
     publish({ type: 'done', turnId, outcome, at: at() })
   }
 
@@ -1765,14 +1766,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const suspected = superseded(task) ? undefined : task.suspect
         const ended: TaskEnded = superseded(task) ? 'superseded' : suspected !== undefined ? 'wall' : 'unavailable'
         log({ ...base, ...none, jevAsked: result !== null, ...jev, ended })
-        if (suspected !== undefined) {
-          publish({ type: 'command', turnId, text: task.text, action: 'not read', dropped: true, task: hopOf(task, hop), at: firedAt })
-          answerFailure(turnId, SPOKEN_FAILURES[suspected.failure])
-          if (DEAD_END_LANDINGS.has(suspected.failure) && suspected.url !== undefined) deps.dropLastPage?.(suspected.url)
-          publish({ type: 'done', turnId, outcome: 'done', at: at() })
-          return endTask(task, ended, hop + 1)
-        }
-        dropHop(turnId, task, hopOf(task, hop), ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
+        if (suspected !== undefined && DEAD_END_LANDINGS.has(suspected.failure) && suspected.url !== undefined) deps.dropLastPage?.(suspected.url)
+        dropHop(turnId, task, hopOf(task, hop), ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt, suspected && SPOKEN_FAILURES[suspected.failure])
         return endTask(task, ended, hop + 1)
       }
 

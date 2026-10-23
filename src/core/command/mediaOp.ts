@@ -111,8 +111,9 @@ export function mediaOpAnswer(action: MediaOpAction, changes: readonly string[] 
  * speed's direction rides it (#408): one op each on the card, and the
  * rung says up or down and how far, or `to` the level the words carry.
  * Measured against split ops (louder/quieter/volume, faster/slower/rate)
- * on the gate, 2026-10-23: a tie, every case through on both models in
- * each arm; this arm is the cheaper to reverse (ADR 0080 amendment).
+ * on the gate, 2026-10-23: a tie, each arm passing every direction case on
+ * both models and losing nothing that passed before; this arm is the
+ * cheaper to reverse (ADR 0080 amendment).
  */
 export function amountQuestion(): DecisionChoiceQuestion {
   return {
@@ -253,6 +254,13 @@ export function seekAmount(rung: AmountRung, op: 'forward' | 'back', facts: Medi
 /** Seconds to the hundredth: a share of a length is no finer than a player shows. */
 const hundredths = (seconds: number): number => Math.round(seconds * 100) / 100
 
+/** A rung that moves a level, as its way and its size; null for `to`, which sets it. */
+function moveOf(rung: LevelRung): { way: 1 | -1; size: 'little' | 'step' | 'lot' | 'all' } | null {
+  if (rung === 'to') return null
+  const [way, size] = rung.split('-') as ['up' | 'down', 'little' | 'step' | 'lot' | 'all']
+  return { way: way === 'up' ? 1 : -1, size }
+}
+
 /** A number the words move by: "down by 25". */
 const byNumber = (words: string): number | null => {
   const by = /\bby\s+(.+)$/i.exec(words)
@@ -279,21 +287,20 @@ function rateInWords(words: string): number | null {
  * when `to` finds no level in the words. The words never say which way.
  */
 export function volumeLevel(rung: LevelRung, words: string, facts: MediaFacts): number | null {
-  if (rung === 'to') {
+  const move = moveOf(rung)
+  if (move === null) {
     const number = firstNumber(words)
     return number !== null && number >= 0 && number <= 100 ? number : null
   }
-  const [way, size] = rung.split('-') as ['up' | 'down', 'little' | 'step' | 'lot' | 'all']
-  const sign = way === 'up' ? 1 : -1
-  const step = size === 'all' ? 100 : (byNumber(words) ?? LEVEL_STEPS[size].volume)
-  return Math.max(0, Math.min(100, percentOf(facts) + sign * step))
+  const step = move.size === 'all' ? 100 : (byNumber(words) ?? LEVEL_STEPS[move.size].volume)
+  return Math.max(0, Math.min(100, percentOf(facts) + move.way * step))
 }
 
 /** The speed `rate-N` sets, by the rung Jev chose (#408): `to` the level the words carry, else faster or slower a rung's step, or as far as it goes; null when `to` finds none. */
 export function rateLevel(rung: LevelRung, words: string, facts: MediaFacts): number | null {
-  if (rung === 'to') return rateInWords(words)
-  const [way, size] = rung.split('-') as ['up' | 'down', 'little' | 'step' | 'lot' | 'all']
-  if (size === 'all') return way === 'up' ? RATE_RANGE.max : RATE_RANGE.min
-  const next = facts.rate + (way === 'up' ? 1 : -1) * LEVEL_STEPS[size].rate
+  const move = moveOf(rung)
+  if (move === null) return rateInWords(words)
+  if (move.size === 'all') return move.way === 1 ? RATE_RANGE.max : RATE_RANGE.min
+  const next = facts.rate + move.way * LEVEL_STEPS[move.size].rate
   return Math.max(RATE_RANGE.min, Math.min(RATE_RANGE.max, next))
 }

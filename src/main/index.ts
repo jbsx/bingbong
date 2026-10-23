@@ -12,7 +12,7 @@ import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPan
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { registerLastPageIpc } from './browser/attachLastPage'
 import { createLastPageStore } from './browser/lastPageStore'
-import { createKnownAddressStore } from './browser/knownAddressesStore'
+import { createKnownAddressStore } from './browser/knownAddressStore'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { holdBrowserCustody } from '../core/browser/unsettledAction'
 import { createAuthPopupDirector } from './browser/authPopupDirector'
@@ -173,7 +173,7 @@ const rememberedSongs = createRememberedSongsStore(join(app.getPath('userData'),
 // restarts for the Idle Screen and `resume`.
 const lastPageStore = createLastPageStore(join(app.getPath('userData'), 'last-page.json'))
 // The Known Addresses (ADR 0089): the hosts the pane has landed on, which a bare `open <word>` opens without an ask.
-const knownAddresses = createKnownAddressStore(join(app.getPath('userData'), 'hosts.json'))
+const knownAddresses = createKnownAddressStore(join(app.getPath('userData'), 'known-addresses.json'))
 registerLearnedTermsIpc(learnedTermsStore)
 // The Scale Listener (CONTEXT.md): started once the app is ready and kept
 // for its life; every window's dashboard and overlay hear it.

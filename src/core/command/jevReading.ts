@@ -134,7 +134,8 @@ function resumeOption(appliance: Appliance | undefined, page: CommandPage): [str
 function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): ApplianceVerb[] {
   if (appliance?.queued === undefined) return []
   const songOn = appliance.queued || page.media !== undefined
-  return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : []), ...(appliance.queued ? (['correct', 'correct_back', 'forget'] as const) : [])]
+  const corrections = appliance.queued ? (['correct', 'correct_back', 'forget'] as const) : []
+  return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : []), ...corrections]
 }
 
 /** Whether an action card label names an Appliance Verb. */

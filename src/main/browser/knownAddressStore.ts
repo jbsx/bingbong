@@ -4,7 +4,7 @@ import { EMPTY_KNOWN_ADDRESSES, knownAddressOf, landedOn, sanitizeKnownAddresses
 import type { BrowserPaneState } from '../../core/browser/paneState'
 import { reportFault } from '../../core/trace/fault'
 
-// The Known Addresses' persistence (#408, ADR 0089): hosts.json in userData
+// The Known Addresses' persistence (#408, ADR 0089): known-addresses.json in userData
 // beside the Last Page, kept across restarts. The rules live in core
 // (knownAddresses.ts); this store owns the file and the clock. A corrupt
 // file fails closed to no hosts — every bare word is Jev's — and the next
