@@ -1330,3 +1330,22 @@ and Steps.
   in_the_way at 0.52–0.59 and end unsure rather than step aside.
 - A no-repeat guard, a mechanical done and re-deriving the 0.7 bar for the
   wider card stay deferred: measure on the new asks first.
+
+## Amendment 2026-10-23 — a Task's end says one fixed line (#399)
+
+The voice policy above ("successful actions stay silent") gains one
+exception at a Task's end. A Task that ends `done` after more than one
+action says "Done." — one word, not the Verdict's reason or the landing's
+title; no model writes it. A Task that ends at the cap of five actions, or
+`unavailable` past hop 0, says "I couldn't finish that.", marked a failure.
+Both are spoken through the runner's voice like any other line: the next
+Command silences them, and they ride the turn whose Answer the Feed already
+shows, so the Feed gains no entry. A single action stays silent; a wall,
+`unsure` and `not_found` keep their own lines; a superseded Task says
+nothing. A Step with Steps still to come says nothing of being done, and a
+Step whose Task said its end line stops its line without saying "I'm not
+sure this is it." again.
+
+The dead end above ("nothing is spoken, the Feed shows `no next step`")
+already speaks "I'm not sure this is it." since #369; this amendment
+leaves that line as it is.
