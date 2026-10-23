@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "Spoken over the YouTube watch page: hop 0 none 0.89, the Where Ask read search 0.67 with the slot \"Gurgaon\" alone (s5-5 0.37 over the whole line 0.19, \"weather like in Gurgaon\" 0.12; replayed 3x: s5-5 0.30–0.32), DuckDuckGo searched \"Gurgaon\"; hop 1 clicked the search box (progress 0.26, struck), the re-read showed the suggestions and hop 3 read click \"gurgaon weather\" 0.95, but the second strike (progress 0.27 on the box click) ended the Task unsure before it fired; 3.1 s, \"not sure\" said",
   "meant": "Search the web for the weather in Gurgaon (the whole question) and land on the forecast",
-  "log": "decision-1792664044313-1.jsonl"
+  "log": "decision-1792664044313-1.jsonl",
+  "claimedBy": "#400"
 }

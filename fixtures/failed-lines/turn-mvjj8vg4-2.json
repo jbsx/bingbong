@@ -7,5 +7,6 @@
   "happened": "hop 2 on BBC Weather London with #392's text line (the whole hourly forecast in view, 14:00 to 05:00, the nav labels left out as refs on the card): the Verdict still read yes 0.61 over in_the_way 0.38 with BBC's non-modal cookie banner on the page; unsure, the Task went on to read instead of ending done. The same line as turn-mvjidxxf-2: more of the forecast did not move it",
   "meant": "yes: the forecast for London is on screen; a cookie banner that covers nothing is not in the way",
   "log": "decision-1792673042337-1.jsonl",
-  "case": "turn-mvjj8vg4-2"
+  "case": "turn-mvjj8vg4-2",
+  "claimedBy": "#404"
 }

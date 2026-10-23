@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "hop 2 on BBC Weather London, the forecast in view and on the card's Text in view line: the Verdict read yes 0.57 over in_the_way 0.42 because BBC's non-modal cookie banner (its refs and its two sentences) was on the page; unsure, the Task ended without done. Replayed: yes 0.61 with no text line, 0.60-0.68 with it, 0.75-0.79 with only the banner's sentences cut",
   "meant": "yes: the forecast for London is on screen; a cookie banner that covers nothing is not in the way",
-  "log": "decision-1792671600606-1.jsonl"
+  "log": "decision-1792671600606-1.jsonl",
+  "claimedBy": "#404"
 }
