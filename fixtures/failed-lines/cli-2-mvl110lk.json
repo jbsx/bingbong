@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvl110lk",
+  "transcript": "What's the weather like in Gurgaon?",
+  "at": 1792763380101,
+  "source": "typed",
+  "stage": "page",
+  "happened": "Typed on about:blank on d81cb568: searched the whole question (search 0.63, slot s0-5 0.98); the DuckDuckGo landing (an address with %20, where other runs had +) drew no refs before the landing wait capped, and the Task ended on a wall",
+  "meant": "Land on DuckDuckGo's results with the weather box and end done at hop 1",
+  "log": "decision-1792763376323-1.jsonl"
+}

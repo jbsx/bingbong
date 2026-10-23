@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvl0yit5",
+  "transcript": "What's the weather like in Gurgaon?",
+  "at": 1792763265915,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "Typed on the YouTube watch page as the session's first line, on d81cb568 (#400 verification): the action call took 3004 ms on Mammoth, over the 3000 ms round timeout, and the line read as not a command. A second run (logs removed) hit the same: the action answered at 2866 ms with the whole question as the slot, then the Where Ask timed out at 3003 ms",
+  "meant": "Search the whole question on the web and land on its results",
+  "log": "decision-1792763258487-1.jsonl"
+}

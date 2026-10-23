@@ -7,5 +7,7 @@
   "happened": "Typed on the YouTube watch page (rerun 2026-10-23, main 17f82618; identical from about:blank, cli-1-mvkw9sux): hop 0 search 0.47 over none 0.46 with the slot 'posthumous' (s5-5 0.59), 'synonym' dropped; hop 1 opened the Cambridge definition page, hop 2 scrolled, hop 3 read in_the_way 0.93 and clicked the cookie wall's I Accept with no observable change (dialog still open), hop 4 scrolled: cap after 9 s. A DuckDuckGo search for the whole line shows a thesaurus result",
   "meant": "Search the whole question once, land on a page of synonyms, say one",
   "log": "decision-1792755837242-1.jsonl",
-  "claimedBy": "#400"
+  "claimedBy": "#400",
+  "fixedBy": "d81cb568",
+  "case": "cli-6-mvkwl3aw"
 }
