@@ -10,8 +10,9 @@ are prose about the ledger, never a second copy of it.
 
 - `pnpm bugs` — the ledger as one table: a count per stage (open, claimed,
   fixed, ruled), then every line under its stage, open and unclaimed first.
-  This is the widest-net view: read the stage counts before deciding what
-  to fix.
+  This is the widest-net view: the stage counts show where in the
+  pipeline a scenario breaks; what to fix comes from the yield list
+  (`docs/agents/yield.md`).
 - `pnpm bugs:candidates [logs-dir]` — lines in the decision logs that look
   failed and are not in the ledger, each with what pointed at it.
 - `pnpm bugs:add <turnId> --stage <stage> --happened "…" --meant "…"` —

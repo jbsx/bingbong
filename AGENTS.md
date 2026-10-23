@@ -111,6 +111,21 @@ Every line that did not do what was meant goes in the Failed Lines ledger
 `pnpm bugs` prints it grouped by stage, open first. A post mortem ends by
 adding its lines; a fix issue claims the lines it covers. See `docs/agents/bugs.md`.
 
+### Yield
+
+The highest-yield item is the most common scenario the owner is in on a
+normal day of spoken use, weighted by how far that scenario is from
+ideal: done, right, in one hop, within the reaction, the right thing
+said. It is never the most recurring line in the ledger or the logs;
+those record what was tested and say how a scenario breaks, not how
+much it weighs. A scenario is a situation, the page or state and what is
+wanted from it; it may name a site, the fix for it never does. A daily
+scenario the app has no road for counts, with the state `missing`.
+Effort breaks ties only. The ranked list and the method are in
+`docs/agents/yield.md`. Every "work on this next", every triage order
+and every audit order names the scenario it serves, its place on the
+list, its state with dated evidence, and what the one change does to it.
+
 ### Triage labels
 
 Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
