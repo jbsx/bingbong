@@ -52,6 +52,8 @@ export interface Harness {
   clickDashboardElement(selector: string): Promise<void>
   /** Click the dashboard at a point in its own CSS pixels — for a spot no element's centre is, like the Idle Prompt's scrim beside its card. */
   clickDashboardAt(x: number, y: number): Promise<void>
+  /** Move the mouse over the dashboard to a point in its own CSS pixels, no button down — the cursor's rest over the Idle Screen. */
+  moveDashboardMouse(x: number, y: number): Promise<void>
   /**
    * Click an element in the feed panel's overlay webContents (#45). The
    * click waits for the view to settle at `minViewportWidth` (default
@@ -487,6 +489,13 @@ async function buildHarness(
       if (!sid) throw new Error('dashboard target not found')
       await activateFor('dashboard')
       await dispatchClick(sid, x, y)
+    },
+
+    async moveDashboardMouse(x, y) {
+      const sid = dashboardSid()
+      if (!sid) throw new Error('dashboard target not found')
+      await activateFor('dashboard')
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 }, sid)
     },
 
     async typeIntoDashboard(text) {

@@ -25,6 +25,7 @@ import type { OrbStatus } from './useAssistant'
 import { GlobeIcon } from './WeatherIcon'
 import { ChromeIcon } from './ChromeIcon'
 import { dateLabel } from './dateLabel'
+import { useCursorRest } from './useCursorRest'
 
 /**
  * The display the Idle Screen is laid out for: the appliance's 21-inch 16:9
@@ -486,6 +487,7 @@ export function IdleScreen({
   popup?: React.ReactNode
 }) {
   const [now, setNow] = useState(() => new Date())
+  useCursorRest()
   const usageViews = usage.status === 'ready' ? viewUsage(usage.snapshot, usagePrefs) : []
 
   useEffect(() => {

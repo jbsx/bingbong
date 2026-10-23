@@ -1996,6 +1996,12 @@ details[open] > .settings-summary::before {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The cursor at rest over the Idle Screen (useCursorRest): hidden over everything, the cards' pointers too, till it moves. */
+.cursor-hidden,
+.cursor-hidden * {
+  cursor: none !important;
+}
+
 .idle-drag-strip {
   position: absolute;
   top: 0;
