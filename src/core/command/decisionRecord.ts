@@ -26,7 +26,7 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
+  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number; readonly passage?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
     readonly action: Readonly<Record<string, number>>
@@ -42,6 +42,8 @@ export interface JevDetail {
     readonly dismiss?: Readonly<Record<string, number>>
     /** The steps Choice's (#364), at hop 0 of a line with a conjunction. */
     readonly steps?: Readonly<Record<string, number>>
+    /** The passage Choice's (#401, ADR 0087), beside a Verdict over a page with text in view. */
+    readonly passage?: Readonly<Record<string, number>>
   }
 }
 
@@ -241,6 +243,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
   const outcome = 'outcome' in answers ? answers.outcome : undefined
   const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
   const steps = 'steps' in answers ? answers.steps : undefined
+  const passage = 'passage' in answers ? answers.passage : undefined
   return {
     model,
     latencyMs,
@@ -253,6 +256,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
       ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
       ...(steps !== undefined ? { steps: steps.confidence } : {}),
+      ...(passage !== undefined ? { passage: passage.confidence } : {}),
     },
     probabilities: {
       action: topProbabilities(answers.action.probabilities, KEPT_ACTIONS),
@@ -263,6 +267,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
       ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),
       ...(steps !== undefined ? { steps: topProbabilities(steps.probabilities, KEPT_PROBABILITIES) } : {}),
+      ...(passage !== undefined ? { passage: topProbabilities(passage.probabilities, KEPT_PROBABILITIES) } : {}),
     },
   }
 }

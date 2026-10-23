@@ -62,4 +62,14 @@ describe('jevDetailOf', () => {
     expect('where' in unscoped.confidence).toBe(false)
     expect('where' in unscoped.probabilities).toBe(false)
   })
+
+  it('carries the passage pick beside the Verdict when it was asked (#401): its confidence and its five most probable blocks', () => {
+    const one = (label: string, confidence: number): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
+    const reading = { action: one('none', 0.9), slot: one('none', 0.9), outcome: one('yes', 0.98) }
+    const probabilities = { none: 0.02, 'view-1': 0.8, 'view-2': 0.1, 'view-3': 0.03, 'view-4': 0.03, 'view-5': 0.01, 'view-6': 0.01 }
+    const detail = jevDetailOf({ ...reading, passage: { type: 'choice', choice: 'view-1', confidence: 0.8, probabilities } }, 212, 'jev-1.14.0')
+    expect(detail.confidence.passage).toBe(0.8)
+    expect(detail.probabilities.passage).toEqual({ 'view-1': 0.8, 'view-2': 0.1, 'view-3': 0.03, 'view-4': 0.03, none: 0.02 })
+    expect('passage' in jevDetailOf(reading, 212, 'jev-1.14.0').confidence).toBe(false)
+  })
 })

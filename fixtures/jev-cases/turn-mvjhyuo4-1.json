@@ -149,6 +149,37 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"Clear\"",
+          "view-2": "\"Gurugram, India\"",
+          "view-3": "\"5 PM 28°\"",
+          "view-4": "\"8 PM 25°\"",
+          "view-5": "\"11 PM 23°\"",
+          "view-6": "\"2 AM 21°\"",
+          "view-7": "\"5 AM 19°\"",
+          "view-8": "\"8 AM 22°\"",
+          "view-9": "\"11 AM 29°\"",
+          "view-10": "\"2 PM 31°\"",
+          "view-11": "\"Humidity: 50%\"",
+          "view-12": "\"Wind: 4 MPH NW\"",
+          "view-13": "\"Thu\"",
+          "view-14": "\"31° 19°\"",
+          "view-15": "\"Fri\"",
+          "view-16": "\"Sat\"",
+          "view-17": "\"Sun\"",
+          "view-18": "\"Mon\"",
+          "view-19": "\"31° 18°\"",
+          "view-20": "\"Tue\"",
+          "view-21": "\"30° 17°\"",
+          "view-22": "\"Wed\"",
+          "view-23": "\"28° 16°\"",
+          "view-24": "\"28° 17°\""
+        }
       }
     }
   }

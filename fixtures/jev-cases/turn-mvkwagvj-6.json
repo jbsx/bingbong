@@ -287,6 +287,33 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"London - Weather warnings issued\"",
+          "view-2": "\"Cookies on the BBC website\"",
+          "view-3": "\"We use cookies to give you the best online experience. Strictly necessary cookies are on by default. Additional cookies are off by default.\"",
+          "view-4": "\"Accessibility links\"",
+          "view-5": "\"Red Met Office Weather WarningsAmber Met Office Weather WarningsYellow Met Office Weather Warnings\"",
+          "view-6": "\"13 : 00 , 12° , 100% chance of precipitation , Wind speed 11 mph west-north-westerly , More details\"",
+          "view-7": "\"14 : 00 , 12° , 81% chance of precipitation , Wind speed 15 mph west-north-westerly , More details\"",
+          "view-8": "\"15 : 00 , 11° , 100% chance of precipitation , Wind speed 18 mph west-north-westerly , More details\"",
+          "view-9": "\"16 : 00 , 10° , 77% chance of precipitation , Wind gusts 40 mph west-north-westerly , More details\"",
+          "view-10": "\"17 : 00 , 10° , 65% chance of precipitation , Wind speed 20 mph west-north-westerly , More details\"",
+          "view-11": "\"18 : 00 , 10° , 65% chance of precipitation , Wind speed 19 mph west-north-westerly , More details\"",
+          "view-12": "\"19 : 00 , 9° , 59% chance of precipitation , Wind speed 18 mph west-north-westerly , More details\"",
+          "view-13": "\"20 : 00 , 9° , 67% chance of precipitation , Wind speed 18 mph west-north-westerly , More details\"",
+          "view-14": "\"21 : 00 , 9° , 49% chance of precipitation , Wind speed 18 mph west-north-westerly , More details\"",
+          "view-15": "\"22 : 00 , 9° , 0% chance of precipitation , Wind speed 17 mph west-north-westerly , More details\"",
+          "view-16": "\"23 : 00 , 9° , 0% chance of precipitation , Wind speed 16 mph west-north-westerly , More details\"",
+          "view-17": "\"00 : 00 Sat , 9° , 0% chance of precipitation , Wind speed 15 mph westerly , More details\"",
+          "view-18": "\"01 : 00 , 8° , 0% chance of precipitation , Wind speed 14 mph westerly , More details\"",
+          "view-19": "\"02 : 00 , 8° , 0% chance of precipitation , Wind speed 13 mph westerly , More details\"",
+          "view-20": "\"03 : 00 , 8° , 0% chance of precipitation , Wind speed 12 mph westerly , More details\""
+        }
       }
     }
   }

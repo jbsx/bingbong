@@ -284,6 +284,33 @@
           "ref-3": "button \"Show Purposes, Opens the preference center dialog Show Purposes\" hasPopup=dialog",
           "ref-4": "button \"I Reject\""
         }
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"all-cause mortality\"",
+          "view-2": "\"ante mortem\"",
+          "view-3": "\"bereave\"",
+          "view-4": "\"bite\"",
+          "view-5": "\"bleed out phrasal verb\"",
+          "view-6": "\"carcass\"",
+          "view-7": "\"ghost\"",
+          "view-8": "\"give up the ghost idiom\"",
+          "view-9": "\"pass away phrasal verb\"",
+          "view-10": "\"pass on phrasal verb\"",
+          "view-11": "\"peg out phrasal verb\"",
+          "view-12": "\"pop off phrasal verb\"",
+          "view-13": "\"posthumously\"",
+          "view-14": "\"raise\"",
+          "view-15": "\"sinking fast idiom\"",
+          "view-16": "\"snuff it idiom\"",
+          "view-17": "\"starve\"",
+          "view-18": "\"terminal\"",
+          "view-19": "\"toll\"",
+          "view-20": "\"with your last/dying breath idiom\""
+        }
       }
     }
   }

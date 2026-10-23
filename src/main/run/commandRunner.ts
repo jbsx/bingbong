@@ -28,6 +28,7 @@ import {
   partialQuestions,
   readCommandAnswers,
   readDismissChoice,
+  readPassage,
   readProgress,
   readSteps,
   dismissPhraseQuestions,
@@ -67,7 +68,7 @@ import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
-import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
+import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
@@ -668,6 +669,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     whereAsk?: true
     /** The Verdict asked beside the Where Ask (#394), when Jev answered it. */
     verdict?: Verdict
+    /** The Answer Passage the Where Ask's sure pick names (#401, ADR 0087): spoken when its Verdict is a sure yes. */
+    passage?: string
     /** The Mark Ask's reading (#382, ADR 0084), read after a Where Ask whose top choice was `none`, over a card with a Textless Ref. */
     markAsk?: true
   }
@@ -791,7 +794,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const questions = whereQuestions(text, page, { appliance: appliance(), heard })
     const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions, heard), questions, `${first.ask ?? turnId}-where`)
     const verdict = result.status === 'answered' ? readVerdict(result.answers) : null
-    return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}) }
+    const passage = result.status === 'answered' ? readPassage(result.answers, page) : null
+    return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}), ...(passage !== null ? { passage } : {}) }
   }
 
   /**
@@ -1316,6 +1320,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     lookedAgain?: boolean
     /** Whether its end said a line of its own (#399): a Step that ends so stops its line without a second. */
     saidEnd?: boolean
+    /** The Answer Passage it ended done on (#401, ADR 0087): the block its end says, verbatim and whole. */
+    passage?: string
   }
 
   /** A hop's place in its Task, and in its line when the line is Steps (#364). */
@@ -1449,15 +1455,17 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * The line a Task's end says (#399): "Done." after more than one action,
-   * and that it could not finish at the cap or when Jev did not answer past
+   * The line a Task's end says (#399): a done Task's Answer Passage (#401,
+   * ADR 0087), in any Step; else "Done." after more than one action, and
+   * that it could not finish at the cap or when Jev did not answer past
    * hop 0; null for every other end, which is silent or has said its own.
-   * A Step with Steps still to come is not done saying: its line goes on.
-   * A Task a later Command came over while it closed (the cap's close) says
-   * nothing: the later Command stands.
+   * A Step with Steps still to come is not done saying "Done.": its line
+   * goes on. A Task a later Command came over while it closed (the cap's
+   * close) says nothing: the later Command stands.
    */
   function endLineOf(task: Task, ended: TaskEnded, hops: number): { text: string; failure: boolean } | null {
     if (superseded(task)) return null
+    if (ended === 'done' && task.passage !== undefined) return { text: task.passage, failure: false }
     if (ended === 'done') return task.actions.length > 1 && (task.step === undefined || task.step.step === task.step.of) ? { text: DONE_LINE, failure: false } : null
     if (ended === 'cap' || (ended === 'unavailable' && hops > 1)) return { text: SPOKEN_FAILURES.notFinished, failure: true }
     return null
@@ -1487,6 +1495,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function dropHop(turnId: string, task: Task, place: TaskHop, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
     publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: place, at: firedAt })
     publish({ type: 'done', turnId, outcome, at: at() })
+  }
+
+  /**
+   * A Task that ends done on a page (#369, #394), greyed as a hop that
+   * fires nothing; with an Answer Passage (#401, ADR 0087), its Card is
+   * the page's name over the block, on this turn, which the end line is
+   * then spoken on.
+   */
+  function endDone(turnId: string, task: Task, place: TaskHop, page: CommandPage, passage: string | null, firedAt: number): void {
+    if (passage === null) return dropHop(turnId, task, place, 'done', 'done', firedAt)
+    task.passage = passage
+    publish({ type: 'command', turnId, text: task.text, action: 'done', dropped: true, task: place, at: firedAt })
+    answer(turnId, passageCard(page, passage))
+    publish({ type: 'done', turnId, outcome: 'done', at: at() })
   }
 
   /**
@@ -1819,7 +1841,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         log({ ...record, ended })
         if (ended === 'unsure') answerFailure(turnId, SPOKEN_FAILURES.unsure)
-        dropHop(turnId, task, placed, ended === 'done' ? 'done' : 'not sure this is it', 'done', firedAt)
+        // A sure yes speaks the block Jev surely picked beside it (#401, ADR 0087); with no sure pick it ends as before.
+        if (ended === 'done') endDone(turnId, task, placed, page, readPassage(result.answers, page, context), firedAt)
+        else dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
       const ending = endedByReading('jev', command.verb)
@@ -2111,9 +2135,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
     if (heard.whereAsk === true && sure(heard.verdict ?? null) && heard.verdict!.outcome === 'yes') {
       // The Where Ask would act, and the Verdict beside it is sure the page already shows what the words ask for (#394):
-      // the Task ends done on the page as it is, as a later hop's sure yes does, and the action is never fired.
+      // the Task ends done on the page as it is, as a later hop's sure yes does, and the action is never fired — speaking its Answer Passage when the pick is sure (#401).
       log({ ...record, ended: 'done' })
-      dropHop(turnId, task, hop0, 'done', 'done', firedAt)
+      endDone(turnId, task, hop0, heard.page, heard.passage ?? null, firedAt)
       return { ended: endTask(task, 'done', 1), did: '' }
     }
 

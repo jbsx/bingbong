@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyPageReadLine, pageReadPartLine, pageReadText } from '../browser/pageText'
-import { commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from './answer'
+import { commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from './answer'
 import type { Command } from './command'
 
 describe('commandAnswer (#333)', () => {
@@ -128,6 +128,16 @@ describe('pageReadCard (#333)', () => {
     // An input alone is no content of that kind; a page with words is read as words.
     expect(controlsOnlyLine(controls('[1] input[search] "Search"'))).toBeNull()
     expect(controlsOnlyLine(read(['# Lighthouse — https://example.com/'], ['Hi.']))).toBeNull()
+  })
+})
+
+describe('passageCard (#401, ADR 0087)', () => {
+  it('is the page title over the block, the block verbatim', () => {
+    expect(passageCard({ url: 'https://www.gov.uk/passport-fees', title: 'Passport fees - GOV.UK' }, 'Online: £94.50')).toBe('## Passport fees - GOV.UK\n\nOnline: £94.50')
+  })
+
+  it('names an untitled page by its host', () => {
+    expect(passageCard({ url: 'https://www.gov.uk/passport-fees', title: '' }, 'Online: £94.50')).toBe('## gov.uk\n\nOnline: £94.50')
   })
 })
 

@@ -3,7 +3,7 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -71,7 +71,7 @@ describe('the state Jev reads', () => {
 })
 
 describe('the text in view in the state Jev reads (#390)', () => {
-  it('gains one line under the page: each block quoted, in order, joined by a dot', () => {
+  it('gains one line under the page: each block quoted, in order, joined by a dot — unnumbered (#401)', () => {
     const state = commandState('what is the weather', { ...PAGE, viewportText: ['Clear', 'Gurugram, India', '4 PM 30°', 'Say "hi"'] })
     expect(state.split('\n').slice(1, 3)).toEqual(['Page: https://example.com/ — "Example"', 'Text in view: "Clear" · "Gurugram, India" · "4 PM 30°" · "Say \\"hi\\""'])
   })
@@ -102,6 +102,40 @@ describe('the text in view in the state Jev reads (#390)', () => {
     const page = { ...PAGE, viewportText: ['Clear'], dialog: { text: 'Sign in', refs: [2] } }
     const hop: HopContext = { hop: 1, visited: ['https://example.com/'], actions: ['search weather'], links: [] }
     expect(commandState('what is the weather', page, hop).split('\n').slice(3, 6)).toEqual(['Page: https://example.com/ — "Example"', 'Text in view: "Clear"', 'A dialog is open: "Sign in"'])
+  })
+})
+
+describe('the Answer Passage (#401, ADR 0087): which block in view states what was asked, asked beside every Verdict', () => {
+  const WEATHER: CommandPage = { ...PAGE, title: 'London weather', viewportText: ['Home', 'Cloudy', '12 PM 70% 12°', 'Humidity: 90%'] }
+  const hop: HopContext = { hop: 1, visited: [WEATHER.url], actions: ['search for "weather in London"'], links: [] }
+
+  it('asks the passage Choice at a hop, beside the Verdict: none and every block in reading order, each whole, the card\'s labels left out as on the state', () => {
+    const questions = hopQuestions("what's the weather in London", WEATHER, hop)
+    expect(questions.passage?.options).toEqual({ none: expect.any(String), 'view-1': '"Cloudy"', 'view-2': '"12 PM 70% 12°"', 'view-3': '"Humidity: 90%"' })
+    // The state stays as the Verdict was measured on: the blocks are named in the Choice alone.
+    expect(commandState("what's the weather in London", WEATHER, hop)).toContain('Text in view: "Cloudy" · "12 PM 70% 12°" · "Humidity: 90%"')
+  })
+
+  it('asks it beside the Where Ask\'s Verdict too (#394)', () => {
+    expect(Object.keys(whereQuestions("what's the weather in London", WEATHER))).toContain('passage')
+  })
+
+  it('is not asked where no Verdict is, nor over a page with no block in view', () => {
+    expect(Object.keys(commandQuestions("what's the weather in London", WEATHER))).not.toContain('passage')
+    expect(Object.keys(hopQuestions("what's the weather in London", { ...WEATHER, viewportText: ['Home'] }, hop))).not.toContain('passage')
+  })
+
+  it('reads a sure pick as the block itself, whole and verbatim', () => {
+    const answers = { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.98), passage: choice('view-2', 0.8) }
+    expect(readPassage(answers, WEATHER, hop)).toBe('12 PM 70% 12°')
+  })
+
+  it('reads no passage from a pick under the Choice bar, from none, from a number no block carries, or where none was asked', () => {
+    const answered = (passage: DecisionChoiceAnswer) => ({ action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.98), passage })
+    expect(readPassage(answered(choice('view-2', 0.69)), WEATHER, hop)).toBeNull()
+    expect(readPassage(answered(choice('none', 0.95)), WEATHER, hop)).toBeNull()
+    expect(readPassage(answered(choice('view-9', 0.95)), WEATHER, hop)).toBeNull()
+    expect(readPassage({ action: choice('none'), slot: choice('none') }, WEATHER, hop)).toBeNull()
   })
 })
 

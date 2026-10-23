@@ -7,6 +7,10 @@
     {
       "question": "action",
       "label": "search-7"
+    },
+    {
+      "question": "passage",
+      "label": "none"
     }
   ],
   "ask": {
@@ -188,6 +192,14 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"The best place to find government services and information\""
+        }
       }
     }
   }

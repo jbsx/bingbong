@@ -7,6 +7,10 @@
     {
       "question": "outcome",
       "label": "not_yet"
+    },
+    {
+      "question": "passage",
+      "label": "none"
     }
   ],
   "ask": {
@@ -326,6 +330,28 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\".github | .github | devops: run the Windows tests on the 64-core runner with 16 workers (#… | Oct 21, 2026\"",
+          "view-2": "\"browser_patches | browser_patches | feat(firefox): roll to r1564 (#43494) | Oct 19, 2026\"",
+          "view-3": "\"docs/src | docs/src | fix(mcp): give each isolated client its own idle timer (#43527) | Oct 19, 2026\"",
+          "view-4": "\"examples | examples | test(components): restore web and html-reporter component tests (#41889) | Jul 21, 2026\"",
+          "view-5": "\"packages | packages | fix(chromium): detach page-side service worker session without resumi… | Oct 22, 2026\"",
+          "view-6": "\"tests | tests | fix(route): update patterns before awaiting interceptor removal (#43551) | Oct 20, 2026\"",
+          "view-7": "\"utils | utils | chore(docs): replace render_release_notes.mjs with a release notes sk… | Oct 20, 2026\"",
+          "view-8": "\".editorconfig | .editorconfig | Initial commit | Nov 19, 2019\"",
+          "view-9": "\".gitattributes | .gitattributes | feat: implement a new image comparison function (#19166) | Dec 2, 2022\"",
+          "view-10": "\".gitignore | .gitignore | chore(coverage): istanbul instrumentation for the trace viewer and ht… | Sep 19, 2026\"",
+          "view-11": "\"AGENTS.md | AGENTS.md | chore: prefer extending existing tests in AGENTS.md (#43325) | Oct 12, 2026\"",
+          "view-12": "\"CODE_OF_CONDUCT.md | CODE_OF_CONDUCT.md | Revert \\\"chore: rework the crlf in md fix\\\" | Jan 20, 2021\"",
+          "view-13": "\"CONTRIBUTING.md | CONTRIBUTING.md | chore: update contributors' guide (#40541) | Apr 30, 2026\"",
+          "view-14": "\"FILING_ISSUES.md | FILING_ISSUES.md | docs: issue guide (#34457) | Jan 23, 2025\"",
+          "view-15": "\"automationchromechromiume2e-testingelectronend-to-end-testingfirefoxjavascriptplaywrighttesttest-automationtestingtesting-toolswebwebkit\""
+        }
       }
     }
   }

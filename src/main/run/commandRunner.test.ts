@@ -2646,6 +2646,66 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(events.some((event) => event.type === 'display' && event.turnId === said!.turnId)).toBe(true)
     })
 
+    describe('a done Task speaks its Answer Passage (#401, ADR 0087)', () => {
+      const BOX = ['Cloudy', '12 PM 70% 12°']
+      /** The search's landing shows a weather box in view. */
+      function answerHarness(speech: FakeSpeech) {
+        const h = taskHarness('about:blank', { speech })
+        const navigate = h.browser.navigate.bind(h.browser)
+        h.browser.navigate = async (url) => {
+          const line = await navigate(url)
+          h.browser.snapshot = { ...h.browser.snapshot, viewportText: BOX }
+          return line
+        }
+        return h
+      }
+      const yesWith = (passage: DecisionAnswer) => ({ answers: { ...SURE_YES.answers, passage } })
+
+      it('a sure yes with a sure pick speaks the block verbatim, and the Card is the page title over it, on the same turn', async () => {
+        const speech = new FakeSpeech()
+        const { browser, events, decision, runner } = answerHarness(speech)
+        decision.script.push(answer('search', 's3-6'), yesWith(choice('view-2', 0.8)))
+        await runner.run("what's the weather like in London", { source: 'spoken' })
+        // The hop that judged the page was asked which block states it.
+        expect((decision.requests[1]!.questions.passage as DecisionChoiceQuestion).options['view-2']).toBe('"12 PM 70% 12°"')
+        expect(speech.spoken.map((said) => said.text)).toEqual(['12 PM 70% 12°'])
+        const [said] = spoken(events)
+        expect(said).not.toHaveProperty('failure')
+        const card = events.flatMap((event) => (event.type === 'display' && event.turnId === said!.turnId ? [event] : []))
+        expect(card).toEqual([expect.objectContaining({ text: `## Fake page: ${browser.navigations[0]}\n\n12 PM 70% 12°` })])
+        expect(card[0]).not.toHaveProperty('failure')
+      })
+
+      it('speaks the passage in place of "Done." after more than one action', async () => {
+        const speech = new FakeSpeech()
+        const { decision, runner } = answerHarness(speech)
+        decision.script.push(answer('search', 's3-6'), answer('scroll_down'), yesWith(choice('view-1', 0.9)))
+        await runner.run("what's the weather like in London", { source: 'spoken' })
+        expect(speech.spoken.map((said) => said.text)).toEqual(['Cloudy'])
+      })
+
+      it('ends as before with no sure pick: under the Choice bar, or none', async () => {
+        for (const passage of [choice('view-2', 0.6), choice('none', 0.95)]) {
+          const speech = new FakeSpeech()
+          const { events, decision, runner } = answerHarness(speech)
+          decision.script.push(answer('search', 's3-6'), yesWith(passage))
+          await runner.run("what's the weather like in London", { source: 'spoken' })
+          expect(speech.spoken).toEqual([])
+          expect(events.some((event) => event.type === 'display' && event.text.includes('12 PM'))).toBe(false)
+          expect(decision.requests).toHaveLength(2)
+        }
+      })
+
+      it('a sure pick beside a Verdict short of a sure yes is not spoken: the Task goes on, and ends as it would have', async () => {
+        const speech = new FakeSpeech()
+        const { decision, runner } = answerHarness(speech)
+        decision.script.push(answer('search', 's3-6'), { answers: { action: choice('scroll_down'), slot: choice('none'), outcome: choice('yes', 0.6), passage: choice('view-2', 0.9) } }, SURE_YES)
+        await runner.run("what's the weather like in London", { source: 'spoken' })
+        expect(decision.requests).toHaveLength(3)
+        expect(speech.spoken.map((said) => said.text)).toEqual(['Done.'])
+      })
+    })
+
     it('a Task of one action that ends done stays silent', async () => {
       const speech = new FakeSpeech()
       const { decision, runner } = taskHarness('about:blank', { speech })
@@ -3080,8 +3140,8 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
   const isWhereAsk = (request: DecisionRequest<DecisionQuestions>): boolean => cardOf(request).instructions.startsWith('The words are a command for something this page does not show.')
 
   /** The watch page: Settings opens its menu (`inert` refs change nothing), Escape closes it. */
-  function watchHarness(inert: readonly number[] = []) {
-    const h = harness()
+  function watchHarness(inert: readonly number[] = [], options?: Parameters<typeof harness>[0]) {
+    const h = harness(options)
     h.browser.snapshot = { ...h.browser.snapshot, url: WATCH, title: 'Song - YouTube', refs: WATCH_REFS }
     const click = h.browser.click.bind(h.browser)
     h.browser.click = async (n) => {
@@ -3170,6 +3230,19 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     ])
     expect(commands(events)).toEqual([expect.objectContaining({ turnId: 't1', action: 'done', dropped: true, task: { id: 't1', hop: 0 } })])
     expect(displays(events).some((text) => text.startsWith('No response.'))).toBe(false)
+  })
+
+  it('#401: a sure yes beside the Where Ask with a sure pick speaks the block, under the page title, on hop 0\'s turn', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner, decision } = watchHarness([], { speech })
+    browser.snapshot = { ...browser.snapshot, viewportText: ['Renew online: £94.50', 'Renew by post: £107'] }
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.6, none: 0.1 }, { outcome: choice('yes', 0.85), passage: choice('view-1', 0.9) }))
+    await runner.run('how much is it to renew online', { source: 'spoken', turnId: 't1' })
+
+    expect(Object.keys(decision.requests[1]!.questions)).toContain('passage')
+    expect(browser.clicks).toEqual([])
+    expect(speech.spoken).toEqual([{ text: 'Renew online: £94.50', turnId: 't1' }])
+    expect(displays(events)).toEqual(['## Song - YouTube\n\nRenew online: £94.50'])
   })
 
   it('#394: a yes short of sure beside the Where Ask\'s action fires the action as before', async () => {
@@ -3940,6 +4013,19 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     expect(browser.scrolls).toHaveLength(2)
     expect(browser.clicks).toEqual([2])
     expect(speech.spoken).toEqual([])
+  })
+
+  it('a Step done on a sure pick with Steps still to come speaks its passage at its own end, and the line goes on (#401)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, runner } = harness({ speech })
+    browser.snapshot = { ...browser.snapshot, viewportText: ['Opening hours: 9 to 5'] }
+    const scroll = { answers: { action: choice('scroll_down'), slot: choice('none') } }
+    decision.script.push(split('w4', { action: choice('scroll_down') }), { answers: { ...scroll.answers, where: choice('page') } }, { answers: { ...SURE_YES.answers, passage: choice('view-1') } })
+
+    await runner.run('go further down then click sign in', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([2])
+    expect(speech.spoken.map((said) => said.text)).toEqual(['Opening hours: 9 to 5'])
   })
 
   it('ends every Step still to come when a later Command supersedes the line', async () => {

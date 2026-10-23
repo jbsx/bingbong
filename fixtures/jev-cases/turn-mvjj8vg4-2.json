@@ -246,6 +246,33 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"London - Weather warnings issued\"",
+          "view-2": "\"Cookies on the BBC website\"",
+          "view-3": "\"We use cookies to give you the best online experience. Strictly necessary cookies are on by default. Additional cookies are off by default.\"",
+          "view-4": "\"Accessibility links\"",
+          "view-5": "\"Red Met Office Weather WarningsAmber Met Office Weather WarningsYellow Met Office Weather Warnings\"",
+          "view-6": "\"14 : 00 , 13° , 0% chance of precipitation , Wind speed 10 mph westerly , More details\"",
+          "view-7": "\"15 : 00 , 13° , 0% chance of precipitation , Wind speed 9 mph west-south-westerly , More details\"",
+          "view-8": "\"16 : 00 , 13° , 0% chance of precipitation , Wind speed 7 mph west-south-westerly , More details\"",
+          "view-9": "\"17 : 00 , 13° , 0% chance of precipitation , Wind speed 6 mph south-westerly , More details\"",
+          "view-10": "\"18 : 00 , 12° , 0% chance of precipitation , Wind speed 5 mph southerly , More details\"",
+          "view-11": "\"19 : 00 , 12° , 18% chance of precipitation , Wind speed 5 mph south-south-easterly , More details\"",
+          "view-12": "\"20 : 00 , 11° , 35% chance of precipitation , Wind speed 6 mph south-easterly , More details\"",
+          "view-13": "\"21 : 00 , 11° , 68% chance of precipitation , Wind speed 8 mph south-easterly , More details\"",
+          "view-14": "\"22 : 00 , 11° , 93% chance of precipitation , Wind speed 9 mph south-easterly , More details\"",
+          "view-15": "\"23 : 00 , 12° , 93% chance of precipitation , Wind speed 9 mph south-easterly , More details\"",
+          "view-16": "\"00 : 00 Fri , 13° , 93% chance of precipitation , Wind speed 11 mph south-south-easterly , More details\"",
+          "view-17": "\"01 : 00 , 13° , 100% chance of precipitation , Wind speed 12 mph south-south-easterly , More details\"",
+          "view-18": "\"02 : 00 , 13° , 100% chance of precipitation , Wind speed 13 mph south-south-easterly , More details\"",
+          "view-19": "\"03 : 00 , 13° , 99% chance of precipitation , Wind speed 13 mph south-south-easterly , More details\"",
+          "view-20": "\"04 : 00 , 13° , 74% chance of precipitation , Wind speed 13 mph south-south-easterly , More details\""
+        }
       }
     }
   }

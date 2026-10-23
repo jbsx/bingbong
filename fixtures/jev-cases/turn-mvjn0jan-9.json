@@ -216,6 +216,20 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"Window: fetch() method\"",
+          "view-2": "\"This feature is well established and works across many devices and browser versions. It’s been available across browsers since March 2017.\"",
+          "view-3": "\"* Some parts of this feature may have varying levels of support.\"",
+          "view-4": "\"The fetch() method of the Window interface starts the process of fetching a resource from the network, returning a promise that is fulfilled once the response is available.\"",
+          "view-5": "\"The promise resolves to the Response object representing the response to your request.\"",
+          "view-6": "\"A fetch() promise only rejects when the request fails, for example, because of a badly-formed request URL or a network error. A fetch() promise does not reject if the server responds with HTTP status codes that indicate errors (404, 504, etc.). Instead, a then() handler must check the Response.ok an\"",
+          "view-7": "\"In this article\""
+        }
       }
     }
   }

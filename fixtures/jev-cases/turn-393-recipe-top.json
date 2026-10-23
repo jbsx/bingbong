@@ -6,6 +6,10 @@
     {
       "question": "outcome",
       "label": "not_yet"
+    },
+    {
+      "question": "passage",
+      "label": "none"
     }
   ],
   "ask": {
@@ -181,6 +185,15 @@
       "progress": {
         "type": "noul",
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"My easiest Chocolate Chip Cookies (Soft!)\"",
+          "view-2": "\"This is my easiest and fastest Chocolate Chip Cookie recipe that makes soft, buttery cookies, when you need a batch of cookies asap. No waiting for butter to soften, no electric beater, no refrigeration time, no rolling dough into balls. The hardest part is waiting for them to cool!\""
+        }
       }
     }
   }

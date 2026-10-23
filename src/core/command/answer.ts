@@ -230,6 +230,12 @@ export function pageReadCard(result: string): { text: string; failure: boolean }
   return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' && controls === null }
 }
 
+/** A done Task's Answer Passage as its Card (#401, ADR 0087): the page's name over the block, the block verbatim. */
+export function passageCard(page: { url: string; title: string }, block: string): string {
+  const name = pageName(page)
+  return name === '' ? block : `## ${name}\n\n${block}`
+}
+
 /** The page's lines without a first that only repeats the Card's heading, case and spaces aside (2026-10-22 audit); a page with no other words keeps it. */
 function withoutTitleLine(lines: string[], name: string): string[] {
   const bare = (text: string): string => text.toLowerCase().replace(/\s+/g, '')

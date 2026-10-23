@@ -803,17 +803,30 @@ export interface StepContext {
 export const MARKS_IMAGE = '<marks>'
 
 /**
+ * The blocks of text in view the card shows (#390, #392), in reading
+ * order: every block the collect kept but a label already on the card (a
+ * nav link, a button), which the card names once. The passage Choice
+ * offers them in this order as `view-N` (#401).
+ */
+function inViewBlocks(page: CommandPage, hop: HopContext | undefined): string[] {
+  const shown = offered(page, hop)
+  const onCard = new Set([...shown.page.refs, ...shown.links].map((named) => named.label))
+  return (page.viewportText ?? []).filter((block) => !onCard.has(block))
+}
+
+/**
  * The text in view as one line under the page (#390): each block quoted,
  * in reading order. A forecast, a score or a definition is text, not a
  * control, and the Verdict cannot see it is on screen without it. The
  * screen is the bound, as the collect keeps it (#392): no cap of its own,
- * which cut the page from the top and spent itself on the masthead; a block
- * that is a label already on the card (a nav link, a button) is left out;
- * the blocks the collect could not keep are said, so a cut never reads as
- * a page with nothing more on it. No line when no block is left.
+ * which cut the page from the top and spent itself on the masthead; the
+ * blocks the collect could not keep are said, so a cut never reads as a
+ * page with nothing more on it. No line when no block is left. It stays
+ * unnumbered (#401): numbered, every layout measured cost two Mammoth
+ * passes, so the passage Choice names each block in its own options.
  */
-function textInViewLine(page: CommandPage, onCard: ReadonlySet<string>): string[] {
-  const blocks = (page.viewportText ?? []).filter((block) => !onCard.has(block)).map((block) => JSON.stringify(block))
+function textInViewLine(page: CommandPage, hop: HopContext | undefined): string[] {
+  const blocks = inViewBlocks(page, hop).map((block) => JSON.stringify(block))
   const more = page.viewportTextMore ?? 0
   if (more > 0) blocks.push(`… (${more} more ${more === 1 ? 'block' : 'blocks'} in view)`)
   return blocks.length === 0 ? [] : [`Text in view: ${blocks.join(' · ')}`]
@@ -849,7 +862,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
         ? [`Done so far: ${done.join('; ')}`]
         : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
-    ...textInViewLine(page, new Set([...shown.page.refs, ...shown.links].map((named) => named.label))),
+    ...textInViewLine(page, hop),
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.fullScreen !== undefined ? [`Full screen: ${page.fullScreen ? 'on' : 'off'}`] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
@@ -1004,8 +1017,8 @@ const CARD_ASKS: Readonly<Record<CardAsk, { readonly question: string; readonly 
   mark: { question: "Which one action does the browser take for the user's words? A control with no words is found by its number on the image.", ...SAYS_NOT_A_COMMAND },
 }
 
-/** The Where Ask's questions: the Command's and the Verdict (#394). */
-export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion }
+/** The Where Ask's questions: the Command's and the Verdict (#394); with a block in view, the passage Choice (#401). */
+export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly passage?: DecisionChoiceQuestion }
 
 /**
  * The Where Ask's questions (#379, ADR 0082): hop 0's, with the action
@@ -1014,10 +1027,11 @@ export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoi
  * reading already read the line as one Command. The Verdict rides the
  * same call (#394), worded as every hop's: a page that already shows what
  * the words ask for is kept, not left for the Where Ask's action. Adding
- * it moved none of 40 measured Where Ask picks.
+ * it moved none of 40 measured Where Ask picks. The passage Choice rides
+ * beside that Verdict as beside every hop's (#401, ADR 0087).
  */
 export function whereQuestions(text: string, page: CommandPage, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): WhereQuestions {
-  return { ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where', heard }), outcome: outcomeQuestion() }
+  return withPassage({ ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where', heard }), outcome: outcomeQuestion() }, page, undefined)
 }
 
 /**
@@ -1208,6 +1222,45 @@ function outcomeQuestion(): DecisionChoiceQuestion {
 }
 
 /**
+ * The passage Choice (#401, ADR 0087): which block of Text in view states
+ * what the user asked for, or `none`. Asked beside every Verdict; no line
+ * is marked a question, so a line that asked nothing has no block that
+ * states it. Each block is offered whole, as the state shows it, under the
+ * Choice cap, its option naming it `view-N` in reading order. Null when no
+ * block is in view.
+ */
+function passageQuestion(page: CommandPage, hop: HopContext | undefined): DecisionChoiceQuestion | null {
+  const blocks = inViewBlocks(page, hop).slice(0, MAX_SPANS)
+  if (blocks.length === 0) return null
+  return {
+    type: 'choice',
+    instructions:
+      'Which block of Text in view states what the user asked to know, in the page\'s own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.',
+    options: { none: 'no block states it', ...Object.fromEntries(blocks.map((block, index) => [`view-${index + 1}`, JSON.stringify(block)])) },
+  }
+}
+
+/** The questions with the passage Choice beside them (#401), when a block is in view. */
+function withPassage<Q extends object>(questions: Q, page: CommandPage, hop: HopContext | undefined): Q | (Q & { readonly passage: DecisionChoiceQuestion }) {
+  const passage = passageQuestion(page, hop)
+  return passage === null ? questions : { ...questions, passage }
+}
+
+/**
+ * The Answer Passage (#401, ADR 0087): the block of text in view a sure
+ * pick names, verbatim and whole; null when the passage was not asked, its
+ * pick is `none` or its probability under the Choice bar (#403), or names
+ * no block shown.
+ */
+export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandPage, hop?: HopContext): string | null {
+  if (!('passage' in answers) || answers.passage === undefined) return null
+  const { choice, confidence, probabilities } = answers.passage
+  const match = /^view-(\d+)$/.exec(choice)
+  if (match === null || (probabilities[choice] ?? confidence) < DEFAULT_DECISION_THRESHOLDS.choice) return null
+  return inViewBlocks(page, hop)[Number(match[1]) - 1] ?? null
+}
+
+/**
  * The dismiss Choice (#354, owner's rule 2026-10-19): with a pop-up open,
  * which of its controls closes it. Every control of the dialog's layer that
  * a dismissal may click is offered — the widest net, no label list deciding
@@ -1262,16 +1315,17 @@ function progressQuestion(): DecisionNoulQuestion {
 /** At or under it, the Progress Noul is sure the last action did not help (#373): the mirror of the Choice bar, 0.3. */
 export const PROGRESS_FLOOR = Math.round((1 - DEFAULT_DECISION_THRESHOLDS.choice) * 100) / 100
 
-/** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice. */
-export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion }
+/** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice; with a block in view, the passage Choice (#401). */
+export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion; readonly passage?: DecisionChoiceQuestion }
 
 export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  return { ...commandQuestions(text, pageRead, hop, { appliance, heard }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  const asked = { ...commandQuestions(text, pageRead, hop, { appliance, heard }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  return withPassage(asked, pageRead, hop)
 }
 
-/** The answers to {@link HopQuestions}: the Command's, the Verdict's, the Progress Noul's and, when asked, the dismiss Choice's. */
-export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer; readonly progress?: DecisionNoulAnswer; readonly dismiss?: DecisionChoiceAnswer }
+/** The answers to {@link HopQuestions}: the Command's, the Verdict's, the Progress Noul's and, when asked, the dismiss Choice's and the passage Choice's (#401). */
+export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer; readonly progress?: DecisionNoulAnswer; readonly dismiss?: DecisionChoiceAnswer; readonly passage?: DecisionChoiceAnswer }
 
 /** The Progress Noul's probability (#373); null when it was not asked. */
 export function readProgress(answers: CommandAnswers | HopAnswers): number | null {

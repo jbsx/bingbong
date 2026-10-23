@@ -1,0 +1,198 @@
+{
+  "turnId": "turn-mvkwbh2x-1",
+  "transcript": "how much is it to renew online",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792755469127,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    },
+    {
+      "question": "passage",
+      "label": "view-5",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"how much is it to renew online\"\nThis is step 2 of the task. Done so far: scroll down a screen (the address did not change; \"Getting your first adult passport\", \"Get a passport urgently\" and \"Passport Check and Send service\" appeared)\nPages visited: https://www.gov.uk/passport-fees\nPage: https://www.gov.uk/passport-fees — \"Passport fees - GOV.UK\"\nText in view: \"Passport fees\" · \"How much your passport costs depends on how you apply for it.\" · \"You cannot get a refund if you cancel your application or you’re not entitled to a passport.\" · \" | Apply online | Apply by paper form\" · \"Adult (16 and over) standard 34-page passport | £102 | £115.50\" · \"Adult (16 and over) 54-page frequent traveller passport | £116 | £129.50\" · \"Child (under 16) standard 34-page passport | £66.50 | £80\" · \"Child (under 16) 54-page frequent traveller passport | £80.50 | £94\" · \"Related content\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"Getting your first adult passport\" https://www.gov.uk/apply-first-adult-passport\n[2] link \"Get a passport urgently\" https://www.gov.uk/get-a-passport-urgently\n[3] link \"Passport Check and Send service\" https://www.gov.uk/how-the-post-office-check-and-send-service-works\n[4] link \"Renew or replace your adult passport\" https://www.gov.uk/renew-adult-passport\n[5] link \"Get a passport for your child\" https://www.gov.uk/get-a-child-passport\n[6] link \"Countersigning passport applications and photos\" https://www.gov.uk/countersigning-passport-applications\nLinks further down the page (name, address):\n[link-1] link \"View cookies\" https://www.gov.uk/help/cookies\n[link-2] link \"Go to the GOV.UK homepage GOV.UK\" https://www.gov.uk/\n[link-3] link \"Passports, travel and living abroad\" https://www.gov.uk/browse/abroad\n[link-4] link \"Passports\" https://www.gov.uk/browse/abroad/passports\n[link-5] link \"from another country\" https://www.gov.uk/overseas-passports\n[link-6] link \"get or renew a British passport\" https://www.gov.uk/apply-renew-passport\n[link-7] link \"Benefits\" https://www.gov.uk/browse/benefits\n[link-8] link \"Births, death, marriages and care\" https://www.gov.uk/browse/births-deaths-marriages\n[link-9] link \"Business and self-employed\" https://www.gov.uk/browse/business\n[link-10] link \"Childcare and parenting\" https://www.gov.uk/browse/childcare-parenting\n[link-11] link \"Citizenship and living in the UK\" https://www.gov.uk/browse/citizenship\n[link-12] link \"Crime, justice and the law\" https://www.gov.uk/browse/justice\n[link-13] link \"Disabled people\" https://www.gov.uk/browse/disabilities\n[link-14] link \"Driving and transport\" https://www.gov.uk/browse/driving\n[link-15] link \"Education and learning\" https://www.gov.uk/browse/education\n[link-16] link \"Employing people\" https://www.gov.uk/browse/employing-people\n[link-17] link \"Environment and countryside\" https://www.gov.uk/browse/environment-countryside\n[link-18] link \"Housing and local services\" https://www.gov.uk/browse/housing-local-services\n[link-19] link \"Money and tax\" https://www.gov.uk/browse/tax\n[link-20] link \"Visas and immigration\" https://www.gov.uk/browse/visas-immigration\n[link-21] link \"Working, jobs and pensions\" https://www.gov.uk/browse/working\n[link-22] link \"Departments\" https://www.gov.uk/government/organisations\n[link-23] link \"News\" https://www.gov.uk/search/news-and-communications\n[link-24] link \"Guidance and regulation\" https://www.gov.uk/search/guidance-and-regulation\n[link-25] link \"Research and statistics\" https://www.gov.uk/search/research-and-statistics\n[link-26] link \"Policy papers and consultations\" https://www.gov.uk/search/policy-papers-and-consultations\n[link-27] link \"Transparency\" https://www.gov.uk/search/transparency-and-freedom-of-information-releases\n[link-28] link \"How government works\" https://www.gov.uk/government/how-government-works\n[link-29] link \"Get involved\" https://www.gov.uk/government/get-involved\n[link-30] link \"Help\" https://www.gov.uk/help\n[link-31] link \"Privacy\" https://www.gov.uk/help/privacy-notice\n[link-32] link \"Accessibility statement\" https://www.gov.uk/help/accessibility-statement\n[link-33] link \"Contact\" https://www.gov.uk/contact\n[link-34] link \"Terms and conditions\" https://www.gov.uk/help/terms-conditions\n[link-35] link \"Rhestr o Wasanaethau Cymraeg\" https://www.gov.uk/cymraeg\n[link-36] link \"Government Digital Service\" https://www.gov.uk/government/organisations/government-digital-service\n[link-37] link \"Open Government Licence v3.0\" https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/\n[link-38] link \"© Crown copyright\" https://www.nationalarchives.gov.uk/information-management/re-using-public-sector-information/uk-government-licensing-framework/crown-copyright/\nText further down the page, not on screen yet (number, text):\n[text-1] \"Passport for people born on or before 2 September 1929 | Free | Free\"\n[text-2] \"You’ll pay a different fee if you apply for a passport from another country.\"\n[text-3] \"If you need to get a passport urgently, it costs more.\"\n[text-4] \"You can pay extra to use the Post Office’s Check and Send service.\"\n[text-5] \"How to pay\"\n[text-6] \"Depending on how you apply, you can pay by:\"\n[text-7] \"debit or credit card\"\n[text-8] \"cash\"\n[text-9] \"cheque or postal order (payable to the correct organisation, and write the application barcode numbers on the back)\"\n[text-10] \" | Debit or credit card accepted | Cheque or postal order | Cash\"\n[text-11] \"Apply using the Post Office Passport Check and Send service | Yes | Only postal order - payable to ‘Post Office Ltd’ | Yes\"\n[text-12] \"Apply by post | Yes - complete the form in the application pack | Cheque or postal order payable to ‘HM Passport Office’ | No\"\n[text-13] \"Apply online | Yes | No | No\"\n[text-14] \"Fees for returning supporting documents\"\n[text-15] \"Your supporting documents (for example birth certificates) will be sent back to you free of charge by normal second class post.\"\n[text-16] \"It usually costs an extra £5 if you want your documents sent back by secure delivery. Choose this option on your application if you want to use it.\"\n[text-17] \"If you were born on or before 2 September 1929\"\n[text-18] \"You can get or renew a British passport for free if you’re a British national and you were born on or before 2 September 1929. You can also use the Post Office Check and Send service for free and get free secure delivery.\"\n[text-19] \"You must pay a fee if you need to get a passport urgently or if you want a frequent traveller passport (54 pages instead of 34).\"\n[text-20] \"Explore the topic\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"Getting your first adult passport\" https://www.gov.uk/apply-first-adult-passport",
+          "click-2": "click [2] link \"Get a passport urgently\" https://www.gov.uk/get-a-passport-urgently",
+          "click-3": "click [3] link \"Passport Check and Send service\" https://www.gov.uk/how-the-post-office-check-and-send-service-works",
+          "click-4": "click [4] link \"Renew or replace your adult passport\" https://www.gov.uk/renew-adult-passport",
+          "click-5": "click [5] link \"Get a passport for your child\" https://www.gov.uk/get-a-child-passport",
+          "click-6": "click [6] link \"Countersigning passport applications and photos\" https://www.gov.uk/countersigning-passport-applications",
+          "open-1": "open result link \"View cookies\" https://www.gov.uk/help/cookies",
+          "open-2": "open result link \"Go to the GOV.UK homepage GOV.UK\" https://www.gov.uk/",
+          "open-3": "open result link \"Passports, travel and living abroad\" https://www.gov.uk/browse/abroad",
+          "open-4": "open result link \"Passports\" https://www.gov.uk/browse/abroad/passports",
+          "open-5": "open result link \"from another country\" https://www.gov.uk/overseas-passports",
+          "open-6": "open result link \"get or renew a British passport\" https://www.gov.uk/apply-renew-passport",
+          "open-7": "open result link \"Benefits\" https://www.gov.uk/browse/benefits",
+          "open-8": "open result link \"Births, death, marriages and care\" https://www.gov.uk/browse/births-deaths-marriages",
+          "open-9": "open result link \"Business and self-employed\" https://www.gov.uk/browse/business",
+          "open-10": "open result link \"Childcare and parenting\" https://www.gov.uk/browse/childcare-parenting",
+          "open-11": "open result link \"Citizenship and living in the UK\" https://www.gov.uk/browse/citizenship",
+          "open-12": "open result link \"Crime, justice and the law\" https://www.gov.uk/browse/justice",
+          "open-13": "open result link \"Disabled people\" https://www.gov.uk/browse/disabilities",
+          "open-14": "open result link \"Driving and transport\" https://www.gov.uk/browse/driving",
+          "open-15": "open result link \"Education and learning\" https://www.gov.uk/browse/education",
+          "open-16": "open result link \"Employing people\" https://www.gov.uk/browse/employing-people",
+          "open-17": "open result link \"Environment and countryside\" https://www.gov.uk/browse/environment-countryside",
+          "open-18": "open result link \"Housing and local services\" https://www.gov.uk/browse/housing-local-services",
+          "open-19": "open result link \"Money and tax\" https://www.gov.uk/browse/tax",
+          "open-20": "open result link \"Visas and immigration\" https://www.gov.uk/browse/visas-immigration",
+          "open-21": "open result link \"Working, jobs and pensions\" https://www.gov.uk/browse/working",
+          "open-22": "open result link \"Departments\" https://www.gov.uk/government/organisations",
+          "open-23": "open result link \"News\" https://www.gov.uk/search/news-and-communications",
+          "open-24": "open result link \"Guidance and regulation\" https://www.gov.uk/search/guidance-and-regulation",
+          "open-25": "open result link \"Research and statistics\" https://www.gov.uk/search/research-and-statistics",
+          "open-26": "open result link \"Policy papers and consultations\" https://www.gov.uk/search/policy-papers-and-consultations",
+          "open-27": "open result link \"Transparency\" https://www.gov.uk/search/transparency-and-freedom-of-information-releases",
+          "open-28": "open result link \"How government works\" https://www.gov.uk/government/how-government-works",
+          "open-29": "open result link \"Get involved\" https://www.gov.uk/government/get-involved",
+          "open-30": "open result link \"Help\" https://www.gov.uk/help",
+          "open-31": "open result link \"Privacy\" https://www.gov.uk/help/privacy-notice",
+          "open-32": "open result link \"Accessibility statement\" https://www.gov.uk/help/accessibility-statement",
+          "open-33": "open result link \"Contact\" https://www.gov.uk/contact",
+          "open-34": "open result link \"Terms and conditions\" https://www.gov.uk/help/terms-conditions",
+          "open-35": "open result link \"Rhestr o Wasanaethau Cymraeg\" https://www.gov.uk/cymraeg",
+          "open-36": "open result link \"Government Digital Service\" https://www.gov.uk/government/organisations/government-digital-service",
+          "open-37": "open result link \"Open Government Licence v3.0\" https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+          "open-38": "open result link \"© Crown copyright\" https://www.nationalarchives.gov.uk/information-management/re-using-public-sector-information/uk-government-licensing-framework/crown-copyright/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] \"Passport for people born on or before 2 September 1929 | Free | Free\" is in view",
+          "show-2": "scroll until [text-2] \"You’ll pay a different fee if you apply for a passport from another country.\" is in view",
+          "show-3": "scroll until [text-3] \"If you need to get a passport urgently, it costs more.\" is in view",
+          "show-4": "scroll until [text-4] \"You can pay extra to use the Post Office’s Check and Send service.\" is in view",
+          "show-5": "scroll until [text-5] \"How to pay\" is in view",
+          "show-6": "scroll until [text-6] \"Depending on how you apply, you can pay by:\" is in view",
+          "show-7": "scroll until [text-7] \"debit or credit card\" is in view",
+          "show-8": "scroll until [text-8] \"cash\" is in view",
+          "show-9": "scroll until [text-9] \"cheque or postal order (payable to the correct organisation, and write the appli\" is in view",
+          "show-10": "scroll until [text-10] \" | Debit or credit card accepted | Cheque or postal order | Cash\" is in view",
+          "show-11": "scroll until [text-11] \"Apply using the Post Office Passport Check and Send service | Yes | Only postal \" is in view",
+          "show-12": "scroll until [text-12] \"Apply by post | Yes - complete the form in the application pack | Cheque or post\" is in view",
+          "show-13": "scroll until [text-13] \"Apply online | Yes | No | No\" is in view",
+          "show-14": "scroll until [text-14] \"Fees for returning supporting documents\" is in view",
+          "show-15": "scroll until [text-15] \"Your supporting documents (for example birth certificates) will be sent back to \" is in view",
+          "show-16": "scroll until [text-16] \"It usually costs an extra £5 if you want your documents sent back by secure deli\" is in view",
+          "show-17": "scroll until [text-17] \"If you were born on or before 2 September 1929\" is in view",
+          "show-18": "scroll until [text-18] \"You can get or renew a British passport for free if you’re a British national an\" is in view",
+          "show-19": "scroll until [text-19] \"You must pay a fee if you need to get a passport urgently or if you want a frequ\" is in view",
+          "show-20": "scroll until [text-20] \"Explore the topic\" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "how",
+          "s0-1": "how much",
+          "s0-2": "how much is",
+          "s0-3": "how much is it",
+          "s0-4": "how much is it to",
+          "s0-5": "how much is it to renew",
+          "s0-6": "how much is it to renew online",
+          "s1-1": "much",
+          "s1-2": "much is",
+          "s1-3": "much is it",
+          "s1-4": "much is it to",
+          "s1-5": "much is it to renew",
+          "s1-6": "much is it to renew online",
+          "s2-2": "is",
+          "s2-3": "is it",
+          "s2-4": "is it to",
+          "s2-5": "is it to renew",
+          "s2-6": "is it to renew online",
+          "s3-3": "it",
+          "s3-4": "it to",
+          "s3-5": "it to renew",
+          "s3-6": "it to renew online",
+          "s4-4": "to",
+          "s4-5": "to renew",
+          "s4-6": "to renew online",
+          "s5-5": "renew",
+          "s5-6": "renew online",
+          "s6-6": "online"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on gov.uk that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on gov.uk but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"Passport fees\"",
+          "view-2": "\"How much your passport costs depends on how you apply for it.\"",
+          "view-3": "\"You cannot get a refund if you cancel your application or you’re not entitled to a passport.\"",
+          "view-4": "\" | Apply online | Apply by paper form\"",
+          "view-5": "\"Adult (16 and over) standard 34-page passport | £102 | £115.50\"",
+          "view-6": "\"Adult (16 and over) 54-page frequent traveller passport | £116 | £129.50\"",
+          "view-7": "\"Child (under 16) standard 34-page passport | £66.50 | £80\"",
+          "view-8": "\"Child (under 16) 54-page frequent traveller passport | £80.50 | £94\"",
+          "view-9": "\"Related content\""
+        }
+      }
+    }
+  }
+}
