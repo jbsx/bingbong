@@ -87,7 +87,15 @@ export function App() {
   // on the pane is that: the Timer and a Stop are heard and performed with
   // the rest state left up. (Wake-monitoring on/off transitions are not
   // activity; pinging on those would cancel the boot-into-idle state.)
-  const { ping } = idle
+  const { ping, idleNow } = idle
+  // The Idle Screen is reached from every view: the Toolbar's home button
+  // and the idle shortcut leave Settings or the Weight page for it, as the
+  // timeout does over the browsing pane.
+  const showIdleNow = useCallback(() => {
+    setView('dashboard')
+    idleNow()
+  }, [idleNow])
+  useEffect(() => window.bingbong.idle.onEnter(() => setView('dashboard')), [])
   useEffect(() => {
     const unsubEvent = window.bingbong.assistant.onEvent((event) => {
       if (!idleUp.current || wakesIdleScreen(event)) ping()
@@ -167,6 +175,7 @@ export function App() {
             setWeightPerson(person)
             setView('weight')
           }}
+          onOpenSettings={() => setView('settings')}
           status={status}
           voice={voice}
           popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
@@ -215,6 +224,17 @@ export function App() {
             (ADR 0012); settings keeps capsule + controls. */}
         {view === 'dashboard' ? <BrowserNav /> : null}
         <div className="toolbar-actions">
+          {/* On the click, not the pointer going down: the pointer-down is
+              input, and input wakes the screen this button just showed. */}
+          <button
+            type="button"
+            className="chrome-button idle-toggle"
+            aria-label="Show the idle screen"
+            title="Idle screen (Ctrl+Shift+L)"
+            onClick={showIdleNow}
+          >
+            <ChromeIcon name="home" />
+          </button>
           <button
             type="button"
             className="chrome-button feed-panel-toggle"

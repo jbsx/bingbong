@@ -23,6 +23,7 @@ import { WeatherColumn } from './IdleWeather'
 import { StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import { GlobeIcon } from './WeatherIcon'
+import { ChromeIcon } from './ChromeIcon'
 import { dateLabel } from './dateLabel'
 
 /**
@@ -456,6 +457,7 @@ export function IdleScreen({
   weighIns = null,
   weight = defaultWeightSettings(),
   onOpenWeight = () => undefined,
+  onOpenSettings = () => undefined,
   status,
   voice,
   popup = null,
@@ -476,6 +478,8 @@ export function IdleScreen({
   weight?: WeightSettings
   /** A Person's row on the Weight card was tapped: show the Weight page on them. */
   onOpenWeight?: (person: string) => void
+  /** The settings button in the corner was tapped: show the settings page. */
+  onOpenSettings?: () => void
   status: OrbStatus
   voice: IdleVoice
   /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
@@ -570,6 +574,19 @@ export function IdleScreen({
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />
       <IdleStatus status={status} />
+      {/* Settings, in the corner and quiet: on the pointer going down, as
+          the other idle controls are, before the same tap wakes the screen. */}
+      <button
+        type="button"
+        className="idle-settings"
+        aria-label="Open settings"
+        onPointerDown={onOpenSettings}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') onOpenSettings()
+        }}
+      >
+        <ChromeIcon name="settings" size={32} />
+      </button>
       <div className="idle-col idle-col--left">
         {showWeather ? (
           <div className="idle-home" data-card="weather" data-form={weather.status === 'ready' ? 'full' : 'small'}>

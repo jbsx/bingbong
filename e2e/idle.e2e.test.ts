@@ -249,4 +249,35 @@ describe('idle screen e2e: the Last Page and resume', () => {
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     }
   })
+
+  it('opens settings from the idle screen, and the Toolbar’s home button or the shortcut shows the idle screen from every other view', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    const shown = (selector: string): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('${selector}')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    const idleShown = async (): Promise<boolean> => (await shown('.idle-screen')) && !(await harness.dashboardEval<boolean>(`!!document.querySelector('.toolbar')`))
+
+    // From the browsing pane.
+    await shown('.url-input')
+    await harness.clickDashboardElement('.idle-toggle')
+    expect(await idleShown()).toBe(true)
+
+    // The idle screen's corner opens settings; the home button comes back.
+    await harness.clickDashboardElement('.idle-settings')
+    await shown('.settings-page[aria-label="settings"]')
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+    await harness.clickDashboardElement('.idle-toggle')
+    expect(await idleShown()).toBe(true)
+
+    // From settings, the shortcut too.
+    await harness.clickDashboardElement('.idle-settings')
+    await shown('.settings-page[aria-label="settings"]')
+    await harness.pressKey('dashboard', IDLE_SHORTCUT)
+    expect(await idleShown()).toBe(true)
+
+    // From the Weight page.
+    await harness.clickDashboardElement('.weight-card-row[data-person="jaish"]')
+    await shown('.weight-page')
+    await harness.clickDashboardElement('.idle-toggle')
+    expect(await idleShown()).toBe(true)
+  })
 })

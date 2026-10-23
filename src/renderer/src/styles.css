@@ -2005,6 +2005,32 @@ details[open] > .settings-summary::before {
   -webkit-app-region: drag;
 }
 
+/* The way to settings from the Idle Screen: a quiet glyph in the top-right
+   corner, out of the layout, above the drag strip. */
+.idle-settings {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.idle-settings:hover,
+.idle-settings:focus-visible {
+  background: var(--raise);
+  color: var(--fg);
+}
+
 /* The capsule over the Idle Screen while Bing Bong works on a Command that
    needs no pane: floats at the top, out of the layout, so nothing shifts. */
 .idle-status {
