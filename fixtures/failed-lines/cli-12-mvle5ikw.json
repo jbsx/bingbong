@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-12-mvle5ikw",
+  "transcript": "a little louder",
+  "at": 1792785424849,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'a little louder' typed at 14% (same run): volume-10 at 0.99, volumeTarget set 24 (up, right); the page then read 10%, lower than before",
+  "meant": "Raise the volume a step above 14%",
+  "log": "decision-1792785243610-1.jsonl",
+  "claimedBy": "#408"
+}

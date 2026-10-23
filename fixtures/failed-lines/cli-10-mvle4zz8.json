@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-10-mvle4zz8",
+  "transcript": "turn it down a bit more",
+  "at": 1792785401679,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'turn it down a bit more' typed on the watch page at 43% (yield rerun 2026-10-23, main 552774da, Mammoth): Jev chose volume-10 at 0.99, volumeTarget read UP from 'more' and set to 53; the page then read 23%, so the level set and the level read are on different scales",
+  "meant": "Lower the volume a step below 43%",
+  "log": "decision-1792785243610-1.jsonl",
+  "claimedBy": "#408"
+}
