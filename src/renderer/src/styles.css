@@ -2112,6 +2112,13 @@ details[open] > .settings-summary::before {
   color: var(--fg3);
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition: opacity 200ms ease;
+}
+
+/* Out of sight while the cursor rests (useCursorRest), till it moves; still
+   there to a tap, so a touch in the corner opens settings. */
+.cursor-hidden .idle-settings {
+  opacity: 0;
 }
 
 .idle-settings:hover,

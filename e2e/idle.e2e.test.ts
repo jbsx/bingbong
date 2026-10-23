@@ -122,16 +122,18 @@ describe('idle screen e2e: the Last Page and resume', () => {
     expect(card.trendDots).toBe(30)
   })
 
-  it('hides the cursor once it lies still over the idle screen, and a move brings it back without waking it', async () => {
-    const cursor = () => harness.dashboardEval<{ hidden: boolean; card: string; up: boolean }>(`({
+  it('hides the cursor and the settings glyph once it lies still over the idle screen, and a move brings them back without waking it', async () => {
+    const cursor = () => harness.dashboardEval<{ hidden: boolean; card: string; cog: string; up: boolean }>(`({
       hidden: document.documentElement.classList.contains('cursor-hidden'),
       card: getComputedStyle(document.querySelector('.idle-cal')).cursor,
+      cog: getComputedStyle(document.querySelector('.idle-settings')).opacity,
       up: !!document.querySelector('.idle-screen'),
     })`)
     // Still since boot: hidden over everything, a card's own pointer too.
     await waitFor(async () => ((await cursor()).hidden ? true : undefined), { timeoutMs: 8000, intervalMs: 200 })
     expect((await cursor()).card).toBe('none')
-    // A move shows it at once and leaves the screen up.
+    await waitFor(async () => ((await cursor()).cog === '0' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    // A move shows it, and the glyph, at once and leaves the screen up.
     await harness.moveDashboardMouse(300, 300)
     await harness.moveDashboardMouse(320, 310)
     const moved = await waitFor(async () => {
@@ -140,6 +142,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
     }, { timeoutMs: 2000, intervalMs: 50 })
     expect(moved.card).not.toBe('none')
     expect(moved.up).toBe(true)
+    await waitFor(async () => ((await cursor()).cog === '1' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
     // Still again: hidden again.
     await waitFor(async () => ((await cursor()).hidden ? true : undefined), { timeoutMs: 8000, intervalMs: 200 })
   })
