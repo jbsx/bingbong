@@ -7,5 +7,7 @@
   "happened": "Typed on the YouTube watch page (CLI under Xvfb, main 17f82618, Mammoth): hop 0 none 0.99, the Where Ask none 0.97, 'not a command' — the card carries nothing the appliance knows (the time, today's weather, Now Playing, the timer) and no verb that says one, so no option could be right. Same as turn-mvi2opue-8 (2026-10-21 spoken, none 0.97)",
   "meant": "Say the time",
   "log": "decision-1792755258819-1.jsonl",
-  "claimedBy": "#402"
+  "claimedBy": "#402",
+  "fixedBy": "7487011e",
+  "case": "cli-2-mvkw7388"
 }

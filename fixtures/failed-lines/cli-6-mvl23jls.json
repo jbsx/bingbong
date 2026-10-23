@@ -1,0 +1,12 @@
+{
+  "turnId": "cli-6-mvl23jls",
+  "transcript": "what song is this",
+  "at": 1792765177488,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "On a YouTube watch page opened by navigate, the video playing, \"what song is this\" read say_playing and said \"Nothing is playing.\": the song fact was the Player's Now Playing alone, and the Player never started this video.",
+  "meant": "Say the song on the page: \"Playing “YE - HIGHS AND LOWS”, 0:07 of 1:51.\"",
+  "log": "decision-1792765123692-1.jsonl",
+  "claimedBy": "#402",
+  "fixedBy": "7487011e"
+}
