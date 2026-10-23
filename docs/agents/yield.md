@@ -19,8 +19,14 @@ Ruled by the owner on 2026-10-23.
 - **Common**: frequency over a normal day of intended use. A
   once-per-session scenario counts once per session.
 - **Distance from ideal**: how far the scenario is from done, right, one
-  hop, within the reaction, the right thing said. Speed counts: a scenario
-  that is right but slow has distance.
+  hop, within the reaction, the right thing said. A scenario in state
+  `works` has zero distance and zero yield, however often it happens.
+  Speed counts only when it is missed: a scenario over the reaction, or
+  taking more hops than it needs, is `slow` and carries distance. Nothing
+  is worked on for being faster than the reaction. So the list never
+  parks on the most frequent scenario; it parks on the most frequent
+  scenario that is not yet right, and when every scenario is `works` the
+  answer to "what next" is that nothing is broken on a normal day.
 - **Yield**: common × distance from ideal. Effort breaks ties only; it is
   never a factor, or every ranking collapses back to small fixes.
 - **Missing**: a daily scenario the app has no road for. It is on the list
@@ -31,7 +37,7 @@ Ruled by the owner on 2026-10-23.
 
 ## States
 
-Every row carries one state and the dated evidence that set it:
+Every scenario carries one state and the dated evidence that set it:
 
 | state | meaning |
 |---|---|
@@ -51,9 +57,10 @@ reproduction is `undated`.
 
 ## The list
 
-Ordered by the owner. Per-day counts are the agent's first guess
-(2026-10-23) until the owner reorders; the owner's order wins over any
-count.
+Each line of the table is one scenario; its number is its position, which
+the owner sets. "Scenario 3" means the third line. Per-day counts are the
+agent's first guess (2026-10-23) until the owner reorders; the owner's
+order wins over any count.
 
 | # | Scenario, on a normal day | per day | state | evidence |
 |---|---|---|---|---|
@@ -75,22 +82,22 @@ count.
 Every "work on this next", every triage order and every audit order
 carries this, in this order:
 
-1. **Scenario**: which row, by number and name.
+1. **Scenario**: which one, by number and name.
 2. **Place**: where it sits on the list and the per-day count behind it.
-3. **State**: the row's state, with the dated evidence and the ledger line
+3. **State**: the scenario's state, with the dated evidence and the ledger line
    ids that show how it breaks.
 4. **Change**: what the one change does to the scenario's state and to the
-   other rows it touches.
+   other scenarios it touches.
 
 An item that cannot be stated this way is not a yield claim. Ledger line
 counts, log frequencies and stage totals may appear under 3, never under 2.
 
 ## Maintenance
 
-- The owner orders the list and strikes rows. Agents never reorder it.
-- An agent that meets a daily scenario not on the list adds a row at the
+- The owner orders the list and strikes scenarios. Agents never reorder it.
+- An agent that meets a daily scenario not on the list adds it at the
   end, state `undated`, and says so in its report.
 - A state changes only with new dated evidence: a reproduction, a ledger
   line, a corpus case. The old evidence is replaced, not appended.
-- A fix issue names the row it serves in its body, beside the ledger lines
-  it claims (`docs/agents/bugs.md`).
+- A fix issue names the scenario it serves in its body, beside the ledger
+  lines it claims (`docs/agents/bugs.md`).
