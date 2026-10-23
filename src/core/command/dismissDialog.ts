@@ -50,7 +50,8 @@ function isWayThrough(label: string): boolean {
 /** How Jev answered the dismiss Choice (the `dismiss` question): a dialog control by ref, or Escape, with how sure it was. */
 export interface DismissChoice {
   readonly choice: { readonly ref: number } | 'escape'
-  readonly confidence: number
+  /** The chosen label's probability, the number the Choice bar reads (#403). */
+  readonly probability: number
 }
 
 /** Whether the words are a dismiss phrase. */
@@ -91,13 +92,13 @@ export function dismissalLadder(page: CommandPage, chosen: DismissChoice | null 
   if (rule?.style === 'reject') rungs.push(rule.command)
   // 2. Jev's sure choice; then the consent policy's accept, which a reject Jev found goes before (privacy first).
   const jev = chosen === null ? null : chosenCommand(chosen, controls)
-  if (jev !== null && chosen!.confidence >= sureAbove) rungs.push(jev)
+  if (jev !== null && chosen!.probability >= sureAbove) rungs.push(jev)
   if (rule?.style === 'accept') rungs.push(rule.command)
   // 3. A close by its label.
   const byLabel = controls.find((control) => CLOSE_GLYPHS.has(control.label.trim()) || CLOSE_LABEL_RE.test(normalizeWords(control.label)))
   if (byLabel !== undefined) rungs.push(click(byLabel))
   // 4. Jev's unsure choice.
-  if (jev !== null && chosen!.confidence < sureAbove) rungs.push(jev)
+  if (jev !== null && chosen!.probability < sureAbove) rungs.push(jev)
   // 5. Escape.
   rungs.push(ESCAPE)
   return dedupe(rungs.filter((rung): rung is Command => rung !== null))

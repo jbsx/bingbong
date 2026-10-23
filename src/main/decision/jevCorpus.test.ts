@@ -92,6 +92,37 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('FAIL  surer\n  target=ref-27>=0.90  chose ref-27 0.85')
   })
 
+  it('judges a floor on the chosen label\'s probability (#403), the number the runner\'s bar reads, never the confidence a vendor sends beside it', async () => {
+    saveCase('sure', 'state-a', [{ question: 'target', label: 'ref-27', atLeast: 0.7 }])
+    const underConfident: DecisionModel = {
+      model: 'jev-fake',
+      ask: async () => ({
+        status: 'answered',
+        answers: {
+          verb: { type: 'choice', choice: 'click', confidence: 0.9, probabilities: { open: 0.1, click: 0.9 } },
+          target: { type: 'choice', choice: 'ref-27', confidence: 0.65, probabilities: { none: 0.03, 'ref-21': 0.2, 'ref-27': 0.77 } },
+        } as never,
+        latencyMs: 1,
+        model: 'jev-fake',
+      }),
+    }
+    const replay = await replayCorpus(dir, { env: {}, model: underConfident })
+    expect(replay.report).toContain('PASS  sure\n  target=ref-27>=0.70  chose ref-27 0.77')
+  })
+
+  it('reads an exclusion at a floor (#403): the label must not be chosen at that probability or more — an unsure pick of it passes, as the runner would not act on it', async () => {
+    saveCase('sure-pinned', 'state-a', [{ question: 'target', not: 'ref-21', atLeast: 0.7 }])
+    saveCase('unsure-pinned', 'state-b', [{ question: 'target', not: 'ref-21', atLeast: 0.7 }])
+    saveCase('latest', 'state-c', [{ question: 'target', not: 'ref-21', atLeast: 0.7 }])
+    const replay = await replayCorpus(dir, {
+      env: {},
+      model: new FakeJev({ 'state-a': probabilities, 'state-b': { none: 0.05, 'ref-21': 0.6, 'ref-27': 0.35 }, 'state-c': { none: 0.05, 'ref-21': 0.1, 'ref-27': 0.85 } }),
+    })
+    expect(replay.report).toContain('FAIL  sure-pinned\n  target!=ref-21>=0.70  chose ref-21 0.70')
+    expect(replay.report).toContain('PASS  unsure-pinned\n  target!=ref-21>=0.70  chose ref-21 0.60')
+    expect(replay.report).toContain('PASS  latest\n  target!=ref-21>=0.70  chose ref-27 0.85 · ref-21 0.10')
+  })
+
   it('reads a ceiling (#367): the question\'s top answer, whatever it is, must be chosen under that probability — an unsure answer a sure one outvotes', async () => {
     saveCase('unsure', 'state-a', [{ question: 'verb', below: 0.95 }])
     saveCase('sure', 'state-a', [{ question: 'verb', below: 0.9 }])
@@ -386,8 +417,8 @@ describe('growing the corpus from the logs', () => {
     writeLogs()
     expect(caseFromLog(logs, 't1', ['target=ref-99'], corpus)).toEqual({ error: '"target" offers no label "ref-99"' })
     expect(caseFromLog(logs, 't1', ['colour=red'], corpus)).toEqual({ error: 'no question "colour" (asked: verb, target)' })
-    expect(caseFromLog(logs, 't1', ['target'], corpus)).toEqual({ error: '"target" is not <question>=<label>[>=<probability>], <question>!=<label> or <question><<probability>' })
-    expect(caseFromLog(logs, 't1', ['target=ref-27>=1.5'], corpus)).toEqual({ error: '"target=ref-27>=1.5" is not <question>=<label>[>=<probability>], <question>!=<label> or <question><<probability>' })
+    expect(caseFromLog(logs, 't1', ['target'], corpus)).toEqual({ error: '"target" is not <question>=<label>[>=<probability>], <question>!=<label>[>=<probability>] or <question><<probability>' })
+    expect(caseFromLog(logs, 't1', ['target=ref-27>=1.5'], corpus)).toEqual({ error: '"target=ref-27>=1.5" is not <question>=<label>[>=<probability>], <question>!=<label>[>=<probability>] or <question><<probability>' })
     expect(caseFromLog(logs, 't1', [], corpus)).toEqual({ error: 'no --expect given' })
     expect(caseFromLog(logs, 't3', ['target=ref-27'], corpus)).toEqual({ error: `no ask recorded for t3 in ${logs}` })
     expect(readCorpus(corpus)).toEqual([])

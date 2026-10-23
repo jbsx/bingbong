@@ -4,7 +4,8 @@
 // the answer each question should have got, written as a case in the Jev
 // corpus for `pnpm jev:replay`. An expectation is a Choice label
 // (`action=click-27`), a label at a floor (`outcome=yes>=0.7`, #366), a
-// label it must not be (`action!=click-21`) or a ceiling on whatever it
+// label it must not be (`action!=click-21`) or not at a floor
+// (`outcome!=yes>=0.7`, #403), or a ceiling on whatever it
 // chooses (`outcome<0.7`); each is checked against the ask's own
 // questions before anything is written.
 // The asks carry page text from real browsing: a case is committed only
@@ -19,7 +20,7 @@
 import { JEV_CORPUS_DIR, caseFromLog } from '../src/main/decision/jevCorpus.ts'
 import { resolvePerfLogsDir } from '../src/main/perf/collectPerfRecords.ts'
 
-const USAGE = 'usage: pnpm jev:case <turnId> --expect <question>=<label>[>=<probability>] [<question>!=<label> <question><<probability> …] [--logs <dir>] [--corpus <dir>]'
+const USAGE = 'usage: pnpm jev:case <turnId> --expect <question>=<label>[>=<probability>] [<question>!=<label>[>=<probability>] <question><<probability> …] [--logs <dir>] [--corpus <dir>]'
 
 const positional: string[] = []
 const expectations: string[] = []

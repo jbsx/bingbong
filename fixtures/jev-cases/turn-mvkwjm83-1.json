@@ -150,9 +150,9 @@
       },
       "outcome": {
         "type": "choice",
-        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
         "options": {
-          "yes": "done: the page shows it, or the action they asked for has happened",
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
           "in_the_way": "a pop-up or prompt covers the page now",
           "not_yet": "not done: more to do, nothing covering the page"
         }

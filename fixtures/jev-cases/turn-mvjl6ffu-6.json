@@ -1,0 +1,166 @@
+{
+  "turnId": "turn-mvjl6ffu-6",
+  "transcript": "show me how to pretty print",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792676291772,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"show me how to pretty print\"\nThis is step 4 of the task. Done so far: type \"pretty print\" into \"Quick search Quick search\" (\"Quick search Quick search\" went from no value to value=\"pretty print\"); click \"Go\" (opened docs.python.org/3/search.html?q=pretty+print); click \"pprint — Data pretty printer\" (opened docs.python.org/3/library/pprint.html)\nPages visited: https://docs.python.org/3/library/json.html https://docs.python.org/3/search.html?q=pretty+print https://docs.python.org/3/library/pprint.html\nPage: https://docs.python.org/3/library/pprint.html — \"pprint — Data pretty printer — Python 3.15.1 documentation\"\nText in view: \"dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3.0 2.7 2.6\" · \"3.15.1 Documentation »\" · \"The Python standard library »\" · \"Data Types »\" · \"Source code: Lib/pprint.py\" · \"The pprint module provides a capability to “pretty-print” arbitrary Python data structures in a form which can be used as input to the interpreter. If the formatted structures include objects which are not fundamental Python types, the representation may not be loadable. This may be the case if obje\" · \"The formatted representation keeps objects on a single line if it can, and breaks them onto multiple lines if they don’t fit within the allowed width, adjustable by the width parameter defaulting to 80 characters.\" · \"Changed in version 3.9: Added support for pretty-printing types.SimpleNamespace.\" · \"Changed in version 3.10: Added support for pretty-printing dataclasses.dataclass.\" · \"Functions\" · \"pprint.pp(object, stream=None, indent=1, width=80, depth=None, *, compact=False, expand=False, sort_dicts=False, underscore_numbers=False): Prints the formatted representation of object, followed by a newline. This function may be used in the interactive interpreter instead of the print() function f\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] button \"\" role=LabelText\n[2] link \"Python logo\" https://www.python.org/\n[3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false\n[4] input[search] \"Quick search Quick search\"\n[5] button \"Go\"\n[6] link \"3.15.1 Documentation\" https://docs.python.org/3/index.html\n[7] link \"The Python standard library\" https://docs.python.org/3/library/index.html\n[8] link \"Data Types\" https://docs.python.org/3/library/datatypes.html keyshortcuts=\"Alt+U\"\n[9] link \"pprint — Data pretty printer\"\n[10] link \"Lib/pprint.py\" https://github.com/python/cpython/tree/3.15/Lib/pprint.py\n[11] link \"types.SimpleNamespace types.SimpleNamespace\" https://docs.python.org/3/library/types.html#types.SimpleNamespace\n[12] link \"dataclasses.dataclass dataclasses.dataclass\" https://docs.python.org/3/library/dataclasses.html#dataclasses.dataclass\n[13] link \"print() print\" https://docs.python.org/3/builtins/functions.html#print\nLinks further down the page (name, address):\n[link-1] link \"Table of Contents\" https://docs.python.org/3/contents.html\n[link-2] link \"copy — Shallow and deep copy operations previous chapter\" https://docs.python.org/3/library/copy.html\n[link-3] link \"reprlib — Alternate repr() implementation next chapter\" https://docs.python.org/3/library/reprlib.html\n[link-4] link \"Report a bug\" https://docs.python.org/3/bugs.html\n[link-5] link \"Improve this page\" https://docs.python.org/3/improve-page.html?pagetitle=pprint+%E2%80%94+Data+pretty+printer&pageurl=https%3A%2F%2Fdocs.python.org%2F3%2Flibrary%2Fpprint.html&pagesource=library%2Fpprint.rst\n[link-6] link \"Show source\" https://github.com/python/cpython/blob/3.15/Doc/library/pprint.rst?plain=1\n[link-7] link \"file-like object\" https://docs.python.org/3/glossary.html#term-file-like-object\n[link-8] link \"sys.stdout sys.stdout\" https://docs.python.org/3/library/sys.html#sys.stdout\n[link-9] link \"RecursionError RecursionError\" https://docs.python.org/3/builtins/exceptions.html#RecursionError\n[link-10] link \"dict dict\" https://docs.python.org/3/builtins/stdtypes.html#dict\n[link-11] link \"PyPI\" https://pypi.org/\n[link-12] link \"Copyright\" https://docs.python.org/3/copyright.html\n[link-13] link \"History and License\" https://docs.python.org/license.html\n[link-14] link \"Please donate.\" https://www.python.org/psf/donations/\n[link-15] link \"Found a bug\" https://docs.python.org/bugs.html\n[link-16] link \"Sphinx\" https://www.sphinx-doc.org/",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] button \"\" role=LabelText",
+          "click-2": "click [2] link \"Python logo\" https://www.python.org/",
+          "type-3": "type the words into [3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false",
+          "click-3": "click [3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false",
+          "type-4": "type the words into [4] input[search] \"Quick search Quick search\"",
+          "click-4": "click [4] input[search] \"Quick search Quick search\"",
+          "click-5": "click [5] button \"Go\"",
+          "click-6": "click [6] link \"3.15.1 Documentation\" https://docs.python.org/3/index.html",
+          "click-7": "click [7] link \"The Python standard library\" https://docs.python.org/3/library/index.html",
+          "click-8": "click [8] link \"Data Types\" https://docs.python.org/3/library/datatypes.html keyshortcuts=\"Alt+U\"",
+          "click-9": "click [9] link \"pprint — Data pretty printer\"",
+          "click-10": "click [10] link \"Lib/pprint.py\" https://github.com/python/cpython/tree/3.15/Lib/pprint.py",
+          "click-11": "click [11] link \"types.SimpleNamespace types.SimpleNamespace\" https://docs.python.org/3/library/types.html#types.SimpleNamespace",
+          "click-12": "click [12] link \"dataclasses.dataclass dataclasses.dataclass\" https://docs.python.org/3/library/dataclasses.html#dataclasses.dataclass",
+          "click-13": "click [13] link \"print() print\" https://docs.python.org/3/builtins/functions.html#print",
+          "open-1": "open result link \"Table of Contents\" https://docs.python.org/3/contents.html",
+          "open-2": "open result link \"copy — Shallow and deep copy operations previous chapter\" https://docs.python.org/3/library/copy.html",
+          "open-3": "open result link \"reprlib — Alternate repr() implementation next chapter\" https://docs.python.org/3/library/reprlib.html",
+          "open-4": "open result link \"Report a bug\" https://docs.python.org/3/bugs.html",
+          "open-5": "open result link \"Improve this page\" https://docs.python.org/3/improve-page.html?pagetitle=pprint+%E2%80%94+Data+pretty+printer&pageurl=https%3A%2F%2Fdocs.python.org%2F3%2Flibrary%2Fpprint.html&pagesource=library%2Fpprint.rst",
+          "open-6": "open result link \"Show source\" https://github.com/python/cpython/blob/3.15/Doc/library/pprint.rst?plain=1",
+          "open-7": "open result link \"file-like object\" https://docs.python.org/3/glossary.html#term-file-like-object",
+          "open-8": "open result link \"sys.stdout sys.stdout\" https://docs.python.org/3/library/sys.html#sys.stdout",
+          "open-9": "open result link \"RecursionError RecursionError\" https://docs.python.org/3/builtins/exceptions.html#RecursionError",
+          "open-10": "open result link \"dict dict\" https://docs.python.org/3/builtins/stdtypes.html#dict",
+          "open-11": "open result link \"PyPI\" https://pypi.org/",
+          "open-12": "open result link \"Copyright\" https://docs.python.org/3/copyright.html",
+          "open-13": "open result link \"History and License\" https://docs.python.org/license.html",
+          "open-14": "open result link \"Please donate.\" https://www.python.org/psf/donations/",
+          "open-15": "open result link \"Found a bug\" https://docs.python.org/bugs.html",
+          "open-16": "open result link \"Sphinx\" https://www.sphinx-doc.org/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 14:38, Thursday 22 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "show",
+          "s0-1": "show me",
+          "s0-2": "show me how",
+          "s0-3": "show me how to",
+          "s0-4": "show me how to pretty",
+          "s0-5": "show me how to pretty print",
+          "s1-1": "me",
+          "s1-2": "me how",
+          "s1-3": "me how to",
+          "s1-4": "me how to pretty",
+          "s1-5": "me how to pretty print",
+          "s2-2": "how",
+          "s2-3": "how to",
+          "s2-4": "how to pretty",
+          "s2-5": "how to pretty print",
+          "s3-3": "to",
+          "s3-4": "to pretty",
+          "s3-5": "to pretty print",
+          "s4-4": "pretty",
+          "s4-5": "pretty print",
+          "s5-5": "print"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on docs.python.org that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on docs.python.org but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3.0 2.7 2.6\"",
+          "view-2": "\"3.15.1 Documentation »\"",
+          "view-3": "\"The Python standard library »\"",
+          "view-4": "\"Data Types »\"",
+          "view-5": "\"Source code: Lib/pprint.py\"",
+          "view-6": "\"The pprint module provides a capability to “pretty-print” arbitrary Python data structures in a form which can be used as input to the interpreter. If the formatted structures include objects which are not fundamental Python types, the representation may not be loadable. This may be the case if obje\"",
+          "view-7": "\"The formatted representation keeps objects on a single line if it can, and breaks them onto multiple lines if they don’t fit within the allowed width, adjustable by the width parameter defaulting to 80 characters.\"",
+          "view-8": "\"Changed in version 3.9: Added support for pretty-printing types.SimpleNamespace.\"",
+          "view-9": "\"Changed in version 3.10: Added support for pretty-printing dataclasses.dataclass.\"",
+          "view-10": "\"Functions\"",
+          "view-11": "\"pprint.pp(object, stream=None, indent=1, width=80, depth=None, *, compact=False, expand=False, sort_dicts=False, underscore_numbers=False): Prints the formatted representation of object, followed by a newline. This function may be used in the interactive interpreter instead of the print() function f\""
+        }
+      }
+    }
+  }
+}

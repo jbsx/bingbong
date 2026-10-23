@@ -1,0 +1,93 @@
+{
+  "turnId": "turn-mvftpw5q-7",
+  "transcript": "Open Donald Trump's truth social profile.",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792448772115,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Open Donald Trump's truth social profile.\"\nThis is step 4 of the task. Done so far: search Donald Trump's truth social profile (opened duckduckgo.com/?q=Donald+Trump%27s+truth+social+profile&ia=web); click \"https://truthsocial.com › @realDonaldTrump\" (opened truthsocial.com/@realDonaldTrump; a pop-up covered it, and closed)\nPages visited: https://duckduckgo.com/?q=Donald+Trump%27s+truth+social+profile&ia=web https://truthsocial.com/@realDonaldTrump\nPage: https://truthsocial.com/@realDonaldTrump — \"Truth Social\"\nRefs (number, kind, label, address):\n[1] link \"Home\" https://truthsocial.com/",
+    "questions": {
+      "verb": {
+        "type": "choice",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "click": "click one of the numbered refs on the page",
+          "type": "type words into one of the numbered refs (a text field)",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "done": "this page is what the user asked for: nothing more to do",
+          "none": "not a command for this page: a remark, a question, a name, noise"
+        }
+      },
+      "target": {
+        "type": "choice",
+        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
+        "options": {
+          "none": "no ref: the command does not act on one element",
+          "ref-1": "link \"Home\" https://truthsocial.com/"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the text to type, the key to press? Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Open",
+          "s0-1": "Open Donald",
+          "s0-2": "Open Donald Trump's",
+          "s0-3": "Open Donald Trump's truth",
+          "s0-4": "Open Donald Trump's truth social",
+          "s0-5": "Open Donald Trump's truth social profile",
+          "s1-1": "Donald",
+          "s1-2": "Donald Trump's",
+          "s1-3": "Donald Trump's truth",
+          "s1-4": "Donald Trump's truth social",
+          "s1-5": "Donald Trump's truth social profile",
+          "s2-2": "Trump's",
+          "s2-3": "Trump's truth",
+          "s2-4": "Trump's truth social",
+          "s2-5": "Trump's truth social profile",
+          "s3-3": "truth",
+          "s3-4": "truth social",
+          "s3-5": "truth social profile",
+          "s4-4": "social",
+          "s4-5": "social profile",
+          "s5-5": "profile"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on truthsocial.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on truthsocial.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      }
+    }
+  }
+}

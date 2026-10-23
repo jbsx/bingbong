@@ -1,0 +1,146 @@
+{
+  "turnId": "turn-mvjks4pf-4",
+  "transcript": "how do i install it",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792675624675,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"how do i install it\"\nThis is step 5 of the task. Done so far: click \"playwright.dev\" (opened playwright.dev); click \"Get started\" (opened playwright.dev/docs/intro); navigate https://playwright.dev/docs/getting-started-cli (opened playwright.dev/docs/getting-started-cli); scroll down a screen (the address did not change; \"Direct link to Prerequisites ​ Direct l…\", \"Node.js\" and \"Direct link to Installation ​ Direct li…\" appeared)\nPages visited: https://github.com/microsoft/playwright https://playwright.dev/ https://playwright.dev/docs/intro https://playwright.dev/docs/getting-started-cli\nPage: https://playwright.dev/docs/getting-started-cli — \"Coding agents | Playwright\"\nText in view: \"playwright-cli is best for coding agents (Claude Code, GitHub Copilot, etc.) that favor token-efficient, skill-based workflows. CLI commands avoid loading large tool schemas and verbose accessibility trees into the model context.\" · \"MCP is best for specialized agentic loops that benefit from persistent state and iterative reasoning over page structure, such as exploratory automation or long-running autonomous workflows. See the MCP getting started guide.\" · \"Prerequisites​\" · \"Before you begin, make sure you have the following installed:\" · \"Node.js 20 or newer\" · \"A coding agent: Claude Code, GitHub Copilot, or similar\" · \"Installation​\" · \"Install playwright-cli globally:\" · \"npm install -g @playwright/cli@latest\\n\\nplaywright-cli --help\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"Skip to main content\" https://playwright.dev/docs/getting-started-cli#__docusaurus_skipToContent_fallback\n[2] button \"Toggle navigation bar\" expanded=false menu holds \"Node.js\", \"Python\", \"Java\", \".NET\"\n[4] button \"Search (Control+k) Search Ctrl K\" keyshortcuts=\"Control+k\"\n[5] link \"MCP getting started guide\" https://playwright.dev/docs/getting-started-mcp\n[6] link \"Direct link to Prerequisites ​ Direct link to Prerequisites\" https://playwright.dev/docs/getting-started-cli#prerequisites\n[7] link \"Node.js\" https://nodejs.org/\n[8] link \"Direct link to Installation ​ Direct link to Installation\" https://playwright.dev/docs/getting-started-cli#installation\n[9] button \"Copy code to clipboard Copy\"\nLinks further down the page (name, address):\n[link-1] link \"WebMCP\" https://webmachinelearning.github.io/webmcp/\n[link-2] link \"Playwright Extension\" https://github.com/microsoft/playwright/blob/main/packages/extension/README.md\n[link-3] link \"Write tests using web-first assertions, page fixtures, and locators\" https://playwright.dev/docs/writing-tests\n[link-4] link \"Run your tests on CI\" https://playwright.dev/docs/ci-intro\n[link-5] link \"Learn more about the Trace Viewer\" https://playwright.dev/docs/trace-viewer\n[link-6] link \"Playwright Training\" https://learn.microsoft.com/en-us/training/modules/build-with-playwright/\n[link-7] link \"Learn Videos\" https://playwright.dev/community/learn-videos\n[link-8] link \"Feature Videos\" https://playwright.dev/community/feature-videos\n[link-9] link \"Stack Overflow\" https://stackoverflow.com/questions/tagged/playwright\n[link-10] link \"Discord\" https://aka.ms/playwright/discord\n[link-11] link \"X\" https://x.com/playwrightweb\n[link-12] link \"LinkedIn\" https://www.linkedin.com/company/playwrightweb\n[link-13] link \"YouTube\" https://www.youtube.com/channel/UC46Zj8pDH5tDosqm1gd7WTg\n[link-14] link \"Blog\" https://dev.to/playwright\n[link-15] link \"Ambassadors\" https://playwright.dev/community/ambassadors\n[link-16] link \"Microsoft Privacy Statement\" https://go.microsoft.com/fwlink/?LinkId=521839",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"Skip to main content\" https://playwright.dev/docs/getting-started-cli#__docusaurus_skipToContent_fallback",
+          "click-2": "click [2] button \"Toggle navigation bar\" expanded=false menu holds \"Node.js\", \"Python\", \"Java\", \".NET\"",
+          "click-4": "click [4] button \"Search (Control+k) Search Ctrl K\" keyshortcuts=\"Control+k\"",
+          "click-5": "click [5] link \"MCP getting started guide\" https://playwright.dev/docs/getting-started-mcp",
+          "click-6": "click [6] link \"Direct link to Prerequisites ​ Direct link to Prerequisites\" https://playwright.dev/docs/getting-started-cli#prerequisites",
+          "click-7": "click [7] link \"Node.js\" https://nodejs.org/",
+          "click-8": "click [8] link \"Direct link to Installation ​ Direct link to Installation\" https://playwright.dev/docs/getting-started-cli#installation",
+          "click-9": "click [9] button \"Copy code to clipboard Copy\"",
+          "open-1": "open result link \"WebMCP\" https://webmachinelearning.github.io/webmcp/",
+          "open-2": "open result link \"Playwright Extension\" https://github.com/microsoft/playwright/blob/main/packages/extension/README.md",
+          "open-3": "open result link \"Write tests using web-first assertions, page fixtures, and locators\" https://playwright.dev/docs/writing-tests",
+          "open-4": "open result link \"Run your tests on CI\" https://playwright.dev/docs/ci-intro",
+          "open-5": "open result link \"Learn more about the Trace Viewer\" https://playwright.dev/docs/trace-viewer",
+          "open-6": "open result link \"Playwright Training\" https://learn.microsoft.com/en-us/training/modules/build-with-playwright/",
+          "open-7": "open result link \"Learn Videos\" https://playwright.dev/community/learn-videos",
+          "open-8": "open result link \"Feature Videos\" https://playwright.dev/community/feature-videos",
+          "open-9": "open result link \"Stack Overflow\" https://stackoverflow.com/questions/tagged/playwright",
+          "open-10": "open result link \"Discord\" https://aka.ms/playwright/discord",
+          "open-11": "open result link \"X\" https://x.com/playwrightweb",
+          "open-12": "open result link \"LinkedIn\" https://www.linkedin.com/company/playwrightweb",
+          "open-13": "open result link \"YouTube\" https://www.youtube.com/channel/UC46Zj8pDH5tDosqm1gd7WTg",
+          "open-14": "open result link \"Blog\" https://dev.to/playwright",
+          "open-15": "open result link \"Ambassadors\" https://playwright.dev/community/ambassadors",
+          "open-16": "open result link \"Microsoft Privacy Statement\" https://go.microsoft.com/fwlink/?LinkId=521839",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 14:27, Thursday 22 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "how",
+          "s0-1": "how do",
+          "s0-2": "how do i",
+          "s0-3": "how do i install",
+          "s0-4": "how do i install it",
+          "s1-1": "do",
+          "s1-2": "do i",
+          "s1-3": "do i install",
+          "s1-4": "do i install it",
+          "s2-2": "i",
+          "s2-3": "i install",
+          "s2-4": "i install it",
+          "s3-3": "install",
+          "s3-4": "install it",
+          "s4-4": "it"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on playwright.dev that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on playwright.dev but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"playwright-cli is best for coding agents (Claude Code, GitHub Copilot, etc.) that favor token-efficient, skill-based workflows. CLI commands avoid loading large tool schemas and verbose accessibility trees into the model context.\"",
+          "view-2": "\"MCP is best for specialized agentic loops that benefit from persistent state and iterative reasoning over page structure, such as exploratory automation or long-running autonomous workflows. See the MCP getting started guide.\"",
+          "view-3": "\"Prerequisites​\"",
+          "view-4": "\"Before you begin, make sure you have the following installed:\"",
+          "view-5": "\"Node.js 20 or newer\"",
+          "view-6": "\"A coding agent: Claude Code, GitHub Copilot, or similar\"",
+          "view-7": "\"Installation​\"",
+          "view-8": "\"Install playwright-cli globally:\"",
+          "view-9": "\"npm install -g @playwright/cli@latest\\n\\nplaywright-cli --help\""
+        }
+      }
+    }
+  }
+}

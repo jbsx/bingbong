@@ -31,7 +31,7 @@ export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
   if (deps.prefetch) synth.prefetch()
   return createSpeechCoordinator({
     synth,
-    player: createAplayPlayer({ bin: deps.config.playerBin }),
+    player: createAplayPlayer({ bin: deps.config.playerBin, device: deps.config.playerDevice }),
     ducker: createPaneAudioDucker(deps.pane),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
   })

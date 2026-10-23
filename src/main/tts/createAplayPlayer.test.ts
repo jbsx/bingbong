@@ -59,6 +59,17 @@ describe('aplay player', () => {
     await expect(playback.done).resolves.toBeUndefined()
   })
 
+  it('plays to the device it is given', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    const player = createAplayPlayer({ spawnFn, device: 'null' })
+
+    const playback = player.play(new Uint8Array([1, 2, 3]))
+
+    expect(calls[0]!.args).toEqual(['-D', 'null', '-q', '-'])
+    calls[0]!.child.emit('close', 0)
+    await expect(playback.done).resolves.toBeUndefined()
+  })
+
   it('rejects done when aplay exits nonzero', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const player = createAplayPlayer({ spawnFn })

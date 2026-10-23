@@ -1,0 +1,165 @@
+{
+  "turnId": "turn-mvk6o9ja-6",
+  "transcript": "Open Voice Studio GitHub",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792712395869,
+  "expect": [
+    {
+      "question": "outcome",
+      "not": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Open Voice Studio GitHub\"\nHeard by ear, so a word may be misheard: \"Studio\" sounds like \"tuesday tue\", a name on this page\nThis is step 4 of the task. Done so far: search Advice studio GitHub (opened duckduckgo.com/?q=Advice+studio+GitHub&ia=web); click \"soundadvicestudio · GitHub\" (opened github.com/soundadvicestudio)\nPages visited: https://duckduckgo.com/?q=Advice+studio+GitHub&ia=web https://github.com/soundadvicestudio\nPage: https://github.com/soundadvicestudio — \"soundadvicestudio · GitHub\"\nText in view: \"soundadvicestudio\" · \"Overview Repositories 3 Projects Packages Stars 0\" · \"Popular repositories Loading\" · \"performers-lab Public Weekly personalized performance feedback and monthly live masterclasses — for serious singers and performers across America. HTML\" · \"soundadvice Public JavaScript\" · \"thirtyninetyvolunteers Public TypeScript\" · \"76 contributions in the last year\" · \"Day of Week | October Oct | November Nov | December Dec | January Jan | February Feb | March Mar | April Apr | May May | June Jun | July Jul | August Aug | September Sep | October Oct\" · \"Sunday Sun |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Monday Mon |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Tuesday Tue |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Wednesday Wed |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Thursday Thu |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Friday Fri |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Saturday Sat |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \" · \"Contribution activity\" · \"October 2026\" · \"soundadvicestudio has no activity yet for this period.\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] button \"Toggle navigation\" expanded=false\n[2] link \"Homepage\" https://github.com/\n[3] link \"Sign in\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio\n[4] button \"Appearance settings\" hasPopup=dialog\n[5] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio\n[6] link \"Overview\" https://github.com/soundadvicestudio\n[7] link \"Repositories 3\" https://github.com/soundadvicestudio?tab=repositories\n[8] link \"Projects\" https://github.com/soundadvicestudio?tab=projects\n[9] link \"Packages\" https://github.com/soundadvicestudio?tab=packages\n[10] button \"More\" expanded=false menu holds \"Stars\"\n[11] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio\n[12] link \"View soundadvicestudio's full-sized avatar\" https://avatars.githubusercontent.com/u/289074079?v=4\n[13] button \"\"\n[14] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio\n[15] button \"Block or report user\"\n[16] link \"performers-lab\" https://github.com/soundadvicestudio/performers-lab\n[17] link \"soundadvice\" https://github.com/soundadvicestudio/soundadvice\n[18] link \"thirtyninetyvolunteers\" https://github.com/soundadvicestudio/thirtyninetyvolunteers\n[19] link \"Learn how we count contributions\" https://docs.github.com/articles/why-are-my-contributions-not-showing-up-on-my-profile\n[20] button \"Show more activity\"\nLinks further down the page (name, address):\n[link-1] link \"Terms\" https://docs.github.com/site-policy/github-terms/github-terms-of-service\n[link-2] link \"Privacy\" https://docs.github.com/site-policy/privacy-policies/github-privacy-statement\n[link-3] link \"Security\" https://github.com/security\n[link-4] link \"Status\" https://www.githubstatus.com/\n[link-5] link \"Community\" https://github.community/\n[link-6] link \"Docs\" https://docs.github.com/\n[link-7] link \"Contact\" https://support.github.com/?tags=dotcom-footer",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] button \"Toggle navigation\" expanded=false",
+          "click-2": "click [2] link \"Homepage\" https://github.com/",
+          "click-3": "click [3] link \"Sign in\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio",
+          "click-4": "click [4] button \"Appearance settings\" hasPopup=dialog",
+          "click-5": "click [5] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio",
+          "click-6": "click [6] link \"Overview\" https://github.com/soundadvicestudio",
+          "click-7": "click [7] link \"Repositories 3\" https://github.com/soundadvicestudio?tab=repositories",
+          "click-8": "click [8] link \"Projects\" https://github.com/soundadvicestudio?tab=projects",
+          "click-9": "click [9] link \"Packages\" https://github.com/soundadvicestudio?tab=packages",
+          "click-10": "click [10] button \"More\" expanded=false menu holds \"Stars\"",
+          "click-11": "click [11] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio",
+          "click-12": "click [12] link \"View soundadvicestudio's full-sized avatar\" https://avatars.githubusercontent.com/u/289074079?v=4",
+          "click-13": "click [13] button \"\"",
+          "click-14": "click [14] link \"Follow\" https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fsoundadvicestudio",
+          "click-15": "click [15] button \"Block or report user\"",
+          "click-16": "click [16] link \"performers-lab\" https://github.com/soundadvicestudio/performers-lab",
+          "click-17": "click [17] link \"soundadvice\" https://github.com/soundadvicestudio/soundadvice",
+          "click-18": "click [18] link \"thirtyninetyvolunteers\" https://github.com/soundadvicestudio/thirtyninetyvolunteers",
+          "click-19": "click [19] link \"Learn how we count contributions\" https://docs.github.com/articles/why-are-my-contributions-not-showing-up-on-my-profile",
+          "click-20": "click [20] button \"Show more activity\"",
+          "open-1": "open result link \"Terms\" https://docs.github.com/site-policy/github-terms/github-terms-of-service",
+          "open-2": "open result link \"Privacy\" https://docs.github.com/site-policy/privacy-policies/github-privacy-statement",
+          "open-3": "open result link \"Security\" https://github.com/security",
+          "open-4": "open result link \"Status\" https://www.githubstatus.com/",
+          "open-5": "open result link \"Community\" https://github.community/",
+          "open-6": "open result link \"Docs\" https://docs.github.com/",
+          "open-7": "open result link \"Contact\" https://support.github.com/?tags=dotcom-footer",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 00:39, Friday 23 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Open",
+          "s0-1": "Open Voice",
+          "s0-2": "Open Voice Studio",
+          "s0-3": "Open Voice Studio GitHub",
+          "s1-1": "Voice",
+          "s1-2": "Voice Studio",
+          "s1-3": "Voice Studio GitHub",
+          "s2-2": "Studio (sounds like \"tuesday tue\")",
+          "s2-3": "Studio GitHub",
+          "s3-3": "GitHub"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on github.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on github.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "passage": {
+        "type": "choice",
+        "instructions": "Which block of Text in view states what the user asked to know, in the page's own words? Choose none when no block states it, or when the user asked for an action and nothing to be told.",
+        "options": {
+          "none": "no block states it",
+          "view-1": "\"soundadvicestudio\"",
+          "view-2": "\"Overview Repositories 3 Projects Packages Stars 0\"",
+          "view-3": "\"Popular repositories Loading\"",
+          "view-4": "\"performers-lab Public Weekly personalized performance feedback and monthly live masterclasses — for serious singers and performers across America. HTML\"",
+          "view-5": "\"soundadvice Public JavaScript\"",
+          "view-6": "\"thirtyninetyvolunteers Public TypeScript\"",
+          "view-7": "\"76 contributions in the last year\"",
+          "view-8": "\"Day of Week | October Oct | November Nov | December Dec | January Jan | February Feb | March Mar | April Apr | May May | June Jun | July Jul | August Aug | September Sep | October Oct\"",
+          "view-9": "\"Sunday Sun |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-10": "\"Monday Mon |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-11": "\"Tuesday Tue |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-12": "\"Wednesday Wed |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-13": "\"Thursday Thu |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-14": "\"Friday Fri |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-15": "\"Saturday Sat |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | \"",
+          "view-16": "\"Contribution activity\"",
+          "view-17": "\"October 2026\"",
+          "view-18": "\"soundadvicestudio has no activity yet for this period.\""
+        }
+      }
+    }
+  }
+}

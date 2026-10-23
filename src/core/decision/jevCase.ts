@@ -1,4 +1,4 @@
-import type { DecisionChoiceAnswer, DecisionQuestions, DecisionResult } from '../ports/decisionModel'
+import { choiceProbability, type DecisionChoiceAnswer, type DecisionQuestions, type DecisionResult } from '../ports/decisionModel.ts'
 
 // A Jev case (#338): one recorded ask and the answer each question should
 // get — a Choice label, or a label it must not be — promoted by the owner
@@ -6,22 +6,24 @@ import type { DecisionChoiceAnswer, DecisionQuestions, DecisionResult } from '..
 // each case again and reports, per expectation, what it chose against the
 // expected label, so a change to the state text or the question wording
 // is accepted only when it passes its own case and leaves no other worse.
-// Zero runtime imports: the jev:* scripts run this under node's type
-// stripping.
+// Its one runtime import, the number a bar reads, is a .ts path: the jev:*
+// scripts run this under node's type stripping.
 
 /**
  * What one question's answer must be: `action=click-27` (that label),
  * `outcome=yes>=0.7` (that label at that probability or more, #366 — a
  * sure answer where the runner acts only on one), `action!=click-21`
- * (anything but it), or `outcome<0.7` (whatever it chooses, under that
- * probability — an answer that must stay unsure). A label may name
- * alternatives between bars (#405), `action=show-31|show-39`: any of them
- * passes, and `!=` refuses every one — for a line more than one option
- * answers rightly, so the case never measures the arm it was written for.
+ * (anything but it), `outcome!=yes>=0.7` (anything but that label at that
+ * probability or more, #403 — an answer the runner must not act on), or
+ * `outcome<0.7` (whatever it chooses, under that probability — an answer
+ * that must stay unsure). A label may name alternatives between bars
+ * (#405), `action=show-31|show-39`: any of them passes, and `!=` refuses
+ * every one — for a line more than one option answers rightly, so the case
+ * never measures the arm it was written for.
  */
 export type JevExpectation =
   | { readonly question: string; readonly label: string; readonly atLeast?: number }
-  | { readonly question: string; readonly not: string }
+  | { readonly question: string; readonly not: string; readonly atLeast?: number }
   | { readonly question: string; readonly below: number }
 
 /** The ask as the case keeps it: what Jev is sent again. */
@@ -47,9 +49,12 @@ export interface JevCase {
 /** A probability, as a floor or a ceiling takes it: from 0 to 1. */
 const isProbability = (value: unknown): value is number => typeof value === 'number' && value >= 0 && value <= 1
 
-/** `action=click-27`, `outcome=yes>=0.7`, `action!=click-21` or `outcome<0.7`, as the CLI takes it; a string is why it cannot be read. */
+/** A floor when one is given, to spread into a label or an exclusion. */
+const floorOf = (atLeast: number | undefined): { atLeast?: number } => (atLeast !== undefined ? { atLeast } : {})
+
+/** `action=click-27`, `outcome=yes>=0.7`, `action!=click-21`, `outcome!=yes>=0.7` or `outcome<0.7`, as the CLI takes it; a string is why it cannot be read. */
 export function parseExpectation(text: string): JevExpectation | string {
-  const unread = `"${text}" is not <question>=<label>[>=<probability>], <question>!=<label> or <question><<probability>`
+  const unread = `"${text}" is not <question>=<label>[>=<probability>], <question>!=<label>[>=<probability>] or <question><<probability>`
   const match = /^([^=!<]+)(!?=|<)(.+)$/.exec(text.trim())
   if (match === null) return unread
   const [, question, op, said] = match as unknown as [string, string, string, string]
@@ -57,11 +62,11 @@ export function parseExpectation(text: string): JevExpectation | string {
     const below = said.trim() === '' ? NaN : Number(said)
     return isProbability(below) ? { question: question.trim(), below } : unread
   }
-  if (op !== '=') return { question: question.trim(), not: said.trim() }
   const [label, floor] = said.split('>=') as [string, string | undefined]
-  if (floor === undefined) return { question: question.trim(), label: label.trim() }
-  const atLeast = floor.trim() === '' ? NaN : Number(floor)
-  return isProbability(atLeast) ? { question: question.trim(), label: label.trim(), atLeast } : unread
+  const atLeast = floor === undefined ? undefined : floor.trim() === '' ? NaN : Number(floor)
+  if (atLeast !== undefined && !isProbability(atLeast)) return unread
+  const named = { question: question.trim(), ...floorOf(atLeast) }
+  return op === '=' ? { ...named, label: label.trim() } : { ...named, not: label.trim() }
 }
 
 /** The label an expectation names, whether it must be the answer or must not; null for a ceiling, which names none. */
@@ -75,7 +80,7 @@ const bestOf = (label: string, probabilities: Readonly<Record<string, number>>):
 
 export function expectationText(expectation: JevExpectation): string {
   if ('below' in expectation) return `${expectation.question}<${expectation.below.toFixed(2)}`
-  const floor = 'label' in expectation && expectation.atLeast !== undefined ? `>=${expectation.atLeast.toFixed(2)}` : ''
+  const floor = expectation.atLeast !== undefined ? `>=${expectation.atLeast.toFixed(2)}` : ''
   return `${expectation.question}${'label' in expectation ? '=' : '!='}${labelOf(expectation)}${floor}`
 }
 
@@ -93,11 +98,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 function readExpectation(raw: unknown): JevExpectation | null {
   if (!isRecord(raw) || typeof raw.question !== 'string') return null
-  if (typeof raw.label === 'string') {
-    if (raw.atLeast === undefined) return { question: raw.question, label: raw.label }
-    return isProbability(raw.atLeast) ? { question: raw.question, label: raw.label, atLeast: raw.atLeast } : null
+  if (typeof raw.label === 'string' || typeof raw.not === 'string') {
+    if (raw.atLeast !== undefined && !isProbability(raw.atLeast)) return null
+    const named = { question: raw.question, ...floorOf(raw.atLeast as number | undefined) }
+    return typeof raw.label === 'string' ? { ...named, label: raw.label } : { ...named, not: raw.not as string }
   }
-  if (typeof raw.not === 'string') return { question: raw.question, not: raw.not }
   if (isProbability(raw.below)) return { question: raw.question, below: raw.below }
   return null
 }
@@ -143,14 +148,14 @@ export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionRes
   if (unanswered !== undefined) return { name, pass: false, problem: `Jev gave no Choice for "${unanswered.question}"` }
   const outcomes = jevCase.expect.map((expectation): ExpectationOutcome => {
     const answer = result.answers[expectation.question] as DecisionChoiceAnswer
-    const chosenProbability = answer.probabilities[answer.choice] ?? answer.confidence
+    const chosenProbability = choiceProbability(answer)
     if ('below' in expectation) return { expectation, pass: chosenProbability < expectation.below, chosen: answer.choice, chosenProbability, labelProbability: chosenProbability }
     const label = labelOf(expectation)!
     const chosenIs = alternativesOf(label).includes(answer.choice)
-    const sure = !('label' in expectation) || (chosenIs ? chosenProbability : 0) >= (expectation.atLeast ?? 0)
+    const sure = chosenIs && chosenProbability >= (expectation.atLeast ?? 0)
     return {
       expectation,
-      pass: 'label' in expectation ? chosenIs && sure : !chosenIs,
+      pass: 'label' in expectation ? sure : !sure,
       chosen: answer.choice,
       chosenProbability,
       labelProbability: answer.probabilities[bestOf(label, answer.probabilities)] ?? 0,

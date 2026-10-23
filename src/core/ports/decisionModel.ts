@@ -100,7 +100,7 @@ export interface DecisionModel {
  * their own (ADR 0068).
  */
 export interface DecisionThresholds {
-  /** The least Choice confidence that acts. */
+  /** The least probability of a Choice's chosen label that acts (#403). */
   readonly choice: number
   /** The least Noul probability that acts. */
   readonly noul: number
@@ -108,11 +108,25 @@ export interface DecisionThresholds {
 
 /**
  * The bars jev-1.13.0's answers were tuned to act at (ADR 0068): a Choice
- * confidence and a Noul probability of 0.7, each read against its own
- * primitive. Set from the shadow replays on main; a new seam starts here
- * and moves its bars from its own traces.
+ * and a Noul probability of 0.7, each read against its own primitive. Set
+ * from the shadow replays on main; a new seam starts here and moves its
+ * bars from its own traces. The same bar for every Decision Model (#403):
+ * a model whose answer stays under it shows a card problem, not a bar to
+ * lower.
  */
 export const DEFAULT_DECISION_THRESHOLDS: DecisionThresholds = { choice: 0.7, noul: 0.7 }
+
+/**
+ * The number a Choice bar reads (#403): the chosen label's probability, the
+ * one every seam that acts on a Choice and the Jev corpus gate compare to
+ * the bar. Never the vendor's `confidence`, which sits about 0.1 under it
+ * on every model (every split in the October live logs, Jev and Mammoth)
+ * and, read by the runner while the gate read the probability, ended right
+ * yeses unsure.
+ */
+export function choiceProbability(answer: DecisionChoiceAnswer): number {
+  return answer.probabilities[answer.choice] ?? answer.confidence
+}
 
 /** Whether every answer clears its own primitive's threshold — the one condition under which a seam acts. */
 export function clearsDecisionThresholds(
@@ -120,7 +134,7 @@ export function clearsDecisionThresholds(
   thresholds: DecisionThresholds = DEFAULT_DECISION_THRESHOLDS,
 ): boolean {
   return Object.values(answers).every((answer) =>
-    answer.type === 'choice' ? answer.confidence >= thresholds.choice : answer.noul >= thresholds.noul,
+    answer.type === 'choice' ? choiceProbability(answer) >= thresholds.choice : answer.noul >= thresholds.noul,
   )
 }
 

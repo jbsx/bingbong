@@ -1,4 +1,4 @@
-import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
 import type { TextBelow } from '../browser/pageText'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
@@ -1058,7 +1058,7 @@ export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): 
  */
 export function isTextlessGuess(action: DecisionChoiceAnswer, questions: CommandQuestions, page: CommandPage, bar: number): boolean {
   const acted = refActionOf(action.choice)
-  return action.confidence < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
+  return choiceProbability(action) < bar && acted?.act === 'click' && textlessRefsOf(questions, page).includes(acted.n)
 }
 
 /**
@@ -1193,7 +1193,8 @@ export type Outcome = (typeof OUTCOMES)[number]
 /** The Verdict a hop's reading carries: where the Task stands on this page, and how sure Jev is. */
 export interface Verdict {
   readonly outcome: Outcome
-  readonly confidence: number
+  /** The outcome's probability, the number the Choice bar reads (#403). */
+  readonly probability: number
 }
 
 /**
@@ -1212,9 +1213,9 @@ function outcomeQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions:
-      'Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.',
+      'Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.',
     options: {
-      yes: 'done: the page shows it, or the action they asked for has happened',
+      yes: 'done: the page shows it or its answer, or the action they asked for has happened',
       in_the_way: 'a pop-up or prompt covers the page now',
       not_yet: 'not done: more to do, nothing covering the page',
     },
@@ -1254,9 +1255,8 @@ function withPassage<Q extends object>(questions: Q, page: CommandPage, hop: Hop
  */
 export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandPage, hop?: HopContext): string | null {
   if (!('passage' in answers) || answers.passage === undefined) return null
-  const { choice, confidence, probabilities } = answers.passage
-  const match = /^view-(\d+)$/.exec(choice)
-  if (match === null || (probabilities[choice] ?? confidence) < DEFAULT_DECISION_THRESHOLDS.choice) return null
+  const match = /^view-(\d+)$/.exec(answers.passage.choice)
+  if (match === null || choiceProbability(answers.passage) < DEFAULT_DECISION_THRESHOLDS.choice) return null
   return inViewBlocks(page, hop)[Number(match[1]) - 1] ?? null
 }
 
@@ -1332,21 +1332,22 @@ export function readProgress(answers: CommandAnswers | HopAnswers): number | nul
   return 'progress' in answers && answers.progress !== undefined ? answers.progress.noul : null
 }
 
-/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its confidence. Null when it was not asked, or names nothing offered. */
+/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its probability. Null when it was not asked, or names nothing offered. */
 export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
   if (!('dismiss' in answers) || answers.dismiss === undefined) return null
-  const { choice, confidence } = answers.dismiss
-  if (choice === 'escape') return { choice: 'escape', confidence }
+  const { choice } = answers.dismiss
+  const probability = choiceProbability(answers.dismiss)
+  if (choice === 'escape') return { choice: 'escape', probability }
   const match = /^ref-(\d+)$/.exec(choice)
   const ref = match === null ? NaN : Number(match[1])
-  return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, confidence } : null
+  return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, probability } : null
 }
 
 /** The Verdict a hop's answers, or a Where Ask's (#394), carry; null when none was asked, or the answer names no outcome. */
 export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {
   if (!('outcome' in answers)) return null
-  const { choice, confidence } = answers.outcome
-  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, confidence } : null
+  const { choice } = answers.outcome
+  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, probability: choiceProbability(answers.outcome) } : null
 }
 
 /**

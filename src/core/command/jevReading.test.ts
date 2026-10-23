@@ -909,8 +909,8 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(hopQuestions('open elon musks latest tweet', PROFILE, hop).dismiss).toBeUndefined()
     // Only a way through, or links: nothing to offer beside Escape, so nothing is asked.
     expect(hopQuestions('open elon musks latest tweet', { ...covered, dialog: { text: 'Join', refs: [7, 8] } }, hop).dismiss).toBeUndefined()
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, confidence: 0.8 })
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', confidence: 0.6 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, probability: 0.8 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', probability: 0.6 })
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way') }, covered)).toBeNull()
   })
@@ -919,8 +919,8 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'extent', 'where'])
   })
 
-  it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
-    expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', confidence: 0.85 })
+  it('reads the Verdict with its probability, null when none was asked or the answer names no outcome', () => {
+    expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', probability: 0.85 })
     expect(readVerdict(reading)).toBeNull()
     expect(readVerdict({ ...reading, outcome: answer('maybe') })).toBeNull()
   })

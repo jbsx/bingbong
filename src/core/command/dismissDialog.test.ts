@@ -134,17 +134,17 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
 
   it('Jev\'s sure choice comes before the label rung, its unsure one after, and Escape chosen sure comes first of all but the consent policy', () => {
     const sheet: CommandPage = { ...SHEET, refs: [...SHEET.refs, { ref: 12, kind: 'button', label: 'Nah', href: null, inputType: null }], dialog: { text: 'Join', refs: [7, 8, 9, 12] } }
-    expect(dismissalLadder(sheet, { choice: { ref: 12 }, confidence: 0.9 })).toEqual([click(12), click(9), ESCAPE])
-    expect(dismissalLadder(sheet, { choice: { ref: 12 }, confidence: 0.4 })).toEqual([click(9), click(12), ESCAPE])
-    expect(dismissalLadder(sheet, { choice: 'escape', confidence: 0.9 })).toEqual([ESCAPE, click(9)])
-    expect(dismissalLadder(BANNER, { choice: { ref: 1 }, confidence: 0.9 })).toEqual([click(11), click(1), ESCAPE])
+    expect(dismissalLadder(sheet, { choice: { ref: 12 }, probability: 0.9 })).toEqual([click(12), click(9), ESCAPE])
+    expect(dismissalLadder(sheet, { choice: { ref: 12 }, probability: 0.4 })).toEqual([click(9), click(12), ESCAPE])
+    expect(dismissalLadder(sheet, { choice: 'escape', probability: 0.9 })).toEqual([ESCAPE, click(9)])
+    expect(dismissalLadder(BANNER, { choice: { ref: 1 }, probability: 0.9 })).toEqual([click(11), click(1), ESCAPE])
   })
 
   it('Jev\'s choice of a way through, a link or a ref outside the dialog is not a rung: the guards hold whoever chose', () => {
-    expect(dismissalLadder(SHEET, { choice: { ref: 8 }, confidence: 0.95 })).toEqual([click(9), ESCAPE])
-    expect(dismissalLadder(SHEET, { choice: { ref: 7 }, confidence: 0.95 })).toEqual([click(9), ESCAPE])
-    expect(dismissalLadder(SHEET, { choice: { ref: 1 }, confidence: 0.95 })).toEqual([click(9), ESCAPE])
-    expect(dismissalLadder(BANNER, { choice: { ref: 10 }, confidence: 0.95 })).toEqual([click(11), click(1), ESCAPE])
+    expect(dismissalLadder(SHEET, { choice: { ref: 8 }, probability: 0.95 })).toEqual([click(9), ESCAPE])
+    expect(dismissalLadder(SHEET, { choice: { ref: 7 }, probability: 0.95 })).toEqual([click(9), ESCAPE])
+    expect(dismissalLadder(SHEET, { choice: { ref: 1 }, probability: 0.95 })).toEqual([click(9), ESCAPE])
+    expect(dismissalLadder(BANNER, { choice: { ref: 10 }, probability: 0.95 })).toEqual([click(11), click(1), ESCAPE])
   })
 
   it('a way through the label refuses is a way out: "Don\'t allow" and "Do not install" are offered, "No account? Sign up" is not', () => {
@@ -172,7 +172,7 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
       dialog: { text: 'We use cookies', refs: [20, 21] },
     }
     expect(dismissalLadder(wall)).toEqual([click(20), ESCAPE])
-    expect(dismissalLadder(wall, { choice: { ref: 21 }, confidence: 0.9 })).toEqual([click(21), click(20), ESCAPE])
+    expect(dismissalLadder(wall, { choice: { ref: 21 }, probability: 0.9 })).toEqual([click(21), click(20), ESCAPE])
     // The policy settles only a reject it reads; anything else is Jev's to choose.
     expect(ruledDismissal(wall)).toBeNull()
     expect(ruledDismissal(BANNER)).toEqual(click(11))
@@ -180,7 +180,7 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
   })
 
   it('each rung once: Jev choosing the labelled close leaves one click of it', () => {
-    expect(dismissalLadder(SHEET, { choice: { ref: 9 }, confidence: 0.9 })).toEqual([click(9), ESCAPE])
+    expect(dismissalLadder(SHEET, { choice: { ref: 9 }, probability: 0.9 })).toEqual([click(9), ESCAPE])
     expect(dismissalLadder(CLOSED)).toEqual([])
   })
 })
