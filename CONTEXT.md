@@ -199,6 +199,13 @@ against the Task's five actions, and the next Hop's Verdict judges what
 came into view.
 _Avoid_: jump, reveal, scroll to text
 
+**Search Op**:
+The action a search box carries on the action card because of its kind
+(`search-N`): one type that replaces the box's words with the Slot, then
+submits it, on any site. It counts as one action; the next Hop's Verdict
+judges the results.
+_Avoid_: submit hop, search ladder, type then click Search
+
 **Menu**:
 The browser verb that opens a ref's right-click menu to see what it
 offers: `menu <ref>` or "right-click the player" from the user, or the

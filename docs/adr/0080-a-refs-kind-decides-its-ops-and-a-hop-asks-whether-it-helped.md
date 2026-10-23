@@ -8,7 +8,8 @@ Accepted on 2026-10-21 by the owner, grilled from the post mortem of the
 Narrows ADR 0079's Capability: the ops a media element can take come from
 the ref, not from the Player's list, and the list's retirement is #374. Built as two tickets in this order: the progress Noul (#373), then
 the media ops (#372). The progress bar that reads the Noul is #375.
-Amended on 2026-10-22 by the owner's ruling on #389.
+Amended on 2026-10-22 by the owner's ruling on #389, and on 2026-10-23 on
+#398: a search box is a kind, and searching it is its op.
 
 ## Context
 
@@ -90,6 +91,17 @@ track in `hidden` mode says nothing, because a hidden track is on at
 Vimeo and BBC but off at Plyr. The switches go on the ref's line only,
 never on the `Playing:` line. Jev acts on a switch by clicking its ref,
 so no new op is offered.
+
+**Amended 2026-10-23 (#398): a search box is a kind, and searching it is
+its op.** A ref is a search box when it is an editable field that declares
+it (`type=search`, `role=searchbox`, `enterkeyhint=search`), sits in a
+search landmark, or is named for it by its name, id, aria-label or
+placeholder. A password or payment field never is one. Its line says
+`searchbox` and what it holds; its form's submit says `button[submit]`.
+Each box carries one Search Op, `search-N`, beside its `type-N`: the words
+replace what it holds, then the box is submitted, by Enter or by the form
+itself where Enter would not. Jev chooses it; the web search and its
+`where` stay as they were.
 
 **Several media refs: each its own lines, Jev picks the element.** Two
 playing videos mean `pause-7` and `pause-12`, each line naming its title
