@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvjombar-4",
+  "transcript": "how much is it to renew online",
+  "at": 1792682072013,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "hop on gov.uk's passport filter page (Do you live in the UK?) with its analytics cookie strip: the Verdict read in_the_way 0.95 (no dialog line on the card)",
+  "meant": "not_yet: the fee is a step further on; a cookie strip that covers nothing is not in the way",
+  "log": "decision-1792682059850-1.jsonl",
+  "claimedBy": "#404",
+  "fixedBy": "4fa315e9",
+  "case": "turn-mvjombar-4"
+}
