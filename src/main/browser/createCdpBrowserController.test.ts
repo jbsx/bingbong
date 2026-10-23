@@ -13,7 +13,7 @@ import { fakePerfHarness } from '../../core/testing/doubles'
 import type { Clock } from '../../core/ports/clock'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival, PageFrame, PageFrames } from './createCdpBrowserController'
-import { createCdpBrowserController, READINESS_CAP_MS } from './createCdpBrowserController'
+import { createCdpBrowserController, READINESS_CAP_MS, SUBMIT_START_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
 import type { AxNode } from '../../core/browser/refStates'
 
@@ -116,6 +116,8 @@ class FakeCdp implements CdpDebugger {
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
   /** What a Media Op's evaluate answers (#372): the element's facts before and after, or null for an element that is no media. */
   mediaOpResult: unknown = null
+  /** What the Search Op's submit check answers (#398): `enter`, or `form` for a form it submitted itself. */
+  searchSubmit: 'enter' | 'form' = 'enter'
   /** What the in-place links helper answers (#303); null is a page that holds no helper. */
   pageLinks: unknown = null
   collectValues: unknown[] = []
@@ -207,6 +209,8 @@ class FakeCdp implements CdpDebugger {
       if (expression.includes('/* FRAME_BOX */')) return { result: { value: this.frameBox } } as T
       if (expression.includes('__bingbongDialogOpen')) return { result: { value: this.dialogOpenValues.length > 0 ? this.dialogOpenValues.shift() : false } } as T
       if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
+      if (expression.includes('/* SELECT_FIELD */')) return { result: { value: true } } as T
+      if (expression.includes('/* SEARCH_SUBMIT */')) return { result: { value: this.searchSubmit } } as T
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       if (expression === COLLECT_EXPRESSION && this.collectException) {
         return { exceptionDetails: { text: this.collectException } } as T
@@ -1458,6 +1462,70 @@ describe('createCdpBrowserController type', () => {
     await showRefs(controller)
 
     await expect(controller.type(999, 'nope')).rejects.toThrow(/ref 999 refused/)
+  })
+
+  /** The inputs after the focusing click, as method and text or key. */
+  const keyedAfterClick = (cdp: FakeCdp) => cdp.inputCalls().filter((call) => call.method !== 'Input.dispatchMouseEvent').map((call) => [call.method, call.params?.text ?? call.params?.key])
+
+  it('selects what the field holds before inserting, so typing replaces it and never appends (#398)', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+
+    await controller.type(3, 'cats')
+
+    const select = cdp.calls.findIndex((call) => call.method === 'Runtime.evaluate' && String(call.params?.expression ?? '').includes('/* SELECT_FIELD */'))
+    expect(select).toBeGreaterThan(cdp.calls.findIndex((call) => call.params?.type === 'mouseReleased'))
+    expect(select).toBeLessThan(cdp.calls.findIndex((call) => call.method === 'Input.insertText'))
+  })
+
+  it('submits a Search Op with Enter after the words (#398): the one submit every kind of box honours', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+
+    await controller.type(3, 'MKBHD', { submit: true })
+
+    expect(keyedAfterClick(cdp)).toEqual([
+      ['Input.insertText', 'MKBHD'],
+      ['Input.dispatchKeyEvent', '\r'],
+      ['Input.dispatchKeyEvent', 'Enter'],
+    ])
+  })
+
+  it("waits past the words' own effect for the navigation a Search Op's Enter starts (#398)", async () => {
+    // The watch sees no navigation started on its first asks — the suggestions the words drew ended the readiness wait — then the landing.
+    const page = new FakePage()
+    let asks = 0
+    page.watchArrival = () => ({ arrival: async () => (++asks < 3 ? 'none' : 'loaded') })
+    const { controller } = makeController({ page })
+    await showRefs(controller)
+
+    const outcome = await controller.type(3, 'MKBHD', { submit: true })
+
+    expect(asks).toBe(3)
+    expect(outcome).toContain(ARRIVED_CLAUSE)
+  })
+
+  it('ends the wait at its bound for a box that searches in place, and a plain type never waits on it (#398)', async () => {
+    const page = new FakePage()
+    const { controller } = makeController({ page })
+    await showRefs(controller)
+
+    await controller.type(3, 'MKBHD', { submit: true })
+    expect(page.arrivalsAsked).toBe(1 + SUBMIT_START_MS / 50 + 1)
+
+    page.arrivalsAsked = 0
+    await controller.type(3, 'cats')
+    expect(page.arrivalsAsked).toBe(1)
+  })
+
+  it('presses no Enter when the box\'s form would ignore it and the page submitted the form itself (#398)', async () => {
+    const { cdp, controller } = makeController()
+    cdp.searchSubmit = 'form'
+    await showRefs(controller)
+
+    await controller.type(3, 'MKBHD', { submit: true })
+
+    expect(keyedAfterClick(cdp)).toEqual([['Input.insertText', 'MKBHD']])
   })
 
   it('returns the settled page state when the typing navigates (#113)', async () => {

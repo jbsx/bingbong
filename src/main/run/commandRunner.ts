@@ -393,7 +393,7 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
     case 'click':
       return { name: 'click', args: { ref: command.target } }
     case 'type':
-      return { name: 'type', args: { ref: command.target, text: command.slot ?? '' } }
+      return { name: 'type', args: { ref: command.target, text: command.slot ?? '', ...(command.submit === true ? { submit: true } : {}) } }
     case 'menu':
       return { name: 'menu', args: { ref: command.target } }
     case 'media':
@@ -921,7 +921,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return result
       }
       case 'type': {
-        const result = await browser.type(command.target ?? 0, command.slot ?? '')
+        // A Search Op (#398) is the same type, the box submitted after the words.
+        const result = await browser.type(command.target ?? 0, command.slot ?? '', command.submit === true ? { submit: true } : undefined)
         flash(command.target ?? 0)
         return result
       }
@@ -1033,6 +1034,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(command.music !== undefined ? { music: command.music } : {}),
       ...(command.mediaOp !== undefined ? { mediaOp: command.mediaOp } : {}),
       ...(command.extent !== undefined ? { extent: command.extent } : {}),
+      ...(command.submit === true ? { submit: true } : {}),
       target: command.target,
       ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,

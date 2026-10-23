@@ -105,6 +105,8 @@ export interface Command {
   readonly dismiss?: true
   /** The Mark Ask chose the target (#382, ADR 0084): the control the words named on the image of the page, which "Done so far" says. */
   readonly marked?: true
+  /** For `type`, a Search Op (#398): the words replace what the search box holds, then the box is submitted. */
+  readonly submit?: true
 }
 
 /** What the reading sees of one ref: the number, its kind, its label and, for a link, its address. */
@@ -127,6 +129,15 @@ export interface CommandRef {
   readonly switches?: readonly PlayerSwitch[]
   /** The host of the frame it was read in (#377, ADR 0081); absent for the top document's own. */
   readonly frame?: string
+  /** A search box (#398): a field that searches, by kind, and the words it holds now; absent for every other ref. */
+  readonly searchBox?: SearchBoxFacts
+  /** The submit control of a form that holds a search box (#398): its line says `button[submit]`; absent for every other ref. */
+  readonly submitsSearch?: true
+}
+
+/** A search box's own facts (#398): what its line says it holds, since a stale value is what a type used to append to. */
+export interface SearchBoxFacts {
+  readonly holds: string
 }
 
 /** The page a Command is read against: its address, its title and its numbered refs. */
@@ -158,7 +169,13 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}), ...searchFactsOf(ref) }
+}
+
+/** A search box's facts and a search form's submit (#398), off the collect's own: the box's kind and what it holds, the submit's kind. */
+function searchFactsOf(ref: SnapshotRef): Pick<CommandRef, 'searchBox' | 'submitsSearch'> {
+  if (ref.kind === 'input' && ref.searchField) return { searchBox: { holds: ref.value ?? '' } }
+  return ref.kind === 'button' && ref.submitsForm && ref.formHasSearch ? { submitsSearch: true } : {}
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms, its text in view and the dialog open over it. */
@@ -295,6 +312,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     case 'click':
       return `click${label(command.target)}`
     case 'type':
+      // A Search Op (#398) is told as the search it is.
+      if (command.submit === true) return `search for ${JSON.stringify(command.slot ?? '')} with${label(command.target)}`
       return `type ${JSON.stringify(command.slot ?? '')} into${label(command.target)}`
     case 'menu':
       return `menu${label(command.target)}`

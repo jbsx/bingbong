@@ -54,7 +54,7 @@ export function withAgentActivity(
     click: (ref) => run(() => controller.click(ref)),
     openMenu: (ref) => run(() => controller.openMenu(ref)),
     mediaOp: (ref, op) => run(() => controller.mediaOp(ref, op)),
-    type: (ref, text) => run(() => controller.type(ref, text)),
+    type: (ref, text, options) => run(() => controller.type(ref, text, options)),
     scroll: (direction, extent) => controller.scroll(direction, extent),
     scrollRegion: (ref, direction, extent) => controller.scrollRegion(ref, direction, extent),
     showText: (block) => controller.showText(block),

@@ -160,8 +160,10 @@ export function slotSpans(text: string): SlotSpan[] {
  * label on is otherwise `media ""`, which says nothing of what it is.
  */
 function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<number>): string {
-  const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
-  const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
+  const kind = kindOf(ref)
+  // A search box says its value once, as what it holds (#398): the tree's `value=` state is that.
+  const shownStates = ref.searchBox !== undefined ? ref.states?.filter((state) => !state.startsWith('value=')) : ref.states
+  const states = shownStates !== undefined && shownStates.length > 0 ? ` ${shownStates.join(' ')}` : ''
   // What a closed trigger opens rides its line (#388): the words the user names are often behind it.
   const holds = ref.holds !== undefined && ref.holds.length > 0 ? ` menu holds ${ref.holds.map((name) => JSON.stringify(name)).join(', ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
@@ -174,7 +176,26 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
   // A Textless Ref the Mark Ask boxed on the image (#382, ADR 0084) is named by its mark, the one thing Jev can find it by.
   const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${holds}${media}${switches}${region}`
+  // What a search box holds rides its line (#398): stale words in the box are what a type used to append to.
+  const words = ref.searchBox !== undefined && ref.searchBox.holds !== '' ? ` holds ${JSON.stringify(ref.searchBox.holds)}` : ''
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${states}${holds}${media}${switches}${region}`
+}
+
+/**
+ * A ref's kind as its line names it: a search box as `searchbox` and the
+ * submit of its form as `button[submit]` (#398) — the gate 2026-10-22 read
+ * `button[submit] "Search"` as the click where `button "Search Search"` read
+ * `none` — an input by its type, the rest as they are.
+ */
+function kindOf(ref: CommandRef): string {
+  if (ref.searchBox !== undefined) return 'searchbox'
+  if (ref.submitsSearch === true) return 'button[submit]'
+  return ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
+}
+
+/** Whether a ref is a search box (#398): a field the card offers a Search Op on. */
+function isSearchBox(ref: CommandRef): boolean {
+  return ref.searchBox !== undefined && isTextField(ref)
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
@@ -261,8 +282,8 @@ export function refIdentityOf(ref: CommandRef, page: CommandPage): RefIdentity {
   return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
 }
 
-/** What an action card label does to a numbered ref, as a set-aside keeps it: a click, a type, a right-click or a Media Op (#372). */
-type RefAct = 'click' | 'type' | 'menu' | MediaOp | ScrollOp
+/** What an action card label does to a numbered ref, as a set-aside keeps it: a click, a type, a right-click, a Search Op (#398), a Media Op (#372) or a Scroll Op (#383). */
+type RefAct = 'click' | 'type' | 'menu' | 'search' | MediaOp | ScrollOp
 
 /**
  * An action set aside (#336, #373, ADR 0080), keyed by its card label: a
@@ -291,7 +312,7 @@ export function setAsideOf(command: Command, page: CommandPage): SetAside | null
     return verb === null ? null : { verb }
   }
   // A Media Op by its op and the ref's identity (#372, ADR 0080): `forward-7` is set aside as `click-10` is, the ref's other ops staying.
-  const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : scrollOpOf(command)
+  const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'type' && command.submit === true ? 'search' : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : scrollOpOf(command)
   if (act !== undefined) {
     const ref = page.refs.find((candidate) => candidate.ref === command.target)
     return ref === undefined ? null : { act, ...refIdentityOf(ref, page) }
@@ -616,7 +637,7 @@ export function doneAction(command: Command, page: CommandPage): string {
   if (label.trim() === '' && (command.verb === 'click' || command.verb === 'menu' || command.verb === 'type')) {
     return command.marked === true ? `${describeCommand(command)}, the control the user's words named on the image of the page` : describeCommand(command)
   }
-  if (command.verb === 'type') return `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
+  if (command.verb === 'type') return command.submit === true ? `search for ${JSON.stringify(command.slot ?? '')} with ${JSON.stringify(label)}` : `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
   // A Media Op by what it did (#372): `skip forward 10 s "Title"`, `mute "Title"`.
   if (command.verb === 'media' && command.mediaOp !== undefined) return `${describeMediaOp(command.mediaOp)} ${JSON.stringify(label)}`
   // A Scroll Op by its direction and Extent (#383): `scroll down a screen "Live chat"`.
@@ -1060,6 +1081,9 @@ function actionQuestion(
   }
   // The refs the clicks reach under the cap; their types, Media Ops and right-clicks come from these.
   const reached = page.refs.slice(0, Math.max(0, room))
+  // Each search box's Search Op (#398): its words replaced and the box submitted, one action where the ladder was four.
+  // A page has a box or two, so theirs take the room first: on a full card the clicks would leave none.
+  const searched = new Set(take(reached.filter((ref) => isSearchBox(ref) && kept(`search-${ref.ref}`))).map((ref) => ref.ref))
   const clicked = new Set(take(reached.filter((ref) => clickable(ref) && kept(`click-${ref.ref}`))).map((ref) => ref.ref))
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const ops = take(reached.flatMap(opsOf))
@@ -1079,7 +1103,11 @@ function actionQuestion(
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {
           const line = `[${ref.ref}] ${describeRef(ref, pageRead, marked)}`
-          return [...(typed.has(ref.ref) ? [[`type-${ref.ref}`, `type the words into ${line}`]] : []), ...(clicked.has(ref.ref) ? [[`click-${ref.ref}`, `click ${line}`]] : [])]
+          return [
+            ...(searched.has(ref.ref) ? [[`search-${ref.ref}`, `search for the words with ${line}: its words replaced, then submitted`]] : []),
+            ...(typed.has(ref.ref) ? [[`type-${ref.ref}`, `type the words into ${line}`]] : []),
+            ...(clicked.has(ref.ref) ? [[`click-${ref.ref}`, `click ${line}`]] : []),
+          ]
         }),
       ),
       ...Object.fromEntries(ops.map(([op, ref]) => [`${op}-${ref.ref}`, mediaOpDescription(op, ref.ref, shownLabel(ref, pageRead))])),
@@ -1270,7 +1298,7 @@ export type CommandAnswers = Answered<ReadingAnswers, 'steps'>
 
 /** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3, `forward-7` a Media Op on ref 7 (#372). */
 interface RefAction {
-  readonly act: 'click' | 'type' | 'menu' | 'open' | MediaOp | ScrollOp
+  readonly act: 'click' | 'type' | 'menu' | 'open' | 'search' | MediaOp | ScrollOp
   readonly n: number
 }
 
@@ -1279,7 +1307,7 @@ function refActionOf(label: string): RefAction | null {
   const match = /^([a-z]+)-(\d+)$/.exec(label)
   if (match === null) return null
   const [, act, n] = match as unknown as [string, string, string]
-  return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || isMediaOp(act) || isScrollOp(act) ? { act, n: Number(n) } : null
+  return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || act === 'search' || isMediaOp(act) || isScrollOp(act) ? { act, n: Number(n) } : null
 }
 
 /** The Amount rung the answers name (#372); `little` when none was asked, or the answer names no rung. */
@@ -1318,10 +1346,11 @@ function mediaCommand(op: MediaOp, ref: CommandRef, answers: CommandAnswers | Ho
   return command({ op })
 }
 
-/** The ref an action names, when the hop offers it — for a type, only a text field. */
+/** The ref an action names, when the hop offers it — for a type, only a text field; for a Search Op, only a search box. */
 function offeredRefOf(acted: RefAction, page: CommandPage): CommandRef | null {
   const ref = page.refs.find((candidate) => candidate.ref === acted.n)
-  return ref === undefined || (acted.act === 'type' && !isTextField(ref)) ? null : ref
+  if (ref === undefined || (acted.act === 'type' && !isTextField(ref)) || (acted.act === 'search' && !isSearchBox(ref))) return null
+  return ref
 }
 
 /** The offered result link an `open-N` names. */
@@ -1426,6 +1455,8 @@ function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text
   if (ref === null) return null
   if (isMediaOp(acted.act)) return mediaCommand(acted.act, ref, answers, text)
   if (isScrollOp(acted.act)) return scrollCommand(acted.act, ref, answers, text)
+  // A Search Op (#398) is a type that replaces the box's words and submits it; the Slot is the search terms.
+  if (acted.act === 'search') return { verb: 'type', target: ref.ref, slot: slotWords(answers.slot, text), submit: true }
   return { verb: acted.act, target: ref.ref, slot: acted.act === 'type' ? slotWords(answers.slot, text) : null }
 }
 

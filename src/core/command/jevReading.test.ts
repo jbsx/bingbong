@@ -1501,3 +1501,65 @@ describe('the Hearing on the card (#396, ADR 0077 as amended)', () => {
     expect(partialQuestions('Search NKBH D', PAGE, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
   })
 })
+
+describe('a search box (#398): its kind on its line, and searching it one op on the card, beside type', () => {
+  const SEARCH_PAGE: CommandPage = {
+    url: 'https://www.youtube.com/watch?v=abc',
+    title: 'A video - YouTube',
+    refs: [
+      { ref: 1, kind: 'link', label: 'Home', href: 'https://www.youtube.com/', inputType: null },
+      { ref: 4, kind: 'input', label: 'Search', href: null, inputType: 'text', searchBox: { holds: 'lines tactic' } },
+      { ref: 5, kind: 'input', label: 'Comment', href: null, inputType: 'text' },
+      { ref: 6, kind: 'button', label: 'Search', href: null, inputType: null, submitsSearch: true },
+    ],
+  }
+
+  it('shows a search box as a searchbox holding its words, and the submit of its form as button[submit]', () => {
+    expect(commandState('search MKBHD', SEARCH_PAGE).split('\n').filter((line) => line.startsWith('['))).toEqual([
+      '[1] link "Home" https://www.youtube.com/',
+      '[4] searchbox "Search" holds "lines tactic"',
+      '[5] input[text] "Comment"',
+      '[6] button[submit] "Search"',
+    ])
+    const empty: CommandPage = { ...SEARCH_PAGE, refs: [{ ref: 4, kind: 'input', label: 'Search', href: null, inputType: 'search', searchBox: { holds: '' } }] }
+    expect(commandState('search MKBHD', empty).split('\n').at(-1)).toBe('[4] searchbox "Search"')
+  })
+
+  it("says what a search box holds once, in place of the tree's value state", () => {
+    const focused: CommandPage = { ...SEARCH_PAGE, refs: [{ ref: 4, kind: 'input', label: 'Search', href: null, inputType: 'text', states: ['value="NKBHD"', 'focused=true', 'expanded=true'], searchBox: { holds: 'NKBHD' } }] }
+    expect(commandState('search MKBHD', focused).split('\n').at(-1)).toBe('[4] searchbox "Search" holds "NKBHD" focused=true expanded=true')
+  })
+
+  it('offers search-N on every search box beside its type-N, and on no other field', () => {
+    const { options } = commandQuestions('search MKBHD', SEARCH_PAGE).action
+    expect(options['search-4']).toBe('search for the words with [4] searchbox "Search" holds "lines tactic": its words replaced, then submitted')
+    expect(options['type-4']).toBe('type the words into [4] searchbox "Search" holds "lines tactic"')
+    expect(options['type-5']).toBeDefined()
+    expect(options).not.toHaveProperty('search-5')
+    expect(options).not.toHaveProperty('search-6')
+    // The web search stays as it is beside it (Jev chooses).
+    expect(options).toHaveProperty('search')
+  })
+
+  it('reads search-N as the Slot typed into the box and submitted, and refuses it on a field that is no search box', () => {
+    expect(readCommandAnswers({ action: choice('search-4'), slot: choice('s1-1') }, 'search MKBHD', SEARCH_PAGE)).toEqual({ verb: 'type', target: 4, slot: 'MKBHD', submit: true })
+    expect(readCommandAnswers({ action: choice('search-5'), slot: choice('s1-1') }, 'search MKBHD', SEARCH_PAGE).verb).toBe('none')
+  })
+
+  it('names the search in the Feed and in "Done so far", and sets it aside apart from the type on the same box', () => {
+    const command: Command = { verb: 'type', target: 4, slot: 'MKBHD', submit: true }
+    expect(doneAction(command, SEARCH_PAGE)).toBe('search for "MKBHD" with "Search"')
+    const hop: HopContext = { hop: 1, visited: [], actions: [], links: [], setAside: [setAsideOf(command, SEARCH_PAGE)!] }
+    const options = hopQuestions('search MKBHD', SEARCH_PAGE, hop).action.options
+    expect(options).not.toHaveProperty('search-4')
+    expect(options).toHaveProperty('type-4')
+  })
+
+  it('keeps every Search Op on a full card, whose clicks fill the room before its fields do', () => {
+    const buttons: CommandRef[] = Array.from({ length: 260 }, (_, n) => ({ ref: n + 2, kind: 'button', label: `Ref ${n + 2}`, href: null, inputType: null }))
+    const full: CommandPage = { ...SEARCH_PAGE, refs: [{ ref: 1, kind: 'input', label: 'Search', href: null, inputType: 'search', searchBox: { holds: '' } }, ...buttons] }
+    const labels = Object.keys(commandQuestions('search MKBHD', full).action.options)
+    expect(labels.length).toBeLessThanOrEqual(255)
+    expect(labels).toContain('search-1')
+  })
+})

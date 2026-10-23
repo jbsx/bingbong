@@ -36,10 +36,11 @@ export interface CollectedElement {
   inForm?: boolean
   formHasCredential?: boolean
   formHasPayment?: boolean
-  /** Search-flavored field (ADR 0015): type="search", or name/id/aria-label/
-   * placeholder matching /search|query|^q$/i; absent in older payloads. */
+  /** A search box by kind (ADR 0015, #398): one that declares it, sits in a
+   * search landmark, or whose name/id/aria-label/placeholder matches
+   * /search|query|^q$/i; never a password or payment field; absent in older payloads. */
   searchField?: boolean
-  /** The associated form contains a search-flavored field; absent in older payloads. */
+  /** The associated form contains a search box (#398); absent in older payloads. */
   formHasSearch?: boolean
   /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
   layer?: 'dialog' | 'page'
@@ -224,9 +225,9 @@ export interface SnapshotRef {
   inForm: boolean
   formHasCredential: boolean
   formHasPayment: boolean
-  /** Search-flavored field itself (ADR 0015); the Enter-submit exemption reads it. */
+  /** A search box by kind (#398): its card line says `searchbox`, and the card offers its Search Op. */
   searchField: boolean
-  /** The associated form contains a search-flavored field; the click-submit exemption reads it. */
+  /** The associated form contains a search box (#398): its submit's card line says `button[submit]`. */
   formHasSearch: boolean
   checked?: boolean | null
   selectedOption?: string | null

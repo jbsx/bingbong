@@ -9,6 +9,7 @@ import type {
   KeyPress,
   MediaState,
   ScreenshotOptions,
+  TypeOptions,
   ViewportPoint,
   VisualGroundingController,
 } from '../ports/browser'
@@ -134,7 +135,7 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   readonly clicks: number[] = []
   /** The refs whose right-click menu was opened (#363), in order. */
   readonly menus: number[] = []
-  readonly typed: { ref: number; text: string }[] = []
+  readonly typed: { ref: number; text: string; submit?: true }[] = []
   readonly scrolls: ('up' | 'down')[] = []
   readonly pressedKeys: { press: KeyPress; times: number }[] = []
   /** Refs the risk gate can describe; empty means every ref is unknown. */
@@ -226,8 +227,8 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return `${mediaOpHead(op.op, ref)}${this.mediaOpChanges}`
   }
 
-  async type(ref: number, text: string): Promise<string> {
-    this.typed.push({ ref, text })
+  async type(ref: number, text: string, options?: TypeOptions): Promise<string> {
+    this.typed.push({ ref, text, ...(options?.submit === true ? { submit: true as const } : {}) })
     const blocked = this.blockedAt(ref)
     if (blocked !== null) return blockedActionHead('type', ref, blocked)
     return `typed [${ref}]: value=${JSON.stringify(text)}`

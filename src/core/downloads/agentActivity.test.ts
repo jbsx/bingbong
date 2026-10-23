@@ -79,6 +79,12 @@ describe('withAgentActivity', () => {
     expect(tracker.isActive()).toBe(false)
   })
 
+  it("forwards a Search Op's submit to the wrapped controller (#398)", async () => {
+    const browser = new FakeBrowser()
+    await withAgentActivity(browser, trackerWithClock().tracker).type(3, 'cats', { submit: true })
+    expect(browser.typed).toEqual([{ ref: 3, text: 'cats', submit: true }])
+  })
+
   it('leaves read-only verbs untracked', async () => {
     const { tracker } = trackerWithClock()
     const tracked = withAgentActivity(new FakeBrowser(), tracker)

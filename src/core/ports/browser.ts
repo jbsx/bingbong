@@ -71,6 +71,11 @@ export interface KeyPress {
   shift?: boolean
 }
 
+/** How a type ends (#398): with `submit`, the field is submitted after the words, a Search Op. */
+export interface TypeOptions {
+  readonly submit?: boolean
+}
+
 /**
  * A part of the viewport as fractions of its size (#195): every value in
  * [0, 1], `left + width` and `top + height` at most 1. Fractions rather
@@ -127,7 +132,12 @@ export interface BrowserController {
    * is the next collect's refs, and nothing drawn is `no observable change`.
    */
   openMenu(ref: number): Promise<string>
-  type(ref: number, text: string): Promise<string>
+  /**
+   * Type into a text field: what it holds is replaced by the words (#398).
+   * With `submit`, a Search Op (#398): the box is then submitted, as Enter
+   * submits it, and the outcome reads as a typing that left the page.
+   */
+  type(ref: number, text: string, options?: TypeOptions): Promise<string>
   /**
    * A Media Op on a media ref's own element (#372, ADR 0080): one evaluate
    * on the node the number names, beside click and type, on any site. The

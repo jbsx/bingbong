@@ -583,7 +583,7 @@ describe.skipIf(!canDriveChrome)('the collector takes every ARIA widget role a c
       '[7] button "Shorts" role=tab selected=false',
       '[8] button "src" role=treeitem level=1 expanded=false selected=false',
       '[9] button "README.md" role=treeitem level=1 selected=false',
-      '[10] input "Search"',
+      '[10] searchbox "Search"',
     ])
     const card = commandQuestions('turn off annotations', page).action
     expect(Object.keys(card.options).filter((label) => label.startsWith('type-'))).toEqual(['type-10'])

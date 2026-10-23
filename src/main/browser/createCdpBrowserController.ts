@@ -6,6 +6,7 @@ import type {
   MediaState,
   PageLanding,
   ScreenshotOptions,
+  TypeOptions,
   ViewportPoint,
   VisualGroundingController,
 } from '../../core/ports/browser'
@@ -58,6 +59,8 @@ import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDe
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
   clearFocusedScript,
+  searchSubmitScript,
+  selectFieldScript,
   blurFocusedFieldScript,
   clickPrepScript,
   flashRefScript,
@@ -190,6 +193,12 @@ export interface ActionEffects {
  * keystroke, 70 ms per scroll tick) is gone, and text is inserted whole.
  */
 export const READINESS_CAP_MS = 150
+
+/** The most a Search Op's submit is waited on to start a navigation or change the address (#398), past its first effect. */
+export const SUBMIT_START_MS = 1000
+
+/** How often that wait asks again. */
+const SUBMIT_POLL_MS = 50
 
 /**
  * A landing (#328, ADR 0076 amendment) is the page gone DOM-quiet, not the
@@ -586,6 +595,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const arrival = watch === undefined ? 'none' : await watch.arrival()
     if (arrival !== 'none') lastSnapshot = undefined
     return arrival
+  }
+
+  /**
+   * The landing a Search Op's submit starts (#398), past its first effect:
+   * the words' own effect — a suggestions list drawn as they went in — ends
+   * the readiness wait before the Enter's navigation has begun (live
+   * 2026-10-23, BBC and the Python docs: the next hop read the page the
+   * words were typed on). So the watch is asked again until a navigation
+   * starts or the address changes, at most {@link SUBMIT_START_MS}; a box
+   * that searches in place costs that bound.
+   */
+  async function submitArrival(watch: ArrivalWatch | undefined, urlBefore: string): Promise<PageArrival> {
+    if (watch === undefined) return 'none'
+    for (let waited = 0; ; waited += SUBMIT_POLL_MS) {
+      const arrival = await watch.arrival()
+      if (arrival !== 'none' || page.url() !== urlBefore || waited >= SUBMIT_START_MS) {
+        if (arrival !== 'none') lastSnapshot = undefined
+        return arrival
+      }
+      await new Promise<void>((resolve) => clock.setTimer(SUBMIT_POLL_MS, resolve))
+    }
   }
 
   /** The clause an Unfinished Load rides its outcome line with; empty for any other arrival. */
@@ -1958,7 +1988,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `typed [${ref}]: selected=${JSON.stringify(selected)}`
   }
 
-  async function typeIntoRef(ref: number, text: string): Promise<string> {
+  /**
+   * Type into a ref (#324): a focusing click, what the field holds selected
+   * so the words replace it (#398), the words inserted whole. A Search Op
+   * (#398) then submits the box — Enter, or the form the page could not
+   * submit on Enter — and the outcome reads as a typing that left the page.
+   */
+  async function typeIntoRef(ref: number, text: string, options: TypeOptions = {}): Promise<string> {
     const { snapshot, target } = await resolveRef(ref)
     if (target.selectedOption != null) {
       return typeIntoSelect(ref, target, signatureOf(snapshot), text)
@@ -1971,8 +2007,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // The click's focus lands before the insert: input events are processed
     // in order (#324), so nothing is slept between them.
     await armReadiness(clicked.at.frame)
+    await evaluateInFrame(clicked.at.frame, selectFieldScript())
     await insertText(text)
-    const arrival = await settleArrival('type', watch, clicked.at.frame)
+    const urlBefore = page.url()
+    if (options.submit === true && (await evaluateInFrame<string>(clicked.at.frame, searchSubmitScript())) !== 'form') {
+      // Keys land only on the focused webContents, as for a pressed key: the insert does not need it, the Enter does.
+      page.focus()
+      await dispatchKey(SPECIAL_KEYS['\n']!)
+    }
+    let arrival = await settleArrival('type', watch, clicked.at.frame)
+    if (options.submit === true && arrival === 'none') arrival = await submitArrival(watch, urlBefore)
     const after = await probeAction(clicked.at, clicked.label)
     if (!after.target) {
       // The typing navigated (e.g. a submitted search): the resulting page
@@ -2394,7 +2438,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       release?.()
     }
   }
-  const type = (ref: number, text: string) => holdingWindowOpens(() => withRefusedStaleRef(() => typeIntoRef(ref, text)))
+  const type = (ref: number, text: string, options?: TypeOptions) => holdingWindowOpens(() => withRefusedStaleRef(() => typeIntoRef(ref, text, options)))
 
   return {
     navigate,

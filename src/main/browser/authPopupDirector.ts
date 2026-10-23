@@ -90,7 +90,7 @@ export function createAuthPopupDirector(
         click: (ref) => target(base).click(ref),
         openMenu: (ref) => target(base).openMenu(ref),
         mediaOp: (ref, op) => target(base).mediaOp(ref, op),
-        type: (ref, text) => target(base).type(ref, text),
+        type: (ref, text, options) => target(base).type(ref, text, options),
         scroll: (direction, extent) => target(base).scroll(direction, extent),
         scrollRegion: (ref, direction, extent) => target(base).scrollRegion(ref, direction, extent),
         showText: (block) => target(base).showText(block),

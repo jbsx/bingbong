@@ -67,6 +67,8 @@ export interface DecisionRecord {
   readonly mediaOp?: MediaOpAction
   /** For a scroll Jev read (#383, ADR 0085): the Extent rung and the screens it came to; `target` is the Scroll Region for a Scroll Op, null for the page. */
   readonly extent?: ScrollExtent
+  /** For `type`, a Search Op (#398): the box was submitted after the words; absent for a plain type. */
+  readonly submit?: true
   readonly target: number | null
   readonly targetLabel?: string
   readonly slot: string | null

@@ -175,7 +175,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // not leak in (button/hidden types are excluded below regardless). The
   // attribute clause also reaches SPA search boxes that are not form controls:
   // contenteditable and role=searchbox/textbox hosts qualify through their
-  // id/aria-label, so a click on their form's submit is exempt alike.
+  // id/aria-label. The card names such a field a searchbox (#398).
   const SEARCH_HINT_RE = /search|query|^q$/i
   const isEditableField = (el) => {
     if (tagOf(el) === 'INPUT' || tagOf(el) === 'TEXTAREA') return true
@@ -183,12 +183,26 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const role = el.getAttribute('role')
     return role === 'searchbox' || role === 'textbox'
   }
+  // A search box by kind (#398): a field that declares it searches
+  // (type=search, role=searchbox, enterkeyhint=search), one that sits in a
+  // search landmark (<search>, role=search), or one the attributes above
+  // name for it. A password or payment field never is one; a textarea is
+  // one by its attributes alone (Google's name=q), never by where it sits,
+  // and a landmark's number or date field stays what it is.
+  const SEARCH_LANDMARK_SELECTOR = 'search, [role="search" i]'
+  const LANDMARK_INPUT_TYPES = ['text', 'search']
   const isSearchField = (el) => {
     if (!isEditableField(el)) return false
     if (isValuelessInput(el)) return false
-    if (tagOf(el) === 'INPUT' && el.type === 'search') return true
+    if (isCredentialField(el) || isPaymentField(el)) return false
+    const tag = tagOf(el)
     const hints = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder]
-    return hints.some((hint) => typeof hint === 'string' && hint !== '' && SEARCH_HINT_RE.test(hint))
+    if (hints.some((hint) => typeof hint === 'string' && hint !== '' && SEARCH_HINT_RE.test(hint))) return true
+    if (tag === 'TEXTAREA') return false
+    if (tag === 'INPUT' && el.type === 'search') return true
+    if (el.getAttribute('role') === 'searchbox' || (el.getAttribute('enterkeyhint') || '').toLowerCase() === 'search') return true
+    if (tag === 'INPUT' && !LANDMARK_INPUT_TYPES.includes(el.type)) return false
+    return typeof el.closest === 'function' && el.closest(SEARCH_LANDMARK_SELECTOR) !== null
   }
   const isCredentialField = (el) => {
     if (tagOf(el) === 'INPUT' && el.type === 'password') return true
@@ -1428,6 +1442,69 @@ export function flashRefScript(index: number): string {
       el.style.outlineOffset = offset
     }, 400)
     return true
+  })()`
+}
+
+/** The editable element that has focus, through any open shadow roots; null when none. */
+const FOCUSED_FIELD_FN = `(() => {
+      let el = document.activeElement
+      while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement
+      return !el || el === document.body ? null : el
+    })`
+
+/**
+ * Select what the focused field holds (#398), so the insert that follows
+ * replaces it: "type X into a box that holds Y" never meant append. An
+ * input or a textarea selects its value; a contenteditable its contents.
+ * Answers whether a field was selected.
+ */
+export function selectFieldScript(): string {
+  return `(() => {
+    /* SELECT_FIELD */
+    const tagOf = ${TAG_OF_FN}
+    const el = ${FOCUSED_FIELD_FN}()
+    if (!el) return false
+    const tag = tagOf(el)
+    if ((tag === 'INPUT' || tag === 'TEXTAREA') && typeof el.select === 'function') {
+      el.select()
+      return true
+    }
+    if (el.isContentEditable) {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return true
+    }
+    return false
+  })()`
+}
+
+/**
+ * The submit of a Search Op (#398), on the focused field. Enter is the one
+ * submit every kind of box honours — a form submits implicitly, a combobox
+ * navigates, a single-page box listens for the key — so the answer is
+ * \`enter\`, for the controller to press. The one form Enter does nothing in
+ * is one with several text fields and no submit control: that form is
+ * submitted here with requestSubmit, its own submit handlers running, and
+ * the answer is \`form\`.
+ */
+export function searchSubmitScript(): string {
+  return `(() => {
+    /* SEARCH_SUBMIT */
+    const tagOf = ${TAG_OF_FN}
+    const el = ${FOCUSED_FIELD_FN}()
+    const form = el ? el.form || (typeof el.closest === 'function' ? el.closest('form') : null) : null
+    if (!form || typeof form.requestSubmit !== 'function') return 'enter'
+    const fields = Array.from(form.elements)
+    const submits = fields.some((field) => (tagOf(field) === 'BUTTON' || tagOf(field) === 'INPUT') && (field.type === 'submit' || field.type === 'image'))
+    // The input types HTML counts when it decides a form with no submit control submits on Enter: one of them, it does; several, it does not.
+    const IMPLICIT_SUBMIT_TYPES = ['text', 'search', 'url', 'tel', 'email', 'password', 'date', 'month', 'week', 'time', 'datetime-local', 'number']
+    const texts = fields.filter((field) => tagOf(field) === 'INPUT' && IMPLICIT_SUBMIT_TYPES.includes(field.type))
+    if (submits || texts.length < 2) return 'enter'
+    form.requestSubmit()
+    return 'form'
   })()`
 }
 

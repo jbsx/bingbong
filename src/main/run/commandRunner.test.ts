@@ -1235,6 +1235,17 @@ describe('the Name Match (ADR 0077)', () => {
     expect(admitted).toEqual(['linus tech tips'])
   })
 
+  it('fires a Search Op Jev picks as one type that submits the box, the Name Match carrying its words as a search\'s (#398)', async () => {
+    const { browser, events, records, decision: jev, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, title: 'Linus Tech Tips - YouTube', refs: NAMED_REFS.map((named) => (named.ref === 3 ? { ...named, searchField: true } : named)) }
+    jev.script.push({ answers: { action: choice('search-3'), slot: choice('s1-3') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
+    expect(await runner.run('search line stack tips', { source: 'spoken' })).toBe(true)
+    expect(browser.typed).toEqual([{ ref: 3, text: 'linus tech tips', submit: true }])
+    expect(browser.navigations).toEqual([])
+    expect(events[0]).toMatchObject({ type: 'command', action: 'search for "linus tech tips" with [3] "Search"' })
+    expect(decision(records[0])).toMatchObject({ verb: 'type', submit: true, target: 3, slot: 'linus tech tips', slotHeard: 'line stack tips' })
+  })
+
   it('types the page\'s spelling into the field named, keeping the words around the name', async () => {
     const { browser, records, runner } = harness()
     browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
