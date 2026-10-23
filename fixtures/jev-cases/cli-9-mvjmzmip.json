@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] link \"change your cookie settings\" https://www.gov.uk/help/cookies",
           "click-2": "click [2] button \"Hide cookie message\"",
@@ -126,7 +126,7 @@
           "show-80": "scroll until [text-80] \"1 January | Tuesday | New Year’s Day\" is in view",
           "show-81": "scroll until [text-81] \"Last updated:: 24 November 2025\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

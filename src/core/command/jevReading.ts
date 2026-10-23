@@ -84,6 +84,20 @@ const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAct
  */
 const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click play" — they name a button on the page: choose its click, never an op on the video or audio itself.'
 
+/**
+ * What a card with Show Ops (ADR 0086) says beside them, so a question the
+ * page answers further down reads as a show of the block that answers it,
+ * not a blind scroll (#405): the instructions say a question takes its
+ * show, on every ask but the Where Ask, and the page scroll says it is
+ * for when no block below holds the ask. Measured on the gate (Mammoth ∩
+ * Elephant) with the corpus's question cases, 2026-10-23: the two lines
+ * together won 3 model-passes and lost none; the block's kind on each
+ * Show line (heading, code, table row) won the Playwright README on
+ * Elephant too, but each arm carrying it lost a case that passed before.
+ */
+const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
+const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
+
 /** What the appliance holds that its verbs act on (#374): whether the Queue holds a current song. Absent when no Player is wired. */
 export interface Appliance {
   readonly queued: boolean
@@ -1093,12 +1107,13 @@ function actionQuestion(
   // The Show Ops take what room is left (ADR 0086): on a full card the refs win. They stand just before the page's own scroll.
   const showOps = take(texts.filter((target) => kept(`show-${target.n}`))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
   const scrollAt = refLess.findIndex(([verb]) => verb === 'scroll_up' || verb === 'scroll_down')
-  const verbs = scrollAt < 0 ? [...refLess, ...showOps] : [...refLess.slice(0, scrollAt), ...showOps, ...refLess.slice(scrollAt)]
+  const refLessLines = showOps.length === 0 ? refLess : refLess.map(([verb, line]) => [verb, verb === 'scroll_down' ? SCROLL_DOWN_PAST_SHOWS : line] as const)
+  const verbs = scrollAt < 0 ? [...refLessLines, ...showOps] : [...refLessLines.slice(0, scrollAt), ...showOps, ...refLessLines.slice(scrollAt)]
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: ops.length === 0 ? instructions : `${instructions} ${CLICK_NAMES_A_BUTTON}`,
+    instructions: [instructions, ...(ops.length === 0 ? [] : [CLICK_NAMES_A_BUTTON]), ...(showOps.length === 0 || asked === 'where' ? [] : [QUESTION_TAKES_ITS_SHOW])].join(' '),
     options: {
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {

@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] button \"Guide\"",
           "click-2": "click [2] button \"\"",
@@ -100,7 +100,7 @@
           "show-11": "scroll until [text-11] \"About You\" is in view",
           "show-12": "scroll until [text-12] \"Comments\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

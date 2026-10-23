@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] link \".github, (Directory) .github .github\" https://github.com/microsoft/playwright/tree/main/.github",
           "click-2": "click [2] link \"devops: run the Windows tests on the 64-core runner with 16 workers ( devops: r…\" https://github.com/microsoft/playwright/commit/6e2c003f16e01822c3ea45bc894c2542a6e98189",
@@ -259,7 +259,7 @@
           "show-4": "scroll until [text-4] \"README.md | README.md | feat(firefox): roll to r1564 (#43494) | Oct 19, 2026\" is in view",
           "show-5": "scroll until [text-5] \"SECURITY.md | SECURITY.md | chore(policy files): Update SECURITY.md to V0.0.9 (#\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

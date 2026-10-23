@@ -1423,6 +1423,19 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
     expect(offered['show-2']).toBe(`scroll until [text-2] ${JSON.stringify(pretty.text.slice(0, 80))} is in view`)
   })
 
+  it('says beside the Show Ops that a question a block further down answers takes its show (#405); a card with none, and the Where Ask, say nothing of it', () => {
+    const says = /When the words ask something a block of text further down answers, choose the show of that block\.$/
+    expect(commandQuestions('how do i install it', DOCS).action.instructions).toMatch(says)
+    expect(commandQuestions('how do i install it', PAGE).action.instructions).not.toMatch(/further down/)
+    expect(whereQuestions('how do i install it', DOCS).action.instructions).not.toMatch(/further down/)
+  })
+
+  it("says on the page scroll, beside the Show Ops, that it is for when no block further down holds the words' ask (#405); a card with none keeps the bare scroll", () => {
+    expect(commandQuestions('how do i install it', DOCS).action.options.scroll_down).toBe('scroll the page down a screen, when no block further down holds what the words ask for')
+    expect(whereQuestions('how do i install it', DOCS).action.options.scroll_down).toBe('scroll the page down a screen, when no block further down holds what the words ask for')
+    expect(commandQuestions('how do i install it', PAGE).action.options.scroll_down).toBe('scroll the page down')
+  })
+
   it('ends the state with the entries the card offers a Show Op for, each whole, after everything else', () => {
     const questions = hopQuestions('show me how to pretty print', DOCS, HOP)
     expect(commandState('show me how to pretty print', DOCS, HOP, undefined, undefined, questions).split('\n').slice(-3)).toEqual([

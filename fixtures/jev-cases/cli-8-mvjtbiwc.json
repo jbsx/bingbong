@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] button \"Main menu Main menu\" hasPopup=menu menu holds \"Main page\", \"Contents\", \"Current events\", \"Random article\", \"About Wikipedia\", \"Contact us\", \"Help\", \"Learn to edit\", \"Community portal\", \"Recent changes\", \"Upload file\", \"Special pages\"",
           "click-2": "click [2] button \"\"",
@@ -139,7 +139,7 @@
           "show-43": "scroll until [text-43] \"Ducks generally only have one partner at a time, although the partnership usuall\" is in view",
           "show-44": "scroll until [text-44] \"Communication\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

@@ -14,7 +14,10 @@ import type { DecisionChoiceAnswer, DecisionQuestions, DecisionResult } from '..
  * `outcome=yes>=0.7` (that label at that probability or more, #366 — a
  * sure answer where the runner acts only on one), `action!=click-21`
  * (anything but it), or `outcome<0.7` (whatever it chooses, under that
- * probability — an answer that must stay unsure).
+ * probability — an answer that must stay unsure). A label may name
+ * alternatives between bars (#405), `action=show-31|show-39`: any of them
+ * passes, and `!=` refuses every one — for a line more than one option
+ * answers rightly, so the case never measures the arm it was written for.
  */
 export type JevExpectation =
   | { readonly question: string; readonly label: string; readonly atLeast?: number }
@@ -64,6 +67,12 @@ export function parseExpectation(text: string): JevExpectation | string {
 /** The label an expectation names, whether it must be the answer or must not; null for a ceiling, which names none. */
 const labelOf = (expectation: JevExpectation): string | null => ('label' in expectation ? expectation.label : 'not' in expectation ? expectation.not : null)
 
+/** The alternatives a label names between its bars: one, for a plain label. */
+const alternativesOf = (label: string): string[] => label.split('|').map((each) => each.trim())
+
+/** The alternative a label names that the answer gave the most probability: the one a failing line quotes. */
+const bestOf = (label: string, probabilities: Readonly<Record<string, number>>): string => alternativesOf(label).reduce((best, each) => ((probabilities[each] ?? 0) > (probabilities[best] ?? 0) ? each : best))
+
 export function expectationText(expectation: JevExpectation): string {
   if ('below' in expectation) return `${expectation.question}<${expectation.below.toFixed(2)}`
   const floor = 'label' in expectation && expectation.atLeast !== undefined ? `>=${expectation.atLeast.toFixed(2)}` : ''
@@ -76,7 +85,8 @@ export function expectationProblem(questions: DecisionQuestions, expectation: Je
   if (question === undefined) return `no question "${expectation.question}" (asked: ${Object.keys(questions).join(', ')})`
   if (question.type !== 'choice') return `"${expectation.question}" is not a Choice`
   const label = labelOf(expectation)
-  return label === null || label in question.options ? null : `"${expectation.question}" offers no label "${label}"`
+  const unoffered = label === null ? undefined : alternativesOf(label).find((each) => !(each in question.options))
+  return unoffered === undefined ? null : `"${expectation.question}" offers no label "${unoffered}"`
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -115,8 +125,10 @@ export interface ExpectationOutcome {
   readonly pass: boolean
   readonly chosen: string
   readonly chosenProbability: number
-  /** The expected (or excluded) label's probability. */
+  /** The expected (or excluded) label's probability: of its likeliest alternative, when it names several. */
   readonly labelProbability: number
+  /** That alternative, or the label itself; absent for a ceiling. */
+  readonly bestLabel?: string
 }
 
 export type CaseVerdict =
@@ -134,13 +146,15 @@ export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionRes
     const chosenProbability = answer.probabilities[answer.choice] ?? answer.confidence
     if ('below' in expectation) return { expectation, pass: chosenProbability < expectation.below, chosen: answer.choice, chosenProbability, labelProbability: chosenProbability }
     const label = labelOf(expectation)!
-    const sure = !('label' in expectation) || (answer.probabilities[label] ?? (answer.choice === label ? answer.confidence : 0)) >= (expectation.atLeast ?? 0)
+    const chosenIs = alternativesOf(label).includes(answer.choice)
+    const sure = !('label' in expectation) || (chosenIs ? chosenProbability : 0) >= (expectation.atLeast ?? 0)
     return {
       expectation,
-      pass: 'label' in expectation ? answer.choice === label && sure : answer.choice !== label,
+      pass: 'label' in expectation ? chosenIs && sure : !chosenIs,
       chosen: answer.choice,
       chosenProbability,
-      labelProbability: answer.probabilities[label] ?? 0,
+      labelProbability: answer.probabilities[bestOf(label, answer.probabilities)] ?? 0,
+      bestLabel: bestOf(label, answer.probabilities),
     }
   })
   return { name, pass: outcomes.every((outcome) => outcome.pass), outcomes }
@@ -151,7 +165,7 @@ const p = (probability: number): string => probability.toFixed(2)
 function outcomeLine(outcome: ExpectationOutcome): string {
   const label = labelOf(outcome.expectation)
   const chose = `chose ${outcome.chosen} ${p(outcome.chosenProbability)}`
-  return `  ${expectationText(outcome.expectation)}  ${label === null || outcome.chosen === label ? chose : `${chose} · ${label} ${p(outcome.labelProbability)}`}`
+  return `  ${expectationText(outcome.expectation)}  ${label === null || alternativesOf(label).includes(outcome.chosen) ? chose : `${chose} · ${outcome.bestLabel ?? label} ${p(outcome.labelProbability)}`}`
 }
 
 /** The replay's report: PASS or FAIL per case, a line per expectation, then the tally. */

@@ -101,6 +101,18 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('FAIL  sure\n  verb<0.90  chose click 0.90')
   })
 
+  it('reads alternatives (#405): any of the labels between bars passes, `!=` refuses them all, and every one must be on offer', async () => {
+    saveCase('either', 'state-a', [{ question: 'target', label: 'ref-21|ref-27' }])
+    saveCase('neither', 'state-a', [{ question: 'target', label: 'none|ref-27' }])
+    saveCase('none-of', 'state-a', [{ question: 'target', not: 'none|ref-21' }])
+    saveCase('unoffered', 'state-a', [{ question: 'target', label: 'ref-27|ref-99' }])
+    const replay = await replayCorpus(dir, { env: {}, model: new FakeJev({ 'state-a': probabilities }) })
+    expect(replay.report).toContain('PASS  either\n  target=ref-21|ref-27  chose ref-21 0.70')
+    expect(replay.report).toContain('FAIL  neither\n  target=none|ref-27  chose ref-21 0.70 · ref-27 0.25')
+    expect(replay.report).toContain('FAIL  none-of\n  target!=none|ref-21  chose ref-21 0.70')
+    expect(replay.report).toContain('FAIL  unoffered  not a case: "target" offers no label "ref-99"')
+  })
+
   it("ends with Jev's latency over the asks it answered (#390), so a widening's cost is read off the same replay", async () => {
     for (let n = 1; n <= 10; n += 1) saveCase(`case-${String(n).padStart(2, '0')}`, `state-${n}`, [{ question: 'target', label: 'ref-27' }])
     saveCase('case-11', 'state-slow', [{ question: 'target', label: 'ref-27' }])

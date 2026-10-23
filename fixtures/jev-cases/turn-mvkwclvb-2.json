@@ -15,7 +15,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] link \"tsconfig.json, (File) tsconfig.json tsconfig.json\" https://github.com/microsoft/playwright/blob/main/tsconfig.json",
           "click-2": "click [2] link \"feat(ct): type mount() story ids through a generated Stories registry ( feat(ct…\" https://github.com/microsoft/playwright/commit/bfb42e5993fcfab0e4cf98b0938b3ad005cd43ab",
@@ -260,7 +260,7 @@
           "show-36": "scroll until [text-36] \"playwright-cli show\" is in view",
           "show-37": "scroll until [text-37] \"Full CLI documentation | GitHub\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

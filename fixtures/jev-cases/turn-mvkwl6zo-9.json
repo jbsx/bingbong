@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] link \"More information about your privacy, opens in a new tab Privacy and Cookies Pol…\" https://www.cambridge.org/legal/privacy",
           "click-2": "click [2] link \"List of Partners (vendors)\" https://dictionary.cambridge.org/dictionary/english/posthumous#",
@@ -197,7 +197,7 @@
           "show-25": "scroll until [text-25] \"Get a quick, free translation!\" is in view",
           "show-26": "scroll until [text-26] \"Browse\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

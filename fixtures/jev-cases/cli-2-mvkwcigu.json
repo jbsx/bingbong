@@ -6,7 +6,7 @@
   "expect": [
     {
       "question": "action",
-      "label": "show-39"
+      "label": "show-31|show-32|show-33|show-34|show-35|show-36|show-39|show-40|show-41|show-42"
     }
   ],
   "ask": {
@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] button \"Toggle navigation\" expanded=false",
           "click-2": "click [2] link \"Homepage\" https://github.com/",
@@ -194,7 +194,7 @@
           "show-66": "scroll until [text-66] \"Test the \\\"add todo\\\" flow on https://demo.playwright.dev/todomvc using playwright\" is in view",
           "show-67": "scroll until [text-67] \"Or run commands directly:\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",

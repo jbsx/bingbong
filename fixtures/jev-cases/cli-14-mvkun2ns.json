@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
           "click-1": "click [1] button \"\" role=LabelText",
           "click-2": "click [2] link \"Python logo\" https://www.python.org/",
@@ -77,7 +77,7 @@
           "show-28": "scroll until [text-28] \">>> pprint.pp(project_info, indent=4, expand=True)\\n{\\n   'author': 'The Python Pa\" is in view",
           "show-29": "scroll until [text-29] \"© Copyright 2001 Python Software Foundation. This page is licensed under the Pyt\" is in view",
           "scroll_up": "scroll the page up",
-          "scroll_down": "scroll the page down",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
           "forward": "go forward",
           "reload": "reload the page",
