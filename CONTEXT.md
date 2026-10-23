@@ -116,7 +116,10 @@ _Avoid_: sub-task, chain, plan, sequence
 **Appliance Verb**:
 A ref-less option on the action card that acts on the appliance itself,
 never on the page: the Player's search (`play`, `play_next`, `queue`),
-the Queue's walk (`skip`, `previous`) and `show`. The Decision Model
+the Queue's walk (`skip`, `previous`), `show`, and one per fact the
+appliance holds (`say_time`, `say_weather`, `say_playing`, `say_timer`),
+each line carrying the fact itself, offered on every ask but the Where
+Ask (#402). The Decision Model
 chooses one as it would a ref, with its own line beside the browser's
 ref-less verbs; the Command is the one the grammar's exact lines make,
 the Player's action by whichever road. Each is offered while there is
@@ -128,6 +131,16 @@ features (the Timer next), never per site: an action on a page's element
 is the ref's own op, never an Appliance Verb (#374, retiring the
 Capability layer of ADR 0079).
 _Avoid_: capability, tool, skill, feature, affordance, intent
+
+**Appliance Fact**:
+What the appliance holds that answers a question with no page: the time
+and date, today's weather in the settings city, the song playing (the
+Player's, else the page's own) and how long is left on the Timer. Each
+is an Appliance Verb whose line carries the fact; chosen, its Answer is
+a fixed sentence filled from the fact as it fires, shown and spoken, the
+page untouched and the Idle Screen left up. The weather is the settings
+city's alone: words naming another place or a website are a search.
+_Avoid_: knowledge, info
 
 **Media Op**:
 An action a media ref carries on the action card because of its kind, the
