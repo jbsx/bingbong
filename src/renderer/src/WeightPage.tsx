@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { timeOptions, type TimeFormat } from '../../core/idle/timeFormat'
 import { bodyFigures, type BodyFigures, type BodyProfile, type Figure } from '../../core/scale/bodyComposition'
 import { formatChange, formatFigure, formatKg, SINCE_LAST, WEIGHT_FIGURES } from '../../core/scale/weightFormat'
 import { since, type WeighIn } from '../../core/scale/weighIns'
@@ -54,8 +55,8 @@ function changeText(now: Figure, before: Figure | undefined, digits: number, uni
   return `${formatChange(now - before, digits)}${suffix}`
 }
 
-function stamp(at: number): string {
-  return dateLabel(at, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+function stamp(at: number, format: TimeFormat): string {
+  return dateLabel(at, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...timeOptions(format) })
 }
 
 /**
@@ -63,7 +64,7 @@ function stamp(at: number): string {
  * more a small menu of them; a tap gives the Weigh-in to that Person, and
  * its figures follow their Body Profile.
  */
-function MoveChip({ weighIn, others }: { weighIn: WeighIn; others: readonly Person[] }) {
+function MoveChip({ weighIn, others, format }: { weighIn: WeighIn; others: readonly Person[]; format: TimeFormat }) {
   const [open, setOpen] = useState(false)
   const move = (person: string): void => {
     setOpen(false)
@@ -72,14 +73,14 @@ function MoveChip({ weighIn, others }: { weighIn: WeighIn; others: readonly Pers
   if (others.length === 0) return null
   if (others.length === 1) {
     return (
-      <button type="button" className="weight-move" aria-label={`Move the Weigh-in of ${stamp(weighIn.at)} to ${others[0].name}`} onClick={() => move(others[0].id)}>
+      <button type="button" className="weight-move" aria-label={`Move the Weigh-in of ${stamp(weighIn.at, format)} to ${others[0].name}`} onClick={() => move(others[0].id)}>
         → {others[0].name}
       </button>
     )
   }
   return (
     <span className="weight-move-menu">
-      <button type="button" className="weight-move" aria-expanded={open} aria-label={`Move the Weigh-in of ${stamp(weighIn.at)} to…`} onClick={() => setOpen(!open)}>
+      <button type="button" className="weight-move" aria-expanded={open} aria-label={`Move the Weigh-in of ${stamp(weighIn.at, format)} to…`} onClick={() => setOpen(!open)}>
         Move ▾
       </button>
       {open ? (
@@ -106,7 +107,19 @@ function MoveChip({ weighIn, others }: { weighIn: WeighIn; others: readonly Pers
  * stored reading and the Person's Body Profile — the page says the
  * impedance ones are estimates.
  */
-export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }: { weighIns: readonly WeighIn[] | null; people: readonly Person[]; initialPerson?: string; onClose: () => void }) {
+export function WeightPage({
+  weighIns,
+  people,
+  initialPerson = JAISH,
+  format = 'system',
+  onClose,
+}: {
+  weighIns: readonly WeighIn[] | null
+  people: readonly Person[]
+  initialPerson?: string
+  format?: TimeFormat
+  onClose: () => void
+}) {
   const [range, setRange] = useState<RangeName>('30 d')
   const [now] = useState(() => Date.now())
   const [chosen, setChosen] = useState(initialPerson)
@@ -152,7 +165,7 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
           <>
             <section className="settings-section weight-latest" aria-label="latest weigh-in">
               <h2>
-                <span className="weight-latest-name">{person.name}</span> · <span className="weight-latest-when">{stamp(latest.at)}</span>
+                <span className="weight-latest-name">{person.name}</span> · <span className="weight-latest-when">{stamp(latest.at, format)}</span>
               </h2>
               <ul className="weight-figures">
                 {WEIGHT_FIGURES.map(({ key, label, unit, digits }) => {
@@ -224,13 +237,13 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
               <tbody>
                 {[...history].reverse().map(({ weighIn, figures: row }) => (
                   <tr key={weighIn.at} data-at={weighIn.at}>
-                    <td>{stamp(weighIn.at)}</td>
+                    <td>{stamp(weighIn.at, format)}</td>
                     <td>{formatKg(weighIn.kg)} kg</td>
                     <td>{row.fatPercent === 'unavailable' ? '–' : `${formatFigure(row.fatPercent, 1)}%`}</td>
                     <td>{row.musclePercent === 'unavailable' ? '–' : `${formatFigure(row.musclePercent, 1)}%`}</td>
                     <td>
-                      <MoveChip weighIn={weighIn} others={others} />
-                      <button type="button" className="settings-term-remove" aria-label={`Delete the Weigh-in of ${stamp(weighIn.at)}`} onClick={() => remove(weighIn.at)}>
+                      <MoveChip weighIn={weighIn} others={others} format={format} />
+                      <button type="button" className="settings-term-remove" aria-label={`Delete the Weigh-in of ${stamp(weighIn.at, format)}`} onClick={() => remove(weighIn.at)}>
                         Delete
                       </button>
                     </td>

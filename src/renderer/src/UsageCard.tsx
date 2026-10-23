@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { chartCeiling, elapsedPct, resetLabel, USAGE_HISTORY_MS, USAGE_STALE_MS, type UsageView, type UsageWindow } from '../../core/usage/usage'
 import type { RingsHeight } from '../../core/idle/columns'
+import { timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
 
 /** A pause in the dashboard's sampling longer than this breaks the line rather than bridging it. */
 const GAP_MS = 5 * 60 * 1000
@@ -227,9 +228,9 @@ function dashOf(window: UsageWindow, index: number): string | undefined {
 }
 
 /** When the dashboard last refreshed, amber once that is past USAGE_STALE_MS (a failed poll keeps the last numbers on screen). */
-function Updated({ updatedAt, now }: { updatedAt: number; now: number }) {
+function Updated({ updatedAt, now, format }: { updatedAt: number; now: number; format: TimeFormat }) {
   const stale = now - updatedAt > USAGE_STALE_MS
-  const updated = new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const updated = timeOfDay(updatedAt, format)
   return <span className={stale ? 'usage-updated usage-updated--stale' : 'usage-updated'}>updated {updated}</span>
 }
 
@@ -241,7 +242,7 @@ function Updated({ updatedAt, now }: { updatedAt: number; now: number }) {
  * with when the dashboard last refreshed. The plot stretches to its box; its
  * strokes keep their width (non-scaling), the dots and figures sit in HTML.
  */
-function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageView[]; updatedAt: number; now: number }) {
+function UsageChart({ providers, updatedAt, now, format }: { providers: readonly UsageView[]; updatedAt: number; now: number; format: TimeFormat }) {
   const start = now - USAGE_HISTORY_MS
   const lines = providers.flatMap((p) => p.lines.map((window, index) => ({ provider: p.name, window, dash: dashOf(window, index) })))
   const peak = Math.max(0, ...lines.flatMap(({ window }) => window.history.filter(([time]) => time >= start).map(([, pct]) => pct)))
@@ -307,7 +308,7 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
           <span>−12h</span>
           <span>−6h</span>
           <span>
-            now · <Updated updatedAt={updatedAt} now={now} />
+            now · <Updated updatedAt={updatedAt} now={now} format={format} />
           </span>
         </span>
       </div>
@@ -323,15 +324,29 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
  * are drawn smaller. Read-only — a tap wakes the dashboard like anywhere
  * else on the Idle Screen; the choices live in settings.
  */
-export function UsageCard({ providers, updatedAt, now, form, compact = false }: { providers: readonly UsageView[]; updatedAt: number; now: number; form: 'full' | 'small'; compact?: boolean }) {
+export function UsageCard({
+  providers,
+  updatedAt,
+  now,
+  form,
+  compact = false,
+  format = 'system',
+}: {
+  providers: readonly UsageView[]
+  updatedAt: number
+  now: number
+  form: 'full' | 'small'
+  compact?: boolean
+  format?: TimeFormat
+}) {
   return (
     <section className={`idle-card usage-card usage-card--${form}`} aria-label="AI usage">
       <Rings providers={providers} now={now} compact={compact} />
       {form === 'full' ? (
-        <UsageChart providers={providers} updatedAt={updatedAt} now={now} />
+        <UsageChart providers={providers} updatedAt={updatedAt} now={now} format={format} />
       ) : (
         <span className="usage-card-foot">
-          <Updated updatedAt={updatedAt} now={now} />
+          <Updated updatedAt={updatedAt} now={now} format={format} />
         </span>
       )}
     </section>

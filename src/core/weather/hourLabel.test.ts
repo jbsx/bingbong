@@ -17,6 +17,12 @@ describe('hourLabel', () => {
     expect(hourLabel('2026-10-18T06:42', { locale: 'en-US', withMinutes: true })).toMatch(/^6:42\sAM$/)
   })
 
+  it('writes the clock the Time Format setting picks, whatever the locale', () => {
+    expect(hourLabel('2026-10-18T18:00', { locale: 'en-GB', format: '12' })).toMatch(/^6\spm$/)
+    expect(hourLabel('2026-10-18T06:42', { locale: 'en-GB', format: '12', withMinutes: true })).toMatch(/^6:42\sam$/)
+    expect(hourLabel('2026-10-18T18:00', { locale: 'en-US', format: '24' })).toBe('18:00')
+  })
+
   it('gives back a value it cannot read as it came', () => {
     expect(hourLabel('soon', { locale: 'en-GB' })).toBe('soon')
   })

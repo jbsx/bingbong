@@ -7,6 +7,7 @@ import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthEntries, twoWeeks, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
+import { clockParts, timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
 import { earPhase, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
@@ -50,21 +51,16 @@ function formatDate(now: Date): string {
   return now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-/** The time as the locale writes it, split at its separator so the colon can take the accent: "09", ":", "52". */
-function clockParts(now: Date): [string, string, string] {
-  const text = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const match = /^(\d+)(\D)(\d+.*)$/.exec(text)
-  return match === null ? [text, '', ''] : [match[1], match[2], match[3]]
-}
-
-function Clock({ now, small }: { now: Date; small: boolean }) {
-  const [hours, separator, minutes] = clockParts(now)
+/** The time on the Time Format's clock, the colon in the accent and a 12-hour clock's "pm" small beside the minutes. */
+function Clock({ now, small, format }: { now: Date; small: boolean; format: TimeFormat }) {
+  const { hours, separator, minutes, period } = clockParts(now, format)
   return (
     <div className={small ? 'idle-clock-block idle-clock-block--split' : 'idle-clock-block'}>
       <p className="idle-clock" aria-label="clock">
         {hours}
         <span className="idle-clock-colon">{separator}</span>
         {minutes}
+        {period === '' ? null : <span className="idle-clock-period">{period}</span>}
       </p>
       <p className="idle-date">{formatDate(now)}</p>
     </div>
@@ -101,7 +97,7 @@ function TimerRing({ fraction }: { fraction: number }) {
  * click could land). A running one is not: a tap there only wakes the
  * dashboard.
  */
-function TimerClock({ timer }: { timer: Exclude<TimerState, { status: 'off' }> }) {
+function TimerClock({ timer, format }: { timer: Exclude<TimerState, { status: 'off' }>; format: TimeFormat }) {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -113,7 +109,7 @@ function TimerClock({ timer }: { timer: Exclude<TimerState, { status: 'off' }> }
   const length = describeDuration(timer.durationMs)
   if (timer.status === 'running') {
     const left = timer.endsAt - now
-    const ends = new Date(timer.endsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const ends = timeOfDay(timer.endsAt, format)
     return (
       <section className="idle-timer" aria-label={`timer: ${countdownLabel(left)} left of ${length}`}>
         <p className="idle-timer-left">{countdownLabel(left)}</p>
@@ -197,16 +193,16 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
   )
 }
 
-function eventTime(event: CalendarEvent, now: Date): string {
+function eventTime(event: CalendarEvent, now: Date, format: TimeFormat): string {
   if (event.allDay) return 'All day'
   if (event.start <= now.getTime()) return 'Now'
-  return new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return timeOfDay(event.start, format)
 }
 
 /** Up Next, a Clock Line: today's next event from the Calendar — under way or coming — with how many more today. Shown only when a source has one. */
-function UpNextLine({ next, now }: { next: UpNext; now: Date }) {
+function UpNextLine({ next, now, format }: { next: UpNext; now: Date; format: TimeFormat }) {
   const { event, more } = next
-  const when = eventTime(event, now)
+  const when = eventTime(event, now, format)
   return (
     <div className="idle-line idle-upnext" aria-label={`up next: ${event.title}, ${when}`}>
       <span className="idle-line-kicker">Up next</span>
@@ -301,9 +297,9 @@ function holidayDate(date: string, now: Date): string {
 }
 
 /** An entry's day and time as the list under the weeks names it: "Fri 30 · 19:00", "Fri 30 · all day". */
-function entryWhen(event: CalendarEvent): string {
+function entryWhen(event: CalendarEvent, format: TimeFormat): string {
   const day = new Date(event.start).toLocaleDateString([], { weekday: 'short', day: 'numeric' })
-  return `${day} · ${event.allDay ? 'all day' : new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  return `${day} · ${event.allDay ? 'all day' : timeOfDay(event.start, format)}`
 }
 
 /**
@@ -314,7 +310,7 @@ function entryWhen(event: CalendarEvent): string {
  * entry; and the month's entries still to come listed under the weeks while
  * it has any (its full form).
  */
-function CalendarCard({ now, weekStart, events, form }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; form: 'full' | 'small' }) {
+function CalendarCard({ now, weekStart, events, form, format }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; form: 'full' | 'small'; format: TimeFormat }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
   const holidays = [...ukBankHolidays(now.getFullYear()), ...ukBankHolidays(now.getFullYear() + 1)]
   const weeks = twoWeeks(now, weekStart, events, holidays)
@@ -367,7 +363,7 @@ function CalendarCard({ now, weekStart, events, form }: { now: Date; weekStart: 
         <ul className="idle-cal-entries" aria-label="this month">
           {entries.slice(0, ENTRIES_SHOWN).map((event) => (
             <li key={`${event.source}:${event.id}`} className="idle-cal-entry">
-              <span className="idle-cal-entry-when">{entryWhen(event)}</span>
+              <span className="idle-cal-entry-when">{entryWhen(event, format)}</span>
               <span className="idle-cal-entry-title">{event.title}</span>
             </li>
           ))}
@@ -457,6 +453,7 @@ export function IdleScreen({
   nowPlaying,
   weighIns = null,
   weight = defaultWeightSettings(),
+  timeFormat = 'system',
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
   status,
@@ -477,6 +474,8 @@ export function IdleScreen({
   weighIns?: readonly WeighIn[] | null
   /** The Weight section (settings' weight): the People, their Body Profiles and the card's choices. */
   weight?: WeightSettings
+  /** The clock every time on the screen is written on (settings' timeFormat). */
+  timeFormat?: TimeFormat
   /** A Person's row on the Weight card was tapped: show the Weight page on them. */
   onOpenWeight?: (person: string) => void
   /** The settings button in the corner was tapped: show the settings page. */
@@ -531,10 +530,10 @@ export function IdleScreen({
   const rightCard = (id: IdleCardId, form: 'full' | 'small', height: number): React.ReactNode => {
     switch (id) {
       case 'calendar':
-        return <CalendarCard now={now} weekStart={weekStart} events={events} form={form} />
+        return <CalendarCard now={now} weekStart={weekStart} events={events} form={form} format={timeFormat} />
       case 'weight':
         return weightRows.length > 0 ? (
-          <WeightCard rows={weightRows} weight={weight} form={form} now={now.getTime()} onOpen={onOpenWeight} />
+          <WeightCard rows={weightRows} weight={weight} form={form} now={now.getTime()} format={timeFormat} onOpen={onOpenWeight} />
         ) : (
           <NoteCard label="weight">{weighIns !== null && weighIns.length > 0 ? 'Nobody shown — pick People in Settings' : 'Step on the scale'}</NoteCard>
         )
@@ -561,7 +560,7 @@ export function IdleScreen({
         return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={layout.form} /> : null
       case 'usage':
         return usage.status === 'ready' && usageViews.length > 0 ? (
-          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} {...layout} />
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} format={timeFormat} {...layout} />
         ) : (
           <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
         )
@@ -592,17 +591,17 @@ export function IdleScreen({
       <div className="idle-col idle-col--left">
         {showWeather ? (
           <div className="idle-home" data-card="weather" data-form={weather.status === 'ready' ? 'full' : 'small'}>
-            {weather.status === 'ready' ? <WeatherColumn report={weather.report} now={now.getTime()} /> : <NoteCard label="weather">{weatherLine(weather)}</NoteCard>}
+            {weather.status === 'ready' ? <WeatherColumn report={weather.report} now={now.getTime()} format={timeFormat} /> : <NoteCard label="weather">{weatherLine(weather)}</NoteCard>}
           </div>
         ) : null}
       </div>
       <div className="idle-col idle-col--middle">
         <div className={timer.status === 'off' ? 'idle-clock-row' : 'idle-clock-row idle-clock-row--timer'}>
-          <Clock now={now} small={timer.status !== 'off'} />
+          <Clock now={now} small={timer.status !== 'off'} format={timeFormat} />
           {timer.status !== 'off' ? (
             <>
               <span className="idle-clock-rule" aria-hidden="true" />
-              <TimerClock timer={timer} />
+              <TimerClock timer={timer} format={timeFormat} />
             </>
           ) : null}
         </div>
@@ -612,7 +611,7 @@ export function IdleScreen({
               case 'voice':
                 return <VoiceLine key={line} voice={voice} />
               case 'upNext':
-                return next !== null ? <UpNextLine key={line} next={next} now={now} /> : null
+                return next !== null ? <UpNextLine key={line} next={next} now={now} format={timeFormat} /> : null
               case 'lastPage':
                 return lastPage !== null ? <LastPageLine key={line} page={lastPage} /> : null
             }

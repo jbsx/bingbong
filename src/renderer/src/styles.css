@@ -2238,6 +2238,15 @@ details[open] > .settings-summary::before {
   color: var(--accent);
 }
 
+/* A 12-hour clock's "pm": small beside the minutes, on their baseline, so the figures keep the clock's size. */
+.idle-clock-period {
+  margin-left: 0.12em;
+  font-size: 0.3em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--fg2);
+}
+
 .idle-date {
   margin: 4px 0 0;
   font-size: 26px;

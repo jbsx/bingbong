@@ -5,6 +5,7 @@ import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LIST
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../../core/idle/columns'
+import { asTimeFormat, timeOfDay } from '../../core/idle/timeFormat'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
@@ -120,6 +121,7 @@ const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string;
     group: 'Idle screen',
     sections: [
       { id: 'idle screen cards', title: 'Cards' },
+      { id: 'clock', title: 'Clock' },
       { id: 'weather', title: 'Weather' },
       { id: 'weight', title: 'Weight' },
       { id: 'ai usage', title: 'AI usage' },
@@ -926,6 +928,21 @@ export function SettingsPage({
 
         <h2 className="settings-group">Idle screen</h2>
         <IdleCardsSection cards={draft.idleCards} onChange={(idleCards) => setDraft({ ...draft, idleCards })} />
+
+        <Section id="clock" title="Clock" hint={`${draft.timeFormat === 'system' ? 'Matches this computer' : `${draft.timeFormat}-hour`} · ${timeOfDay(Date.now(), draft.timeFormat)}`}>
+          <Field label="Time format">
+            <select
+              value={draft.timeFormat}
+              aria-label="Time format"
+              onChange={(event) => setDraft({ ...draft, timeFormat: asTimeFormat(event.target.value) })}
+            >
+              <option value="system">Match this computer</option>
+              <option value="12">12-hour (9:05 pm)</option>
+              <option value="24">24-hour (21:05)</option>
+            </select>
+          </Field>
+          <p className="settings-note">Every time on the idle screen and the Weight page: the clock, the Timer, the calendar, the weather's hours.</p>
+        </Section>
 
         <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? `Detected · ${draft.weather.units === 'imperial' ? '°F' : '°C'}` : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>
           <Field label="City">

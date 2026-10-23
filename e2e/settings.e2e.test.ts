@@ -181,4 +181,36 @@ describe('settings page e2e', () => {
       expect(Math.abs(row.figureTop - row.nameTop), row.label).toBeLessThanOrEqual(4)
     }
   })
+
+  it('writes the idle screen clock on the 12-hour clock once that is picked, and saves it', async () => {
+    await harness.dashboardEval(`(() => { const details = document.querySelector('section[aria-label="clock"] details'); if (!details.open) details.open = true })()`)
+    expect(await harness.dashboardEval<string>(`document.querySelector('select[aria-label="Time format"]').value`)).toBe('system')
+    await harness.dashboardEval(`(() => {
+      const select = document.querySelector('select[aria-label="Time format"]')
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, '12')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    await harness.clickDashboardElement('.settings-button--primary')
+    await waitFor(
+      async () => {
+        const raw = await readFile(join(userDataDir, 'settings.json'), 'utf8').catch(() => undefined)
+        return raw !== undefined && JSON.parse(raw).timeFormat === '12' ? true : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+
+    await harness.pressKey('dashboard', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    const clock = await waitFor(
+      async () => {
+        const found = await harness.dashboardEval<{ text: string; period: string } | null>(
+          `(() => { const clock = document.querySelector('.idle-clock'); return clock ? { text: clock.textContent, period: clock.querySelector('.idle-clock-period')?.textContent ?? '' } : null })()`,
+        )
+        return found ?? undefined
+      },
+      { timeoutMs: 10000, intervalMs: 100 },
+    )
+    // "9:05pm": a bare hour from 1 to 12, the minutes, and the day period set apart.
+    expect(clock.period).toMatch(/^(am|pm)$/i)
+    expect(clock.text).toMatch(/^(1[0-2]|[1-9]):[0-5]\d(am|pm)$/i)
+  })
 })

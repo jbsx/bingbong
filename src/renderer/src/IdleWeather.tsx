@@ -1,3 +1,4 @@
+import type { TimeFormat } from '../../core/idle/timeFormat'
 import { hourLabel } from '../../core/weather/hourLabel'
 import { cityWallClock, dayBar, rainPeak } from '../../core/weather/today'
 import { temperatureHue, type WeatherHour, type WeatherOutlookDay, type WeatherReport } from '../../core/weather/weather'
@@ -31,13 +32,13 @@ function Drop({ size }: { size: number }) {
 }
 
 /** The day from sunrise to sunset on its 24 hours, now marked on it — past sunset at night. */
-function DayBar({ report, now }: { report: WeatherReport; now: number }) {
+function DayBar({ report, now, format }: { report: WeatherReport; now: number; format: TimeFormat }) {
   const at = report.utcOffsetSeconds === undefined ? null : cityWallClock(now, report.utcOffsetSeconds)
   const bar = at === null ? null : dayBar(report.today?.sunrise ?? null, report.today?.sunset ?? null, at)
   if (bar === null || report.today?.sunrise == null || report.today.sunset == null) return null
   const percent = (share: number): string => `${(share * 100).toFixed(2)}%`
   return (
-    <div className="wx-day" aria-label={`sunrise ${hourLabel(report.today.sunrise, { withMinutes: true })}, sunset ${hourLabel(report.today.sunset, { withMinutes: true })}`}>
+    <div className="wx-day" aria-label={`sunrise ${hourLabel(report.today.sunrise, { withMinutes: true, format })}, sunset ${hourLabel(report.today.sunset, { withMinutes: true, format })}`}>
       <span className="wx-day-track">
         <span className="wx-day-sun" style={{ left: percent(bar.sunrise), width: percent(bar.sunset - bar.sunrise) }} />
         <span className="wx-day-edge" style={{ left: percent(bar.sunrise) }} />
@@ -45,10 +46,10 @@ function DayBar({ report, now }: { report: WeatherReport; now: number }) {
         <span className="wx-day-now" style={{ left: percent(bar.now) }} />
       </span>
       <span className="wx-day-time" style={{ left: percent(bar.sunrise) }}>
-        {hourLabel(report.today.sunrise, { withMinutes: true })}
+        {hourLabel(report.today.sunrise, { withMinutes: true, format })}
       </span>
       <span className="wx-day-time" style={{ left: percent(bar.sunset) }}>
-        {hourLabel(report.today.sunset, { withMinutes: true })}
+        {hourLabel(report.today.sunset, { withMinutes: true, format })}
       </span>
     </div>
   )
@@ -59,7 +60,7 @@ function DayBar({ report, now }: { report: WeatherReport; now: number }) {
  * by its sky's glyph and today's rain chance; today's low to high with now
  * on it; the day bar under them.
  */
-function WeatherNow({ report, now }: { report: WeatherReport; now: number }) {
+function WeatherNow({ report, now, format }: { report: WeatherReport; now: number; format: TimeFormat }) {
   const { today, units } = report
   const span = today ? Math.max(1, today.high - today.low) : 1
   const at = today ? Math.min(100, Math.max(0, ((report.temperature - today.low) / span) * 100)) : 0
@@ -96,7 +97,7 @@ function WeatherNow({ report, now }: { report: WeatherReport; now: number }) {
           </span>
         </div>
       ) : null}
-      <DayBar report={report} now={now} />
+      <DayBar report={report} now={now} format={format} />
     </div>
   )
 }
@@ -126,7 +127,7 @@ const BASE = 246
  * each end — over the rain chance as a blue area, each hour's chance over
  * it, the peak's brighter, and the hours under the axis.
  */
-function HourChart({ hours, units, peak }: { hours: readonly WeatherHour[]; units: WeatherUnits; peak: number }) {
+function HourChart({ hours, units, peak, format }: { hours: readonly WeatherHour[]; units: WeatherUnits; peak: number; format: TimeFormat }) {
   const last = hours.length - 1
   const x = (index: number): number => (last === 0 ? (X0 + X1) / 2 : X0 + ((X1 - X0) * index) / last)
   const rainY = (chance: number): number => BASE - chance * 1.42
@@ -177,7 +178,7 @@ function HourChart({ hours, units, peak }: { hours: readonly WeatherHour[]; unit
         {hours.map((hour, index) => (
           <g key={hour.time}>
             <text className="wx-hours-time" x={x(index)} y={BASE + 28} textAnchor="middle">
-              {hourLabel(hour.time)}
+              {hourLabel(hour.time, { format })}
             </text>
             {hour.precipitationChance !== null && hour.precipitationChance > 0 ? (
               <text className={hour.precipitationChance === peak ? 'wx-hours-rain wx-hours-rain--peak' : 'wx-hours-rain'} x={x(index)} y={rainY(hour.precipitationChance) - 10} textAnchor="middle">
@@ -209,24 +210,24 @@ function HourChart({ hours, units, peak }: { hours: readonly WeatherHour[]; unit
 }
 
 /** The coming hours: the rain at its peak and the hour it comes, large, over the chart. */
-function WeatherHours({ report }: { report: WeatherReport }) {
+function WeatherHours({ report, format }: { report: WeatherReport; format: TimeFormat }) {
   const hours = report.hours ?? []
   const peak = rainPeak(hours)
   return (
     <div className="wx-band wx-hours" aria-label="coming hours">
       {peak !== null ? (
-        <div className="wx-peak" aria-label={`rain ${Math.round(peak.chance)}% by ${hourLabel(peak.time)}`}>
+        <div className="wx-peak" aria-label={`rain ${Math.round(peak.chance)}% by ${hourLabel(peak.time, { format })}`}>
           <span className="wx-peak-figure">
             {Math.round(peak.chance)}
             <small>%</small>
           </span>
           <span className="wx-peak-words">
             <span>rain</span>
-            <span className="wx-peak-by">by {hourLabel(peak.time, { withMinutes: true })}</span>
+            <span className="wx-peak-by">by {hourLabel(peak.time, { withMinutes: true, format })}</span>
           </span>
         </div>
       ) : null}
-      {hours.length > 0 ? <HourChart hours={hours} units={report.units} peak={peak?.chance ?? -1} /> : null}
+      {hours.length > 0 ? <HourChart hours={hours} units={report.units} peak={peak?.chance ?? -1} format={format} /> : null}
     </div>
   )
 }
@@ -274,11 +275,11 @@ function WeatherDays({ days, units }: { days: readonly WeatherOutlookDay[]; unit
  * draws it: the weather now, the coming hours, the coming days — every
  * temperature in its hue, rain in blue, every time in the city's own clock.
  */
-export function WeatherColumn({ report, now }: { report: WeatherReport; now: number }) {
+export function WeatherColumn({ report, now, format = 'system' }: { report: WeatherReport; now: number; format?: TimeFormat }) {
   return (
     <section className="idle-card wx-card" aria-label="weather">
-      <WeatherNow report={report} now={now} />
-      <WeatherHours report={report} />
+      <WeatherNow report={report} now={now} format={format} />
+      <WeatherHours report={report} format={format} />
       {(report.days ?? []).length > 0 ? <WeatherDays days={report.days ?? []} units={report.units} /> : <div className="wx-band wx-days" />}
     </section>
   )

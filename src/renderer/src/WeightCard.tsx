@@ -1,3 +1,4 @@
+import { timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
 import { bodyFigures } from '../../core/scale/bodyComposition'
 import { weighInsOf, type Person } from '../../core/scale/people'
 import { formatFigure, formatKg, SINCE_LAST } from '../../core/scale/weightFormat'
@@ -24,11 +25,11 @@ export function weightCardRows(weighIns: readonly WeighIn[], weight: WeightSetti
 }
 
 /** When the latest Weigh-in was: "today 07:12", "yesterday", else "Mon 13 Oct". */
-function whenLabel(at: number, now: number): string {
+function whenLabel(at: number, now: number, format: TimeFormat): string {
   const day = new Date(at)
   const today = new Date(now)
   const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()) / DAY_MS)
-  if (days === 0) return `today ${day.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  if (days === 0) return `today ${timeOfDay(day, format)}`
   if (days === 1) return 'yesterday'
   return dateLabel(day, { weekday: 'short', day: 'numeric', month: 'short' })
 }
@@ -81,7 +82,21 @@ function tapProps(person: Person, latest: WeighIn, onOpen: (person: string) => v
  * pointer-down wakes the dashboard, which unmounts this screen before any
  * click could land.
  */
-export function WeightCard({ rows, weight, form, now, onOpen }: { rows: readonly WeightCardRow[]; weight: WeightSettings; form: 'full' | 'small'; now: number; onOpen: (person: string) => void }) {
+export function WeightCard({
+  rows,
+  weight,
+  form,
+  now,
+  format = 'system',
+  onOpen,
+}: {
+  rows: readonly WeightCardRow[]
+  weight: WeightSettings
+  form: 'full' | 'small'
+  now: number
+  format?: TimeFormat
+  onOpen: (person: string) => void
+}) {
   const { card } = weight
   if (form === 'small') {
     return (
@@ -119,7 +134,7 @@ export function WeightCard({ rows, weight, form, now, onOpen }: { rows: readonly
               {card.change ? <LastChange weighIns={weighIns} /> : null}
               <span className="weight-card-who">
                 <span className="weight-card-name">{person.name}</span>
-                <span className="weight-card-when">{whenLabel(latest.at, now)}</span>
+                <span className="weight-card-when">{whenLabel(latest.at, now, format)}</span>
                 {card.fat ? <span className="weight-card-fat">{fat === 'unavailable' ? '– fat' : `${formatFigure(fat, 1)}% fat`}</span> : null}
               </span>
             </div>

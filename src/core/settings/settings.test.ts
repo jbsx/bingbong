@@ -33,6 +33,7 @@ describe('defaultSettings', () => {
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
     expect(settings.appearance).toBe('system')
+    expect(settings.timeFormat).toBe('system')
   })
 })
 
@@ -136,6 +137,13 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ adblockEnabled: false }).adblockEnabled).toBe(false)
     expect(sanitizeSettings({}).adblockEnabled).toBe(true)
     expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
+  })
+
+  it('keeps a saved 12- or 24-hour clock and reads anything else as the locale\'s', () => {
+    expect(sanitizeSettings({ timeFormat: '12' }).timeFormat).toBe('12')
+    expect(sanitizeSettings({ timeFormat: '24' }).timeFormat).toBe('24')
+    expect(sanitizeSettings({}).timeFormat).toBe('system')
+    expect(sanitizeSettings({ timeFormat: 24 }).timeFormat).toBe('system')
   })
 
   it('accepts only the three appearance literals and defaults to system', () => {

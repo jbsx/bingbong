@@ -171,6 +171,7 @@ export function App() {
           nowPlaying={nowPlaying}
           weighIns={weighIns}
           weight={settings?.weight}
+          timeFormat={settings?.timeFormat}
           onOpenWeight={(person) => {
             setWeightPerson(person)
             setView('weight')
@@ -275,7 +276,7 @@ export function App() {
               <p className="settings-loading">Loading settings…</p>
             )
           ) : view === 'weight' ? (
-            <WeightPage weighIns={weighIns} people={settings?.weight.people ?? defaultWeightSettings().people} initialPerson={weightPerson} onClose={() => setView('dashboard')} />
+            <WeightPage weighIns={weighIns} people={settings?.weight.people ?? defaultWeightSettings().people} initialPerson={weightPerson} format={settings?.timeFormat} onClose={() => setView('dashboard')} />
           ) : (
             <div className="dashboard-browsing">
               <BrowserPane />

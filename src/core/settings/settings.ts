@@ -5,6 +5,7 @@
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
 import { IDLE_CARD_IDS, sanitizeIdleCards, savedIdleCards, type IdleCardId } from '../idle/columns'
+import { asTimeFormat, type TimeFormat } from '../idle/timeFormat'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 import { defaultWeightSettings, sanitizeWeightSettings, type WeightSettings } from '../scale/weightSettings'
@@ -69,6 +70,8 @@ export interface AppSettings {
   adblockEnabled: boolean
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
+  /** The clock every time of day on the Idle Screen and the Weight page is written on (core/idle/timeFormat): the locale's, 12-hour or 24-hour. */
+  timeFormat: TimeFormat
   /**
    * The weather's city ('' is the network's own place) and units; a city
    * picked from the search keeps its coordinates, so the forecast is for the
@@ -109,6 +112,7 @@ export function defaultSettings(): AppSettings {
     sttEngine: 'parakeet',
     adblockEnabled: true,
     appearance: 'system',
+    timeFormat: 'system',
     weather: { city: '', units: 'metric' },
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
@@ -249,6 +253,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     appearance: asAppearance(record.appearance),
+    timeFormat: asTimeFormat(record.timeFormat),
     weather: {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
