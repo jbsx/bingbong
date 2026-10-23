@@ -13,7 +13,8 @@ after it, and is grilled on its own. Amended on 2026-10-21 by ADR 0084: a
 second `none` makes a Mark Ask before it ends, when a Textless Ref is on
 the card. Amended on 2026-10-22 by #394: the Where Ask's call carries the
 Verdict, and a sure `yes` beside an action ends the Task done on the page
-as it is.
+as it is. Amended on 2026-10-23 by ADR 0087: that call carries the Answer
+Passage Choice too, and a sure yes with a sure pick speaks the block.
 
 ## Context
 

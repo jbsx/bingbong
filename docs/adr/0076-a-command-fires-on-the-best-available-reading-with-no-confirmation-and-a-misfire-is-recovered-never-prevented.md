@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended on 2026-10-23 by ADR 0087: a Task that ends done on a sure yes
+speaks the Answer Passage, the block of the page Jev chose as stating what
+was asked, in place of "Done." or silence.
+
 Amended on 2026-10-20 (see "Amendment: a line is Steps" below): Jev is
 asked at hop 0 where a second Command starts, and each Step runs as its
 own Task in order. ADR 0079 moves `play <words>` from the Local Match to
