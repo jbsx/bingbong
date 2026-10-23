@@ -81,6 +81,7 @@ import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { muteOffScreen } from './muteOffScreen'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { attachAppearance } from './attachAppearance'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
@@ -123,6 +124,9 @@ attachGpuStability({
 // off by default on Linux — one blink feature switch turns it on for every
 // webContents. Must precede app ready.
 app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
+
+// A test or an agent under xvfb-run plays nothing through the speakers.
+muteOffScreen(app, process.env)
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
 // vanishing silently; reports stay local — nothing uploads anywhere.
