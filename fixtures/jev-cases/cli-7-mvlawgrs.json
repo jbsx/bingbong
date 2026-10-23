@@ -1,6 +1,7 @@
 {
   "turnId": "cli-7-mvlawgrs",
   "transcript": "does it run on freebsd",
+  "note": "Captured for #407 on a page the agent chose (owner, 2026-10-23), from a live Mammoth run on a build with no Text Further Down stop, blocks to 4000 characters and the budget lifted; stored as the #407 build asks it. Case (c): the answer sits at the block's char 300 (\"…except FreeB\").",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792779963151,
   "expect": [

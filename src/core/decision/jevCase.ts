@@ -39,6 +39,8 @@ export interface JevCase {
   readonly turnId?: string
   /** The words the Command was read from, for the human reading the case. */
   readonly transcript?: string
+  /** Why the case was captured, for the human reading it: a case grown for an issue says so (#407). */
+  readonly note?: string
   /** The model that first answered it, and when it was asked. */
   readonly model?: string
   readonly recordedAt?: number

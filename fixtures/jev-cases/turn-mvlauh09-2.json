@@ -1,6 +1,7 @@
 {
   "turnId": "turn-mvlauh09-2",
   "transcript": "what port does it run on",
+  "note": "Captured for #407 on a page the agent chose (owner, 2026-10-23), from a live Mammoth run on a build with no Text Further Down stop, blocks to 4000 characters and the budget lifted; stored as the #407 build asks it. Case (a): the port is in prose under install headings, at a hop past the first on a link-heavy page.",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792779870151,
   "expect": [

@@ -1,6 +1,7 @@
 {
   "turnId": "turn-mvlavpif-3",
   "transcript": "what port does it use",
+  "note": "Captured for #407 on a page the agent chose (owner, 2026-10-23), from a live Mammoth run on a build with no Text Further Down stop, blocks to 4000 characters and the budget lifted; stored as the #407 build asks it. The Verdict after (b)'s show: the port in view.",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792779927822,
   "expect": [

@@ -1075,10 +1075,11 @@ export function markQuestions(text: string, page: CommandPage, { appliance, mark
  * Appliance Verbs on offer; and `none`. No `done`: done-ness is the
  * Verdict's alone. Under the Choice cap the clicks come first, then the
  * types, then each media ref's Media Ops (#372, ADR 0080) — every op the
- * element can take, whatever its state — then the opens, and a right-click
- * on each ref fills what room is left — a menu is the last resort, never
- * chosen over the page's own control in the logged asks. An action the
- * Task set aside is not offered (#373): a ref's other actions stay.
+ * element can take, whatever its state — then the shows of the blocks
+ * further down (#407), then the opens, and a right-click on each ref fills
+ * what room is left — a menu is the last resort, never chosen over the
+ * page's own control in the logged asks. An action the Task set aside is
+ * not offered (#373): a ref's other actions stay.
  */
 function actionQuestion(
   page: CommandPage,
@@ -1131,6 +1132,7 @@ function actionQuestion(
     toKeep -= near.length
     return near
   }
+  // `take` and `nearest` hand out room in the order they are called: the three lines below are the yield order.
   // The Show Ops stand just before the page's own scroll (ADR 0086); on a full card the refs win.
   const showOps = nearest(take(texts.filter((target) => kept(`show-${target.n}`)))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
   const opened = nearest(take(links))
