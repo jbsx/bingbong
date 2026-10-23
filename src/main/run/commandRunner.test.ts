@@ -1867,6 +1867,26 @@ describe('a Command whose output is speech', () => {
     expect(speech.spoken.map((spoken) => spoken.text)).toEqual([SPOKEN_FAILURES.empty, SPOKEN_FAILURES.blocked])
   })
 
+  it('a landing ends the Task with its line, no one asked, only on a fact: the status the site served (ADR 0089)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, runner } = harness({ speech })
+    browser.status = 404
+    browser.navigate = async () => 'navigated: url=https://example.com/missing title="Example"\nsignature 1a2b3c4d\npage text:\nsome text'
+    await runner.run('open https://example.com/missing')
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([SPOKEN_FAILURES.notFound])
+    expect(decision.requests).toEqual([])
+  })
+
+  it('a landing whose title reads as not found goes to the Verdict, which may find it is what was asked (ADR 0089)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, runner } = harness({ speech })
+    browser.navigate = async () => 'navigated: url=https://example.com/404-songs title="404 Songs Not Found — a playlist"\nsignature 1a2b3c4d\npage text:\nsome text'
+    decision.script.push(SURE_YES)
+    await runner.run('open https://example.com/404-songs')
+    expect(decision.requests).toHaveLength(1)
+    expect(speech.spoken.map((spoken) => spoken.text)).not.toContain(SPOKEN_FAILURES.notFound)
+  })
+
   it('a successful click, type, scroll, back and a none publish no speak (AC4)', async () => {
     const speech = new FakeSpeech()
     const { decision, events, runner } = harness({ speech })

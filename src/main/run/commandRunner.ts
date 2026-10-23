@@ -69,7 +69,7 @@ import {
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
-import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
+import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
@@ -339,6 +339,12 @@ interface FireResult {
   readonly pick?: PickSource
   /** The action threw: its message, for the record (post mortem 2026-10-19). */
   readonly error?: string
+  /**
+   * The landing's title or body reads as a wall or a dead end (ADR 0089):
+   * only suspected, so the Task goes on to the Verdict, and this class's
+   * line is said when Jev does not answer; `url` is the page it landed on.
+   */
+  readonly suspect?: { readonly failure: SpokenFailure; readonly url: string | undefined }
 }
 
 /** How many hops in a row that change nothing, or that the Progress Noul is sure did not help, end a Task (#336, #373). */
@@ -1188,8 +1194,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let unchanged = false
     /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
     let played: PlayerOutcome | null = null
+    let suspect: FireResult['suspect'] | null = null
     const ended = (outcome: FireOutcome): FireResult => ({
       outcome,
+      ...(suspect !== null ? { suspect } : {}),
       ...(landing !== undefined ? { landing } : {}),
       ...(unchanged && landing === undefined ? { unchanged: true } : {}),
       ...(played?.video !== undefined ? { video: played.video } : {}),
@@ -1228,7 +1236,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
       } else {
         const state = browser.state()
-        const landedFailure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
+        const landedOn = { tool: name, outcome: { ok: true as const, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}), ...(state.status !== undefined ? { status: state.status } : {}) }
+        // A landing ends the Task with its line only on a fact (ADR 0089); a title or a body that reads as one goes to the Verdict.
+        const landedFailure = spokenFailureOf(landedOn)
+        const suspected = landedFailure === null ? suspectedFailureOf(landedOn) : null
+        suspect = suspected === null ? null : { failure: suspected, url: landedUrl(result) ?? state.url ?? undefined }
         const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
         const covered = landedFailure === null && !stayed && reacting.tellsPopup === true && (await dialogOpenNow())
         const failure = landedFailure ?? (stayed ? 'dialogStayed' : covered ? 'popup' : null)
@@ -1338,6 +1350,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     saidEnd?: boolean
     /** The Answer Passage it ended done on (#401, ADR 0087): the block its end says, verbatim and whole. */
     passage?: string
+    /** What the last landing's title or body read as (ADR 0089): said when the Verdict that reads it goes unanswered. */
+    suspect?: FireResult['suspect']
   }
 
   /** A hop's place in its Task, and in its line when the line is Steps (#364). */
@@ -1443,6 +1457,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(fired.pick !== undefined ? { pick: fired.pick } : {}),
       ...(fired.error !== undefined ? { error: fired.error } : {}),
     }
+    task.suspect = fired.suspect
     if (ending !== null) {
       if (recordedAfterFiring(command.verb)) log({ ...record, ...landed, ended: ending })
       return ending
@@ -1740,8 +1755,17 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
       if (result === null || result.status !== 'answered') {
         const jev = result === null ? {} : { jev: jevUnavailableOf(result), ask: result.askId }
-        const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
+        // The landing read as a wall or a dead end, and no Verdict came (ADR 0089): its class line is what is said.
+        const suspected = superseded(task) ? undefined : task.suspect
+        const ended: TaskEnded = superseded(task) ? 'superseded' : suspected !== undefined ? 'wall' : 'unavailable'
         log({ ...base, ...none, jevAsked: result !== null, ...jev, ended })
+        if (suspected !== undefined) {
+          publish({ type: 'command', turnId, text: task.text, action: 'not read', dropped: true, task: hopOf(task, hop), at: firedAt })
+          answerFailure(turnId, SPOKEN_FAILURES[suspected.failure])
+          if (DEAD_END_LANDINGS.has(suspected.failure) && suspected.url !== undefined) deps.dropLastPage?.(suspected.url)
+          publish({ type: 'done', turnId, outcome: 'done', at: at() })
+          return endTask(task, ended, hop + 1)
+        }
         dropHop(turnId, task, hopOf(task, hop), ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
@@ -2190,7 +2214,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         ...(rung + 1 < ladder.length ? { deferStay: true as const } : {}),
       }, hop0)
     }
-    const ended = settleHop(task, record, ending, command, heard.page, result)
+    // A Local-Matched landing whose title or body reads as a wall or a dead end goes on to the Verdict (ADR 0089): Jev reads the landing.
+    const ended = settleHop(task, record, ending === 'local_match' && result.suspect !== undefined ? null : ending, command, heard.page, result)
     const outcome = result.outcome
     const end = ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1)
     return { ended: end, outcome, did: did(), ...(task.saidEnd === true ? { said: true as const } : {}) }

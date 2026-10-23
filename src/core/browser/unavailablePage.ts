@@ -41,28 +41,19 @@ export function isUnavailableStatus(status: number | null | undefined): status i
 // The corpus's four Unavailable Pages and the standard server-error
 // phrases. A bare "error" is no signal: GitHub's loading widget put "there
 // was an error" into ten content digests.
+// No phrase names a site (ADR 0089): Cloudflare's own title suffix was a
+// rule by site, and its error pages carry a phrase of this list besides.
 const UNAVAILABLE_TITLE_RE =
-  /\btemporarily (?:offline|unavailable)\b|\bservice unavailable\b|\bsomething went wrong\b|\bbad gateway\b|\bgateway time-?out\b|\binternal server error\b|\borigin dns error\b|\bconnection timed out\b|\bweb server is down\b|\bunder maintenance\b/i
-
-// Cloudflare's own title suffix (Error 1016: "Origin DNS error | <host> |
-// Cloudflare"). It counts only beside an error — the word or a numbered
-// code — since the same suffix names its challenge wall ("Attention
-// Required! | Cloudflare"), a Blocker, and every page of cloudflare.com.
-const CLOUDFLARE_SUFFIX_RE = /\|\s*cloudflare\s*$/i
-const CLOUDFLARE_ERROR_RE = /\berror\b|\b\d{3,4}:/i
+  /\btemporarily (?:offline|unavailable)\b|\bservice unavailable\b|\bsomething went wrong\b|\bbad gateway\b|\bgateway time-?out\b|\binternal server error\b|\borigin dns error\b|\bconnection timed out\b|\bweb server is (?:down|returning an unknown error)\b|\bunder maintenance\b/i
 
 /** Whether a title says the site could not serve the page (ADR 0060's second test). */
 export function isUnavailableTitle(title: string): boolean {
-  return UNAVAILABLE_TITLE_RE.test(title) || (CLOUDFLARE_SUFFIX_RE.test(title) && CLOUDFLARE_ERROR_RE.test(title))
+  return UNAVAILABLE_TITLE_RE.test(title)
 }
 
 // 403 is the Network Block's, 429 nothing the corpus has seen, and 404 and
 // 410 the Not-found Page's: the status decides them before any title.
 const NOT_UNAVAILABLE_STATUSES: ReadonlySet<number> = new Set([403, 429, ...NOT_FOUND_STATUSES])
-
-function isCloudflareSite(host: string): boolean {
-  return host === 'cloudflare.com' || host.endsWith('.cloudflare.com')
-}
 
 /**
  * Classify a settled page (ADR 0060). Null for every page that is not an
@@ -81,8 +72,7 @@ export function classifyUnavailablePage(facts: NotFoundPageFacts): UnavailableCl
   const host = parsed.hostname.toLowerCase()
   if (host === '') return null
   const status = facts.status
-  // Cloudflare's own pages carry its name as their title suffix too.
-  const title = isCloudflareSite(host) ? facts.title.replace(CLOUDFLARE_SUFFIX_RE, '') : facts.title
+  const title = facts.title
   let basis: UnavailableBasis | null = null
   if (isUnavailableStatus(status)) basis = String(status) as UnavailableBasis
   else if (typeof status === 'number' && NOT_UNAVAILABLE_STATUSES.has(status)) basis = null

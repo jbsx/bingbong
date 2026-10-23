@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from './spokenFailure'
+import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf, suspectedFailureOf } from './spokenFailure'
 import { blockedActionHead } from '../browser/actionOutcome'
 import { consentDismissalLine, consentRetryNote } from '../browser/dialogPolicy'
 
 // A failure speaks one line (#327, ADR 0076): a Command whose action fails,
 // or whose landing is a Blocked Action, a consent wall, a Blocker, or an
 // empty, not-found or unavailable page, speaks one fixed line naming what
-// happened — never the raw error. Everything else stays silent.
+// happened — never the raw error. Everything else stays silent. A landing
+// ends the Task at once only on a fact (ADR 0089): an HTTP status, a
+// challenge host or token. A title or a body that reads as one is only
+// suspected: the Verdict reads the landing, and the line is said when Jev
+// does not answer.
 
 const PAGE = (url: string, title: string, text = 'Some words on the page.'): string =>
   `navigated: url=${url} title=${JSON.stringify(title)}\n# ${title} — ${url}\nviewport 985x575 scroll 0/2000\nsignature 1a2b3c4d\npage text:\n${text}`
@@ -27,38 +31,62 @@ describe('spokenFailureOf', () => {
     expect(spokenFailureOf({ tool: 'click', outcome: { ok: true, result: walled } })).toBe('consent')
   })
 
-  it('names the page a landing settled on', () => {
-    const land = (url: string, title: string, result = PAGE(url, title)) => spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result }, url, title })
+  it('names a landing by its facts alone: the status the site served, a challenge host or token (ADR 0089)', () => {
+    const land = (url: string, title: string, status?: number) => spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, title) }, url, title, ...(status !== undefined ? { status } : {}) })
+    expect(land('https://example.com/missing', 'Example', 404)).toBe('notFound')
+    expect(land('https://example.com/gone', 'Example', 410)).toBe('notFound')
+    expect(land('https://example.com/down', 'Example', 503)).toBe('unavailable')
+    expect(land('https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile', 'Example')).toBe('blocker')
+    expect(land('https://example.com/?__cf_chl_rt_tk=abc', 'Example')).toBe('blocker')
+    expect(land('https://example.com/?js_challenge=1', 'Example')).toBe('blocker')
+    // A title or a body is no fact: the Verdict reads it.
+    expect(land('https://example.com/missing', 'Page Not Found', 200)).toBeNull()
+    expect(land('https://example.com/x', 'Just a moment...')).toBeNull()
+    expect(land('https://accounts.example.com/signin', 'Sign in')).toBeNull()
+    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: EMPTY_PAGE('https://example.com/') }, url: 'https://example.com/', title: 'Home' })).toBeNull()
+  })
+
+  it('suspects a landing whose title or body reads as a wall or a dead end: its line, for when Jev does not answer', () => {
+    const land = (url: string, title: string, result = PAGE(url, title)) => suspectedFailureOf({ tool: 'navigate', outcome: { ok: true, result }, url, title })
     expect(land('https://accounts.example.com/signin', 'Sign in')).toBe('blocker')
     expect(land('https://example.com/x', 'Just a moment...')).toBe('blocker')
     expect(land('https://example.com/missing', 'Page Not Found')).toBe('notFound')
     expect(land('https://example.com/down', '503 Service Unavailable')).toBe('unavailable')
     expect(land('https://example.com/', 'Home', EMPTY_PAGE('https://example.com/'))).toBe('empty')
+    expect(land('https://example.com/', 'Example')).toBeNull()
+  })
+
+  it('names no site: Google\'s /sorry and Reddit\'s query are no walls of their own', () => {
+    const land = (url: string, title: string) => suspectedFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, title) }, url, title }) ?? spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, title) }, url, title })
+    expect(land('https://www.google.com/sorry/index?continue=x', 'Google')).toBeNull()
+    expect(land('https://www.reddit.com/r/x/?solution=abc&sei=def', 'reddit')).toBeNull()
   })
 
   it('says nothing of a landing on a page made only of controls: it opened fine (2026-10-21 audit)', () => {
     const url = 'http://127.0.0.1:4100/context-menu'
     const controls = `${EMPTY_PAGE(url)}\n[1] button "Fixture video player"\n[2] link "Plain link" href="http://127.0.0.1:4100/second"`
     expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: controls }, url, title: 'context menu fixture' })).toBeNull()
+    expect(suspectedFailureOf({ tool: 'navigate', outcome: { ok: true, result: controls }, url, title: 'context menu fixture' })).toBeNull()
   })
 
   it('names an outage told in the page text under a title that names only the site, not an empty page', () => {
     const url = 'http://127.0.0.1:4100/empty-main'
     const notice = PAGE(url, '| Fixture Museums', 'The search service is currently unavailable. Please try again later.')
-    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: notice }, url, title: '| Fixture Museums' })).toBe('unavailable')
-    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, '| Fixture Museums') } })).toBeNull()
+    expect(suspectedFailureOf({ tool: 'navigate', outcome: { ok: true, result: notice }, url, title: '| Fixture Museums' })).toBe('unavailable')
+    expect(suspectedFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, '| Fixture Museums') } })).toBeNull()
   })
 
   it('reads the landing line when the address and title are not passed, and a step back lands as a navigation', () => {
     const result = PAGE('https://example.com/missing', 'Page Not Found').replace('navigated:', 'went back:')
-    expect(spokenFailureOf({ tool: 'back', outcome: { ok: true, result } })).toBe('notFound')
-    expect(spokenFailureOf({ tool: 'forward', outcome: { ok: true, result } })).toBe('notFound')
+    expect(suspectedFailureOf({ tool: 'back', outcome: { ok: true, result } })).toBe('notFound')
+    expect(suspectedFailureOf({ tool: 'forward', outcome: { ok: true, result } })).toBe('notFound')
   })
 
   it('names a click that arrived on such a page, and never a read of one', () => {
     const arrived = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; arrived at another page\n${PAGE('https://example.com/gone', '404')}`
-    expect(spokenFailureOf({ tool: 'click', outcome: { ok: true, result: arrived }, url: 'https://example.com/gone', title: '404' })).toBe('notFound')
-    expect(spokenFailureOf({ tool: 'read_page', outcome: { ok: true, result: '# 404' }, url: 'https://example.com/gone', title: '404' })).toBeNull()
+    expect(suspectedFailureOf({ tool: 'click', outcome: { ok: true, result: arrived }, url: 'https://example.com/gone', title: '404' })).toBe('notFound')
+    expect(spokenFailureOf({ tool: 'click', outcome: { ok: true, result: arrived }, url: 'https://example.com/gone', title: '404', status: 404 })).toBe('notFound')
+    expect(suspectedFailureOf({ tool: 'read_page', outcome: { ok: true, result: '# 404' }, url: 'https://example.com/gone', title: '404' })).toBeNull()
   })
 
   it('is silent for every success: a landing on a page with text, a click, a type, a scroll, a step back', () => {

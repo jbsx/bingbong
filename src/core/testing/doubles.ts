@@ -323,8 +323,9 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
 
   state(): BrowserState {
     // A page a test set as the snapshot is the page the pane is on, as a real pane's would be.
-    if (this.pageState.url === null && this.snapshot.url !== '' && this.snapshot.url !== 'about:blank') return { url: this.snapshot.url, title: this.snapshot.title || null }
-    return this.pageState
+    const status = this.status !== null ? { status: this.status } : {}
+    if (this.pageState.url === null && this.snapshot.url !== '' && this.snapshot.url !== 'about:blank') return { url: this.snapshot.url, title: this.snapshot.title || null, ...status }
+    return { ...this.pageState, ...status }
   }
 
   /** The top-level response status the fake page answered with (#239); null — unknown — by default. */

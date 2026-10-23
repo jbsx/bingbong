@@ -132,13 +132,14 @@ describe('classifyBlockerPage (ADR 0010)', () => {
     expect(classifyBlockerPage(factsFrom(captchaArticle))).toBeNull()
   })
 
-  it('detects the Reddit challenge-redirect query params', () => {
+  it('detects a challenge token in the query on any host, and names no site (ADR 0089)', () => {
     expect(classifyBlockerPage({ url: 'https://www.reddit.com/?js_challenge=1&solution=x', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerPage({ url: 'https://www.reddit.com/?sei=abc', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerPage({ url: 'https://www.reddit.com/?solution=42', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
-    // Generic names like `solution` stay scoped to the hosts the failed
-    // runs captured them on; `js_challenge` is specific enough for any host.
     expect(classifyBlockerPage({ url: 'https://www.example.com/?js_challenge=1', title: 'Example' })).toMatchObject({ signal: 'challenge' })
+    // `solution` and `sei` were Reddit's alone, a rule by site: no signal anywhere now.
+    expect(classifyBlockerPage({ url: 'https://www.reddit.com/?sei=abc', title: 'Reddit' })).toBeNull()
+    expect(classifyBlockerPage({ url: 'https://www.reddit.com/?solution=42', title: 'Reddit' })).toBeNull()
+    // Google's /sorry path is no signal of its own; its page's sentence is.
+    expect(classifyBlockerPage({ url: 'https://www.google.com/sorry/index?continue=x', title: 'Sorry...' })).toBeNull()
     expect(classifyBlockerPage({ url: 'https://www.example.com/?solution=42', title: 'Example' })).toBeNull()
     expect(classifyBlockerPage({ url: 'https://www.example.com/?resolution=42', title: 'Example' })).toBeNull()
   })
@@ -217,7 +218,7 @@ describe('parseBlockerMarker', () => {
 
   it('round-trips the classifier marker for every signal', () => {
     for (const facts of [
-      { url: 'https://www.google.com/sorry/index?continue=x', title: 'Sorry...' },
+      { url: 'https://challenges.cloudflare.com/x', title: 'Sorry...' },
       { url: 'https://www.reddit.com/r/x/', title: 'Reddit', textDigest: 'blocked by network security' },
       { url: 'https://old.reddit.com/login', title: 'Log in' },
     ]) {

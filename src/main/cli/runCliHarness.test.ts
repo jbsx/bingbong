@@ -152,11 +152,11 @@ describe('runCliHarness', () => {
     await cli.done
   })
 
-  it('reads plain words as a Command: a bare word opens its .com, a label clicks the ref that carries it', async () => {
+  it('reads plain words as a Command: an address opens, a label clicks the ref that carries it', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
-    cli.input.write('open youtube\n')
+    cli.input.write('open youtube.com\n')
     await cli.expectOutput('navigated: url=https://youtube.com')
 
     cli.input.write('click sign in\n')

@@ -15,6 +15,8 @@ export type PageLanding = 'quiet' | 'loaded' | 'capped'
 export interface BrowserState {
   url: string | null
   title: string | null
+  /** HTTP status of the top-level response the tab is on (#239, ADR 0050), when the surface knows it: a landing's one fact (ADR 0089). */
+  status?: number
 }
 
 export interface MediaState {

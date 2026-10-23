@@ -1,10 +1,10 @@
 import type { ToolResultOutcome } from '../ports/toolOutcome'
 import { blockedOrInertAction } from '../browser/actionOutcome'
-import { classifyBlockerPage } from '../browser/blockerNudge'
+import { classifyBlockerPage, isChallengeAddress } from '../browser/blockerNudge'
 import { consentWallStayed } from '../browser/dialogPolicy'
 import { classifyEmptyLanding, isPageArrival } from '../browser/emptyLanding'
-import { classifyNotFoundPage } from '../browser/notFoundPage'
-import { classifyUnavailablePage, isUnavailableNotice } from '../browser/unavailablePage'
+import { NOT_FOUND_STATUSES, classifyNotFoundPage } from '../browser/notFoundPage'
+import { classifyUnavailablePage, isUnavailableNotice, isUnavailableStatus } from '../browser/unavailablePage'
 import { pageReadText } from '../browser/pageText'
 import { reportFault } from '../trace/fault'
 
@@ -16,6 +16,13 @@ import { reportFault } from '../trace/fault'
 // error, an address or a status code. Successful actions stay silent. A
 // thrown failure is told by failureLineOf (#329), the same words on the
 // Feed, the Peek Card and the spoken line.
+//
+// A landing ends the Task with its line, no one asked, only on a fact
+// (ADR 0089): the status the site served (404, 410, 5xx), a challenge host
+// or token. A title or a body that reads as not found, unavailable, a wall
+// or empty is only suspected (`suspectedFailureOf`): the Verdict reads the
+// landing, and the class line is what is said when Jev does not answer.
+// No landing rule names a site.
 
 /** The address a landing's outcome carries on its first line; null without one (a click's arrival). */
 export function landedUrl(result: string): string | null {
@@ -110,28 +117,59 @@ export interface SpokenFailureInput {
   /** The page the tab settled on, for an outcome with no landing line to name it (a click that arrived). */
   readonly url?: string
   readonly title?: string
+  /** HTTP status of the top-level response the tab settled on, when the surface knows it (ADR 0050). */
+  readonly status?: number
 }
 
-/** The failure a Command's outcome speaks, or null when it stays silent. */
+/** The page an arrival settled on: its address, title and outcome text; null for an outcome that is no arrival on a page. */
+function arrivalOf(input: SpokenFailureInput): { url: string; title: string; result: string } | null {
+  const { outcome } = input
+  if (!outcome.ok || typeof outcome.result !== 'string') return null
+  const tool = input.tool === 'forward' ? 'go_forward' : input.tool
+  if (!isPageArrival(tool, outcome.result)) return null
+  const landed = landingFacts(outcome.result)
+  // The landing line names the page the outcome carries; a click's arrival has none, and the tab's state stands in.
+  const url = landed?.url ?? input.url
+  return url === undefined ? null : { url, title: landed?.title ?? input.title ?? '', result: outcome.result }
+}
+
+/**
+ * The failure a Command's outcome speaks and ends its Task on, or null when
+ * it stays silent: an action that failed or was blocked, and a landing on
+ * a fact (ADR 0089) — the status the site served, or a challenge host or
+ * token in its address.
+ */
 export function spokenFailureOf(input: SpokenFailureInput): SpokenFailure | null {
   const { outcome } = input
   if (!outcome.ok) return 'failed'
   if (typeof outcome.result !== 'string') return null
-  const result = outcome.result
-  const tool = input.tool === 'forward' ? 'go_forward' : input.tool
-  const blocked = blockedOrInertAction(result)
-  if (blocked === 'covered' || blocked === 'notShown') return consentWallStayed(result) ? 'consent' : 'blocked'
-  if (!isPageArrival(tool, result)) return null
-  const landed = landingFacts(result)
-  // The landing line names the page the outcome carries; a click's arrival has none, and the tab's state stands in.
-  const url = landed?.url ?? input.url
-  const title = landed?.title ?? input.title ?? ''
-  if (url === undefined) return null
-  if (classifyBlockerPage({ url, title }) !== null) return 'blocker'
-  if (classifyNotFoundPage({ url, title }) !== null) return 'notFound'
+  const blocked = blockedOrInertAction(outcome.result)
+  if (blocked === 'covered' || blocked === 'notShown') return consentWallStayed(outcome.result) ? 'consent' : 'blocked'
+  const arrival = arrivalOf(input)
+  if (arrival === null) return null
+  if (isChallengeAddress(arrival.url)) return 'blocker'
+  if (input.status !== undefined && NOT_FOUND_STATUSES.has(input.status)) return 'notFound'
+  if (isUnavailableStatus(input.status)) return 'unavailable'
+  return null
+}
+
+/**
+ * What a landing's title or body reads as (ADR 0089): a wall, a page not
+ * found, a site that could not serve it, or a page with no text — only
+ * suspected, since a title or a body is no fact. The Verdict reads the
+ * landing; this line is said when Jev does not answer. Null for a page
+ * that reads as none, or an outcome that is no arrival.
+ */
+export function suspectedFailureOf(input: SpokenFailureInput): SpokenFailure | null {
+  const arrival = arrivalOf(input)
+  if (arrival === null) return null
+  const { url, title, result } = arrival
+  const status = input.status ?? null
+  if (classifyBlockerPage({ url, title, textDigest: pageReadText(result) }) !== null) return 'blocker'
+  if (classifyNotFoundPage({ url, title, status }) !== null) return 'notFound'
   // An outage served with 200 under a title naming only the site says so in
   // its one sentence: the page's text, read before it can count as empty.
-  if (classifyUnavailablePage({ url, title }) !== null || isUnavailableNotice(pageReadText(result))) return 'unavailable'
+  if (classifyUnavailablePage({ url, title, status }) !== null || isUnavailableNotice(pageReadText(result))) return 'unavailable'
   if (classifyEmptyLanding({ url, outcome: result }) !== null) return 'empty'
   return null
 }

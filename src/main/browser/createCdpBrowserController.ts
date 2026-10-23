@@ -2383,7 +2383,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   function state(): BrowserState {
-    return { url: page.url(), title: page.title() }
+    const status = page.status?.() ?? null
+    return { url: page.url(), title: page.title(), ...(status !== null ? { status } : {}) }
   }
 
   // ADR 0010 classifier facts off the freshest collected snapshot — free

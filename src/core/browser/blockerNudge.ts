@@ -98,23 +98,19 @@ const CHALLENGE_HOST_RE = /(^|\.)challenges\.|(^|\.)recaptcha\.|(^|\.)hcaptcha\.
 const CHALLENGE_TITLE_RE =
   /just a moment|unusual traffic|attention required|checking your browser|prove your humanity|verify (you are|you're|that you're) human|checking if the website/i
 
-// Google's /sorry walls (runs 46/47) — fingerprint-triggered CAPTCHA pages.
-const GOOGLE_HOST_RE = /(^|\.)google\.[a-z.]+$/i
-const SORRY_PATH_RE = /^\/sorry(\/|$)/i
-
-// Reddit's challenge redirect carries no title signal — the wall is in the
-// query string (runs 46/47): ?js_challenge=1&solution=…&sei=… Those params
-// were captured on reddit hosts; generic names like `solution` stay scoped
-// there, while `js_challenge` is specific enough to signal on any host.
-const REDDIT_HOST_RE = /(^|\.)reddit\.com$/i
-const CHALLENGE_QUERY_PARAMS_ANY_HOST = new Set(['js_challenge'])
-const CHALLENGE_QUERY_PARAMS_REDDIT = new Set(['js_challenge', 'solution', 'sei'])
+// A challenge's token in the query string (runs 46/47): `js_challenge` is
+// specific enough to signal on any host. No rule names a site (ADR 0089):
+// Google's /sorry path and Reddit's `solution`/`sei` were rules by site.
+const CHALLENGE_QUERY_PARAMS = new Set(['js_challenge'])
+// Cloudflare's challenge token, raw in the address on any site.
+const CHALLENGE_URL_TOKEN = '__cf_chl_'
 
 // Wall text the blocked page leads with (runs 46/47). "Near the digest
 // start": a wall page's leading text IS the wall, while an article about
 // walls buries the phrase below its own heading and intro.
 const NETWORK_BLOCK_BODY_RE = /blocked by network security/i
-const HUMANITY_BODY_RE = /prove your humanity/i
+// A challenge's own sentence, on any site: Google's /sorry wall leads with "unusual traffic from your computer network".
+const HUMANITY_BODY_RE = /prove your humanity|unusual traffic from your (?:computer )?network/i
 const LEADING_TEXT_CHARS = 300
 
 // Ref poverty: with at most this many interactive refs, a page embedding a
@@ -144,6 +140,19 @@ function isChallengeSrc(src: string): boolean {
     reportFault('browser.blockerNudge.isChallengeSrc', error)
     return false
   }
+}
+
+/**
+ * Whether an address is a challenge by its facts alone (ADR 0089): a
+ * challenge host (Turnstile, reCAPTCHA, hCaptcha) or path, or a
+ * challenge's token in it. The one Blocker signal that ends a Task with no
+ * one asked; a title or a body that reads as one goes to the Verdict.
+ */
+export function isChallengeAddress(url: string): boolean {
+  if (url.includes(CHALLENGE_URL_TOKEN)) return true
+  if (!URL.canParse(url)) return false
+  const parsed = new URL(url)
+  return CHALLENGE_HOST_RE.test(parsed.hostname) || /^\/recaptcha(\/|$)/i.test(parsed.pathname) || [...parsed.searchParams.keys()].some((param) => CHALLENGE_QUERY_PARAMS.has(param))
 }
 
 /** Sentinel host for a degraded URL that won't parse — never matches a real host. */
@@ -206,7 +215,7 @@ export function classifyBlockerPage(facts: BlockerPageFacts): BlockerClassificat
 
   // Title facts and raw Cloudflare tokens work without a parseable URL;
   // so do body/dialog/iframe-poverty facts, which need no URL at all.
-  const challengeByTitleOrToken = CHALLENGE_TITLE_RE.test(facts.title) || facts.url.includes('__cf_chl_')
+  const challengeByTitleOrToken = CHALLENGE_TITLE_RE.test(facts.title) || facts.url.includes(CHALLENGE_URL_TOKEN)
   const challengeByBody = HUMANITY_BODY_RE.test(leadingText) || HUMANITY_BODY_RE.test(dialogText)
   const challengeByIframePoverty = refs.some((ref) => ref.kind === 'iframe' && ref.src !== null && isChallengeSrc(ref.src)) && refs.length <= CHALLENGE_PAGE_MAX_REFS
   if (challengeByTitleOrToken || challengeByBody || challengeByIframePoverty) {
@@ -222,26 +231,15 @@ export function classifyBlockerPage(facts: BlockerPageFacts): BlockerClassificat
   // usable facts, not a Blocker.
   let hostname = ''
   let pathname = ''
-  let queryParams: string[] = []
   try {
     const parsed = new URL(facts.url)
     hostname = parsed.hostname
     pathname = parsed.pathname
-    queryParams = [...parsed.searchParams.keys()]
   } catch (error) {
     reportFault('browser.blockerNudge.classifyBlockerPage', error)
     return null
   }
-
-  if (
-    CHALLENGE_HOST_RE.test(hostname) ||
-    /^\/recaptcha(\/|$)/i.test(pathname) ||
-    (GOOGLE_HOST_RE.test(hostname) && SORRY_PATH_RE.test(pathname)) ||
-    queryParams.some((param) => CHALLENGE_QUERY_PARAMS_ANY_HOST.has(param)) ||
-    (REDDIT_HOST_RE.test(hostname) && queryParams.some((param) => CHALLENGE_QUERY_PARAMS_REDDIT.has(param)))
-  ) {
-    return verdict('challenge', facts.url)
-  }
+  if (isChallengeAddress(facts.url)) return verdict('challenge', facts.url)
   if (LOGIN_HOST_RE.test(hostname) || LOGIN_PATH_RE.test(pathname)) {
     return verdict('login-wall', facts.url)
   }
