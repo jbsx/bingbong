@@ -82,7 +82,9 @@ export async function launchApp({
   // Chromium's Ozone auto-detection prefers Wayland when WAYLAND_DISPLAY is
   // set (e.g. a sway session), which bypasses the Xvfb DISPLAY the suite runs
   // under and pops real windows on the developer's screen. Force X11.
-  const proc = spawn(electronBinary, [entry, ...args, '--ozone-platform=x11', `--remote-debugging-port=${debugPort}`], {
+  // Xvfb hides the windows but not the sound: --mute-audio silences the
+  // output stream while every media element's own state (muted, volume) is untouched.
+  const proc = spawn(electronBinary, [entry, ...args, '--ozone-platform=x11', '--mute-audio', `--remote-debugging-port=${debugPort}`], {
     cwd,
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: buildEnv(process.env, {

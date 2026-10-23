@@ -63,7 +63,7 @@ export async function launchHeadlessChrome(profilePrefix: string): Promise<Headl
   const profile = mkdtempSync(join(tmpdir(), profilePrefix))
   const chrome: ChildProcess = spawn(
     CHROME,
-    ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1440,900', '--autoplay-policy=no-user-gesture-required', 'about:blank'],
+    ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1440,900', '--autoplay-policy=no-user-gesture-required', '--mute-audio', 'about:blank'],
     { stdio: 'ignore' },
   )
   const portFile = join(profile, 'DevToolsActivePort')
