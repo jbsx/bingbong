@@ -11,14 +11,15 @@ import { waitFor } from './waitFor'
 
 function setWeatherCityScript(city: string): string {
   return `(async () => {
-    const input = document.querySelector('input[aria-label="Weather city"]')
-    if (!input) return 'no-city-input'
-    input.focus()
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    setter.call(input, ${JSON.stringify(city)})
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const select = document.querySelector('select[aria-label="Weather city"]')
+    if (!select) return 'no-city-select'
+    if (select.options[0]?.value !== '') return 'automatic-not-first'
+    select.focus()
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+    setter.call(select, ${JSON.stringify(city)})
+    select.dispatchEvent(new Event('change', { bubbles: true }))
     await new Promise((r) => setTimeout(r, 100))
-    return 'edited'
+    return select.value === ${JSON.stringify(city)} ? 'edited' : 'not-listed'
   })()`
 }
 
@@ -73,7 +74,7 @@ describe('settings page e2e', () => {
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`document.querySelector('section[aria-label="${id}"] details').open`)) ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
     }
 
-    // The city field is addressed by its aria-label.
+    // The city dropdown is addressed by its aria-label; Automatic leads it.
     const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))
     expect(edited).toBe('edited')
 

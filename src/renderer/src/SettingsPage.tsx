@@ -9,6 +9,7 @@ import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { defaultWeightSettings, EMPTY_BODY, POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, withoutPerson, type WeightSettings } from '../../core/scale/weightSettings'
 import { reportRendererFault } from './diagnostics'
+import { weatherCityOptions } from '../../core/weather/cities'
 import { markedSection } from './settingsIndexMark'
 import { useScaleStatus, useWeighIns } from './useWeight'
 
@@ -784,13 +785,17 @@ export function SettingsPage({
 
         <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? `Detected · ${draft.weather.units === 'imperial' ? '°F' : '°C'}` : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>
           <Field label="City">
-            <input
-              type="text"
-              value={draft.weather.city}
-              placeholder="Detected from the network (London until online)"
+            <select
+              value={weatherCityOptions(draft.weather.city).find((name) => name.toLowerCase() === draft.weather.city.trim().toLowerCase()) ?? ''}
               aria-label="Weather city"
               onChange={(event) => setDraft({ ...draft, weather: { ...draft.weather, city: event.target.value } })}
-            />
+            >
+              {weatherCityOptions(draft.weather.city).map((name) => (
+                <option key={name} value={name}>
+                  {name === '' ? 'Automatic (London until online)' : name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Units">
             <select
