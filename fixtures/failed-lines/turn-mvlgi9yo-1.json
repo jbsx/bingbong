@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvlgi9yo-1",
+  "transcript": "next",
+  "at": 1792789379497,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'next' typed on xkcd.com/100 (#408 build, Mammoth): hop 0 clicked [19] 'Next >' to /101/, right; hop 1 clicked [19] 'Next >' again on /101/ and landed on /102/ before ending done",
+  "meant": "End done on /101/: one click of Next is what 'next' asks",
+  "log": "decision-1792789363339-1.jsonl"
+}

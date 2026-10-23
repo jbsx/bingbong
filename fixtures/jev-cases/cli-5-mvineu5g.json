@@ -59,12 +59,12 @@
           "forward-7": "go forward in [7] \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
           "back-7": "go back in [7] \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
           "restart-7": "play [7] \"YE - HIGHS AND LOWS - YouTube\" again from the start",
-          "volume-7": "set the volume of [7] \"YE - HIGHS AND LOWS - YouTube\": to the number the words carry (0 to 100), or up or down as they say",
+          "volume-7": "change the volume of [7] \"YE - HIGHS AND LOWS - YouTube\": up, down or to the number the words carry, the amount Choice saying which and how far",
           "mute-7": "mute [7] \"YE - HIGHS AND LOWS - YouTube\"",
           "unmute-7": "unmute [7] \"YE - HIGHS AND LOWS - YouTube\"",
           "loop-7": "put [7] \"YE - HIGHS AND LOWS - YouTube\" on loop, so it repeats",
           "unloop-7": "stop looping [7] \"YE - HIGHS AND LOWS - YouTube\"",
-          "rate-7": "set the playback speed of [7] \"YE - HIGHS AND LOWS - YouTube\": to the number the words carry (1 is normal), or faster or slower as they say",
+          "rate-7": "change the playback speed of [7] \"YE - HIGHS AND LOWS - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far",
           "menu-1": "right-click [1] to open its menu",
           "menu-2": "right-click [2] to open its menu",
           "menu-3": "right-click [3] to open its menu",
@@ -135,7 +135,7 @@
       },
       "amount": {
         "type": "choice",
-        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "instructions": "Only when the action skips forward or back in a video or audio, or changes its volume or speed: how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For the volume or the speed, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
         "options": {
           "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
           "moment": "a moment: a hundredth of its length",
@@ -143,7 +143,16 @@
           "chunk": "a chunk: a tenth of its length",
           "lot": "a lot: a quarter of its length",
           "half": "half of its length",
-          "end": "all the way: to the end, or back to the start"
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume or speed to the number the words carry",
+          "up-little": "the volume or speed up a little",
+          "up-step": "the volume or speed up a step",
+          "up-lot": "the volume or speed up a lot",
+          "up-all": "the volume or speed up as far as it goes",
+          "down-little": "the volume or speed down a little",
+          "down-step": "the volume or speed down a step",
+          "down-lot": "the volume or speed down a lot",
+          "down-all": "the volume or speed down as far as it goes"
         }
       },
       "where": {

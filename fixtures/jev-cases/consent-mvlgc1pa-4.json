@@ -1,0 +1,31 @@
+{
+  "turnId": "consent-mvlgc1pa-4",
+  "note": "Captured for #408 on bbcgoodfood.com's consent-or-pay wall: no control offered declines.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792789088158,
+  "expect": [
+    {
+      "question": "decline",
+      "label": "none"
+    }
+  ],
+  "ask": {
+    "state": "A cookie consent notice covers a web page: \"At Good Food we use cookies to give you the best experience and most relevant advertising possible Pay to remove ads with contentpass Access Good Food and 500+ other websites ad-free, with no personalised tracking or video ads, for only £3.49 per month. Continue with ads… Accept cookies and read free content with personalised ads We and our 133 technology partners ask for your consent to the use o\"\nIts controls:\n[c-0] \"500+ other websites 500+ other websites\"\n[c-1] \"133 technology partners 133 technology partners\"\n[c-2] \"Privacy Policy. Privacy Policy.\"\n[c-3] \"Precise geolocation data, and identification through device scanning Precise ge…\"\n[c-4] \"Store and/or access information on a device Store and/or access information on …\"\n[c-5] \"Personalised advertising and content, advertising and content measurement, audi…\"\n[c-6] \"Analytics Storage Analytics Storage\"\n[c-7] \"Reject & Pay Reject & Pay Reject & Pay\"\n[c-8] \"Accept All & Continue Accept All & Continue Accept All & Continue\"",
+    "questions": {
+      "decline": {
+        "type": "choice",
+        "instructions": "Which control declines the optional cookies and closes the notice: reject, decline, refuse, continue without accepting, necessary or essential only, save without the optional ones? Never one that opens settings, manages preferences or learns more. Choose none when no control declines.",
+        "options": {
+          "none": "no control declines the optional cookies",
+          "c-0": "\"500+ other websites 500+ other websites\"",
+          "c-1": "\"133 technology partners 133 technology partners\"",
+          "c-2": "\"Privacy Policy. Privacy Policy.\"",
+          "c-3": "\"Precise geolocation data, and identification through device scanning Precise ge…\"",
+          "c-4": "\"Store and/or access information on a device Store and/or access information on …\"",
+          "c-5": "\"Personalised advertising and content, advertising and content measurement, audi…\"",
+          "c-6": "\"Analytics Storage Analytics Storage\""
+        }
+      }
+    }
+  }
+}

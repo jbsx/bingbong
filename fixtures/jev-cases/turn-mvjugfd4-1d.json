@@ -53,12 +53,12 @@
           "click-33": "click [33] link \"57:22 New\" https://www.youtube.com/watch?v=RVc3TJ-l2KY&pp=ugUHEgVlbi1HQg%3D%3D",
           "play-11": "play [11] \"Unable to play media.\": start it, or carry on playing it",
           "pause-11": "pause [11] \"Unable to play media.\"",
-          "volume-11": "set the volume of [11] \"Unable to play media.\": to the number the words carry (0 to 100), or up or down as they say",
+          "volume-11": "change the volume of [11] \"Unable to play media.\": up, down or to the number the words carry, the amount Choice saying which and how far",
           "mute-11": "mute [11] \"Unable to play media.\"",
           "unmute-11": "unmute [11] \"Unable to play media.\"",
           "loop-11": "put [11] \"Unable to play media.\" on loop, so it repeats",
           "unloop-11": "stop looping [11] \"Unable to play media.\"",
-          "rate-11": "set the playback speed of [11] \"Unable to play media.\": to the number the words carry (1 is normal), or faster or slower as they say",
+          "rate-11": "change the playback speed of [11] \"Unable to play media.\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far",
           "open-1": "open result link \"11:47\" https://www.youtube.com/watch?v=QVv3mQzlrN0&pp=ugUEEgJlbg%3D%3D",
           "open-2": "open result link \"1:14:19 New\" https://www.youtube.com/watch?v=Axv-1C9-07U",
           "open-3": "open result link \"32:03 New\" https://www.youtube.com/watch?v=61iIHiesPdE&pp=ugUHEgVlbi1HQg%3D%3D",
@@ -155,7 +155,7 @@
       },
       "amount": {
         "type": "choice",
-        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "instructions": "Only when the action skips forward or back in a video or audio, or changes its volume or speed: how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For the volume or the speed, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
         "options": {
           "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
           "moment": "a moment: a hundredth of its length",
@@ -163,7 +163,16 @@
           "chunk": "a chunk: a tenth of its length",
           "lot": "a lot: a quarter of its length",
           "half": "half of its length",
-          "end": "all the way: to the end, or back to the start"
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume or speed to the number the words carry",
+          "up-little": "the volume or speed up a little",
+          "up-step": "the volume or speed up a step",
+          "up-lot": "the volume or speed up a lot",
+          "up-all": "the volume or speed up as far as it goes",
+          "down-little": "the volume or speed down a little",
+          "down-step": "the volume or speed down a step",
+          "down-lot": "the volume or speed down a lot",
+          "down-all": "the volume or speed down as far as it goes"
         }
       },
       "where": {

@@ -1,0 +1,64 @@
+{
+  "turnId": "cli-1-mvlg4ryp",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build with no Known Address: a bare word no landing named is Jev's.",
+  "transcript": "open bluesky",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792788748971,
+  "expect": [
+    {
+      "question": "action",
+      "not": "none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"open bluesky\"\nPage: about:blank — \"\"\nFull screen: off\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 21:52, Friday 23 October",
+          "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "open",
+          "s0-1": "open bluesky",
+          "s1-1": "bluesky"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      }
+    }
+  }
+}

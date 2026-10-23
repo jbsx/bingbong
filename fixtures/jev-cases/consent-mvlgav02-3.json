@@ -1,0 +1,29 @@
+{
+  "turnId": "consent-mvlgav02-3",
+  "note": "Captured for #408 on theguardian.com's consent-or-pay wall: \"Reject all and subscribe\" is a way through that costs, never offered; no control left declines.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792789032818,
+  "expect": [
+    {
+      "question": "decline",
+      "label": "none"
+    }
+  ],
+  "ask": {
+    "state": "A cookie consent notice covers a web page: \"Personalised advertising Independent, quality original journalism needs your support. Please choose an option. Accept personalised advertising and all cookies We use cookies and similar technologies to support the Guardian and personalise your experience in other ways. To do this we work with a cross section of 141 partners. or Reject all and subscribe to Guardian Ad-Lite for £5 per month Read the\"\nIts controls:\n[c-0] \"Personalised advertising\"\n[c-1] \"141 partners 141 partners\"\n[c-2] \". .\"\n[c-3] \"privacy policy privacy policy\"\n[c-4] \"cookie policy cookie policy\"\n[c-5] \"Accept all Accept all Accept all\"\n[c-6] \"Reject all and subscribe Reject all and subscribe Reject all and subscribe\"\n[c-7] \"sign in sign in\"",
+    "questions": {
+      "decline": {
+        "type": "choice",
+        "instructions": "Which control declines the optional cookies and closes the notice: reject, decline, refuse, continue without accepting, necessary or essential only, save without the optional ones? Never one that opens settings, manages preferences or learns more. Choose none when no control declines.",
+        "options": {
+          "none": "no control declines the optional cookies",
+          "c-0": "\"Personalised advertising\"",
+          "c-1": "\"141 partners 141 partners\"",
+          "c-2": "\". .\"",
+          "c-3": "\"privacy policy privacy policy\"",
+          "c-4": "\"cookie policy cookie policy\""
+        }
+      }
+    }
+  }
+}

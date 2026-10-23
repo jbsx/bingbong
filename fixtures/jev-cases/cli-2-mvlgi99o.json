@@ -1,0 +1,117 @@
+{
+  "turnId": "cli-2-mvlgi99o",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build: \"next\" beside a page's Next link is Jev's, not the Player's skip.",
+  "transcript": "next",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792789377928,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-19"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"next\"\nPage: https://xkcd.com/100/ — \"xkcd: Family Circus\"\nText in view: \"Feed•Email\" · \"TW•FB•IG\" · \"WI?•TE•HT\" · \"A webcomic of romance, sarcasm, math, and language.\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"Archive\" https://xkcd.com/archive\n[2] link \"What If?\" https://what-if.xkcd.com/\n[3] link \"About\" https://xkcd.com/about\n[4] link \"Feed\" https://xkcd.com/atom.xml\n[5] link \"Email\" https://xkcd.com/newsletter/\n[6] link \"TW\" https://twitter.com/xkcd/\n[7] link \"FB\" https://www.facebook.com/TheXKCD/\n[8] link \"IG\" https://www.instagram.com/xkcd/\n[9] link \"-Books-\" https://xkcd.com/books/\n[10] link \"What If? 2\" https://xkcd.com/what-if-2/\n[11] link \"WI?\" https://xkcd.com/what-if/\n[12] link \"TE\" https://xkcd.com/thing-explainer/\n[13] link \"HT\" https://xkcd.com/how-to/\n[14] link \"xkcd.com logo\" https://xkcd.com/\n[15] link \"The xkcd store is back, with shirts, stickers, and posters for sale.\" https://store.xkcd.com/\n[16] link \"|<\" https://xkcd.com/1/\n[17] link \"< Prev\" https://xkcd.com/99/ keyshortcuts=\"Alt+p\"\n[18] link \"Random\" https://c.xkcd.com/random/comic/\n[19] link \"Next >\" https://xkcd.com/101/ keyshortcuts=\"Alt+n\"\n[20] link \">|\" https://xkcd.com/\nText further down the page, not on screen yet (number, text):\n[text-1] \"Permanent link to this comic: https://xkcd.com/100/ Image URL (for hotlinking/embedding): https://imgs.xkcd.com/comics/family_circus.jpg\"\n[text-2] \"Comics I enjoy: Three Word Phrase, SMBC, Dinosaur Comics, Oglaf (nsfw), A Softer World, Buttersafe, Perry Bible Fellowship, Questionable Content, Buttercup Festival, Homestuck, Junior Scientist Power Hour\"\n[text-3] \"Other things: Tips on technology and government, Climate FAQ, Katharine Hayhoe\"\n[text-4] \"xkcd.com is best viewed with Netscape Navigator 4.0 or below on a Pentium 3±1 emulated in Javascript on an Apple IIGS at a screen resolution of 1024x1. Please enable your ad blockers, disable high-heat drying, and remove your device from Airplane Mode and set it to Boat Mode. For security reasons, p\"\n[text-5] \"This work is licensed under a Creative Commons Attribution-NonCommercial 2.5 License.\"\n[text-6] \"This means you're free to copy and share these comics (but not to sell them). More details.\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "options": {
+          "click-1": "click [1] link \"Archive\" https://xkcd.com/archive",
+          "click-2": "click [2] link \"What If?\" https://what-if.xkcd.com/",
+          "click-3": "click [3] link \"About\" https://xkcd.com/about",
+          "click-4": "click [4] link \"Feed\" https://xkcd.com/atom.xml",
+          "click-5": "click [5] link \"Email\" https://xkcd.com/newsletter/",
+          "click-6": "click [6] link \"TW\" https://twitter.com/xkcd/",
+          "click-7": "click [7] link \"FB\" https://www.facebook.com/TheXKCD/",
+          "click-8": "click [8] link \"IG\" https://www.instagram.com/xkcd/",
+          "click-9": "click [9] link \"-Books-\" https://xkcd.com/books/",
+          "click-10": "click [10] link \"What If? 2\" https://xkcd.com/what-if-2/",
+          "click-11": "click [11] link \"WI?\" https://xkcd.com/what-if/",
+          "click-12": "click [12] link \"TE\" https://xkcd.com/thing-explainer/",
+          "click-13": "click [13] link \"HT\" https://xkcd.com/how-to/",
+          "click-14": "click [14] link \"xkcd.com logo\" https://xkcd.com/",
+          "click-15": "click [15] link \"The xkcd store is back, with shirts, stickers, and posters for sale.\" https://store.xkcd.com/",
+          "click-16": "click [16] link \"|<\" https://xkcd.com/1/",
+          "click-17": "click [17] link \"< Prev\" https://xkcd.com/99/ keyshortcuts=\"Alt+p\"",
+          "click-18": "click [18] link \"Random\" https://c.xkcd.com/random/comic/",
+          "click-19": "click [19] link \"Next >\" https://xkcd.com/101/ keyshortcuts=\"Alt+n\"",
+          "click-20": "click [20] link \">|\" https://xkcd.com/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] \"Permanent link to this comic: https://xkcd.com/100/ Image URL (for hotlinking/em\" is in view",
+          "show-2": "scroll until [text-2] \"Comics I enjoy: Three Word Phrase, SMBC, Dinosaur Comics, Oglaf (nsfw), A Softer\" is in view",
+          "show-3": "scroll until [text-3] \"Other things: Tips on technology and government, Climate FAQ, Katharine Hayhoe\" is in view",
+          "show-4": "scroll until [text-4] \"xkcd.com is best viewed with Netscape Navigator 4.0 or below on a Pentium 3±1 em\" is in view",
+          "show-5": "scroll until [text-5] \"This work is licensed under a Creative Commons Attribution-NonCommercial 2.5 Lic\" is in view",
+          "show-6": "scroll until [text-6] \"This means you're free to copy and share these comics (but not to sell them). Mo\" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 22:02, Friday 23 October",
+          "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "next"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on xkcd.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on xkcd.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

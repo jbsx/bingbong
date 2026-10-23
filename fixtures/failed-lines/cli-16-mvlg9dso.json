@@ -1,0 +1,13 @@
+{
+  "turnId": "cli-16-mvlg9dso",
+  "transcript": "where was i",
+  "at": 1792788964126,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'where was i' typed on a blank pane (the #408 build before resume was offered, Mammoth): the line left the grammar for Jev, whose card had no resume; read none, No response",
+  "meant": "Reopen the Last Page, as the grammar's resume did before ADR 0089",
+  "log": "decision-1792788751894-1.jsonl",
+  "claimedBy": "#408",
+  "fixedBy": "7647a098",
+  "case": "cli-16-mvlg9dso"
+}

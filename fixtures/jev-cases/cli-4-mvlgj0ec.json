@@ -1,0 +1,136 @@
+{
+  "turnId": "cli-4-mvlgj0ec",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build: \"the first result\" on a Bing page, Jev's.",
+  "transcript": "open the first result",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792789413087,
+  "expect": [
+    {
+      "question": "action",
+      "not": "none"
+    },
+    {
+      "question": "action",
+      "not": "search-5"
+    },
+    {
+      "question": "action",
+      "not": "click-3"
+    },
+    {
+      "question": "action",
+      "not": "click-8"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"open the first result\"\nPage: https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B — \"buy running shoes - Search\"\nText in view: \"onbuy.com https://www.onbuy.com › gb OnBuy | UK marketplace | Instant cashback on every item Find amazing choice, the brands you love and instant Cashback across Home, Garden, Tech, Beauty and more. It pays to OnBuy it!\" · \"ebay.co.uk https://www.ebay.co.uk eBay UK | Electronics, Cars, Fashion, Collectibles & More Buy & sell electronics, cars, clothes, collectibles & more on eBay UK's online marketplace. Top brands, low prices & free shipping on …\" · \"marketplaceapp.com https://marketplaceapp.com Local Marketplace: Buy & Sell Nearby With Mobile App Marketplace: Buy and sell locally with ease. List items fast, chat with buyers, and find great deals using our location-based mobile …\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"Skip to content\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button\n[2] link \"Accessibility Feedback\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button\n[3] link \"Back to Bing search\" https://www.bing.com/?FORM=Z9FD1\n[4] button[submit] \"Search\"\n[5] searchbox \"Enter your search here – Search suggestions will show as you type\" holds \"buy running shoes\" autocomplete=both\n[6] button \"Search using an image\" expanded=false\n[7] link \"Microsoft Rewards Rewards\" javascript:void(0) role=button hasPopup=menu expanded=false\n[8] link \"All\" https://www.bing.com/?scope=web&FORM=HDRSC1\n[9] link \"Web\" https://www.bing.com/ck/a?!&&p=b65f1cff21eb7146ff78b99d87cb315dcddb58a508fc847a207cba257c13ba8fJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L3NlYXJjaD9xPWJ1eStydW5uaW5nK3Nob2VzJndlYnNjcD0xJkZPUk09SERSV1ND&ntb=1\n[10] link \"AI Mode\" https://www.bing.com/copilotsearch?q=buy+running+shoes&FORM=CSSCOP\n[11] link \"Images\" https://www.bing.com/ck/a?!&&p=0f80f5aa283e25f44c993a342ad5dca459e23956a5bed4c0e2ee68713fd8c653JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L2ltYWdlcy9zZWFyY2g_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDMg&ntb=1\n[12] link \"Videos\" https://www.bing.com/ck/a?!&&p=4955df66715ac614356215b37433898891eaa590d1432406925443c6a01a0bc3JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L3ZpZGVvcy9zZWFyY2g_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDMw&ntb=1\n[13] link \"Maps\" https://www.bing.com/ck/a?!&&p=f1189584b6ae097b4950fb8507310b3ec0ddbac1610932db0448c461be29577cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L21hcHM_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDNA&ntb=1\n[14] link \"News\" https://www.bing.com/ck/a?!&&p=0d588a026811aecb46673785c6106c5aec0a629c94f95bc7599f1aa827dc53d4JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L25ld3Mvc2VhcmNoP3E9YnV5K3J1bm5pbmcrc2hvZXMmRk9STT1IRFJTQzY&ntb=1\n[15] link \"More\" javascript:void(0); role=button hasPopup=menu\n[16] link \"onbuy.com onbuy.com https://www.onbuy.com › gb\" https://www.bing.com/ck/a?!&&p=6956abcd7540fecca772075958a187ec3ac48102e929fd0453aec5a8861100eaJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cub25idXkuY29tL2diLw&ntb=1\n[17] link \"OnBuy | UK marketplace | Instant cashback on every item\" https://www.bing.com/ck/a?!&&p=6956abcd7540fecca772075958a187ec3ac48102e929fd0453aec5a8861100eaJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cub25idXkuY29tL2diLw&ntb=1\n[18] link \"ebay.co.uk ebay.co.uk https://www.ebay.co.uk\" https://www.bing.com/ck/a?!&&p=4c7c311d267c5484dc41cb8f7c686d59dd255b5c214ca1528554db3f79b04e2cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cuZWJheS5jby51ay8_JTk0Jm1zb2NraWQ9MjFkMmMzN2NkOGU3NjExOTA2ZWZkNDg3ZDliYzYwMjc&ntb=1\n[19] link \"eBay UK | Electronics, Cars, Fashion, Collectibles & More\" https://www.bing.com/ck/a?!&&p=4c7c311d267c5484dc41cb8f7c686d59dd255b5c214ca1528554db3f79b04e2cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cuZWJheS5jby51ay8_JTk0Jm1zb2NraWQ9MjFkMmMzN2NkOGU3NjExOTA2ZWZkNDg3ZDliYzYwMjc&ntb=1\n[20] link \"marketplaceapp.com marketplaceapp.com https://marketplaceapp.com\" https://www.bing.com/ck/a?!&&p=fee3b3284f5ac87020a81d35496f45ba0efd2c75fc70f99795768095566992b2JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly9tYXJrZXRwbGFjZWFwcC5jb20v&ntb=1\n[21] link \"Local Marketplace: Buy & Sell Nearby With Mobile App\" https://www.bing.com/ck/a?!&&p=fee3b3284f5ac87020a81d35496f45ba0efd2c75fc70f99795768095566992b2JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly9tYXJrZXRwbGFjZWFwcC5jb20v&ntb=1\nText further down the page, not on screen yet (number, text):\n[text-1] list item \"gumtree.com https://www.gumtree.com Gumtree UK | Buy, Sell & Find Local Classified Ads Buy, sell and find local deals on Gumtree, the UK marketplace for cars, property, jobs, services, furniture, tech and more.\"\n[text-2] list item \"joybuy.co.uk https://www.joybuy.co.uk Joybuy | One-Stop Shopping | Don't just buy, Joybuy Shop Joybuy for quality electronics, appliances, beauty & grocery. Same/next-day delivery from local warehouses on eligible orders, …\"\n[text-3] list item \"webuy.com https://uk.webuy.com CeX (UK) Buy & Sell Games, Phones, DVDs, Blu-ray, Electronics ... Want to Sell or buy electronics & gadgets online? sell your second hand electronics at best price. Earn & redeem CeX vouchers to …\"\n[text-4] list item \"bestbuy.com https://www.bestbuy.com Best Buy | Official Online Store | Shop Now & Save Shop Best Buy for electronics, computers, appliances, cell phones, video games & more new tech. Store pickup & free 2-day …\"\n[text-5] list item \"onthemarket.com https://www.onthemarket.com › for-sale Property for Sale | Flats & Houses for Sale | OnTheMarket Search from a huge range of properties for sale from leading UK estate agents. The most uncluttered, user-friendly property portal | …\"\n[text-6] list item \"merriam-webster.com https://www.merriam-webster.com › dictionary › buy\"\n[text-7] list item \"cambridge.org https://dictionary.cambridge.org › dictionary › english › buy\"\n[text-8] list item \"Searches you might likerunning shoe findermarathon running shoesroad running shoesladies running shoesrunning shoes for salecheap running shoesamazon running shoesrunning gear\"\n[text-9] list item \"Pagination1234Next\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "options": {
+          "click-1": "click [1] link \"Skip to content\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button",
+          "click-2": "click [2] link \"Accessibility Feedback\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button",
+          "click-3": "click [3] link \"Back to Bing search\" https://www.bing.com/?FORM=Z9FD1",
+          "click-4": "click [4] button[submit] \"Search\"",
+          "search-5": "search for the words with [5] searchbox \"Enter your search here – Search suggestions will show as you type\" holds \"buy running shoes\" autocomplete=both: its words replaced, then submitted",
+          "type-5": "type the words into [5] searchbox \"Enter your search here – Search suggestions will show as you type\" holds \"buy running shoes\" autocomplete=both",
+          "click-5": "click [5] searchbox \"Enter your search here – Search suggestions will show as you type\" holds \"buy running shoes\" autocomplete=both",
+          "click-6": "click [6] button \"Search using an image\" expanded=false",
+          "click-7": "click [7] link \"Microsoft Rewards Rewards\" javascript:void(0) role=button hasPopup=menu expanded=false",
+          "click-8": "click [8] link \"All\" https://www.bing.com/?scope=web&FORM=HDRSC1",
+          "click-9": "click [9] link \"Web\" https://www.bing.com/ck/a?!&&p=b65f1cff21eb7146ff78b99d87cb315dcddb58a508fc847a207cba257c13ba8fJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L3NlYXJjaD9xPWJ1eStydW5uaW5nK3Nob2VzJndlYnNjcD0xJkZPUk09SERSV1ND&ntb=1",
+          "click-10": "click [10] link \"AI Mode\" https://www.bing.com/copilotsearch?q=buy+running+shoes&FORM=CSSCOP",
+          "click-11": "click [11] link \"Images\" https://www.bing.com/ck/a?!&&p=0f80f5aa283e25f44c993a342ad5dca459e23956a5bed4c0e2ee68713fd8c653JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L2ltYWdlcy9zZWFyY2g_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDMg&ntb=1",
+          "click-12": "click [12] link \"Videos\" https://www.bing.com/ck/a?!&&p=4955df66715ac614356215b37433898891eaa590d1432406925443c6a01a0bc3JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L3ZpZGVvcy9zZWFyY2g_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDMw&ntb=1",
+          "click-13": "click [13] link \"Maps\" https://www.bing.com/ck/a?!&&p=f1189584b6ae097b4950fb8507310b3ec0ddbac1610932db0448c461be29577cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L21hcHM_cT1idXkrcnVubmluZytzaG9lcyZGT1JNPUhEUlNDNA&ntb=1",
+          "click-14": "click [14] link \"News\" https://www.bing.com/ck/a?!&&p=0d588a026811aecb46673785c6106c5aec0a629c94f95bc7599f1aa827dc53d4JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1L25ld3Mvc2VhcmNoP3E9YnV5K3J1bm5pbmcrc2hvZXMmRk9STT1IRFJTQzY&ntb=1",
+          "click-15": "click [15] link \"More\" javascript:void(0); role=button hasPopup=menu",
+          "click-16": "click [16] link \"onbuy.com onbuy.com https://www.onbuy.com › gb\" https://www.bing.com/ck/a?!&&p=6956abcd7540fecca772075958a187ec3ac48102e929fd0453aec5a8861100eaJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cub25idXkuY29tL2diLw&ntb=1",
+          "click-17": "click [17] link \"OnBuy | UK marketplace | Instant cashback on every item\" https://www.bing.com/ck/a?!&&p=6956abcd7540fecca772075958a187ec3ac48102e929fd0453aec5a8861100eaJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cub25idXkuY29tL2diLw&ntb=1",
+          "click-18": "click [18] link \"ebay.co.uk ebay.co.uk https://www.ebay.co.uk\" https://www.bing.com/ck/a?!&&p=4c7c311d267c5484dc41cb8f7c686d59dd255b5c214ca1528554db3f79b04e2cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cuZWJheS5jby51ay8_JTk0Jm1zb2NraWQ9MjFkMmMzN2NkOGU3NjExOTA2ZWZkNDg3ZDliYzYwMjc&ntb=1",
+          "click-19": "click [19] link \"eBay UK | Electronics, Cars, Fashion, Collectibles & More\" https://www.bing.com/ck/a?!&&p=4c7c311d267c5484dc41cb8f7c686d59dd255b5c214ca1528554db3f79b04e2cJmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly93d3cuZWJheS5jby51ay8_JTk0Jm1zb2NraWQ9MjFkMmMzN2NkOGU3NjExOTA2ZWZkNDg3ZDliYzYwMjc&ntb=1",
+          "click-20": "click [20] link \"marketplaceapp.com marketplaceapp.com https://marketplaceapp.com\" https://www.bing.com/ck/a?!&&p=fee3b3284f5ac87020a81d35496f45ba0efd2c75fc70f99795768095566992b2JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly9tYXJrZXRwbGFjZWFwcC5jb20v&ntb=1",
+          "click-21": "click [21] link \"Local Marketplace: Buy & Sell Nearby With Mobile App\" https://www.bing.com/ck/a?!&&p=fee3b3284f5ac87020a81d35496f45ba0efd2c75fc70f99795768095566992b2JmltdHM9MTc5MjcxMzYwMA&ptn=3&ver=2&hsh=4&fclid=21d2c37c-d8e7-6119-06ef-d487d9bc6027&u=a1aHR0cHM6Ly9tYXJrZXRwbGFjZWFwcC5jb20v&ntb=1",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] list item \"gumtree.com https://www.gumtree.com Gumtree UK | Buy, Sell & Find Local Classifi\" is in view",
+          "show-2": "scroll until [text-2] list item \"joybuy.co.uk https://www.joybuy.co.uk Joybuy | One-Stop Shopping | Don't just bu\" is in view",
+          "show-3": "scroll until [text-3] list item \"webuy.com https://uk.webuy.com CeX (UK) Buy & Sell Games, Phones, DVDs, Blu-ray,\" is in view",
+          "show-4": "scroll until [text-4] list item \"bestbuy.com https://www.bestbuy.com Best Buy | Official Online Store | Shop Now \" is in view",
+          "show-5": "scroll until [text-5] list item \"onthemarket.com https://www.onthemarket.com › for-sale Property for Sale | Flats\" is in view",
+          "show-6": "scroll until [text-6] list item \"merriam-webster.com https://www.merriam-webster.com › dictionary › buy\" is in view",
+          "show-7": "scroll until [text-7] list item \"cambridge.org https://dictionary.cambridge.org › dictionary › english › buy\" is in view",
+          "show-8": "scroll until [text-8] list item \"Searches you might likerunning shoe findermarathon running shoesroad running sho\" is in view",
+          "show-9": "scroll until [text-9] list item \"Pagination1234Next\" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 22:03, Friday 23 October",
+          "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "open",
+          "s0-1": "open the",
+          "s0-2": "open the first",
+          "s0-3": "open the first result",
+          "s1-1": "the",
+          "s1-2": "the first",
+          "s1-3": "the first result",
+          "s2-2": "first",
+          "s2-3": "first result",
+          "s3-3": "result"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      }
+    }
+  }
+}

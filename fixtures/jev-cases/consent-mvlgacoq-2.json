@@ -1,0 +1,27 @@
+{
+  "turnId": "consent-mvlgacoq-2",
+  "note": "Captured for #408 on sportsdirect.com's consent wall: Jev's sure pick, first under ADR 0089, is the reject the rule reads too.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792789009082,
+  "expect": [
+    {
+      "question": "decline",
+      "label": "c-2"
+    }
+  ],
+  "ask": {
+    "state": "A cookie consent notice covers a web page: \"Our cookies Our website uses cookies and similar technologies to personalise the ads that are shown to you and to help give you the best experience on our websites. For more information see our Privacy and Cookie Policy Manage cookies Reject all Allow all\"\nIts controls:\n[c-0] \"More information about your privacy, opens in a new tab Privacy and Cookie Poli…\"\n[c-1] \"Manage cookies, Opens the preference center dialog Manage cookies\"\n[c-2] \"Reject all\"\n[c-3] \"Allow all\"",
+    "questions": {
+      "decline": {
+        "type": "choice",
+        "instructions": "Which control declines the optional cookies and closes the notice: reject, decline, refuse, continue without accepting, necessary or essential only, save without the optional ones? Never one that opens settings, manages preferences or learns more. Choose none when no control declines.",
+        "options": {
+          "none": "no control declines the optional cookies",
+          "c-0": "\"More information about your privacy, opens in a new tab Privacy and Cookie Poli…\"",
+          "c-1": "\"Manage cookies, Opens the preference center dialog Manage cookies\"",
+          "c-2": "\"Reject all\""
+        }
+      }
+    }
+  }
+}

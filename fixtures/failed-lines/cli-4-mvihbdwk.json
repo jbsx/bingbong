@@ -6,5 +6,8 @@
   "stage": "runner",
   "happened": "After the paid reject opened the Ad-Lite checkout, 'open the first headline' clicked 'Return to the Guardian', landed back under the same Sourcepoint wall and ended 'not read'",
   "meant": "Open the front page's first headline, the consent wall cleared on the way",
-  "log": "decision-1792609315259-1.jsonl"
+  "log": "decision-1792609315259-1.jsonl",
+  "claimedBy": "#408",
+  "fixedBy": "69bbd972",
+  "case": "consent-mvlgav02-3"
 }

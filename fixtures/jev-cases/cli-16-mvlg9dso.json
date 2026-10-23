@@ -1,0 +1,79 @@
+{
+  "turnId": "cli-16-mvlg9dso",
+  "transcript": "where was i",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792788964126,
+  "expect": [
+    {
+      "question": "action",
+      "label": "resume"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"where was i\"\nPage: about:blank — \"\"\nFull screen: off\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "The words are a command for something this page does not show. Which one action would reveal it, or find it? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are a remark or noise, nothing to look for.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "a remark or noise, nothing to look for",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "skip": "music: skip to the next song",
+          "previous": "music: go back to the song before",
+          "show": "music: show the video playing on the screen",
+          "correct": "music: the song playing is the wrong one: play the next result of its search instead",
+          "correct_back": "music: play the result of the search before the song playing instead",
+          "forget": "music: forget the song playing, so its words search again next time",
+          "resume": "reopen the last page the screen showed: \"YE - HIGHS AND LOWS - YouTube\""
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "where",
+          "s0-1": "where was",
+          "s0-2": "where was i",
+          "s1-1": "was",
+          "s1-2": "was i",
+          "s2-2": "i"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      }
+    }
+  },
+  "note": "Captured for #408 from a live Mammoth run on the #408 build before resume was on the card; stored with the resume line the card now offers on a blank pane, the Last Page the YouTube watch page the run had just shown."
+}
