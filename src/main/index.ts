@@ -386,7 +386,7 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   }
   const paneCustody = holdBrowserCustody(
-    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects, chooseConsent: createConsentChooser(decisionModel, DEFAULT_DECISION_THRESHOLDS.choice) })), agentActivity),
+    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects, chooseConsent: createConsentChooser(decisionModel, DEFAULT_DECISION_THRESHOLDS.choice, askLog) })), agentActivity),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.

@@ -1,4 +1,6 @@
+import type { AskRecord } from '../decision/askRecord'
 import { choiceProbability, type DecisionChoiceQuestion, type DecisionModel } from '../ports/decisionModel'
+import { reportFault } from '../trace/fault'
 import { isAcceptStyle, type ConsentChooser } from './dialogPolicy'
 
 // The consent wall's reject, found by Jev (owner's rule 2026-10-19: the
@@ -28,14 +30,28 @@ export function consentQuestion(dialogText: string, controlLabels: readonly stri
   }
 }
 
+/** Where a consent ask is written once its answer is in (#338's sidecar): every Jev call's whole ask, this one's too. */
+export interface ConsentAskLog {
+  readonly write: (record: AskRecord) => void
+  readonly now?: () => number
+}
+
 /** A {@link ConsentChooser} over the Decision Model: the control Jev is sure declines, else null. */
-export function createConsentChooser(model: () => DecisionModel | null, sureAbove: number): ConsentChooser {
+export function createConsentChooser(model: () => DecisionModel | null, sureAbove: number, askLog?: ConsentAskLog): ConsentChooser {
+  let asked = 0
   return async (dialogText, controlLabels) => {
     const jev = model()
     if (jev === null) return null
     const ask = consentQuestion(dialogText, controlLabels)
     if (ask === null) return null
+    const askedAt = (askLog?.now ?? Date.now)()
     const result = await jev.ask(ask)
+    try {
+      // No turn owns a consent wall: the ask carries its own id, as a partial's does.
+      askLog?.write({ type: 'ask', id: `consent-${askedAt.toString(36)}-${(asked += 1)}`, at: askedAt, kind: 'consent', model: jev.model, state: ask.state, questions: ask.questions })
+    } catch (error) {
+      reportFault('browser.consentChooser.askLog', error)
+    }
     if (result.status !== 'answered') return null
     const { choice } = result.answers.decline
     const match = /^c-(\d+)$/.exec(choice)

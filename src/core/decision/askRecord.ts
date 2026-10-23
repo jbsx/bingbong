@@ -7,8 +7,8 @@ import type { DecisionQuestions } from '../ports/decisionModel'
 // record names its ask by id; the corpus of replayable cases is grown
 // from these (`pnpm jev:candidates`, `pnpm jev:case`).
 
-/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, or an Early Fire partial. */
-export type AskKind = 'command' | 'where' | 'mark' | 'hop' | 'partial'
+/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, an Early Fire partial, or a consent wall's decline. */
+export type AskKind = 'command' | 'where' | 'mark' | 'hop' | 'partial' | 'consent'
 
 /** The file an ask's image is saved as (#382, ADR 0084): its ask's id, and the image's place among the ask's after the first. */
 export function askImageFile(askId: string, index: number): string {

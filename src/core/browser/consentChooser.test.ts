@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { AskRecord } from '../decision/askRecord'
 import type { DecisionModel, DecisionRequest, DecisionQuestions } from '../ports/decisionModel'
 import { consentQuestion, createConsentChooser } from './consentChooser'
 
@@ -46,6 +47,22 @@ describe('the consent chooser', () => {
     expect(await createConsentChooser(() => model({ choice: 'none', confidence: 0.9 }), 0.7)('x', LABELS)).toBeNull()
     expect(await createConsentChooser(() => model('unavailable'), 0.7)('x', LABELS)).toBeNull()
     expect(await createConsentChooser(() => null, 0.7)('x', LABELS)).toBeNull()
+  })
+
+  it('writes every ask it makes to the asks sidecar, answered or not', async () => {
+    const records: AskRecord[] = []
+    const log = { write: (record: AskRecord) => records.push(record), now: () => 1000 }
+    await createConsentChooser(() => model({ choice: 'c-1', confidence: 0.9 }), 0.7, log)('We use cookies', LABELS)
+    await createConsentChooser(() => model('unavailable'), 0.7, log)('We use cookies', LABELS)
+    expect(records).toHaveLength(2)
+    expect(records[0]).toMatchObject({ type: 'ask', kind: 'consent', at: 1000, model: 'jev-test', state: consentQuestion('We use cookies', LABELS)!.state })
+    expect(Object.keys(records[0]!.questions)).toEqual(['decline'])
+  })
+
+  it('writes nothing when it asks nothing', async () => {
+    const records: AskRecord[] = []
+    await createConsentChooser(() => model({ choice: 'c-1', confidence: 0.9 }), 0.7, { write: (record) => records.push(record) })('x', ['Accept all'])
+    expect(records).toEqual([])
   })
 
   it('never returns an accept, whatever Jev says', async () => {
