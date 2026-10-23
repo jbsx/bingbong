@@ -1164,7 +1164,7 @@ export interface Verdict {
  * off their words and "Done so far", not the page alone, so an action the
  * user asked for ("close the pop-up") can be done on a page that is no
  * one's goal. A pop-up covering the page is asked first, so a wall stays a
- * sure `in_the_way` whatever the words; a cookie strip that covers nothing
+ * sure `in_the_way` whatever the words; a consent strip that covers nothing
  * is said not to be one (#404: a cookie notice named among the walls read
  * every strip on BBC, Reddit and gov.uk as one). Asked at every hop past
  * the first beside the verb, so an end is a verdict and never a verb's

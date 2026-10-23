@@ -7,7 +7,6 @@
   "happened": "hop 1 after down-40 moved Reddit's sidebar at top → at end: the Verdict read in_the_way 0.57 over yes 0.42 because Reddit's non-modal cookie notice was on the page; unsure, the Task scrolled again, then back up, and ended unsure",
   "meant": "yes: the sidebar is at its end; a cookie strip at the foot of the page covers nothing the words asked for",
   "log": "decision-1792637066171-1.jsonl",
-  "claimedBy": "#404",
-  "fixedBy": "4fa315e9",
+  "claimedBy": "#403",
   "case": "turn-mvixu07l-1"
 }

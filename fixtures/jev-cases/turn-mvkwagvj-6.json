@@ -6,7 +6,8 @@
   "expect": [
     {
       "question": "outcome",
-      "label": "yes"
+      "label": "yes",
+      "atLeast": 0.7
     }
   ],
   "ask": {
