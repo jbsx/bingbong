@@ -7,5 +7,7 @@
   "happened": "Typed on the microsoft/playwright repo page (rerun 2026-10-23, main 17f82618, Mammoth): hop 0 scroll_down 0.42 over show-39 'Install' 0.20 with the README's Install block on the card as a target (#393); three screen scrolls; at hop 2 the Install section was in view and the Verdict read yes at probability 0.77 but confidence 0.65, under the 0.7 bar, so a third scroll fired; hop 3's call failed (HTTP) and the Task ended unavailable after 17 s. Stays on the page now (was the Where Ask leaving for playwright.dev, cli-4-mvjks2y0)",
   "meant": "One show of the Install block, then done; the Verdict's yes at 0.77 ends the Task",
   "log": "decision-1792755509633-1.jsonl",
-  "claimedBy": "#405"
+  "claimedBy": "#405",
+  "fixedBy": "04c96702",
+  "case": "cli-2-mvkwcigu"
 }
