@@ -66,7 +66,7 @@ import {
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
-import { DEAD_END_LANDINGS, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
+import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
@@ -101,8 +101,10 @@ import type { Player, PlayerOutcome } from '../music/player'
 // ends, the Abort Head, or the next Command silences it; its Reaction
 // closes on the first spoken sample. A Command that fails, or lands on an
 // Action Outcome class, speaks one plain line (spokenFailure.ts), marked a
-// failure. Every other action stays silent; a best guess that landed shows
-// an Answer naming what it fired (#329).
+// failure. Every other action stays silent, but for a Task's end (#399):
+// one done after more than one action says "Done.", and one that hit the
+// cap or lost Jev past hop 0 says it could not finish, marked a failure. A
+// best guess that landed shows an Answer naming what it fired (#329).
 //
 // A Task (#328, ADR 0076 amendment): an Utterance is one or more Commands.
 // Hop 0 is read as above. A Task goes on after a Command Jev read and ends
@@ -1293,6 +1295,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     opened?: Opened
     /** Whether the Task has looked again (#363): closed what it opened and tried, or passed on, the runner-up — once per Task. */
     lookedAgain?: boolean
+    /** Whether its end said a line of its own (#399): a Step that ends so stops its line without a second. */
+    saidEnd?: boolean
   }
 
   /** A hop's place in its Task, and in its line when the line is Steps (#364). */
@@ -1425,7 +1429,26 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return isRealPage(after) && after !== page.url ? { changed: true, opened: after } : { changed: true }
   }
 
-  /** A Task's end (#328): the `task` span, from its Endpoint, on hop 0's turn. */
+  /**
+   * The line a Task's end says (#399): "Done." after more than one action,
+   * and that it could not finish at the cap or when Jev did not answer past
+   * hop 0; null for every other end, which is silent or has said its own.
+   * A Step with Steps still to come is not done saying: its line goes on.
+   * A Task a later Command came over while it closed (the cap's close) says
+   * nothing: the later Command stands.
+   */
+  function endLineOf(task: Task, ended: TaskEnded, hops: number): { text: string; failure: boolean } | null {
+    if (superseded(task)) return null
+    if (ended === 'done') return task.actions.length > 1 && (task.step === undefined || task.step.step === task.step.of) ? { text: DONE_LINE, failure: false } : null
+    if (ended === 'cap' || (ended === 'unavailable' && hops > 1)) return { text: SPOKEN_FAILURES.notFinished, failure: true }
+    return null
+  }
+
+  /**
+   * A Task's end (#328): the `task` span, from its Endpoint, on hop 0's
+   * turn, and its end line spoken (#399) — on the turn last answered, whose
+   * Card the Feed already shows, so the line adds no entry of its own.
+   */
   function endTask(task: Task, ended: TaskEnded, hops: number): TaskEnded {
     try {
       tracer?.span(task.id, 'task', Math.max(0, monotonic() - task.endpointAt), { ended, hops, actions: task.actions.length, source: task.source })
@@ -1433,6 +1456,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reportFault('run.commandRunner.taskSpan', error, { turnId: task.id })
     }
     summarize(task.id)
+    const line = endLineOf(task, ended, hops)
+    if (line !== null && deps.speech !== undefined) {
+      task.saidEnd = true
+      void say(deps.speech, answeredTurn ?? task.id, line.text, { failure: line.failure })
+    }
     return ended
   }
 
@@ -1979,6 +2007,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly ended: TaskEnded
     readonly outcome?: FireOutcome
     readonly did: string
+    /** Whether its end said a line of its own (#399). */
+    readonly said?: true
   }
 
   /**
@@ -2101,7 +2131,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
     const ended = settleHop(task, record, ending, command, heard.page, result)
     const outcome = result.outcome
-    return { ended: ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1), outcome, did: did() }
+    const end = ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1)
+    return { ended: end, outcome, did: did(), ...(task.saidEnd === true ? { said: true as const } : {}) }
   }
 
   /** Whether a Step's Task ended done (#364): a sure yes, the page already what was asked, or a one-Command Task whose action landed. */
@@ -2117,14 +2148,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * A Step that did not end done stops its line (#364): the next Step is a
    * greyed line of the line's Entry, and a Step that ended with nothing
    * said — it changed nothing twice, hit the cap, or Jev did not answer —
-   * says the line is not done; one that met a wall or ended unsure already
-   * said so. A superseded line says nothing: the later Command stands.
+   * says the line is not done; one that met a wall, ended unsure or said
+   * its Task's end line (#399) already said so. A superseded line says
+   * nothing: the later Command stands.
    */
   function stopSteps(line: Line, lineId: string, end: StepEnd, next: number, of: number): void {
     if (end.ended === 'superseded' || line.submission !== submitted) return
     const turnId = tracer?.mintTurnId() ?? `${lineId}-step${next}`
     publish({ type: 'command', turnId, text: line.text, action: `Step ${next} not run`, dropped: true, task: { id: lineId, hop: 0, step: next, of }, at: at() })
-    if (ENDS_UNSAID.has(end.ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
+    if (ENDS_UNSAID.has(end.ended) && end.said !== true) answerFailure(turnId, SPOKEN_FAILURES.unsure)
     publish({ type: 'done', turnId, outcome: 'done', at: at() })
   }
 

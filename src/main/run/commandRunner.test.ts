@@ -1933,8 +1933,8 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   const failures = (events: PipelineEvent[]) => events.filter((event) => event.type === 'display' && event.failure === true)
 
   /** A browser whose landings change the page: each address has its refs, and a results page its whole links. */
-  function taskHarness(start = 'about:blank') {
-    const h = harness()
+  function taskHarness(start = 'about:blank', options?: Parameters<typeof harness>[0]) {
+    const h = harness(options)
     h.browser.snapshot = { ...h.browser.snapshot, url: start, title: '', refs: [] }
     const pages: Record<string, SnapshotRef[]> = { [SEARCH]: SEARCH_REFS, [POST]: POST_REFS }
     const navigate = h.browser.navigate.bind(h.browser)
@@ -2589,6 +2589,54 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.scrolls).toHaveLength(5)
     expect(decision.requests).toHaveLength(5)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'cap'])
+  })
+
+  describe('a Task\'s end says so (#399): one fixed line by how it ended', () => {
+    const spoken = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'speak' ? [event] : []))
+
+    it('a Task of two actions that ends done says "Done.", not a failure, on the turn whose Answer is shown', async () => {
+      const speech = new FakeSpeech()
+      const { events, decision, runner } = taskHarness('about:blank', { speech })
+      decision.script.push(answer('search', 's3-6'), answer('open-1'), SURE_YES)
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(speech.spoken.map((said) => said.text)).toEqual(['Done.'])
+      const [said] = spoken(events)
+      expect(said).not.toHaveProperty('failure')
+      // The Feed keeps one Answer: the line rides a turn whose Card rendered.
+      expect(events.some((event) => event.type === 'display' && event.turnId === said!.turnId)).toBe(true)
+    })
+
+    it('a Task of one action that ends done stays silent', async () => {
+      const speech = new FakeSpeech()
+      const { decision, runner } = taskHarness('about:blank', { speech })
+      decision.script.push(answer('search', 's3-6'), SURE_YES)
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(speech.spoken).toEqual([])
+    })
+
+    it('a Task at the cap says it could not finish, marked a failure', async () => {
+      const speech = new FakeSpeech()
+      const { events, records, decision, runner } = harness({ speech })
+      for (let hop = 0; hop < 6; hop += 1) decision.script.push(answer('scroll_down'))
+      await runner.run('keep going down the page', { source: 'spoken' })
+      expect(decisions(records).at(-1)!.ended).toBe('cap')
+      expect(speech.spoken.map((said) => said.text)).toEqual(["I couldn't finish that."])
+      expect(spoken(events)).toEqual([expect.objectContaining({ failure: true })])
+    })
+
+    it('a Task Jev stops answering past hop 0 says it could not finish; at hop 0 it stays silent', async () => {
+      const speech = new FakeSpeech()
+      const { records, decision, runner } = taskHarness('about:blank', { speech })
+      decision.script.push(answer('search', 's3-6'), { unavailable: 'timeout' })
+      await runner.run('pull up the latest elon musk tweet and open the first result', { source: 'spoken' })
+      expect(decisions(records).at(-1)!.ended).toBe('unavailable')
+      expect(speech.spoken.map((said) => said.text)).toEqual(["I couldn't finish that."])
+
+      decision.script.push({ unavailable: 'timeout' })
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(decisions(records).at(-1)!.ended).toBe('unavailable')
+      expect(speech.spoken).toHaveLength(1)
+    })
   })
 
   it('AC4: an address the Task has visited is not among the next hop\'s targets', async () => {
@@ -3825,6 +3873,33 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     expect(browser.scrolls).toEqual([])
     expect(speech.spoken.map((spoken) => spoken.text)).toEqual(["I'm not sure this is it."])
     expect(commands(events).at(-1)).toMatchObject({ action: 'Step 2 not run', dropped: true, task: { id: 't1', hop: 0, step: 2, of: 2 } })
+  })
+
+  it('a Step that ends at the cap says it could not finish once, and greys Step 2 (#399)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, events, runner } = harness({ speech })
+    const scroll = { answers: { action: choice('scroll_down'), slot: choice('none') } }
+    decision.script.push(split('w4', { action: choice('scroll_down') }), { answers: { ...scroll.answers, where: choice('page') } }, scroll, scroll, scroll, scroll)
+
+    await runner.run('go further down then click sign in', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.scrolls).toHaveLength(5)
+    expect(browser.clicks).toEqual([])
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual(["I couldn't finish that."])
+    expect(commands(events).at(-1)).toMatchObject({ action: 'Step 2 not run', dropped: true })
+  })
+
+  it('a Step done after two actions with Steps still to come says nothing of being done (#399)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, runner } = harness({ speech })
+    const scroll = { answers: { action: choice('scroll_down'), slot: choice('none') } }
+    decision.script.push(split('w4', { action: choice('scroll_down') }), { answers: { ...scroll.answers, where: choice('page') } }, scroll, SURE_YES)
+
+    await runner.run('go further down then click sign in', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.scrolls).toHaveLength(2)
+    expect(browser.clicks).toEqual([2])
+    expect(speech.spoken).toEqual([])
   })
 
   it('ends every Step still to come when a later Command supersedes the line', async () => {

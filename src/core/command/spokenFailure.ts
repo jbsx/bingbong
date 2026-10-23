@@ -23,7 +23,7 @@ export function landedUrl(result: string): string | null {
 }
 
 /** What went wrong, as the spoken line names it. */
-export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack' | 'noPage' | 'popup' | 'unsure' | 'notHere'
+export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack' | 'noPage' | 'popup' | 'unsure' | 'notHere' | 'notFinished'
 
 /** The landings that leave the pane on no page worth going back to: never the Last Page (2026-10-22 audit). */
 export const DEAD_END_LANDINGS: ReadonlySet<SpokenFailure> = new Set(['notFound', 'unavailable', 'empty'])
@@ -44,7 +44,12 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   unsure: "I'm not sure this is it.",
   // A Task that looked again (#363) and found nothing: said with the words, `notHereLine`; this when it has none.
   notHere: "I couldn't find that here.",
+  // A Task that stopped short (#399): five actions fired, or Jev did not answer past hop 0.
+  notFinished: "I couldn't finish that.",
 }
+
+/** The end line of a Task done after more than one action (#399): the one word that says it stopped on purpose. Not a failure. */
+export const DONE_LINE = 'Done.'
 
 /** The end line of a Task that looked again and found nothing (#363, ADR 0079): the words it looked for, said back. */
 export function notHereLine(words: string): string {
