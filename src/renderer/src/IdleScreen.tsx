@@ -4,10 +4,11 @@ import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import type { CalendarEvent } from '../../core/calendar/calendar'
-import { monthEntries, twoWeeks, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
+import { firstDayOfWeek, monthEntries, twoWeeks, upNext, type UpNext, type WeekStart } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
-import { clockParts, timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
+import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } from '../../core/idle/timeFormat'
+import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
 import { earPhase, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
@@ -47,22 +48,32 @@ const LEAN_NEWS_PX = 330
 /** How many of the month's entries the Calendar lists under its weeks. */
 const ENTRIES_SHOWN = 4
 
-function formatDate(now: Date): string {
-  return now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
-}
-
-/** The time on the Time Format's clock, the colon in the accent and a 12-hour clock's "pm" small beside the minutes. */
-function Clock({ now, small, format }: { now: Date; small: boolean; format: TimeFormat }) {
-  const { hours, separator, minutes, period } = clockParts(now, format)
+/**
+ * The time on the Time Format's clock, the colon in the accent, the
+ * seconds when asked for and a 12-hour clock's "pm" small beside the
+ * minutes; under it the date in its Date Format. Stepped down beside a
+ * Timer the clock is its hours and minutes alone and the date drops its
+ * year: the half of the row it has holds no more ("Wednesday, 30 September
+ * 2026" is 349 px of its 306), and the Timer counts the seconds and writes
+ * its end with its "pm".
+ */
+function Clock({ now, small, format, seconds, dateFormat }: { now: Date; small: boolean; format: TimeFormat; seconds: boolean; dateFormat: DateFormat }) {
+  const full = clockParts(now, format, { seconds: seconds && !small })
+  const parts = small ? { ...full, seconds: '', period: '' } : full
   return (
     <div className={small ? 'idle-clock-block idle-clock-block--split' : 'idle-clock-block'}>
       <p className="idle-clock" aria-label="clock">
-        {hours}
-        <span className="idle-clock-colon">{separator}</span>
-        {minutes}
-        {period === '' ? null : <span className="idle-clock-period">{period}</span>}
+        {parts.hours}
+        <span className="idle-clock-colon">{parts.separator}</span>
+        {parts.minutes}
+        {parts.seconds === '' && parts.period === '' ? null : (
+          <span className="idle-clock-tail">
+            {parts.seconds === '' ? null : <span className="idle-clock-seconds">{`${parts.separator}${parts.seconds}`}</span>}
+            {parts.period === '' ? null : <span className="idle-clock-period">{parts.period}</span>}
+          </span>
+        )}
       </p>
-      <p className="idle-date">{formatDate(now)}</p>
+      <p className="idle-date">{dateLabel(now, dateOptions(small && dateFormat === 'long-year' ? 'long' : dateFormat))}</p>
     </div>
   )
 }
@@ -454,6 +465,10 @@ export function IdleScreen({
   weighIns = null,
   weight = defaultWeightSettings(),
   timeFormat = 'system',
+  clockSeconds = false,
+  dateFormat = 'long',
+  weekStart: weekStartSetting = 'system',
+  nightDim = defaultNightDim(),
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
   status,
@@ -476,6 +491,14 @@ export function IdleScreen({
   weight?: WeightSettings
   /** The clock every time on the screen is written on (settings' timeFormat). */
   timeFormat?: TimeFormat
+  /** Whether the clock shows its seconds (settings' clockSeconds). */
+  clockSeconds?: boolean
+  /** How the date under the clock is written (settings' dateFormat). */
+  dateFormat?: DateFormat
+  /** The weekday the Calendar's weeks start on (settings' weekStart). */
+  weekStart?: WeekStart
+  /** The screen darkened between two times of day (settings' nightDim). */
+  nightDim?: NightDim
   /** A Person's row on the Weight card was tapped: show the Weight page on them. */
   onOpenWeight?: (person: string) => void
   /** The settings button in the corner was tapped: show the settings page. */
@@ -494,7 +517,7 @@ export function IdleScreen({
     return () => clearInterval(timer)
   }, [])
 
-  const weekStart = weekStartOf(navigator.language)
+  const weekStart = firstDayOfWeek(weekStartSetting, navigator.language)
   const events = useCalendarEvents(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), weekStart)
   const next = upNext(now, events)
   const zoom = useFitZoom()
@@ -597,7 +620,7 @@ export function IdleScreen({
       </div>
       <div className="idle-col idle-col--middle">
         <div className={timer.status === 'off' ? 'idle-clock-row' : 'idle-clock-row idle-clock-row--timer'}>
-          <Clock now={now} small={timer.status !== 'off'} format={timeFormat} />
+          <Clock now={now} small={timer.status !== 'off'} format={timeFormat} seconds={clockSeconds} dateFormat={dateFormat} />
           {timer.status !== 'off' ? (
             <>
               <span className="idle-clock-rule" aria-hidden="true" />
@@ -645,6 +668,8 @@ export function IdleScreen({
           </div>
         ) : null}
       </div>
+      {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says. */}
+      {isNightDimmed(now, nightDim) ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
     </div>
   )
 }

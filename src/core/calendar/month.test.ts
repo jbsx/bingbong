@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from './calendar'
-import { eventsLeftToday, monthEntries, monthRange, twoWeeks, upNext, weekStartOf } from './month'
+import { asWeekStart, eventsLeftToday, firstDayOfWeek, monthEntries, monthRange, twoWeeks, upNext, weekStartOf } from './month'
 import { ukBankHolidays } from './ukBankHolidays'
 
 function event(title: string, start: Date, end: Date, allDay = false): CalendarEvent {
@@ -84,6 +84,16 @@ describe('upNext', () => {
   it('is nothing on a day with nothing left', () => {
     expect(upNext(now, [event('done', new Date(2026, 9, 19, 9), new Date(2026, 9, 19, 10))])).toBeNull()
     expect(upNext(now, [])).toBeNull()
+  })
+})
+
+describe('firstDayOfWeek', () => {
+  it('starts the week on the day picked, whatever the locale, and on the locale\'s on system', () => {
+    expect(firstDayOfWeek('sunday', 'en-GB')).toBe(0)
+    expect(firstDayOfWeek('monday', 'en-US')).toBe(1)
+    expect(firstDayOfWeek('saturday', 'en-GB')).toBe(6)
+    expect(firstDayOfWeek('system', 'en-GB')).toBe(weekStartOf('en-GB'))
+    expect(asWeekStart('friday')).toBe('system')
   })
 })
 

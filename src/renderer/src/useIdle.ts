@@ -16,7 +16,8 @@ export interface IdleApi {
  * the idle screen is the rest state; any interaction (input, a wake, a
  * command) wakes the dashboard, and the countdown only runs from there.
  * Pointer/keyboard input is tracked here; callers ping for non-input
- * activity. The timeout comes from the launch config snapshot. The idle
+ * activity. The timeout is `afterMs` (the setting) where given, else the
+ * launch config snapshot's, read each time the countdown arms. The idle
  * shortcut (Ctrl/Cmd+Shift+L, heard in main) enters idle at once.
  *
  * Over the Idle Screen (#361) a key is main's: one that types opens the
@@ -28,7 +29,7 @@ export interface IdleApi {
  * tap wakes only while `tapWakes` holds — with no page in the pane there
  * is nothing to wake to.
  */
-export function useIdle(options: { tapWakes: () => boolean; shown: () => boolean; onType: (text: string) => void }): IdleApi {
+export function useIdle(options: { tapWakes: () => boolean; shown: () => boolean; onType: (text: string) => void; afterMs?: number }): IdleApi {
   const [idle, setIdle] = useState(true)
   const pingRef = useRef<() => void>(() => {})
   const idleRef = useRef<() => void>(() => {})
@@ -38,11 +39,13 @@ export function useIdle(options: { tapWakes: () => boolean; shown: () => boolean
   shownRef.current = options.shown
   const onTypeRef = useRef(options.onType)
   onTypeRef.current = options.onType
+  const afterMsRef = useRef(options.afterMs)
+  afterMsRef.current = options.afterMs
 
   useEffect(() => {
     const timer = createIdleTimer({
       clock: systemClock,
-      timeoutMs: window.bingbong.app.idleTimeoutMs,
+      timeoutMs: () => afterMsRef.current ?? window.bingbong.app.idleTimeoutMs,
       startIdle: true,
       onChange: setIdle,
     })

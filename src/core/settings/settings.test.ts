@@ -34,6 +34,11 @@ describe('defaultSettings', () => {
     expect(settings.adblockEnabled).toBe(true)
     expect(settings.appearance).toBe('system')
     expect(settings.timeFormat).toBe('system')
+    expect(settings.clockSeconds).toBe(false)
+    expect(settings.dateFormat).toBe('long')
+    expect(settings.weekStart).toBe('system')
+    expect(settings.idleAfterMinutes).toBe(0)
+    expect(settings.nightDim.enabled).toBe(false)
   })
 })
 
@@ -144,6 +149,13 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ timeFormat: '24' }).timeFormat).toBe('24')
     expect(sanitizeSettings({}).timeFormat).toBe('system')
     expect(sanitizeSettings({ timeFormat: 24 }).timeFormat).toBe('system')
+  })
+
+  it('keeps the saved Idle Screen choices and reads anything else as the default', () => {
+    const saved = sanitizeSettings({ clockSeconds: true, dateFormat: 'short', weekStart: 'sunday', idleAfterMinutes: 15, nightDim: { enabled: true, from: '22:00', to: '06:30', brightnessPercent: 30 } })
+    expect(saved).toMatchObject({ clockSeconds: true, dateFormat: 'short', weekStart: 'sunday', idleAfterMinutes: 15, nightDim: { enabled: true, from: '22:00', to: '06:30', brightnessPercent: 30 } })
+    const garbage = sanitizeSettings({ clockSeconds: 'yes', dateFormat: 'tiny', weekStart: 'friday', idleAfterMinutes: 7 })
+    expect(garbage).toMatchObject({ clockSeconds: false, dateFormat: 'long', weekStart: 'system', idleAfterMinutes: 0 })
   })
 
   it('accepts only the three appearance literals and defaults to system', () => {

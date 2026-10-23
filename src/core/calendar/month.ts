@@ -94,6 +94,22 @@ export function upNext(now: Date, events: readonly CalendarEvent[]): UpNext | nu
   return event === undefined ? null : { event, more: left.length - 1 }
 }
 
+/** The First Day setting: the locale's, or the weekday picked. */
+export type WeekStart = 'system' | 'monday' | 'sunday' | 'saturday'
+
+/** Only the four literals pass; anything else follows the locale. */
+export function asWeekStart(value: unknown): WeekStart {
+  return value === 'monday' || value === 'sunday' || value === 'saturday' ? value : 'system'
+}
+
+/** The weekday the Calendar's weeks start on (0 = Sunday): the one picked, or for `system` the locale's. */
+export function firstDayOfWeek(setting: WeekStart, locale: string): number {
+  if (setting === 'monday') return 1
+  if (setting === 'sunday') return 0
+  if (setting === 'saturday') return 6
+  return weekStartOf(locale)
+}
+
 /**
  * The weekday a locale's weeks start on (0 = Sunday), from Intl's week
  * info where the runtime has it; Monday otherwise.

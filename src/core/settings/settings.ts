@@ -5,7 +5,9 @@
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
 import { IDLE_CARD_IDS, sanitizeIdleCards, savedIdleCards, type IdleCardId } from '../idle/columns'
-import { asTimeFormat, type TimeFormat } from '../idle/timeFormat'
+import { asDateFormat, asTimeFormat, type DateFormat, type TimeFormat } from '../idle/timeFormat'
+import { defaultNightDim, sanitizeNightDim, type NightDim } from '../idle/nightDim'
+import { asWeekStart, type WeekStart } from '../calendar/month'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 import { defaultWeightSettings, sanitizeWeightSettings, type WeightSettings } from '../scale/weightSettings'
@@ -28,6 +30,8 @@ export const HOT_LISTEN_SILENCE_MS_DEFAULT = 8_000
 export const WEB_ZOOM_PERCENT_MIN = 75
 export const WEB_ZOOM_PERCENT_MAX = 200
 export const WEB_ZOOM_PERCENT_DEFAULT = 130
+/** The choices for when the Idle Screen comes on, in minutes; 0 is the launch default (5 minutes, or BINGBONG_IDLE_TIMEOUT_MS). */
+export const IDLE_AFTER_MINUTES = [0, 1, 2, 5, 10, 15, 30, 60] as const
 
 export type WeatherUnits = 'metric' | 'imperial'
 
@@ -72,6 +76,16 @@ export interface AppSettings {
   appearance: Appearance
   /** The clock every time of day on the Idle Screen and the Weight page is written on (core/idle/timeFormat): the locale's, 12-hour or 24-hour. */
   timeFormat: TimeFormat
+  /** Whether the Idle Screen's clock shows its seconds. */
+  clockSeconds: boolean
+  /** How the date under the Idle Screen's clock is written (core/idle/timeFormat). */
+  dateFormat: DateFormat
+  /** The weekday the Calendar's weeks start on (core/calendar/month): the locale's, or the one picked. */
+  weekStart: WeekStart
+  /** Minutes without activity before the Idle Screen comes on; 0 leaves it to the launch config (5 minutes, or BINGBONG_IDLE_TIMEOUT_MS). */
+  idleAfterMinutes: number
+  /** The Idle Screen darkened between two times of day (core/idle/nightDim). */
+  nightDim: NightDim
   /**
    * The weather's city ('' is the network's own place) and units; a city
    * picked from the search keeps its coordinates, so the forecast is for the
@@ -113,6 +127,11 @@ export function defaultSettings(): AppSettings {
     adblockEnabled: true,
     appearance: 'system',
     timeFormat: 'system',
+    clockSeconds: false,
+    dateFormat: 'long',
+    weekStart: 'system',
+    idleAfterMinutes: 0,
+    nightDim: defaultNightDim(),
     weather: { city: '', units: 'metric' },
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
@@ -254,6 +273,11 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     appearance: asAppearance(record.appearance),
     timeFormat: asTimeFormat(record.timeFormat),
+    clockSeconds: record.clockSeconds === true,
+    dateFormat: asDateFormat(record.dateFormat),
+    weekStart: asWeekStart(record.weekStart),
+    idleAfterMinutes: (IDLE_AFTER_MINUTES as readonly unknown[]).includes(record.idleAfterMinutes) ? (record.idleAfterMinutes as number) : 0,
+    nightDim: sanitizeNightDim(record.nightDim),
     weather: {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,

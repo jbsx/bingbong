@@ -16,7 +16,8 @@ export interface IdleTimer {
 
 export function createIdleTimer(deps: {
   clock: Clock
-  timeoutMs: number
+  /** The countdown; a function is read again each time it arms, so a changed setting holds from the next activity. */
+  timeoutMs: number | (() => number)
   /** Boot straight into idle (appliance mode): no countdown until the first ping. */
   startIdle?: boolean
   onChange(idle: boolean): void
@@ -27,7 +28,7 @@ export function createIdleTimer(deps: {
 
   const arm = () => {
     cancel?.()
-    cancel = deps.clock.setTimer(deps.timeoutMs, () => {
+    cancel = deps.clock.setTimer(typeof deps.timeoutMs === 'function' ? deps.timeoutMs() : deps.timeoutMs, () => {
       idle = true
       deps.onChange(true)
     })

@@ -1,11 +1,15 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
 import { isEnvKey, isSecretKey, type EnvFileView } from '../../core/settings/envEntries'
-import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
+import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel, IDLE_AFTER_MINUTES } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../../core/idle/columns'
-import { asTimeFormat, timeOfDay } from '../../core/idle/timeFormat'
+import { asDateFormat, asTimeFormat, dateOptions, timeOfDay } from '../../core/idle/timeFormat'
+import { NIGHT_BRIGHTNESS_MAX, NIGHT_BRIGHTNESS_MIN } from '../../core/idle/nightDim'
+import { asWeekStart } from '../../core/calendar/month'
+import { DEFAULT_IDLE_TIMEOUT_MS } from '../../core/app/launchConfig'
+import { dateLabel } from './dateLabel'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
@@ -122,6 +126,7 @@ const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string;
     sections: [
       { id: 'idle screen cards', title: 'Cards' },
       { id: 'clock', title: 'Clock' },
+      { id: 'screen', title: 'Screen' },
       { id: 'weather', title: 'Weather' },
       { id: 'weight', title: 'Weight' },
       { id: 'ai usage', title: 'AI usage' },
@@ -714,6 +719,12 @@ function usageHint(providers: readonly string[]): string {
   return `${named} shown`
 }
 
+/** The launch config's idle timeout in minutes — BINGBONG_IDLE_TIMEOUT_MS or 5 — which a timeout of 0 keeps; 5 where the page renders without the preload. */
+function launchIdleMinutes(): number {
+  const ms = typeof window === 'undefined' ? DEFAULT_IDLE_TIMEOUT_MS : window.bingbong.app.idleTimeoutMs
+  return Math.round(ms / 60_000)
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -942,6 +953,87 @@ export function SettingsPage({
             </select>
           </Field>
           <p className="settings-note">Every time on the idle screen and the Weight page: the clock, the Timer, the calendar, the weather's hours.</p>
+          <Field label="Show seconds">
+            <input type="checkbox" checked={draft.clockSeconds} aria-label="Show seconds" onChange={(event) => setDraft({ ...draft, clockSeconds: event.target.checked })} />
+          </Field>
+          <Field label="Date">
+            <select value={draft.dateFormat} aria-label="Date format" onChange={(event) => setDraft({ ...draft, dateFormat: asDateFormat(event.target.value) })}>
+              {(['long', 'long-year', 'short', 'numeric'] as const).map((format) => (
+                <option key={format} value={format}>
+                  {dateLabel(Date.now(), dateOptions(format))}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="First day of the week">
+            <select value={draft.weekStart} aria-label="First day of the week" onChange={(event) => setDraft({ ...draft, weekStart: asWeekStart(event.target.value) })}>
+              <option value="system">Match this computer</option>
+              <option value="monday">Monday</option>
+              <option value="sunday">Sunday</option>
+              <option value="saturday">Saturday</option>
+            </select>
+          </Field>
+        </Section>
+
+        <Section
+          id="screen"
+          title="Screen"
+          hint={`On after ${draft.idleAfterMinutes === 0 ? 'the default' : `${draft.idleAfterMinutes} min`} · ${draft.nightDim.enabled ? `dims ${draft.nightDim.from}–${draft.nightDim.to}` : 'no night dimming'}`}
+        >
+          <Field label="Comes on after">
+            <select
+              value={draft.idleAfterMinutes}
+              aria-label="Idle screen after"
+              onChange={(event) => setDraft({ ...draft, idleAfterMinutes: Number(event.target.value) })}
+            >
+              {IDLE_AFTER_MINUTES.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes === 0 ? `Default (${launchIdleMinutes()} min)` : minutes === 1 ? '1 minute' : `${minutes} minutes`}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="settings-note">How long the dashboard waits without a tap, a key or a command before the idle screen comes on. Holds from the next activity.</p>
+          <Field label="Dim at night">
+            <input
+              type="checkbox"
+              checked={draft.nightDim.enabled}
+              aria-label="Dim at night"
+              onChange={(event) => setDraft({ ...draft, nightDim: { ...draft.nightDim, enabled: event.target.checked } })}
+            />
+          </Field>
+          {draft.nightDim.enabled ? (
+            <>
+              <Field label="From">
+                <input
+                  type="time"
+                  value={draft.nightDim.from}
+                  aria-label="Dim from"
+                  onChange={(event) => event.target.value !== '' && setDraft({ ...draft, nightDim: { ...draft.nightDim, from: event.target.value } })}
+                />
+              </Field>
+              <Field label="Until">
+                <input
+                  type="time"
+                  value={draft.nightDim.to}
+                  aria-label="Dim until"
+                  onChange={(event) => event.target.value !== '' && setDraft({ ...draft, nightDim: { ...draft.nightDim, to: event.target.value } })}
+                />
+              </Field>
+              <Field label={`Brightness — ${draft.nightDim.brightnessPercent}%`}>
+                <input
+                  type="range"
+                  min={NIGHT_BRIGHTNESS_MIN}
+                  max={NIGHT_BRIGHTNESS_MAX}
+                  step={5}
+                  value={draft.nightDim.brightnessPercent}
+                  aria-label="Night brightness"
+                  onChange={(event) => setDraft({ ...draft, nightDim: { ...draft.nightDim, brightnessPercent: Number(event.target.value) } })}
+                />
+              </Field>
+              <p className="settings-note">The idle screen only; the dashboard stays at full brightness while you use it.</p>
+            </>
+          ) : null}
         </Section>
 
         <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? `Detected · ${draft.weather.units === 'imperial' ? '°F' : '°C'}` : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>

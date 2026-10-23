@@ -213,4 +213,78 @@ describe('settings page e2e', () => {
     expect(clock.period).toMatch(/^(am|pm)$/i)
     expect(clock.text).toMatch(/^(1[0-2]|[1-9]):[0-5]\d(am|pm)$/i)
   })
+
+  it('saves the clock, the week, the timeout and the night dimming, and the idle screen follows them', async () => {
+    // The last test left the idle screen up; its corner opens settings again.
+    await harness.clickDashboardElement('.idle-settings')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.settings-page')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    // A night window an hour either side of now, so the screen is dimmed whenever this runs.
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const clockTime = (at: Date): string => `${pad(at.getHours())}:${pad(at.getMinutes())}`
+    const from = clockTime(new Date(Date.now() - 60 * 60_000))
+    const to = clockTime(new Date(Date.now() + 60 * 60_000))
+    const result = await harness.dashboardEval<string>(`(() => {
+      for (const id of ['clock', 'screen']) { const details = document.querySelector('section[aria-label="' + id + '"] details'); if (!details.open) details.open = true }
+      const pick = (label, value, event) => {
+        const field = document.querySelector('[aria-label="' + label + '"]')
+        if (!field) throw new Error('no ' + label)
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value').set.call(field, value)
+        field.dispatchEvent(new Event(event, { bubbles: true }))
+      }
+      document.querySelector('input[aria-label="Show seconds"]').click()
+      pick('Date format', 'short', 'change')
+      pick('First day of the week', 'sunday', 'change')
+      pick('Idle screen after', '15', 'change')
+      document.querySelector('input[aria-label="Dim at night"]').click()
+      return 'set'
+    })()`)
+    expect(result).toBe('set')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('input[aria-label="Dim from"]')`)) ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    await harness.dashboardEval(`(() => {
+      const pick = (label, value) => {
+        const field = document.querySelector('[aria-label="' + label + '"]')
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value)
+        field.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      pick('Dim from', ${JSON.stringify(from)})
+      pick('Dim until', ${JSON.stringify(to)})
+      pick('Night brightness', '30')
+    })()`)
+    await harness.clickDashboardElement('.settings-button--primary')
+    const saved = await waitFor(
+      async () => {
+        const raw = await readFile(join(userDataDir, 'settings.json'), 'utf8').catch(() => undefined)
+        const settings = raw === undefined ? undefined : JSON.parse(raw)
+        return settings?.nightDim?.brightnessPercent === 30 ? settings : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    expect(saved).toMatchObject({ clockSeconds: true, dateFormat: 'short', weekStart: 'sunday', idleAfterMinutes: 15, nightDim: { enabled: true, from, to, brightnessPercent: 30 } })
+
+    await harness.pressKey('dashboard', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    const idle = await waitFor(
+      async () => {
+        const found = await harness.dashboardEval<{ seconds: string; date: string; firstDay: string; sunday: string; veil: string } | null>(`(() => {
+          if (!document.querySelector('.idle-screen')) return null
+          const veil = document.querySelector('.idle-night')
+          return {
+            seconds: document.querySelector('.idle-clock-seconds')?.textContent ?? '',
+            date: document.querySelector('.idle-date').textContent,
+            firstDay: document.querySelector('.idle-cal-weekday')?.textContent ?? '',
+            sunday: new Date(2026, 9, 25).toLocaleDateString([], { weekday: 'short' }),
+            veil: veil ? getComputedStyle(veil).opacity : '',
+          }
+        })()`)
+        return found ?? undefined
+      },
+      { timeoutMs: 10000, intervalMs: 100 },
+    )
+    expect(idle.seconds).toMatch(/^:[0-5]\d$/)
+    expect(idle.date).toBe(await harness.dashboardEval<string>(`new Date().toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }).replace('Sept', 'Sep')`))
+    expect(idle.firstDay).toBe(idle.sunday)
+    expect(Number(idle.veil)).toBeCloseTo(0.7, 2)
+    // The veil lets a tap through: the corner's settings button still opens settings under it.
+    await harness.clickDashboardElement('.idle-settings')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.settings-page')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+  })
 })

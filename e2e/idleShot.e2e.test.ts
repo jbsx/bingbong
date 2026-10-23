@@ -264,6 +264,30 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
   })
 
+  it('writes the clock on the 12-hour clock with its seconds and the year, beside a running Timer too, then dims for the night', async () => {
+    const before = await harness.dashboardEval<unknown>(`window.bingbong.settings.get()`)
+    const set = (changes: Record<string, unknown>): Promise<unknown> => harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, ...${JSON.stringify(changes)} }))`)
+    try {
+      await set({ timeFormat: '12', clockSeconds: true, dateFormat: 'long-year' })
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-clock-seconds')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+      await held('clock-12h-seconds')
+      await harness.dashboardEval(`window.bingbong.assistant.submit('timer 10 minutes')`)
+      await reenterIdle()
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+      await held('clock-12h-seconds-timer')
+      await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+      await reenterIdle()
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      const clockTime = (at: Date): string => `${pad(at.getHours())}:${pad(at.getMinutes())}`
+      await set({ nightDim: { enabled: true, from: clockTime(new Date(Date.now() - HOUR)), to: clockTime(new Date(Date.now() + HOUR)), brightnessPercent: 40 } })
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-night')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+      await held('night-dim')
+    } finally {
+      await harness.dashboardEval(`window.bingbong.settings.update(${JSON.stringify(before)})`)
+    }
+  })
+
   it('shows the Weigh-in pop-up in the AI Usage chart’s place, live then settled', async () => {
     await writeFile(join(userDataDir, 'scale-frames.txt'), STEPPING_ON, 'utf8')
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-popup-place .weighin-popup--live')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 50 })

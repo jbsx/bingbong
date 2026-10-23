@@ -24,12 +24,16 @@ export function weightCardRows(weighIns: readonly WeighIn[], weight: WeightSetti
     .filter((row) => row.weighIns.length > 0)
 }
 
-/** When the latest Weigh-in was: "today 07:12", "yesterday", else "Mon 13 Oct". */
+/**
+ * When the latest Weigh-in was: today's by its time alone ("07:12", "7:12
+ * am" — "today 7:12 am" outgrew the line on the 12-hour clock),
+ * "yesterday", else "Mon 13 Oct".
+ */
 function whenLabel(at: number, now: number, format: TimeFormat): string {
   const day = new Date(at)
   const today = new Date(now)
   const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()) / DAY_MS)
-  if (days === 0) return `today ${timeOfDay(day, format)}`
+  if (days === 0) return timeOfDay(day, format)
   if (days === 1) return 'yesterday'
   return dateLabel(day, { weekday: 'short', day: 'numeric', month: 'short' })
 }

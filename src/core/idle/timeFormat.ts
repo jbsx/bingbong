@@ -36,13 +36,38 @@ export function timeOfDay(at: Date | number, format: TimeFormat, locale?: string
 
 /**
  * The Idle Screen's clock in its parts, so the separator can take the
- * accent and the day period sit small beside the minutes: "9", ":", "05",
- * "pm" — the period '' on the 24-hour clock.
+ * accent and the seconds and day period sit small beside the minutes: "9",
+ * ":", "05", "41", "pm" — the seconds '' unless asked for, the period ''
+ * on the 24-hour clock.
  */
-export function clockParts(at: Date | number, format: TimeFormat, locale?: string): { hours: string; separator: string; minutes: string; period: string } {
-  const parts = new Intl.DateTimeFormat(locale, timeOptions(format, locale)).formatToParts(at)
+export function clockParts(
+  at: Date | number,
+  format: TimeFormat,
+  { locale, seconds = false }: { locale?: string; seconds?: boolean } = {},
+): { hours: string; separator: string; minutes: string; seconds: string; period: string } {
+  const parts = new Intl.DateTimeFormat(locale, { ...timeOptions(format, locale), ...(seconds ? { second: '2-digit' } : {}) }).formatToParts(at)
   const value = (type: Intl.DateTimeFormatPartTypes): string => parts.find((part) => part.type === type)?.value ?? ''
   const hourAt = parts.findIndex((part) => part.type === 'hour')
   const separator = parts[hourAt + 1]?.type === 'literal' ? parts[hourAt + 1].value : ':'
-  return { hours: value('hour'), separator, minutes: value('minute'), period: value('dayPeriod') }
+  return { hours: value('hour'), separator, minutes: value('minute'), seconds: value('second'), period: value('dayPeriod') }
+}
+
+/**
+ * How the date under the Idle Screen's clock is written: "Saturday 24
+ * October" (`long`, as it always was), with the year ("Saturday, 24
+ * October 2026"), "Sat 24 Oct", or
+ * the locale's numeric date, "24/10/2026".
+ */
+export type DateFormat = 'long' | 'long-year' | 'short' | 'numeric'
+
+/** Only the four literals pass; anything else is the long date. */
+export function asDateFormat(value: unknown): DateFormat {
+  return value === 'long-year' || value === 'short' || value === 'numeric' ? value : 'long'
+}
+
+/** The Intl options that write a date in that format. */
+export function dateOptions(format: DateFormat): Intl.DateTimeFormatOptions {
+  if (format === 'short') return { weekday: 'short', day: 'numeric', month: 'short' }
+  if (format === 'numeric') return { day: '2-digit', month: '2-digit', year: 'numeric' }
+  return { weekday: 'long', day: 'numeric', month: 'long', ...(format === 'long-year' ? { year: 'numeric' } : {}) }
 }

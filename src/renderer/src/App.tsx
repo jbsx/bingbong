@@ -47,7 +47,12 @@ export function App() {
   const idleUp = useRef(false)
   // A key typed on the Idle Screen opens its Prompt with it, as main's does (#361).
   const typeIntoPrompt = useCallback((text: string) => setPromptDraft((draft) => (draft ?? '') + text), [])
-  const idle = useIdle({ tapWakes: () => paneHasPage && promptDraft === null, shown: () => idleUp.current, onType: typeIntoPrompt })
+  const idle = useIdle({
+    tapWakes: () => paneHasPage && promptDraft === null,
+    shown: () => idleUp.current,
+    onType: typeIntoPrompt,
+    afterMs: settings?.idleAfterMinutes ? settings.idleAfterMinutes * 60_000 : undefined,
+  })
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
@@ -172,6 +177,10 @@ export function App() {
           weighIns={weighIns}
           weight={settings?.weight}
           timeFormat={settings?.timeFormat}
+          clockSeconds={settings?.clockSeconds}
+          dateFormat={settings?.dateFormat}
+          weekStart={settings?.weekStart}
+          nightDim={settings?.nightDim}
           onOpenWeight={(person) => {
             setWeightPerson(person)
             setView('weight')

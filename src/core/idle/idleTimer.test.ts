@@ -25,6 +25,19 @@ function fakeClock(start = 1_000): Clock & { advance(ms: number): void } {
 }
 
 describe('createIdleTimer', () => {
+  it('reads a timeout given as a function again each time it arms', () => {
+    const clock = fakeClock()
+    let timeoutMs = 30_000
+    const events: boolean[] = []
+    const timer = createIdleTimer({ clock, timeoutMs: () => timeoutMs, onChange: (idle) => events.push(idle) })
+    timeoutMs = 5_000
+    clock.advance(5_000)
+    expect(timer.isIdle()).toBe(false)
+    timer.ping()
+    clock.advance(5_000)
+    expect(timer.isIdle()).toBe(true)
+  })
+
   it('starts active with the timeout running', () => {
     const clock = fakeClock()
     const timer = createIdleTimer({ clock, timeoutMs: 30_000, onChange: () => {} })

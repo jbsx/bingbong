@@ -2245,13 +2245,30 @@ details[open] > .settings-summary::before {
   color: var(--accent);
 }
 
-/* A 12-hour clock's "pm": small beside the minutes, on their baseline, so the figures keep the clock's size. */
-.idle-clock-period {
+/* The seconds and a 12-hour clock's "pm": small beside the minutes, on their baseline, so the figures keep the clock's size. */
+.idle-clock-tail {
   margin-left: 0.12em;
   font-size: 0.3em;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--fg2);
+}
+
+.idle-clock-seconds {
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-clock-seconds + .idle-clock-period {
+  margin-left: 0.3em;
+}
+
+/* Night Dim: black over the whole screen at the setting's strength; every tap passes through to what is under it. */
+.idle-night {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: #000;
+  pointer-events: none;
 }
 
 .idle-date {
@@ -2264,10 +2281,11 @@ details[open] > .settings-summary::before {
 }
 
 /* With a Timer set the clock steps down and the Timer Clock sits beside it, a hairline between; the
-   Timer's side a little wider, so "Timer 25 minutes · ends 10:18" holds one line. */
+   Timer's side wider, so "Timer 10 minutes · ends 12:55 am" holds one line (401 px of its 413) while
+   the clock's 306 still hold its widest time (294) and date ("Wednesday 30 September", 279). */
 .idle-clock-row--timer {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) 1px minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 0.85fr) 1px minmax(0, 1.15fr);
   column-gap: 0;
   margin-top: -6px;
 }

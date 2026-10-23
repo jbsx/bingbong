@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asTimeFormat, clockParts, isTwelveHour, timeOfDay } from './timeFormat'
+import { asDateFormat, asTimeFormat, clockParts, dateOptions, isTwelveHour, timeOfDay } from './timeFormat'
 
 const evening = new Date(2026, 9, 24, 21, 5)
 const midnight = new Date(2026, 9, 24, 0, 5)
@@ -23,9 +23,25 @@ describe('timeFormat', () => {
   })
 
   it('splits the clock into hours, separator, minutes and the day period', () => {
-    expect(clockParts(evening, '24', 'en-GB')).toEqual({ hours: '21', separator: ':', minutes: '05', period: '' })
-    expect(clockParts(evening, '12', 'en-GB')).toEqual({ hours: '9', separator: ':', minutes: '05', period: 'pm' })
-    expect(clockParts(evening, '12', 'en-US')).toEqual({ hours: '9', separator: ':', minutes: '05', period: 'PM' })
+    expect(clockParts(evening, '24', { locale: 'en-GB' })).toEqual({ hours: '21', separator: ':', minutes: '05', seconds: '', period: '' })
+    expect(clockParts(evening, '12', { locale: 'en-GB' })).toEqual({ hours: '9', separator: ':', minutes: '05', seconds: '', period: 'pm' })
+    expect(clockParts(evening, '12', { locale: 'en-US' })).toEqual({ hours: '9', separator: ':', minutes: '05', seconds: '', period: 'PM' })
+  })
+
+  it('gives the seconds too when asked', () => {
+    const late = new Date(2026, 9, 24, 21, 5, 7)
+    expect(clockParts(late, '24', { locale: 'en-GB', seconds: true })).toEqual({ hours: '21', separator: ':', minutes: '05', seconds: '07', period: '' })
+    expect(clockParts(late, '12', { locale: 'en-GB', seconds: true })).toMatchObject({ hours: '9', minutes: '05', seconds: '07', period: 'pm' })
+  })
+
+  it('writes the date in each of the four formats', () => {
+    const write = (format: Parameters<typeof dateOptions>[0]): string => evening.toLocaleDateString('en-GB', dateOptions(format))
+    expect(write('long')).toBe('Saturday 24 October')
+    expect(write('long-year')).toBe('Saturday, 24 October 2026')
+    expect(write('short')).toBe('Sat 24 Oct')
+    expect(write('numeric')).toBe('24/10/2026')
+    expect(asDateFormat('short')).toBe('short')
+    expect(asDateFormat('tiny')).toBe('long')
   })
 
   it('reads anything but 12 or 24 as system', () => {
