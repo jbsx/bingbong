@@ -1,0 +1,189 @@
+{
+  "turnId": "turn-mvjugfd4-1d",
+  "transcript": "Play the first video.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792691875722,
+  "expect": [
+    {
+      "question": "outcome",
+      "label": "yes",
+      "atLeast": 0.7
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Play the first video.\"\nThis is step 3 of the task. Done so far: click \"iPhone Duo Review: First Generation Fun! 29 minutes iPhone Duo Review: First Ge…\" (opened youtube.com/watch?v=ESABTN4VtrA)\nPages visited: https://www.youtube.com/results?search_query=NKBHD https://www.youtube.com/watch?v=ESABTN4VtrA\nPage: https://www.youtube.com/watch?v=ESABTN4VtrA — \"iPhone Duo Review: First Generation Fun! - YouTube\"\nText in view: \"iPhone Duo Review: First Generation Fun!\" · \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 . 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 m\" · \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9\" · \"What it's actually like to use the first folding iPhone - Duo Don’t miss Ridge’s friends and family sale at https://ridge.com/MKBHD …\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] button \"Guide\"\n[2] button \"\"\n[3] link \"YouTube Home\" https://www.youtube.com/\n[4] input[text] \"Search\" value=\"NKBHD\" autocomplete=list hasPopup=listbox expanded=true\n[5] button \"Clear search query\"\n[6] button \"Search Search\"\n[7] button \"\"\n[8] button \"Settings\"\n[9] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den-GB%26next%3D%252Fwatch%253Fv%253DESABTN4VtrA%2526pp%253DygUFTktCSEQ%25253D&hl=en-GB&ec=65620\n[10] button \"\"\n[11] media \"Unable to play media.\" disabled=true paused live 0:00 volume 25% loop off [17] \"Subtitles/closed captions unavailable\" off, [24] \"like this video along with 157,210 other people 157k\" off, [25] \"Dislike this video\" off\n[12] button \"Pause (k)\" keyshortcuts=\"k\"\n[13] button \"Mute (m)\" keyshortcuts=\"m\"\n[14] button \"0 Minutes 0 Seconds of 0 Minutes 0 Seconds 0:00 / 0:00\"\n[15] button \"Intro\"\n[16] button \"Auto-play is off\"\n[17] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"\n[18] button \"Settings\" hasPopup=menu expanded=false\n[19] button \"Cinema mode (t)\" keyshortcuts=\"t\"\n[20] button \"Full screen (f)\" keyshortcuts=\"f\"\n[21] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd\n[22] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd\n[23] button \"Subscribe to Marques Brownlee. Subscribe\"\n[24] button \"like this video along with 157,210 other people 157k\" pressed=false\n[25] button \"Dislike this video\" pressed=false\n[26] button \"\"\n[27] button \"Share\"\n[28] button \"Save to playlist\"\n[29] button \"More actions\"\n[30] link \"https://ridge.com/MKBHD\" https://www.youtube.com/redirect?event=video_description&redir_token=QUlxb01IYVp1R21ValBTUEUtV0RjcXo3czJTRXxBSTVJdTVzaEgtVl9CUFFETm1ncmFHS0kzeTNQUkdHb1pHS1ExeFRWanFlOV9nVkJsMGFiVkNQdk1SVDB5dlpPT3lMZmtZeDJxcmZTT1g3TVBNWTl5cVJqRlA5UDBOZURnVEI0&q=https%3A%2F%2Fridge.com%2FMKBHD&v=ESABTN4VtrA\n[31] button \"more\"\n[32] link \"20:31 New\" https://www.youtube.com/watch?v=Xrxy_W78SKk\n[33] link \"57:22 New\" https://www.youtube.com/watch?v=RVc3TJ-l2KY&pp=ugUHEgVlbi1HQg%3D%3D\nLinks further down the page (name, address):\n[link-1] link \"11:47\" https://www.youtube.com/watch?v=QVv3mQzlrN0&pp=ugUEEgJlbg%3D%3D\n[link-2] link \"1:14:19 New\" https://www.youtube.com/watch?v=Axv-1C9-07U\n[link-3] link \"32:03 New\" https://www.youtube.com/watch?v=61iIHiesPdE&pp=ugUHEgVlbi1HQg%3D%3D\n[link-4] link \"50:26\" https://www.youtube.com/watch?v=axRhjqd-rus&pp=ugUEEgJlbg%3D%3D\n[link-5] link \"58:12 New\" https://www.youtube.com/watch?v=Jdm8qnlnzqc&pp=ugUEEgJlbg%3D%3D\nText further down the page, not on screen yet (number, text):\n[text-1] \"iPhone Duo is Messier Than You Think\"\n[text-2] \"I EXPOSED THE SHUT DOWN UK SUPERCAR DEALERSHIP\"\n[text-3] \"Recommendations not quite right?\"\n[text-4] \"When you turn on watch history, you'll get more personalised recommendations.\"\n[text-5] \"Apple Homeview Impressions: Not Convinced!\"\n[text-6] \"Stallone: Rocky Secrets, Rambo Stories & Schwarzenegger Rivalry | Stick to Football EP 154\"\n[text-7] \"Martin Lewis Talks Mortgages And How To Save!\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
+        "options": {
+          "click-1": "click [1] button \"Guide\"",
+          "click-2": "click [2] button \"\"",
+          "click-3": "click [3] link \"YouTube Home\" https://www.youtube.com/",
+          "type-4": "type the words into [4] input[text] \"Search\" value=\"NKBHD\" autocomplete=list hasPopup=listbox expanded=true",
+          "click-4": "click [4] input[text] \"Search\" value=\"NKBHD\" autocomplete=list hasPopup=listbox expanded=true",
+          "click-5": "click [5] button \"Clear search query\"",
+          "click-6": "click [6] button \"Search Search\"",
+          "click-7": "click [7] button \"\"",
+          "click-8": "click [8] button \"Settings\"",
+          "click-9": "click [9] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den-GB%26next%3D%252Fwatch%253Fv%253DESABTN4VtrA%2526pp%253DygUFTktCSEQ%25253D&hl=en-GB&ec=65620",
+          "click-10": "click [10] button \"\"",
+          "click-11": "click [11] media \"Unable to play media.\" disabled=true paused live 0:00 volume 25% loop off [17] \"Subtitles/closed captions unavailable\" off, [24] \"like this video along with 157,210 other people 157k\" off, [25] \"Dislike this video\" off",
+          "click-12": "click [12] button \"Pause (k)\" keyshortcuts=\"k\"",
+          "click-13": "click [13] button \"Mute (m)\" keyshortcuts=\"m\"",
+          "click-14": "click [14] button \"0 Minutes 0 Seconds of 0 Minutes 0 Seconds 0:00 / 0:00\"",
+          "click-15": "click [15] button \"Intro\"",
+          "click-16": "click [16] button \"Auto-play is off\"",
+          "click-17": "click [17] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"",
+          "click-18": "click [18] button \"Settings\" hasPopup=menu expanded=false",
+          "click-19": "click [19] button \"Cinema mode (t)\" keyshortcuts=\"t\"",
+          "click-20": "click [20] button \"Full screen (f)\" keyshortcuts=\"f\"",
+          "click-21": "click [21] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd",
+          "click-22": "click [22] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd",
+          "click-23": "click [23] button \"Subscribe to Marques Brownlee. Subscribe\"",
+          "click-24": "click [24] button \"like this video along with 157,210 other people 157k\" pressed=false",
+          "click-25": "click [25] button \"Dislike this video\" pressed=false",
+          "click-26": "click [26] button \"\"",
+          "click-27": "click [27] button \"Share\"",
+          "click-28": "click [28] button \"Save to playlist\"",
+          "click-29": "click [29] button \"More actions\"",
+          "click-30": "click [30] link \"https://ridge.com/MKBHD\" https://www.youtube.com/redirect?event=video_description&redir_token=QUlxb01IYVp1R21ValBTUEUtV0RjcXo3czJTRXxBSTVJdTVzaEgtVl9CUFFETm1ncmFHS0kzeTNQUkdHb1pHS1ExeFRWanFlOV9nVkJsMGFiVkNQdk1SVDB5dlpPT3lMZmtZeDJxcmZTT1g3TVBNWTl5cVJqRlA5UDBOZURnVEI0&q=https%3A%2F%2Fridge.com%2FMKBHD&v=ESABTN4VtrA",
+          "click-31": "click [31] button \"more\"",
+          "click-32": "click [32] link \"20:31 New\" https://www.youtube.com/watch?v=Xrxy_W78SKk",
+          "click-33": "click [33] link \"57:22 New\" https://www.youtube.com/watch?v=RVc3TJ-l2KY&pp=ugUHEgVlbi1HQg%3D%3D",
+          "play-11": "play [11] \"Unable to play media.\": start it, or carry on playing it",
+          "pause-11": "pause [11] \"Unable to play media.\"",
+          "volume-11": "set the volume of [11] \"Unable to play media.\": to the number the words carry (0 to 100), or up or down as they say",
+          "mute-11": "mute [11] \"Unable to play media.\"",
+          "unmute-11": "unmute [11] \"Unable to play media.\"",
+          "loop-11": "put [11] \"Unable to play media.\" on loop, so it repeats",
+          "unloop-11": "stop looping [11] \"Unable to play media.\"",
+          "rate-11": "set the playback speed of [11] \"Unable to play media.\": to the number the words carry (1 is normal), or faster or slower as they say",
+          "open-1": "open result link \"11:47\" https://www.youtube.com/watch?v=QVv3mQzlrN0&pp=ugUEEgJlbg%3D%3D",
+          "open-2": "open result link \"1:14:19 New\" https://www.youtube.com/watch?v=Axv-1C9-07U",
+          "open-3": "open result link \"32:03 New\" https://www.youtube.com/watch?v=61iIHiesPdE&pp=ugUHEgVlbi1HQg%3D%3D",
+          "open-4": "open result link \"50:26\" https://www.youtube.com/watch?v=axRhjqd-rus&pp=ugUEEgJlbg%3D%3D",
+          "open-5": "open result link \"58:12 New\" https://www.youtube.com/watch?v=Jdm8qnlnzqc&pp=ugUEEgJlbg%3D%3D",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "menu-22": "right-click [22] to open its menu",
+          "menu-23": "right-click [23] to open its menu",
+          "menu-24": "right-click [24] to open its menu",
+          "menu-25": "right-click [25] to open its menu",
+          "menu-26": "right-click [26] to open its menu",
+          "menu-27": "right-click [27] to open its menu",
+          "menu-28": "right-click [28] to open its menu",
+          "menu-29": "right-click [29] to open its menu",
+          "menu-30": "right-click [30] to open its menu",
+          "menu-31": "right-click [31] to open its menu",
+          "menu-32": "right-click [32] to open its menu",
+          "menu-33": "right-click [33] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] \"iPhone Duo is Messier Than You Think\" is in view",
+          "show-2": "scroll until [text-2] \"I EXPOSED THE SHUT DOWN UK SUPERCAR DEALERSHIP\" is in view",
+          "show-3": "scroll until [text-3] \"Recommendations not quite right?\" is in view",
+          "show-4": "scroll until [text-4] \"When you turn on watch history, you'll get more personalised recommendations.\" is in view",
+          "show-5": "scroll until [text-5] \"Apple Homeview Impressions: Not Convinced!\" is in view",
+          "show-6": "scroll until [text-6] \"Stallone: Rocky Secrets, Rambo Stories & Schwarzenegger Rivalry | Stick to Footb\" is in view",
+          "show-7": "scroll until [text-7] \"Martin Lewis Talks Mortgages And How To Save!\" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Play",
+          "s0-1": "Play the",
+          "s0-2": "Play the first",
+          "s0-3": "Play the first video",
+          "s1-1": "the",
+          "s1-2": "the first",
+          "s1-3": "the first video",
+          "s2-2": "first",
+          "s2-3": "first video",
+          "s3-3": "video"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      }
+    }
+  }
+}

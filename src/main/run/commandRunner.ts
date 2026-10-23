@@ -1325,8 +1325,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return appeared.length > 0 ? { command, page: before, appeared } : undefined
   }
 
-  /** Whether the Verdict is sure: its confidence clears the Choice bar. */
-  const sure = (verdict: Verdict | null): verdict is Verdict => verdict !== null && verdict.confidence >= DEFAULT_DECISION_THRESHOLDS.choice
+  /** Whether the Verdict is sure: its outcome's probability clears the Choice bar (#403). */
+  const sure = (verdict: Verdict | null): verdict is Verdict => verdict !== null && verdict.probability >= DEFAULT_DECISION_THRESHOLDS.choice
 
   /** Whether the Command acts on the pop-up itself: a ref in the dialog's layer, or Escape. */
   function actsOnDialog(command: Command, page: CommandPage): boolean {

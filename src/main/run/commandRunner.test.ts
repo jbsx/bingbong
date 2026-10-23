@@ -2096,6 +2096,15 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(browser.clicks).toEqual([2])
       })
 
+      it('#403: sure reads the yes probability, as the corpus gate does, not the confidence beside it: 0.77 at confidence 0.65 ends done', async () => {
+        const { browser, records, decision, runner } = taskHarness()
+        const yes = choice('yes', 0.65, { yes: 0.77, in_the_way: 0.03, not_yet: 0.2 })
+        decision.script.push(answer('search', 's3-6'), { answers: { ...answer('click-2').answers, outcome: yes } })
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([])
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+      })
+
       it('AC4: hop 0 has no Verdict: an outcome there leaves the click to fire', async () => {
         const { browser, decision, runner } = taskHarness(POST)
         browser.snapshot = { ...browser.snapshot, refs: POST_REFS }

@@ -1,4 +1,4 @@
-import type { DecisionChoiceQuestion, DecisionModel } from '../ports/decisionModel'
+import { sureOf, type DecisionChoiceQuestion, type DecisionModel } from '../ports/decisionModel'
 import { isAcceptStyle, type ConsentChooser } from './dialogPolicy'
 
 // The consent wall's reject, found by Jev (owner's rule 2026-10-19: the
@@ -37,9 +37,9 @@ export function createConsentChooser(model: () => DecisionModel | null, sureAbov
     if (ask === null) return null
     const result = await jev.ask(ask)
     if (result.status !== 'answered') return null
-    const { choice, confidence } = result.answers.decline
+    const { choice } = result.answers.decline
     const match = /^c-(\d+)$/.exec(choice)
-    if (match === null || confidence < sureAbove) return null
+    if (match === null || sureOf(result.answers.decline) < sureAbove) return null
     const index = Number(match[1])
     const label = controlLabels[index]
     return label === undefined || isAcceptStyle(label) ? null : index
