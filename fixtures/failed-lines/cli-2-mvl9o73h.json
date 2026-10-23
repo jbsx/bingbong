@@ -1,0 +1,13 @@
+{
+  "turnId": "cli-2-mvl9o73h",
+  "transcript": "what port does it run on",
+  "at": 1792777900127,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'what port does it run on' on github.com/louislam/uptime-kuma (Mammoth, main 63364c8d): hop 0 picked show-54, the block with localhost:3001, at 0.54; hop 1's ask, 42,544 characters, was refused 422 (16,616 tokens, max_len 16384: 2.56 characters a token, under the Card Budget's 2.6) and the Task ended unavailable with the answer in view",
+  "meant": "Hop 1 is asked within the host's limit and its Verdict reads the port in view",
+  "log": "decision-1792777887732-1.jsonl",
+  "claimedBy": "#407",
+  "fixedBy": "296047be",
+  "case": "turn-mvlauh09-2"
+}

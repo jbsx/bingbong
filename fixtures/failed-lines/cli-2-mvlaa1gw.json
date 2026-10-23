@@ -1,0 +1,13 @@
+{
+  "turnId": "cli-2-mvlaa1gw",
+  "transcript": "what port does uptime kuma run on",
+  "at": 1792778918074,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'what port does uptime kuma run on' from github.com/louislam (Mammoth, main 63364c8d): a site search, then the repo; hop 2's card kept 120 opens and no show (the opens took the budget first), and at 42,559 characters it was still refused 422 (17,012 tokens); the Task ended unavailable",
+  "meant": "Hop 2 offers the README block with localhost:3001 within the host's limit, and Jev shows it",
+  "log": "decision-1792778906209-1.jsonl",
+  "claimedBy": "#407",
+  "fixedBy": "296047be",
+  "case": "turn-mvlauh09-2"
+}

@@ -1,0 +1,13 @@
+{
+  "turnId": "cli-4-mvl9p3mf",
+  "transcript": "what port does it use",
+  "at": 1792777941201,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'what port does it use' on github.com/jellyfin/jellyfin (Mammoth, main 63364c8d): the README's 'accessed at http://localhost:8096 by default' was past Text Further Down's 6000-character stop, so no show reached it; Jev read none 0.40, the Where Ask searched the web, and hops 2-4 scrolled Wikipedia's list of TCP ports until the cap",
+  "meant": "The card offers the block that says 8096 and Jev shows it",
+  "log": "decision-1792777887732-1.jsonl",
+  "claimedBy": "#407",
+  "fixedBy": "296047be",
+  "case": "cli-5-mvlavo3s"
+}

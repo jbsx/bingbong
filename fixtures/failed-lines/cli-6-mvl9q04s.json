@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-6-mvl9q04s",
+  "transcript": "does it run on freebsd",
+  "at": 1792777983462,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'does it run on freebsd' on github.com/jellyfin/jellyfin (Mammoth, main 63364c8d): hop 0 showed the right block (0.92) and hop 1 ended done, the passage view-3 at 1.00; but every block is held to 300 characters, so the block said ends 'supported on all major operating systems except FreeB', cutting the answer mid-word ('except FreeBSD, which is still incompatible')",
+  "meant": "The passage said is the block whole, or at least its sentence that answers",
+  "log": "decision-1792777887732-1.jsonl"
+}
