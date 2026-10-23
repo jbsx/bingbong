@@ -145,15 +145,14 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('add to cart')).toMatchObject({ ok: false })
   })
 
-  it('reads the corrections and `forget this song` to their Player verbs (#345)', () => {
+  it("reads `forget this song` to its Player verb (#345), and leaves the corrections to Jev's Appliance Verbs (ADR 0089)", () => {
     const play = (line: string) => {
       const parsed = parseCliCommand(line)
       return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music } : parsed
     }
-    for (const line of ['not that one', 'Not that one.', 'next result', 'the other one', 'wrong one']) {
-      expect(play(line)).toEqual({ music: { kind: 'correct', step: 1 } })
+    for (const line of ['not that one', 'Not that one.', 'next result', 'the other one', 'wrong one', 'the one before']) {
+      expect(play(line)).toMatchObject({ ok: false })
     }
-    expect(play('the one before')).toEqual({ music: { kind: 'correct', step: -1 } })
     expect(play('forget this song')).toEqual({ music: { kind: 'forget' } })
   })
 

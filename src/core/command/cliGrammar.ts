@@ -1,5 +1,4 @@
 import type { KeyPress } from '../ports/browser'
-import { NEXT_TRACK_KEY } from '../browser/mediaKeys'
 import { parseDuration } from '../timer/duration'
 import { readMusicLine, type MusicAction } from '../music/musicWords'
 
@@ -23,8 +22,8 @@ export type CliCommand =
 export type ParsedCliCommand = { ok: true; command: CliCommand } | { ok: false; error: string } | null
 
 // Shortcut keys the CLI can inject — enough to drive media players
-// (k play/pause, j/l seek, arrows volume) without a full keyboard grammar.
-// The next-track mapping is shared with core/browser/mediaKeys.
+// (k play/pause, j/l seek, arrows volume, Shift+N next) without a full
+// keyboard grammar.
 const PRESS_KEYS: Record<string, KeyPress> = {
   k: { key: 'k' },
   j: { key: 'j' },
@@ -38,7 +37,7 @@ const PRESS_KEYS: Record<string, KeyPress> = {
   tab: { key: 'Tab' },
   escape: { key: 'Escape' },
   esc: { key: 'Escape' },
-  next: NEXT_TRACK_KEY,
+  next: { key: 'n', shift: true },
 }
 
 const PRESS_KEY_NAMES = Object.keys(PRESS_KEYS).join(', ')

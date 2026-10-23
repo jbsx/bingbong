@@ -236,6 +236,8 @@ export interface CommandRunnerDeps {
   lastPage?(): LastPage | null
   /** A landing on no page worth going back to (not found, unavailable, empty): the Last Page leaves it (2026-10-22 audit). */
   dropLastPage?(url: string): void
+  /** The Known Address a bare word names (ADR 0089): a host the appliance has landed on; absent, every bare word is Jev's. */
+  knownAddress?(word: string): string | null
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
@@ -365,13 +367,14 @@ function slotIsNameable(command: Command): command is Command & { slot: string }
   return command.verb === 'type' || command.verb === 'play' || command.verb === 'search'
 }
 
-/** Whether the Local Match's page-free reading settles the line without the page's refs. */
+/**
+ * Whether the Local Match's page-free reading settles the line without the
+ * page's refs: only `stop`, an abort, which never waits. Every other line
+ * is read again over the page, since a ref whose label is the line —
+ * "next" beside a Next link — makes it Jev's (ADR 0089).
+ */
 function pageFree(command: Command | null): command is Command {
-  if (command === null) return false
-  if (command.verb === 'click' || command.verb === 'type') return false
-  // "open <label>" clicks the ref that carries the label (localMatch): the page decides before a navigate does.
-  if (command.verb === 'navigate') return false
-  return true
+  return command?.verb === 'stop'
 }
 
 /**
@@ -430,6 +433,7 @@ interface PreparedPage {
 }
 
 export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
+  const knownAddress = (word: string): string | null => deps.knownAddress?.(word) ?? null
   const { browser, publish, tracer } = deps
   /** The Command whose action is in flight, if one is. */
   let inFlight: { turnId: string; generation: number } | null = null
@@ -757,13 +761,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Match can read it against the Page Terms.
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions = { split: true }): Promise<Reading> {
-    const quick = localMatch(text, [])
+    const quick = localMatch(text, [], knownAddress)
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
     if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
-    const local = localMatch(text, page.refs, page.url)
+    const local = localMatch(text, page.refs, knownAddress)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
@@ -1973,7 +1977,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
   async function readPartial(words: string, stale: () => boolean): Promise<(Reading & { noul?: number }) | null> {
-    const quick = localMatch(words, [])
+    const quick = localMatch(words, [], knownAddress)
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
     const stopsSomething = quick?.verb === 'stop' && !idle()
@@ -1987,7 +1991,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = dismissed ?? (await collectPage(prepared))
     if (stale()) return null
-    const local = localMatch(words, page.refs, page.url)
+    const local = localMatch(words, page.refs, knownAddress)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return null

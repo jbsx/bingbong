@@ -188,6 +188,8 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.facts ? { facts: options.facts } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(player ? { player } : {}),
+    // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
+    knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -466,12 +468,14 @@ describe('the Player (#343)', () => {
     expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', video: 'rememberedQ', pick: 'remembered' })])
   })
 
-  it('`not that one` (#345) is a Command of its own that answers what plays instead', async () => {
-    const { events, youtube, runner } = music()
+  it('`not that one` (#345) is Jev\'s to read (ADR 0089), its `correct` a Command of its own that answers what plays instead', async () => {
+    const { events, decision, youtube, runner } = music()
     youtube.search('bohemian rhapsody', videoItem('fJ9rUzIMcZQ', QUEEN), videoItem('secondvideo', 'Panic! – Bohemian Rhapsody'))
     youtube.watches.set('secondvideo', { title: 'Panic! – Bohemian Rhapsody' })
     await runner.run('play bohemian rhapsody')
+    decision.script.push({ answers: { action: choice('correct'), slot: choice('none') } })
     await runner.run('not that one')
+    expect(cardOf(decision.requests.at(-1)!).options).toHaveProperty('correct')
     expect(events.filter((event) => event.type === 'command').map((event) => (event.type === 'command' ? event.action : ''))).toEqual(['play bohemian rhapsody', 'not that one'])
     expect(displays(events).at(-1)).toBe('Playing “Panic! – Bohemian Rhapsody” instead.')
   })
@@ -598,12 +602,14 @@ describe('the Player (#343)', () => {
   })
 
   it('every Player verb keeps the Idle Screen up, `play <words>` included; "show the video" wakes it (#344)', async () => {
-    const { events, runner } = music()
+    const { events, decision, runner } = music()
     expect(verbKeepsIdle('play')).toBe(true)
     for (const line of ['play bohemian rhapsody', 'queue bohemian rhapsody', 'pause', 'play', 'skip', 'previous', 'loop', 'restart', 'volume 40', 'louder']) await runner.run(line)
     const commands = events.filter((event) => event.type === 'command')
     expect(commands).toHaveLength(10)
     expect(commands.filter(wakesIdleScreen)).toEqual([])
+    // "show it" reads intent (ADR 0089): Jev's, whose `show` is the same Command.
+    decision.script.push({ answers: { action: choice('show'), slot: choice('none') } })
     for (const line of ['show the video', 'show it']) {
       await runner.run(line)
       const shown = events.filter((event) => event.type === 'command').at(-1)!
@@ -654,7 +660,7 @@ describe('a Command the Local Match settles', () => {
     expect(events[2]).toMatchObject({ type: 'tool_call', name: 'click', args: { ref: 2 } })
   })
 
-  it('opens the Nth result on a search page by clicking it, with no Jev call (the AC8 capture\'s Misfire)', async () => {
+  it("asks Jev for \"the first result\" (ADR 0089): which link is a result, and not an ad, is a judgement", async () => {
     const { browser, events, decision, runner } = harness()
     browser.snapshot = {
       ...browser.snapshot,
@@ -666,10 +672,11 @@ describe('a Command the Local Match settles', () => {
         ref(3, 'link', 'Elon Musk (@elonmusk) / X', { href: 'https://x.com/elonmusk' }),
       ],
     }
+    decision.script.push({ answers: { action: choice('click-3'), slot: choice('none') } }, SURE_YES)
     await runner.run('open the first result', { source: 'spoken' })
+    expect(decision.requests[0]!.state).toContain('"open the first result"')
     expect(browser.clicks).toEqual([3])
     expect(browser.navigations).toEqual([])
-    expect(decision.requests).toEqual([])
     expect(events[0]).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
   })
 
@@ -735,12 +742,31 @@ describe('a Command the Local Match settles', () => {
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
   })
 
-  it('collects the page once per Command that needs it, and not for one that does not', async () => {
+  it('collects the page once per Command, every whole line read over it (ADR 0089); `stop`, an abort, collects none', async () => {
     const { browser, runner } = harness()
-    await runner.run('scroll down')
+    await runner.run('stop')
     expect(browser.collects).toBe(0)
-    await runner.run('click sign in')
+    await runner.run('scroll down')
     expect(browser.collects).toBe(1)
+    await runner.run('click sign in')
+    expect(browser.collects).toBe(2)
+  })
+
+  it('asks Jev for a whole line a ref on the page carries as its label: "next" beside a Next link may be the link (ADR 0089)', async () => {
+    const { browser, decision, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: [...PAGE_REFS, ref(4, 'link', 'Next', { href: 'https://example.com/?page=2' })] }
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, SURE_YES)
+    await runner.run('next')
+    expect(decision.requests).not.toHaveLength(0)
+    expect(browser.clicks).toEqual([4])
+  })
+
+  it("asks Jev for a bare word no landing named (ADR 0089): never <word>.com unasked", async () => {
+    const { browser, decision, runner } = harness()
+    await runner.run('open bluesky')
+    expect(decision.requests[0]!.state).toContain('"open bluesky"')
+    // Jev unanswered, nothing guesses: no bluesky.com.
+    expect(browser.navigations).toEqual([])
   })
 
   it('uses the page collected at speech start instead of collecting again at the Endpoint', async () => {

@@ -11,6 +11,14 @@ export type MediaOp = (typeof MEDIA_OPS)[number]
 export const AMOUNT_RUNGS = ['words', 'moment', 'little', 'chunk', 'lot', 'half', 'end'] as const
 export type AmountRung = (typeof AMOUNT_RUNGS)[number]
 
+/**
+ * The Amount's rungs for a volume or a speed (ADR 0080 as amended by
+ * #408): `to` the level the words carry, else up or down and how far —
+ * the direction Jev's, never a word list's.
+ */
+export const LEVEL_RUNGS = ['to', 'up-little', 'up-step', 'up-lot', 'up-all', 'down-little', 'down-step', 'down-lot', 'down-all'] as const
+export type LevelRung = (typeof LEVEL_RUNGS)[number]
+
 /** What a Media Op Command carries: the op; for a seek the rung read and the seconds it came to; for a volume or a rate, the level it sets. */
 export interface MediaOpAction {
   readonly op: MediaOp

@@ -2082,9 +2082,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * number names — the element Jev was shown, never another — the op
    * applied to it, and its facts read before and after in the same tick,
    * so the outcome tells what the op itself changed and nothing time
-   * running on did. Volume and mute are told to YouTube's player too when
-   * the element is its (as the Player does, #343), so its own slider and
-   * remembered volume agree. No mouse, no collect: nothing renumbers.
+   * running on did. The op sets and reads the element alone, on any site
+   * (ADR 0080 as amended by #408): no site's player is told, so the level
+   * set is the level the next read shows. No mouse, no collect: nothing
+   * renumbers.
    */
   async function mediaOpOn(ref: number, op: MediaOpAction): Promise<string> {
     const { target } = await resolveRef(ref)
@@ -2095,7 +2096,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       const el = (window.__bingbongRefs || [])[${at.index}]
       if (!el || !el.isConnected || !(el instanceof HTMLMediaElement)) return null
       const facts = ${MEDIA_FACTS_FN}
-      const player = typeof el.closest === 'function' ? el.closest('#movie_player') : null
       const before = facts(el)
       // The seeks are offered only with a seekable range (ADR 0080): the bounds are the facts' own.
       const start = before.seekable ? before.seekable.start : 0
@@ -2107,17 +2107,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
         case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
         case 'restart': el.currentTime = start; el.play().catch(() => {}); break
-        case 'volume': {
-          const level = Math.max(0, Math.min(100, Math.round(op.to || 0)))
-          el.volume = level / 100
-          if (player && typeof player.setVolume === 'function') player.setVolume(level)
-          break
-        }
+        case 'volume': el.volume = Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100; break
         case 'mute':
-        case 'unmute':
-          el.muted = op.op === 'mute'
-          if (player && typeof player.mute === 'function' && typeof player.unMute === 'function') op.op === 'mute' ? player.mute() : player.unMute()
-          break
+        case 'unmute': el.muted = op.op === 'mute'; break
         case 'loop':
         case 'unloop': el.loop = op.op === 'loop'; break
         case 'rate': el.playbackRate = op.to || 1; break

@@ -34,7 +34,12 @@ export interface MusicLine {
   readonly music: MusicAction
 }
 
-/** The whole lines that are one action, as normalized words. */
+/**
+ * The whole lines that are one action, as normalized words. A line that
+ * reads intent rather than naming an action — "not that one", "the other
+ * one", "show it" — is none of them (ADR 0089): Jev reads it, offered
+ * `correct`, `forget` and `show` as Appliance Verbs.
+ */
 const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   play: { kind: 'unpause' },
   unpause: { kind: 'unpause' },
@@ -75,14 +80,6 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   unmute: { kind: 'mute', on: false },
   'show the video': { kind: 'show' },
   'show me the video': { kind: 'show' },
-  'show it': { kind: 'show' },
-  'not that one': { kind: 'correct', step: 1 },
-  'not this one': { kind: 'correct', step: 1 },
-  'next result': { kind: 'correct', step: 1 },
-  'the other one': { kind: 'correct', step: 1 },
-  'wrong one': { kind: 'correct', step: 1 },
-  'wrong song': { kind: 'correct', step: 1 },
-  'the one before': { kind: 'correct', step: -1 },
   'forget this song': { kind: 'forget' },
 }
 

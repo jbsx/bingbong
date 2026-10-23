@@ -12,6 +12,7 @@ import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPan
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { registerLastPageIpc } from './browser/attachLastPage'
 import { createLastPageStore } from './browser/lastPageStore'
+import { createKnownAddressStore } from './browser/knownAddressesStore'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { holdBrowserCustody } from '../core/browser/unsettledAction'
 import { createAuthPopupDirector } from './browser/authPopupDirector'
@@ -171,6 +172,8 @@ const rememberedSongs = createRememberedSongsStore(join(app.getPath('userData'),
 // The Last Page (CONTEXT.md): the page the pane last showed, kept across
 // restarts for the Idle Screen and `resume`.
 const lastPageStore = createLastPageStore(join(app.getPath('userData'), 'last-page.json'))
+// The Known Addresses (ADR 0089): the hosts the pane has landed on, which a bare `open <word>` opens without an ask.
+const knownAddresses = createKnownAddressStore(join(app.getPath('userData'), 'hosts.json'))
 registerLearnedTermsIpc(learnedTermsStore)
 // The Scale Listener (CONTEXT.md): started once the app is ready and kept
 // for its life; every window's dashboard and overlay hear it.
@@ -356,8 +359,11 @@ async function createWindow(): Promise<BrowserWindow> {
     overlayVoicePartial: (partial) => feedPanel.forwardVoicePartial(partial),
   })
   attachBrowserPaneToWindow(pane, win, eventPublisher)
-  // Every page the pane shows moves the Last Page.
-  const unsubscribeLastPage = pane.onState((state) => lastPageStore.record(state))
+  // Every page the pane shows moves the Last Page, and its host is a Known Address.
+  const unsubscribeLastPage = pane.onState((state) => {
+    lastPageStore.record(state)
+    knownAddresses.record(state)
+  })
   win.on('closed', unsubscribeLastPage)
   feedPanel.bringToTop()
   weighInView.bringToTop()
@@ -458,6 +464,8 @@ async function createWindow(): Promise<BrowserWindow> {
     // `resume` reopens the Last Page when a restart lost it.
     lastPage: () => lastPageStore.get(),
     dropLastPage: (url) => lastPageStore.drop(url),
+    // `open <one word>` opens the host it names, once the pane has landed there.
+    knownAddress: (word) => knownAddresses.addressOf(word),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.

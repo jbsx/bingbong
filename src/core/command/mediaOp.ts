@@ -1,9 +1,9 @@
 import type { DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
-import { MEDIA_OPS, isSeek, type AmountRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
+import { MEDIA_OPS, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 import { firstNumber } from '../timer/duration'
 
-export { AMOUNT_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
+export { AMOUNT_RUNGS, LEVEL_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 
 // A Media Op (#372, ADR 0080, CONTEXT.md): an action a media ref carries on
 // the action card because of its kind, the way an input carries `type-N`
@@ -23,10 +23,19 @@ const NEEDS_TRACKS: ReadonlySet<MediaOp> = new Set<MediaOp>(['captions', 'uncapt
 /** The share of the length each fraction rung moves. */
 const FRACTIONS: Readonly<Record<Exclude<AmountRung, 'words' | 'end'>, number>> = { moment: 1 / 100, little: 1 / 20, chunk: 1 / 10, lot: 1 / 4, half: 1 / 2 }
 
-/** How much `volume-N` moves the volume when the words carry no number, as the Player's louder and quieter do. */
-export const VOLUME_STEP = 10
-/** How much `rate-N` moves the speed when the words carry no number. */
-export const RATE_STEP = 0.25
+/**
+ * How far each up or down rung moves a volume (0–100) and a speed (#408).
+ * A guess, kept cheap to reverse (ADR 0080 amendment): what "a little
+ * louder" should mean only the owner's day can tell. `step` is the
+ * Player's louder and quieter.
+ */
+const LEVEL_STEPS: Readonly<Record<'little' | 'step' | 'lot', { readonly volume: number; readonly rate: number }>> = {
+  little: { volume: 5, rate: 0.25 },
+  step: { volume: 10, rate: 0.5 },
+  lot: { volume: 25, rate: 1 },
+}
+/** The speeds a rung moves between: Chrome mutes audio past 4×, and below a quarter nothing is heard as speech. */
+const RATE_RANGE = { min: 0.25, max: 4 } as const
 
 /**
  * The ops an element can take, by ability alone (ADR 0080): the seeks
@@ -55,12 +64,12 @@ const OP_WORDS: Readonly<Record<MediaOp, OpWords>> = {
   forward: { card: (named) => `go forward in ${named} by a length of time, the amount Choice saying how far`, done: 'skip forward', answer: 'Skipped forward' },
   back: { card: (named) => `go back in ${named} by a length of time, the amount Choice saying how far`, done: 'skip back', answer: 'Skipped back' },
   restart: { card: (named) => `play ${named} again from the start`, done: 'restart', answer: 'Restarted.' },
-  volume: { card: (named) => `set the volume of ${named}: to the number the words carry (0 to 100), or up or down as they say`, done: 'set the volume to', answer: 'Volume' },
+  volume: { card: (named) => `change the volume of ${named}: up, down or to the number the words carry, the amount Choice saying which and how far`, done: 'set the volume to', answer: 'Volume' },
   mute: { card: (named) => `mute ${named}`, done: 'mute', answer: 'Muted.' },
   unmute: { card: (named) => `unmute ${named}`, done: 'unmute', answer: 'Unmuted.' },
   loop: { card: (named) => `put ${named} on loop, so it repeats`, done: 'loop', answer: 'Looping.' },
   unloop: { card: (named) => `stop looping ${named}`, done: 'stop looping', answer: 'Loop off.' },
-  rate: { card: (named) => `set the playback speed of ${named}: to the number the words carry (1 is normal), or faster or slower as they say`, done: 'set the speed to', answer: 'Speed' },
+  rate: { card: (named) => `change the playback speed of ${named}: faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far`, done: 'set the speed to', answer: 'Speed' },
   captions: { card: (named) => `turn captions (subtitles) on for ${named}`, done: 'turn captions on', answer: 'Captions on.' },
   uncaptions: { card: (named) => `turn captions off for ${named}`, done: 'turn captions off', answer: 'Captions off.' },
 }
@@ -96,11 +105,20 @@ export function mediaOpAnswer(action: MediaOpAction, changes: readonly string[] 
   return changes !== undefined && changes.length === 0 ? `${sentence} Nothing changed: it was already.` : sentence
 }
 
-/** The Amount Choice (ADR 0080): asked on every ask that offers a media ref, read only when the action is a seek. */
+/**
+ * The Amount Choice (ADR 0080): asked on every ask that offers a media ref,
+ * read when the action is a seek, a volume or a speed. A volume's and a
+ * speed's direction rides it (#408): one op each on the card, and the
+ * rung says up or down and how far, or `to` the level the words carry.
+ * Measured against split ops (louder/quieter/volume, faster/slower/rate)
+ * on the gate, 2026-10-23: a tie, every case through on both models in
+ * each arm; this arm is the cheaper to reverse (ADR 0080 amendment).
+ */
 export function amountQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
-    instructions: 'Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.',
+    instructions:
+      'Only when the action skips forward or back in a video or audio, or changes its volume or speed: how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For the volume or the speed, choose to when the words carry the level, else up or down and how far. Ignored for every other action.',
     options: {
       words: 'as far as the words say: the number they carry, in seconds, or in minutes when they say minutes',
       moment: 'a moment: a hundredth of its length',
@@ -109,6 +127,15 @@ export function amountQuestion(): DecisionChoiceQuestion {
       lot: 'a lot: a quarter of its length',
       half: 'half of its length',
       end: 'all the way: to the end, or back to the start',
+      to: 'the volume or speed to the number the words carry',
+      'up-little': 'the volume or speed up a little',
+      'up-step': 'the volume or speed up a step',
+      'up-lot': 'the volume or speed up a lot',
+      'up-all': 'the volume or speed up as far as it goes',
+      'down-little': 'the volume or speed down a little',
+      'down-step': 'the volume or speed down a step',
+      'down-lot': 'the volume or speed down a lot',
+      'down-all': 'the volume or speed down as far as it goes',
     },
   }
 }
@@ -226,23 +253,14 @@ export function seekAmount(rung: AmountRung, op: 'forward' | 'back', facts: Medi
 /** Seconds to the hundredth: a share of a length is no finer than a player shows. */
 const hundredths = (seconds: number): number => Math.round(seconds * 100) / 100
 
-const UP = /\b(up|louder|loud|raise|increase|higher|more)\b/i
-const DOWN = /\b(down|quieter|quiet|lower|decrease|softer|less|reduce)\b/i
-const FASTER = /\b(faster|quicker|speed (?:it |things )?up|double)\b/i
-const SLOWER = /\b(slower|slow|half)\b/i
-
-/** The level `volume-N` sets, 0–100: the number the words carry — by that much up or down when they say "by" — else a step up or down as they say; null when they say neither. */
-export function volumeTarget(words: string, facts: MediaFacts): number | null {
-  const number = firstNumber(words)
-  const direction = UP.test(words) ? 1 : DOWN.test(words) ? -1 : 0
-  const by = number !== null && direction !== 0 && /\bby\b/i.test(words)
-  if (number !== null && number >= 0 && number <= 100 && !by) return number
-  if (direction === 0) return null
-  return Math.max(0, Math.min(100, percentOf(facts) + direction * (by ? number : VOLUME_STEP)))
+/** A number the words move by: "down by 25". */
+const byNumber = (words: string): number | null => {
+  const by = /\bby\s+(.+)$/i.exec(words)
+  return by === null ? null : firstNumber(by[1]!)
 }
 
-/** The speed `rate-N` sets: the number the words carry (1 is normal, "2x" is double), else a step faster or slower as they say; null when they say neither. */
-export function rateTarget(words: string, facts: MediaFacts): number | null {
+/** The level a speed's words carry: a number (1 is normal, "2x" is double), or normal, double or half; null for none. */
+function rateInWords(words: string): number | null {
   const match = /(\d+(?:\.\d+)?)\s*x?\b/i.exec(words)
   if (match !== null) {
     const rate = Number(match[1])
@@ -251,7 +269,31 @@ export function rateTarget(words: string, facts: MediaFacts): number | null {
   if (/\bnormal\b/i.test(words)) return 1
   if (/\bdouble\b/i.test(words)) return 2
   if (/\bhalf\b/i.test(words)) return 0.5
-  if (FASTER.test(words)) return Math.min(16, facts.rate + RATE_STEP)
-  if (SLOWER.test(words)) return Math.max(RATE_STEP, facts.rate - RATE_STEP)
   return null
+}
+
+/**
+ * The level `volume-N` sets, 0–100, by the rung Jev chose (#408, ADR
+ * 0080): `to` the number the words carry; else up or down a rung's step —
+ * by the number the words carry when they say "by" — or all the way. Null
+ * when `to` finds no level in the words. The words never say which way.
+ */
+export function volumeLevel(rung: LevelRung, words: string, facts: MediaFacts): number | null {
+  if (rung === 'to') {
+    const number = firstNumber(words)
+    return number !== null && number >= 0 && number <= 100 ? number : null
+  }
+  const [way, size] = rung.split('-') as ['up' | 'down', 'little' | 'step' | 'lot' | 'all']
+  const sign = way === 'up' ? 1 : -1
+  const step = size === 'all' ? 100 : (byNumber(words) ?? LEVEL_STEPS[size].volume)
+  return Math.max(0, Math.min(100, percentOf(facts) + sign * step))
+}
+
+/** The speed `rate-N` sets, by the rung Jev chose (#408): `to` the level the words carry, else faster or slower a rung's step, or as far as it goes; null when `to` finds none. */
+export function rateLevel(rung: LevelRung, words: string, facts: MediaFacts): number | null {
+  if (rung === 'to') return rateInWords(words)
+  const [way, size] = rung.split('-') as ['up' | 'down', 'little' | 'step' | 'lot' | 'all']
+  if (size === 'all') return way === 'up' ? RATE_RANGE.max : RATE_RANGE.min
+  const next = facts.rate + (way === 'up' ? 1 : -1) * LEVEL_STEPS[size].rate
+  return Math.max(RATE_RANGE.min, Math.min(RATE_RANGE.max, next))
 }

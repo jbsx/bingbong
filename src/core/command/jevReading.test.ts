@@ -232,7 +232,9 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     for (const label of Object.keys(card)) expect(label).not.toMatch(/^(play|pause|forward|back|restart|volume|mute|unmute|loop|unloop|rate|captions|uncaptions)-[18]$/)
     expect(card).not.toHaveProperty('captions-7')
     expect(questions).toHaveProperty('amount')
-    expect(Object.keys((questions as { amount: { options: Record<string, string> } }).amount.options)).toEqual(['words', 'moment', 'little', 'chunk', 'lot', 'half', 'end'])
+    // A volume or a speed is one op, its direction and size the Amount Choice's (#408).
+    expect(card['volume-7']).toBe('change the volume of [7] "YE - HIGHS AND LOWS": up, down or to the number the words carry, the amount Choice saying which and how far')
+    expect('amount' in questions && Object.keys(questions.amount.options)).toEqual(['words', 'moment', 'little', 'chunk', 'lot', 'half', 'end', 'to', 'up-little', 'up-step', 'up-lot', 'up-all', 'down-little', 'down-step', 'down-lot', 'down-all'])
   })
 
   it('withholds by ability alone: the captions pair only with text tracks, the seeks only with a seekable range', () => {
@@ -298,12 +300,11 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     // A `words` rung with no number in the words falls back to a little, told as such; no amount asked reads as a little too.
     expect(read('forward-7', 'skip ahead', 'words')).toMatchObject({ mediaOp: { op: 'forward', rung: 'little', seconds: 5.55 } })
     expect(read('forward-7', 'skip ahead')).toMatchObject({ mediaOp: { op: 'forward', rung: 'little' } })
-    expect(read('volume-7', 'set the volume to 30')).toEqual({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'volume', to: 30 } })
-    expect(read('volume-7', 'turn it down')).toMatchObject({ mediaOp: { op: 'volume', to: 90 } })
-    expect(read('volume-7', 'turn it down by 25')).toMatchObject({ mediaOp: { op: 'volume', to: 75 } })
-    expect(read('rate-7', 'play it at 1.5x')).toMatchObject({ mediaOp: { op: 'rate', to: 1.5 } })
-    expect(read('rate-7', 'slow it down')).toMatchObject({ mediaOp: { op: 'rate', to: 0.75 } })
-    expect(read('rate-7', 'speed it up')).toMatchObject({ mediaOp: { op: 'rate', to: 1.25 } })
+    expect(read('volume-7', 'set the volume to 30', 'to')).toEqual({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'volume', to: 30 } })
+    expect(read('rate-7', 'play it at 1.5x', 'to')).toMatchObject({ mediaOp: { op: 'rate', to: 1.5 } })
+    expect(read('rate-7', 'normal speed', 'to')).toMatchObject({ mediaOp: { op: 'rate', to: 1 } })
+    expect(read('volume-7', 'turn it down by 25', 'down-step')).toMatchObject({ mediaOp: { op: 'volume', to: 75 } })
+    expect(read('forward-7', 'skip ahead 1 minute 30 seconds', 'words')).toMatchObject({ mediaOp: { op: 'forward', rung: 'words', seconds: 90 } })
     expect(read('forward-7', 'skip ahead 1 minute 30 seconds', 'words')).toMatchObject({ mediaOp: { op: 'forward', rung: 'words', seconds: 90 } })
     expect(read('loop-7', 'loop it')).toMatchObject({ mediaOp: { op: 'loop' } })
     expect(read('restart-7', 'start it again')).toMatchObject({ mediaOp: { op: 'restart' } })
@@ -316,8 +317,28 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     expect(read('captions-7', 'captions on', withFacts({ tracks: 1 }))).toMatchObject({ verb: 'media', mediaOp: { op: 'captions' } })
     expect(read('pause-1', 'pause').verb).toBe('none')
     expect(read('pause-9', 'pause').verb).toBe('none')
+    // `to` with no level in the words, or no volume rung given any probability, sets nothing.
     expect(read('volume-7', 'the volume').verb).toBe('none')
-    expect(read('rate-7', 'the speed').verb).toBe('none')
+    expect(readCommandAnswers({ action: choice('volume-7'), slot: choice('none'), amount: choice('to') }, 'the volume', WATCH).verb).toBe('none')
+    expect(readCommandAnswers({ action: choice('rate-7'), slot: choice('none'), amount: choice('to') }, 'the speed', WATCH).verb).toBe('none')
+  })
+
+  it("takes a volume's and a speed's direction and size from the Amount Choice, never from the words (#408, ADR 0080)", () => {
+    const read = (label: string, text: string, amount: DecisionChoiceAnswer, facts: Partial<typeof FACTS> = {}) => readCommandAnswers({ action: choice(label), slot: choice('none'), amount }, text, withFacts(facts))
+    // The lines a word list read backwards: "more" and "loud" are no direction.
+    expect(read('volume-7', 'turn it down a bit more', choice('down-little'), { volume: 0.43 })).toMatchObject({ mediaOp: { op: 'volume', to: 38 } })
+    expect(read('volume-7', 'make it less loud', choice('down-little'), { volume: 0.23 })).toMatchObject({ mediaOp: { op: 'volume', to: 18 } })
+    expect(read('volume-7', 'a little louder', choice('up-little'), { volume: 0.14 })).toMatchObject({ mediaOp: { op: 'volume', to: 19 } })
+    expect(read('volume-7', 'turn the volume down', choice('down-step'), { volume: 0.5 })).toMatchObject({ mediaOp: { op: 'volume', to: 40 } })
+    expect(read('volume-7', 'way louder', choice('up-lot'), { volume: 0.5 })).toMatchObject({ mediaOp: { op: 'volume', to: 75 } })
+    expect(read('volume-7', 'all the way up', choice('up-all'), { volume: 0.5 })).toMatchObject({ mediaOp: { op: 'volume', to: 100 } })
+    expect(read('volume-7', 'a little louder', choice('up-little'), { volume: 0.98 })).toMatchObject({ mediaOp: { op: 'volume', to: 100 } })
+    expect(read('rate-7', 'slow it down', choice('down-little'))).toMatchObject({ mediaOp: { op: 'rate', to: 0.75 } })
+    expect(read('rate-7', 'speed it up a lot', choice('up-lot'))).toMatchObject({ mediaOp: { op: 'rate', to: 2 } })
+    expect(read('rate-7', 'slowest', choice('down-all'))).toMatchObject({ mediaOp: { op: 'rate', to: 0.25 } })
+    // A seek's rung on a volume reads the most probable volume rung Jev gave any probability.
+    const split: DecisionChoiceAnswer = { type: 'choice', choice: 'little', confidence: 0.5, probabilities: { little: 0.5, 'down-little': 0.3, 'up-little': 0.1 } }
+    expect(read('volume-7', 'a bit quieter', split, { volume: 0.5 })).toMatchObject({ mediaOp: { op: 'volume', to: 45 } })
   })
 
   it("gives the song's ops one line each, the media ref's own: the Player has none beside them; a song to play, the Queue's walk and show are its Appliance Verbs (#374)", () => {
@@ -1206,10 +1227,10 @@ describe('Appliance Verbs (#374)', () => {
     refs: [{ ref: 4, kind: 'button', label: 'Play (k)', href: null, inputType: null }],
   }
   const HOP: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Play (k)" (nothing changed)'], links: [] }
-  const APPLIANCE_VERBS = ['play', 'play_next', 'queue', 'skip', 'previous', 'show']
+  const APPLIANCE_VERBS = ['play', 'play_next', 'queue', 'skip', 'previous', 'show', 'correct', 'correct_back', 'forget']
   const PAGE_SONG: CommandPage = { ...WATCH, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }
 
-  it("with a song queued, the command, hop and partial asks offer the six beside the browser's ref-less verbs, each described, and no paragraph of their own", () => {
+  it("with a song queued, the command, hop and partial asks offer the nine beside the browser's ref-less verbs, each described, and no paragraph of their own", () => {
     const appliance = { queued: true }
     for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance }), partialQuestions('next song', WATCH, { appliance })]) {
       const labels = Object.keys(questions.action.options)
@@ -1233,6 +1254,10 @@ describe('Appliance Verbs (#374)', () => {
     expect(read('skip', 'next song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
     expect(read('previous', 'the song before')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'previous' } })
     expect(read('show', 'show me the video')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'show' } })
+    // The corrections read intent, never the grammar's (ADR 0089): Jev's to choose.
+    expect(read('correct', 'not that one')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'correct', step: 1 } })
+    expect(read('correct_back', 'the one before')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'correct', step: -1 } })
+    expect(read('forget', 'forget that song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'forget' } })
   })
 
   it("no label loops, pauses or sets the volume but a media ref's op: the retired Capabilities read as no Command", () => {

@@ -17,7 +17,9 @@ const REFS: CommandRef[] = [
   { ref: 6, kind: 'link', label: 'Trending', href: 'https://example.com/trending', inputType: null },
 ]
 
-const SEARCH_URL = 'https://duckduckgo.com/?q=elon+musk+profile&t=h_'
+/** The Known Addresses (ADR 0089): the hosts these tests have landed on. */
+const known = (word: string): string | null => ({ youtube: 'youtube.com', twitter: 'twitter.com', bbc: 'bbc.co.uk' } as Record<string, string>)[word.toLowerCase()] ?? null
+
 const RESULTS: CommandRef[] = [
   { ref: 1, kind: 'link', label: 'DuckDuckGo home', href: 'https://duckduckgo.com/', inputType: null },
   { ref: 2, kind: 'input', label: 'Search', href: null, inputType: 'search' },
@@ -36,12 +38,16 @@ describe('the Local Match: reload (#328)', () => {
 })
 
 describe('the Local Match: resume (the Last Page)', () => {
-  it('reads the grammar and the spoken phrases as a resume, without asking the page', () => {
+  it('reads the grammar and the spoken word as a resume', () => {
     expect(localMatch('resume', [])).toEqual({ verb: 'resume', target: null, slot: null })
     expect(localMatch('continue', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
-    expect(localMatch('where was I', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
-    expect(localMatch('pick up where I left off', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
-    expect(localMatch('the last page', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
+  })
+
+  it('leaves a line that reads intent to Jev (ADR 0089): "last page" may as well be back', () => {
+    expect(localMatch('where was I', REFS)).toBeNull()
+    expect(localMatch('pick up where I left off', REFS)).toBeNull()
+    expect(localMatch('the last page', REFS)).toBeNull()
+    expect(localMatch('last page', REFS)).toBeNull()
   })
 })
 
@@ -80,14 +86,13 @@ describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
     expect(localMatch('click save', save)).toEqual({ verb: 'click', target: 9, slot: null })
     expect(localMatch('press enter twice', REFS)).toMatchObject({ verb: 'press', key: { key: 'Enter' }, times: 2 })
     expect(localMatch('scroll down', REFS)).toMatchObject({ verb: 'scroll_down' })
-    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('open youtube', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
     expect(localMatch('set a timer for 5 minutes', REFS)).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 300_000 })
     // The Player's exact lines; `play <words>` stays Jev's, offered the Player's ops (ADR 0079).
     expect(localMatch('play', REFS)).toMatchObject({ verb: 'play' })
     expect(localMatch('next song', REFS)).toMatchObject({ verb: 'play' })
     expect(localMatch('play bohemian rhapsody', REFS)).toBeNull()
     expect(localMatch('stop looping', REFS)).toMatchObject({ verb: 'play' })
-    expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
   })
 
   it('still holds a partial that may become another Command (Early Fire, #326)', () => {
@@ -153,23 +158,57 @@ describe('the Local Match: the Player (#343)', () => {
   })
 })
 
-describe('the Local Match: the Nth result on a search page', () => {
-  it('reads "the first result" and "second link" as the Nth link that leaves the engine, or its redirect to one', () => {
-    expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
-    expect(localMatch('click on the first link', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
-    expect(localMatch('open the second one', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 5, slot: null })
-    expect(localMatch('click 2nd result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 5, slot: null })
-    expect(localMatch('open the top result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
+describe("the Local Match: the Nth result is Jev's (ADR 0089)", () => {
+  it('settles no ordinal: which link is a result, and not an ad, is a judgement', () => {
+    expect(localMatch('open the first result', RESULTS)).toBeNull()
+    expect(localMatch('click on the first link', RESULTS)).toBeNull()
+    expect(localMatch('open the second one', RESULTS)).toBeNull()
+    expect(localMatch('open the top result', RESULTS)).toBeNull()
+    expect(localMatch('open the first result', REFS)).toBeNull()
+  })
+})
+
+describe('the Local Match: a bare word opens a Known Address (ADR 0089)', () => {
+  it('opens the host a word names, as it was landed on', () => {
+    expect(localMatch('open bbc', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'bbc.co.uk' })
   })
 
-  it('settles nothing past the last result, or off a search page — Jev reads the page then', () => {
-    expect(localMatch('open the third result', RESULTS, SEARCH_URL)).toBeNull()
-    expect(localMatch('open the first result', REFS, 'https://example.com/')).toBeNull()
-    expect(localMatch('click the first video', REFS, 'https://www.youtube.com/')).toBeNull()
+  it('leaves a bare word no landing named to Jev, never <word>.com', () => {
+    expect(localMatch('open youtube', REFS)).toBeNull()
+    expect(localMatch('open bluesky', REFS, known)).toBeNull()
+    // A host or a URL is an address the words spell out.
+    expect(localMatch('open bluesky.app', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'bluesky.app' })
+  })
+})
+
+describe('the Local Match: a whole line has one reading on every page (ADR 0089)', () => {
+  const NEXT: CommandRef[] = [...REFS, { ref: 7, kind: 'link', label: 'Next', href: 'https://example.com/?page=2', inputType: null }]
+
+  it('leaves a whole line a ref\'s label carries to Jev: "next" beside a Next link may be the link', () => {
+    expect(localMatch('next', NEXT)).toBeNull()
+    expect(localMatch('Next.', NEXT)).toBeNull()
+    expect(localMatch('next', REFS)).toMatchObject({ verb: 'play', music: { kind: 'skip' } })
+    const back = [...REFS, { ref: 7, kind: 'link' as const, label: 'Back', href: 'https://example.com/', inputType: null }]
+    expect(localMatch('back', back)).toBeNull()
+    expect(localMatch('go back', back)).toMatchObject({ verb: 'back' })
+    const proceed = [...REFS, { ref: 7, kind: 'button' as const, label: 'Continue', href: null, inputType: null }]
+    expect(localMatch('continue', proceed)).toBeNull()
   })
 
-  it('does not read a longer phrase as an ordinal', () => {
-    expect(localMatch('open the first video on the left', RESULTS, SEARCH_URL)).toBeNull()
+  it('keeps a line whose words no label is: a player\'s "Pause (k)" is not "pause"', () => {
+    const player = [...REFS, { ref: 7, kind: 'button' as const, label: 'Pause (k)', href: null, inputType: null }]
+    expect(localMatch('pause', player)).toMatchObject({ verb: 'play', music: { kind: 'pause' } })
+  })
+
+  it('keeps `stop` an abort whatever the page holds: it never waits on an ask', () => {
+    const stop = [...REFS, { ref: 7, kind: 'button' as const, label: 'Stop', href: null, inputType: null }]
+    expect(localMatch('stop', stop)).toMatchObject({ verb: 'stop' })
+  })
+
+  it("leaves the Player's intent lines to Jev, which is offered correct and forget", () => {
+    for (const line of ['not that one', 'the other one', 'wrong one', 'show it', 'wrong song', 'the one before', 'next result']) expect(localMatch(line, REFS)).toBeNull()
+    expect(localMatch('show the video', REFS)).toMatchObject({ verb: 'play', music: { kind: 'show' } })
+    expect(localMatch('forget this song', REFS)).toMatchObject({ verb: 'play', music: { kind: 'forget' } })
   })
 })
 
@@ -220,7 +259,7 @@ describe('the Local Match: plain verbs', () => {
   })
 
   it('navigates an address after an opening phrase, and leaves search phrasing to Jev (#353)', () => {
-    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('open youtube', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
     expect(localMatch('go to news.ycombinator.com', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'news.ycombinator.com' })
     // Search terms are Jev's, whose `where` scopes them: no search phrase is a fixed phrase.
     expect(localMatch('search for rust async book', REFS)).toBeNull()
@@ -246,8 +285,10 @@ describe('the Local Match: plain verbs', () => {
   })
 
   it('settles an open of an address with words past it (#341): the address alone, the words left for the Task', () => {
-    expect(localMatch('go to twitter and open donald trumps profile', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'twitter' })
-    expect(localMatch('open youtube and search for lofi', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('go to twitter and open donald trumps profile', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'twitter.com' })
+    expect(localMatch('open youtube and search for lofi', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
+    // A bare word no landing named is Jev's, with the words past it.
+    expect(localMatch('go to bluesky and open the feed', REFS, known)).toBeNull()
     expect(localMatch('go to youtube dot com then search for lofi', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube dot com' })
     expect(carriesWordsPastAddress('go to twitter and open donald trumps profile')).toBe(true)
     expect(carriesWordsPastAddress('open youtube and search for lofi')).toBe(true)
@@ -269,7 +310,7 @@ describe('the Local Match: plain verbs', () => {
     const settings = [...REFS, { ref: 7, kind: 'link' as const, label: 'Account settings', href: 'https://example.com/settings', inputType: null }]
     expect(localMatch('open settings and click save', settings)).toBeNull()
     expect(localMatch('go to trending and scroll down', REFS)).toBeNull()
-    expect(localMatch('go to twitter and scroll down', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'twitter' })
+    expect(localMatch('go to twitter and scroll down', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'twitter.com' })
   })
 
   it("leaves a bare word a ref's label carries to Jev: the page's word, never <word>.com (2026-10-21)", () => {
@@ -282,7 +323,7 @@ describe('the Local Match: plain verbs', () => {
     const youtube = [...REFS, { ref: 7, kind: 'link' as const, label: 'YouTube Music', href: 'https://music.youtube.com/', inputType: null }, { ref: 8, kind: 'link' as const, label: 'YouTube Kids', href: 'https://www.youtubekids.com/', inputType: null }]
     expect(localMatch('open youtube', [...REFS, { ref: 7, kind: 'link' as const, label: 'YouTube', href: 'https://www.youtube.com/', inputType: null }])).toEqual({ verb: 'click', target: 7, slot: null })
     expect(localMatch('open youtube', youtube)).toBeNull()
-    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('open youtube', REFS, known)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
     // A host or a URL is an address whatever the page says.
     expect(localMatch('open youtube.com', youtube)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
     expect(localMatch('open youtube dot com', youtube)).toEqual({ verb: 'navigate', target: null, slot: 'youtube dot com' })

@@ -9,7 +9,7 @@ import type { NameHearing } from './nameMatch'
 import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
-import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
+import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateLevel, seekAmount, volumeLevel, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 import { promptChars } from '../decision/cardBudget'
 
@@ -57,12 +57,14 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
 /**
  * An Appliance Verb (CONTEXT.md, #374): a ref-less option that acts on the
  * appliance itself, never on the page — the Player's search (`play`,
- * `play_next`, `queue`), the Queue's walk (`skip`, `previous`) and `show`.
+ * `play_next`, `queue`), the Queue's walk (`skip`, `previous`), `show`,
+ * and the corrections of the last pick (`correct`, `correct_back`,
+ * `forget`), which read intent and so are never the grammar's (ADR 0089).
  * A fixed small set beside the browser's ref-less verbs, grown only with
  * the appliance's own features, never per site: the song's own ops are the
  * Media Ops its ref carries (ADR 0080).
  */
-type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show'
+type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show' | 'correct' | 'correct_back' | 'forget'
 
 /** Each Appliance Verb's Player action — the Command the grammar's exact lines make — and its one line on the card. */
 const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAction; readonly line: string }>> = {
@@ -72,6 +74,9 @@ const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAct
   skip: { music: { kind: 'skip' }, line: 'music: skip to the next song' },
   previous: { music: { kind: 'previous' }, line: 'music: go back to the song before' },
   show: { music: { kind: 'show' }, line: 'music: show the video playing on the screen' },
+  correct: { music: { kind: 'correct', step: 1 }, line: 'music: the song playing is the wrong one: play the next result of its search instead' },
+  correct_back: { music: { kind: 'correct', step: -1 }, line: 'music: play the result of the search before the song playing instead' },
+  forget: { music: { kind: 'forget' }, line: 'music: forget the song playing, so its words search again next time' },
 }
 
 /**
@@ -109,14 +114,15 @@ export interface Appliance {
 /**
  * The Appliance Verbs offered by ability (#374), each while there is
  * something for it to act on: a song to play whenever a Player is wired;
- * the Queue's walk while the Queue holds a song — never over a page's own
- * video with nothing queued, where a `skip` fires nothing but a pause;
- * `show` while any song is on, the Player's or the page's.
+ * the Queue's walk and the corrections while the Queue holds a song —
+ * never over a page's own video with nothing queued, where a `skip` fires
+ * nothing but a pause and there is no pick to correct; `show` while any
+ * song is on, the Player's or the page's.
  */
 function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): ApplianceVerb[] {
   if (appliance?.queued === undefined) return []
   const songOn = appliance.queued || page.media !== undefined
-  return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : [])]
+  return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : []), ...(appliance.queued ? (['correct', 'correct_back', 'forget'] as const) : [])]
 }
 
 /** Whether an action card label names an Appliance Verb. */
@@ -126,7 +132,9 @@ const isApplianceVerb = (label: string): label is ApplianceVerb => Object.hasOwn
 function applianceVerbOf(music: MusicAction): ApplianceVerb | null {
   const same = (verb: ApplianceVerb): boolean => {
     const own = APPLIANCE_VERBS[verb].music
-    return own.kind === music.kind && (own.kind !== 'search' || (music.kind === 'search' && own.place === music.place))
+    if (own.kind === 'search') return music.kind === 'search' && own.place === music.place
+    if (own.kind === 'correct') return music.kind === 'correct' && own.step === music.step
+    return own.kind === music.kind
   }
   return (Object.keys(APPLIANCE_VERBS) as ApplianceVerb[]).find(same) ?? null
 }
@@ -1432,10 +1440,16 @@ function refActionOf(label: string): RefAction | null {
   return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || act === 'search' || isMediaOp(act) || isScrollOp(act) ? { act, n: Number(n) } : null
 }
 
-/** The Amount rung the answers name (#372); `little` when none was asked, or the answer names no rung. */
+/** The Amount rung a seek reads (#372): the most probable seek rung the answer gives any probability; `little` when none was asked, or it gives none. */
 function amountOf(answers: CommandAnswers | HopAnswers): AmountRung {
-  const choice = 'amount' in answers ? answers.amount.choice : null
-  return AMOUNT_RUNGS.find((rung) => rung === choice) ?? 'little'
+  if (!('amount' in answers)) return 'little'
+  return mostProbable(answers.amount, (label) => AMOUNT_RUNGS.find((rung) => rung === label) ?? null) ?? 'little'
+}
+
+/** The Amount rung a volume or a speed reads (#408): the most probable level rung the answer gives any probability; null when none was asked, or it gives none. */
+function levelOf(answers: CommandAnswers | HopAnswers): LevelRung | null {
+  if (!('amount' in answers)) return null
+  return mostProbable(answers.amount, (label) => LEVEL_RUNGS.find((rung) => rung === label) ?? null)
 }
 
 /** The Extent rung the answers name (#383); `screen` when none was asked, or the answer names no rung. */
@@ -1453,16 +1467,18 @@ function scrollCommand(op: ScrollOp, ref: CommandRef, answers: CommandAnswers | 
 /**
  * The Media Op Command a card label makes (#372, ADR 0080): the op on the
  * media ref it names, when the element can take it — a seek with the
- * Amount read into seconds, a volume or a speed with the level the words
- * give. Null for an op the element cannot take, a ref that is no media
- * ref, or a level the words leave unsaid.
+ * Amount read into seconds, a volume or a speed with the level its rung
+ * comes to — the direction Jev's (#408). Null for an op the element cannot
+ * take, a ref that is no media ref, no level rung, or a `to` the words
+ * give no level for.
  */
 function mediaCommand(op: MediaOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
   if (!isMediaRef(ref) || !mediaOpsOf(ref.media).includes(op)) return null
   const command = (mediaOp: MediaOpAction): Command => ({ verb: 'media', target: ref.ref, slot: null, mediaOp })
   if (isSeek(op)) return command({ op, ...seekAmount(amountOf(answers), op, ref.media, text) })
   if (op === 'volume' || op === 'rate') {
-    const to = op === 'volume' ? volumeTarget(text, ref.media) : rateTarget(text, ref.media)
+    const rung = levelOf(answers)
+    const to = rung === null ? null : op === 'volume' ? volumeLevel(rung, text, ref.media) : rateLevel(rung, text, ref.media)
     return to === null ? null : command({ op, to })
   }
   return command({ op })

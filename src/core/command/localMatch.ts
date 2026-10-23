@@ -9,16 +9,19 @@ import { ONE_SCREEN } from './scrollOp'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
 // from the Utterance and the page alone, without asking the Decision Model
-// — fixed phrases only. The CLI grammar; the control words (scroll, back,
-// reload, read, clear, stop, resume, a key), a phrase that takes no words
-// only as the whole Utterance (#368); the Timer's and the Player's lines;
-// and a plain verb with the one element the words name exactly: a
-// label exactly one ref carries, the Nth result on a search page ("the
-// first result"), or an address-shaped Slot after an opening phrase ("open
-// youtube"). Search terms and words about the page always go to Jev, whose
-// verbs are actions, with the refs. Nothing here guesses: a reading that is
-// not settled is null, Jev is asked, and when Jev does not answer the line
-// is no Command.
+// — fixed phrases only, each with one reading whatever the page holds
+// (ADR 0089). The CLI grammar; the control words (scroll, back, reload,
+// read, clear, stop, resume, a key), a phrase that takes no words only as
+// the whole Utterance (#368); the Timer's and the Player's lines; and a
+// plain verb with the one element the words name exactly: a label exactly
+// one ref carries, or an address after an opening phrase — a host, a URL,
+// or a Known Address ("open youtube" once youtube.com has been landed on).
+// A whole line a ref's label carries ("next" beside a Next link) is Jev's,
+// and so is a line that reads intent ("last page", "the first result").
+// Search terms and words about the page always go to Jev, whose verbs are
+// actions, with the refs. Nothing here guesses: a reading that is not
+// settled is null, Jev is asked, and when Jev does not answer the line is
+// no Command.
 
 /** Words a spoken label wears that the ref's label does not: leading articles and trailing kind words. */
 const ARTICLES: ReadonlySet<string> = new Set(['the', 'a', 'an', 'that', 'this', 'on'])
@@ -87,10 +90,6 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['read', 'read'],
   ['resume', 'resume'],
   ['continue', 'resume'],
-  ['where was i', 'resume'],
-  ['last page', 'resume'],
-  ['the last page', 'resume'],
-  ['pick up where i left off', 'resume'],
   ['clear the field', 'clear'],
   ['clear it', 'clear'],
   ['clear', 'clear'],
@@ -179,6 +178,16 @@ function exactlyOneLabelled(phrase: string, refs: readonly CommandRef[]): number
   return matches.length === 1 ? matches[0]!.ref : null
 }
 
+/**
+ * Whether a ref's label is the whole line (ADR 0089): "next" beside a Next
+ * link, "back" beside a Back link, "continue" beside a Continue button.
+ * Such a line has two readings, the grammar's and the ref's, and is Jev's.
+ */
+function aRefIsLabelled(line: string, refs: readonly CommandRef[]): boolean {
+  const wanted = labelWords(line).join(' ')
+  return wanted !== '' && refs.some((ref) => normalizeWords(ref.label) === wanted)
+}
+
 /** Whether any ref's label carries a word of the phrase: the page's word, not an address (#341). */
 function sharesALabelWord(phrase: string, refs: readonly CommandRef[]): boolean {
   const wanted = labelWords(phrase)
@@ -197,46 +206,6 @@ export function isTextField(ref: CommandRef): boolean {
 function theOneTextField(refs: readonly CommandRef[]): number | null {
   const fields = refs.filter(isTextField)
   return fields.length === 1 ? fields[0]!.ref : null
-}
-
-/** The ordinals a spoken position names: "first result", "2nd link", "top one". */
-const ORDINALS: Readonly<Record<string, number>> = {
-  first: 1,
-  '1st': 1,
-  top: 1,
-  second: 2,
-  '2nd': 2,
-  third: 3,
-  '3rd': 3,
-  fourth: 4,
-  '4th': 4,
-  fifth: 5,
-  '5th': 5,
-  sixth: 6,
-  '6th': 6,
-  seventh: 7,
-  '7th': 7,
-  eighth: 8,
-  '8th': 8,
-  ninth: 9,
-  '9th': 9,
-  tenth: 10,
-  '10th': 10,
-}
-
-/** What an ordinal counts: "the first result", "second link", "the top one". */
-const ORDINAL_NOUNS: ReadonlySet<string> = new Set(['result', 'results', 'link', 'one', 'item', 'entry', 'hit', 'video', 'article', 'page', 'option', 'match'])
-
-/** The position a phrase names and nothing else — "the first result" is 1; "the first video on the left" is null. */
-function ordinalOf(phrase: string): number | null {
-  const words = normalizeWords(phrase)
-    .split(' ')
-    .filter((word) => word !== '' && !ARTICLES.has(word))
-  if (words.length < 1 || words.length > 2) return null
-  const position = ORDINALS[words[0]!]
-  if (position === undefined) return null
-  if (words.length === 2 && !ORDINAL_NOUNS.has(words[1]!)) return null
-  return position
 }
 
 /** The address's host without a leading `www.`; null for text that is no URL. */
@@ -288,15 +257,6 @@ export function pageAddressOf(href: string): string {
   const host = url.host.replace(/^www\./, '').toLowerCase()
   const path = url.pathname.replace(/\/+$/, '')
   return `${url.protocol}//${host}${path}${url.search}`
-}
-
-/**
- * The Nth result on a search results page: the Nth link whose address
- * leaves the engine's host (the engine's own links — home, settings,
- * ads — are not results). Null off a search page, or past the last.
- */
-function nthResult(position: number, refs: readonly CommandRef[], url: string): number | null {
-  return resultRefsOf(refs, url)[position - 1]?.ref ?? null
 }
 
 /**
@@ -386,24 +346,41 @@ function fromGrammar(parsed: CliCommand): Command | null {
   }
 }
 
+/** The Known Address a bare word names (ADR 0089): a host the appliance has landed on; null for none. */
+export type KnownAddressOf = (word: string) => string | null
+
+const NO_KNOWN_ADDRESS: KnownAddressOf = () => null
+
+/**
+ * The address a Slot opens without an ask (ADR 0089): a host or a URL as
+ * spoken; a bare word only as the Known Address it names, the host landed
+ * on; null for any other words, Jev's.
+ */
+function openableAddress(slot: string, known: KnownAddressOf): string | null {
+  if (!isAddressShaped(slot)) return null
+  return isBareWord(slot) ? known(slot) : slot
+}
+
 /**
  * The address an opening phrase's words start with when words past it go on (#341):
- * the longest leading span that is address-shaped and is followed by a
+ * the longest leading span that is an address and is followed by a
  * joiner and another verb phrase — "twitter" in "twitter and open donald
  * trumps profile". Null when the words are an address whole, or no such
  * span starts them: "the menu" names no address with more to do. A span
  * that shares a word with a ref's label is the page's word, not an
  * address ("settings and click save" beside an Account settings link):
- * Jev reads it.
+ * Jev reads it. `address` says what a span opens: a bare word is a Known
+ * Address's (ADR 0089).
  */
-function addressBeforeMore(rest: readonly Token[], refs: readonly CommandRef[]): string | null {
+function addressBeforeMore(rest: readonly Token[], refs: readonly CommandRef[], address: (span: string) => string | null): string | null {
   if (isAddressShaped(spokenOf(rest))) return null
   for (let end = rest.length - 1; end >= 1; end -= 1) {
-    const address = spokenOf(rest.slice(0, end))
-    if (!isAddressShaped(address) || sharesALabelWord(address, refs)) continue
+    const span = spokenOf(rest.slice(0, end))
+    const opened = sharesALabelWord(span, refs) ? null : address(span)
+    if (opened === null) continue
     const after = rest.slice(end)
     const joiner = JOINERS.find((words) => cleanOf(after).startsWith(`${words} `))
-    if (joiner !== undefined && headsAClause(after.slice(joiner.split(' ').length))) return address
+    if (joiner !== undefined && headsAClause(after.slice(joiner.split(' ').length))) return opened
   }
   return null
 }
@@ -416,11 +393,11 @@ function addressBeforeMore(rest: readonly Token[], refs: readonly CommandRef[]):
  */
 export function carriesWordsPastAddress(text: string): boolean {
   const found = verbOf(tokenize(text))
-  return found?.kind === 'open' && addressBeforeMore(found.rest, []) !== null
+  return found?.kind === 'open' && addressBeforeMore(found.rest, [], (span) => (isAddressShaped(span) ? span : null)) !== null
 }
 
 /** The Command a spoken verb and its words settle exactly; null when they settle none. */
-function readSpoken(text: string, refs: readonly CommandRef[], url: string): Command | null {
+function readSpoken(text: string, refs: readonly CommandRef[], known: KnownAddressOf): Command | null {
   const tokens = tokenize(text)
   if (tokens.length === 0) return null
   // The Timer's lines first: "cancel the timer" is not the stop verb, and "set" heads no verb phrase.
@@ -430,18 +407,8 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
   // No fixed phrase heads the words (ADR 0076, #353): Jev reads them.
   if (found === null) return null
   const { kind, rest } = found
-  /** "the first result": the Nth result on a search page settles it; an ordinal anywhere else is Jev's (`unsettled`). */
-  const ordinal = (): { target: number } | 'unsettled' | null => {
-    const position = ordinalOf(spokenOf(rest))
-    if (position === null) return null
-    const target = nthResult(position, refs, url)
-    return target !== null ? { target } : 'unsettled'
-  }
-  /** The one element the words name — the Nth result, or the label exactly one ref carries — clicked; null otherwise. */
+  /** The one element the words name — the label exactly one ref carries — clicked; null otherwise. "The first result" is Jev's (ADR 0089). */
   const clickNamed = (): Command | null => {
-    const nth = ordinal()
-    if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
-    if (nth === 'unsettled') return null
     const target = exactlyOneLabelled(spokenOf(rest), refs)
     return target !== null ? command('click', { target }) : null
   }
@@ -462,23 +429,23 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
     }
     case 'open': {
       if (rest.length === 0) return null
-      // A label exactly one ref carries, or the Nth result on a search
-      // page, is opened by clicking it; an address is navigated to; words
-      // about anything else are Jev's.
+      // A label exactly one ref carries is opened by clicking it; an
+      // address is navigated to; words about anything else are Jev's.
       const named = clickNamed()
       if (named !== null) return named
-      if (ordinal() === 'unsettled') return null
       // An address with words past it (#341) opens the address; the Task reads the rest on its landing.
-      const address = addressBeforeMore(rest, refs)
-      if (address !== null) return command('navigate', { slot: address })
+      const before = addressBeforeMore(rest, refs, (span) => openableAddress(span, known))
+      if (before !== null) return command('navigate', { slot: before })
       const alone = spokenOf(rest)
-      if (!isAddressShaped(alone)) return null
       // A bare word a ref's label carries is the page's word, not an address
       // (the #341 rule, 2026-10-21): "open settings" beside two Settings
       // refs, "open comments" beside a Comments section, are Jev's with the
-      // refs — never settings.com. A host or a URL is an address whatever
-      // the page says.
-      return isBareWord(alone) && sharesALabelWord(alone, refs) ? null : command('navigate', { slot: alone })
+      // refs — never settings.com. Any other bare word opens only the
+      // Known Address it names (ADR 0089), the host landed on. A host or a
+      // URL is an address whatever the page says.
+      if (isBareWord(alone) && sharesALabelWord(alone, refs)) return null
+      const address = openableAddress(alone, known)
+      return address === null ? null : command('navigate', { slot: address })
     }
     case 'type': {
       if (rest.length === 0) return null
@@ -521,12 +488,15 @@ export function headsAnotherVerb(text: string): boolean {
 
 /**
  * The Local Match: the CLI grammar, or a plain verb and the one element the
- * words can name — the label exactly one ref carries, or the Nth result on
- * a search page (`url` is the page's address). Null when the words and the
- * page settle no Command — the Decision Model is asked then.
+ * words can name — the label exactly one ref carries, or an address (`known`
+ * names the Known Address a bare word opens). Null when the words and the
+ * page settle no Command — the Decision Model is asked then. A whole line
+ * a ref's label carries is the page's as readily as the grammar's (ADR
+ * 0089), and is Jev's too — but `stop`, an abort, which never waits.
  */
-export function localMatch(text: string, refs: readonly CommandRef[], url = ''): Command | null {
+export function localMatch(text: string, refs: readonly CommandRef[], known: KnownAddressOf = NO_KNOWN_ADDRESS): Command | null {
   const parsed = parseCliCommand(text)
-  if (parsed !== null && parsed.ok) return fromGrammar(parsed.command)
-  return readSpoken(text, refs, url)
+  const matched = parsed !== null && parsed.ok ? fromGrammar(parsed.command) : readSpoken(text, refs, known)
+  if (matched === null || matched.target !== null || matched.verb === 'stop') return matched
+  return aRefIsLabelled(text, refs) ? null : matched
 }
