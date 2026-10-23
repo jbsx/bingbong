@@ -38,6 +38,14 @@ is measured, not argued: both arms are built and gated on passage cases
 grown from the rerun's landings, with latency from `perf:report`. The
 winning arm and its numbers are recorded here at build time.
 
+### Measured at build (#401, 2026-10-23)
+
+On `pnpm jev:gate` with Mammoth and Elephant (deterministic, one run each).
+
+**Numbering the blocks on the state cost two cases, so they are named in the Choice.** All three numbered layouts (one line under a `(number, text)` header, one block per line, one line with no header) lost the same two Mammoth passes main's card keeps: `cli-4-mvjtak28` ("Turn on ambient mode", `none` 0.36–0.41) and `turn-mvjombar-4` (#404's cookie strip, `in_the_way` 0.45–0.50). Naming each block in the passage Choice's own options (`view-N`, reading order), the state left as it was, moved no case (90 of 105 through on both models before; 93 of 110 with the new cases).
+
+**The Choice rides the Verdict's call.** Against one call after a sure yes, over six landings that should name a block and four that should read `none`, each graded from its page before either arm ran: riding 5/6 Mammoth, 3/6 Elephant, 8/8 `none`; the separate call 5/6, 2/6, 8/8, plus a whole call (p50 ≈ 430 ms) on every sure yes. Every miss kept names the right block under the bar. Latency is the gate's own line, not `perf:report`.
+
 ## Considered options
 
 - **A generating Answer Writer** given the landing's Page Read: ruled out
