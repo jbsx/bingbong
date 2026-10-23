@@ -14,6 +14,7 @@ import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch,
 import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
+  fitCard,
   whereQuestions,
   markQuestions,
   textlessRefsOf,
@@ -54,6 +55,7 @@ import {
   MAX_TASK_ACTIONS,
   MISFIRE_WINDOW_MS,
   jevDetailOf,
+  jevUnavailableOf,
   misfireSignal,
   type CommandLogRecord,
   type CommandReading,
@@ -75,6 +77,7 @@ import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
+import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS } from '../../core/decision/cardBudget'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
@@ -510,6 +513,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const askedAt = at()
     const askId = ownId ?? turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
     const result = await model.ask({ state, questions, ...(images !== undefined ? { images } : {}) })
+    // A host that refused the ask (#406, ADR 0088) — a card over its prompt, a key it turned away — is a fault, not only a slow round.
+    if (result.status === 'unavailable' && result.httpStatus !== undefined) {
+      reportFault('run.commandRunner.jevUnavailable', `${result.model} answered ${result.httpStatus}: ${result.message}`, turnId !== null ? { turnId } : {})
+    }
     try {
       const saved = images === undefined ? null : savedImages(askId, images)
       deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions, ...(saved !== null ? { images: saved } : {}) })
@@ -517,6 +524,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reportFault('run.commandRunner.askLog', error, turnId !== null ? { turnId } : {})
     }
     return { ...result, askId }
+  }
+
+  /** An ask built to the model's Card Budget (#406, ADR 0088): what is further down yields until it fits. */
+  function budgeted<Q extends CommandQuestions>(model: DecisionModel, build: (further: number) => Q, stateOf: (questions: Q) => string): { questions: Q; state: string } {
+    return fitCard(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS), build, stateOf)
   }
 
   /** An ask's images saved beside it (#382), each by the file the sink named; null when none was saved. */
@@ -714,8 +726,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
-    const questions = model === null ? null : dismissPhraseQuestions(text, page, { appliance: appliance() })
-    const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page, undefined, undefined, undefined, questions), questions)
+    const ask = model === null || dismissPhraseQuestions(text, page) === null ? null : budgeted(model, (further) => dismissPhraseQuestions(text, page, { appliance: appliance(), further })!, (questions) => commandState(text, page, undefined, undefined, undefined, questions))
+    const result = model === null || ask === null ? null : await askJev(model, 'command', turnId, ask.state, ask.questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
     const [first, ...rest] = ladder
@@ -724,8 +736,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       result === null
         ? {}
         : result.status === 'answered'
-          ? { jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId }
-          : { jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
+          ? { jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId }
+          : { jev: jevUnavailableOf(result), ask: result.askId }
     return { command: first, page, reading: 'local_match', jevAsked: result !== null, ...asked, ...(rest.length > 0 ? { ladder: rest } : {}) }
   }
 
@@ -756,8 +768,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
     const heard = hearingOf(text, page, spoken)
-    const questions = commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance(), heard })
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step, undefined, questions, heard), questions, options.askId)
+    const ask = budgeted(model, (further) => commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance(), heard, further }), (questions) => commandState(text, page, undefined, options.step, undefined, questions, heard))
+    const result = await askJev(model, 'command', turnId, ask.state, ask.questions, options.askId)
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
     return { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
@@ -771,12 +783,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         page,
         reading: 'jev',
         jevAsked: true,
-        jev: jevDetailOf(result.answers, result.latencyMs, result.model),
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens),
         ask: result.askId,
         action: result.answers.action,
       }
     }
-    return { command: UNREAD, page, reading: 'best_guess', jevAsked: true, jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
+    return { command: UNREAD, page, reading: 'best_guess', jevAsked: true, jev: jevUnavailableOf(result), ask: result.askId }
   }
 
   /**
@@ -791,8 +803,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { page } = first
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
-    const questions = whereQuestions(text, page, { appliance: appliance(), heard })
-    const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step, undefined, questions, heard), questions, `${first.ask ?? turnId}-where`)
+    const ask = budgeted(model, (further) => whereQuestions(text, page, { appliance: appliance(), heard, further }), (questions) => commandState(text, page, undefined, step, undefined, questions, heard))
+    const result = await askJev(model, 'where', turnId, ask.state, ask.questions, `${first.ask ?? turnId}-where`)
     const verdict = result.status === 'answered' ? readVerdict(result.answers) : null
     const passage = result.status === 'answered' ? readPassage(result.answers, page) : null
     return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}), ...(passage !== null ? { passage } : {}) }
@@ -818,13 +830,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const shot = await capture(textless)
     if (shot === null || shot.marks.length === 0) return null
     const marked = new Set(shot.marks.map((mark) => mark.ref))
-    const questions = markQuestions(text, page, { appliance: appliance(), marked, heard })
+    const ask = budgeted(model, (further) => markQuestions(text, page, { appliance: appliance(), marked, heard, further }), (questions) => commandState(text, page, undefined, step, marked, questions, heard))
     const result = await askJev(
       model,
       'mark',
       turnId,
-      commandState(text, page, undefined, step, marked, questions, heard),
-      questions,
+      ask.state,
+      ask.questions,
       `${first.ask ?? turnId}-mark`,
       { [MARKS_IMAGE]: shot.jpeg },
     )
@@ -1715,15 +1727,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
       const heard = hearingOf(task.text, page, spoken)
-      const questions = hopQuestions(task.text, page, context, { appliance: appliance(), heard })
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step, undefined, questions, heard), questions)
+      const ask = model === null ? null : budgeted(model, (further) => hopQuestions(task.text, page, context, { appliance: appliance(), heard, further }), (questions) => commandState(task.text, page, context, task.step, undefined, questions, heard))
+      const result = superseded(task) || model === null || ask === null ? null : await askJev(model, 'hop', turnId, ask.state, ask.questions)
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
       const none = { verb: 'none' as const, target: null, slot: null }
 
       if (result === null || result.status !== 'answered') {
-        const jev = result === null ? {} : { jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
+        const jev = result === null ? {} : { jev: jevUnavailableOf(result), ask: result.askId }
         const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
         log({ ...base, ...none, jevAsked: result !== null, ...jev, ended })
         dropHop(turnId, task, hopOf(task, hop), ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
@@ -1748,7 +1760,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         page,
         reading: 'jev',
         jevAsked: true,
-        jev: jevDetailOf(result.answers, result.latencyMs, result.model),
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens),
         ask: result.askId,
       }
       const { command, matched } = matchName(read.command, page, spoken)
@@ -1982,8 +1994,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     partialCalls += 1
     const askedIn = utterance
     const heard = hearingOf(words, page, true)
-    const questions = partialQuestions(words, page, { appliance: appliance(), heard })
-    const result = await askJev(model, 'partial', null, commandState(words, page, undefined, undefined, undefined, questions, heard), questions)
+    const ask = budgeted(model, (further) => partialQuestions(words, page, { appliance: appliance(), heard, further }), (questions) => commandState(words, page, undefined, undefined, undefined, questions, heard))
+    const result = await askJev(model, 'partial', null, ask.state, ask.questions)
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
@@ -1996,7 +2008,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (command.music?.kind === 'search') return null
     // So does a fact (#402): "what's the weather" may yet be "what's the weather in Gurgaon", which the home city's does not answer.
     if (command.verb === 'say') return null
-    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, action: result.answers.action, noul }
+    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId, action: result.answers.action, noul }
   }
 
   /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */

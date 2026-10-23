@@ -17,6 +17,8 @@ import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
+import { cardBudgetChars, promptChars } from '../../core/decision/cardBudget'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -54,8 +56,9 @@ const PAGE_REFS: SnapshotRef[] = [ref(1, 'link', 'Home'), ref(2, 'button', 'Sign
 class CountingDecisionModel implements DecisionModel {
   readonly model = 'jev-1.14.0'
   readsImages = true
+  cardBudget?: number
   readonly requests: DecisionRequest<DecisionQuestions>[] = []
-  readonly script: ({ answers: Record<string, DecisionAnswer> } | { unavailable: DecisionUnavailableReason })[] = []
+  readonly script: ({ answers: Record<string, DecisionAnswer>; inputTokens?: number } | { unavailable: DecisionUnavailableReason; httpStatus?: number; message?: string })[] = []
   latencyMs = 212
   private readonly gates = new Map<number, Promise<void>>()
 
@@ -73,9 +76,9 @@ class CountingDecisionModel implements DecisionModel {
     if (gate !== undefined) await gate
     const next = this.script.shift()
     if (next === undefined || 'unavailable' in next) {
-      return { status: 'unavailable', reason: next?.unavailable ?? 'failed', message: 'scripted', latencyMs: this.latencyMs, model: this.model }
+      return { status: 'unavailable', reason: next?.unavailable ?? 'failed', message: next?.message ?? 'scripted', latencyMs: this.latencyMs, model: this.model, ...(next?.httpStatus !== undefined ? { httpStatus: next.httpStatus } : {}) }
     }
-    return { status: 'answered', answers: withVerdict(request.questions, next.answers) as never, latencyMs: this.latencyMs, model: this.model }
+    return { status: 'answered', answers: withVerdict(request.questions, next.answers) as never, latencyMs: this.latencyMs, model: this.model, ...(next.inputTokens !== undefined ? { inputTokens: next.inputTokens } : {}) }
   }
 }
 
@@ -791,6 +794,42 @@ describe('a Command the Local Match cannot settle', () => {
     expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ text: 'tap on the sign thing', dropped: true })])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'best_guess', jevAsked: true, ended: 'unavailable', jev: { reason: 'timeout', latencyMs: 212 } })
+  })
+
+  it('keeps a refusal\'s status and the host\'s message in the record and the fault log, and an answer\'s input tokens (#406, ADR 0088)', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    try {
+      const { decision, runner, records } = harness()
+      const refusal = 'OneJev prompt has 16645 tokens, exceeding max_len 16384; prompts are never truncated'
+      decision.script.push({ unavailable: 'http', httpStatus: 422, message: refusal }, { answers: { action: choice('click-2'), slot: choice('none') }, inputTokens: 1234 })
+
+      await runner.run('tap on the sign thing', { source: 'spoken' })
+      await runner.run('sign in please', { source: 'spoken' })
+
+      expect(records[0]).toMatchObject({ ended: 'unavailable', jev: { reason: 'http', httpStatus: 422, message: refusal } })
+      expect(faults).toEqual([expect.objectContaining({ site: 'run.commandRunner.jevUnavailable', message: expect.stringContaining('422') })])
+      expect(records[1]).toMatchObject({ reading: 'jev', jev: { inputTokens: 1234 } })
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('builds a hop over a link-heavy page to the model\'s Card Budget: the farthest links yield, what makes the hop stays (#406, ADR 0088)', async () => {
+    const { browser, decision, runner } = harness()
+    decision.cardBudget = 4000
+    browser.pageLinks = async () => Array.from({ length: 200 }, (_, index) => ({ label: `A link further down the page, number ${index + 1}`, href: `https://example.com/further/${index + 1}` }))
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+
+    await runner.run('sign in please', { source: 'spoken' })
+
+    const hop = decision.requests[1]!
+    expect(promptChars(hop.state, hop.questions)).toBeLessThanOrEqual(cardBudgetChars(4000))
+    const opens = cardRefs(hop).filter((label) => label.startsWith('open-'))
+    expect(opens.length).toBeGreaterThan(10)
+    expect(opens.length).toBeLessThan(200)
+    expect(cardRefs(hop)).toEqual(expect.arrayContaining(['click-1', 'type-3', 'click-3']))
+    expect(Object.keys(hop.questions)).toEqual(expect.arrayContaining(['outcome', 'progress']))
   })
 
   it('never searches the words of an unread line when Jev is unavailable (#353): nothing fires, nothing is spoken', async () => {

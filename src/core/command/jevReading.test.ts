@@ -3,7 +3,8 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { promptChars } from '../decision/cardBudget'
+import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -1686,5 +1687,59 @@ describe('a question is searched as asked (#400): the Slot keeps it, and a hop n
     const answers = { action: action({ 'search-2': 0.6, 'click-3': 0.3 }, 'search-2'), slot: choice('s5-5') }
     expect(readCommandAnswers(answers, TEXT, LANDING, hop)).toEqual({ verb: 'type', target: 2, slot: 'London', submit: true })
     expect(readCommandAnswers({ ...answers, slot: choice('s0-5') }, TEXT, LANDING)).toEqual({ verb: 'type', target: 2, slot: "What's the weather like in London", submit: true })
+  })
+})
+
+describe('the Card Budget (#406, ADR 0088)', () => {
+  // A link-heavy page at a hop past the first: refs in view, a block of
+  // text in view, a hundred links further down and a dozen blocks below.
+  const links = Array.from({ length: 100 }, (_, index) => ({ label: `Link number ${index + 1} with a long name`, href: `https://example.com/page/${index + 1}` }))
+  const page: CommandPage = {
+    ...PAGE,
+    viewportText: ['npm init playwright@latest'],
+    textBelow: Array.from({ length: 12 }, (_, index) => ({ text: `Block ${index + 1} `.padEnd(120, 'b'), frame: null, node: index })),
+  }
+  const hop: HopContext = { hop: 1, visited: [PAGE.url], actions: ['scroll down a screen (the page changed)'], links }
+  const build = (further: number) => hopQuestions('how do i install it', page, hop, { further })
+  const stateOf = (questions: ReturnType<typeof build>) => commandState('how do i install it', page, hop, undefined, undefined, questions)
+  const sizeOf = ({ state, questions }: { state: string; questions: ReturnType<typeof build> }): number => promptChars(state, questions)
+  const labels = (questions: ReturnType<typeof build>, act: string): string[] => Object.keys(questions.action.options).filter((label) => label.startsWith(`${act}-`))
+
+  it('leaves a card that fits as it is', () => {
+    const whole = fitCard(undefined, build, stateOf)
+    expect(fitCard(sizeOf(whole), build, stateOf)).toEqual(whole)
+    expect(labels(whole.questions, 'open')).toHaveLength(100)
+  })
+
+  it('cuts what is further down to fit, shows first, then menus, then the farthest opens, and never what makes the hop', () => {
+    const whole = fitCard(undefined, build, stateOf)
+    const budget = sizeOf(whole) - 6000
+    const fitted = fitCard(budget, build, stateOf)
+
+    expect(sizeOf(fitted)).toBeLessThanOrEqual(budget)
+    expect(labels(fitted.questions, 'show')).toEqual([])
+    expect(labels(fitted.questions, 'menu')).toEqual([])
+    const opens = labels(fitted.questions, 'open')
+    expect(opens.length).toBeGreaterThan(50)
+    expect(opens).toEqual(opens.map((_, index) => `open-${index + 1}`))
+    // The state names the links its card opens, and no other.
+    expect(fitted.state).toContain(`[link-${opens.length}] `)
+    expect(fitted.state).not.toContain(`[link-${opens.length + 1}] `)
+    expect(fitted.state).not.toContain('Text further down')
+    // What makes the hop: the refs in view, Text in view, the Verdict, the passage and the verbs.
+    expect(labels(fitted.questions, 'click')).toEqual(['click-1', 'click-2', 'click-3'])
+    expect(fitted.state).toContain('Text in view: "npm init playwright@latest"')
+    expect(Object.keys(fitted.questions)).toEqual(expect.arrayContaining(['outcome', 'progress', 'passage', 'slot']))
+    expect(fitted.questions.action.options).toHaveProperty('scroll_down')
+  })
+
+  it('keeps the nearest shows when only some must go', () => {
+    const whole = fitCard(undefined, build, stateOf)
+    const fitted = fitCard(sizeOf(whole) - 300, build, stateOf)
+    const shows = labels(fitted.questions, 'show')
+    expect(shows.length).toBeGreaterThan(0)
+    expect(shows.length).toBeLessThan(12)
+    expect(shows).toEqual(shows.map((_, index) => `show-${index + 1}`))
+    expect(labels(fitted.questions, 'open')).toHaveLength(100)
   })
 })

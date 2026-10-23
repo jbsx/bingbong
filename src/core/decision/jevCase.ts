@@ -260,13 +260,20 @@ export type GateCell = { readonly name: string; readonly verdict: CaseVerdict } 
  * so one run each is exact, and a weaker model's miss is a card problem
  * until shown otherwise.
  */
-export function formatJevGate(columns: readonly GateColumn[]): string {
+export function formatJevGate(columns: readonly GateColumn[], sizes: ReadonlyMap<string, CaseSize> = new Map()): string {
   const names = columns[0]?.cells.map((cell) => cell.name) ?? []
   const short = columns.map((column) => column.model.slice(column.model.lastIndexOf('/') + 1))
   const nameWidth = Math.max('case'.length, ...names.map((name) => name.length))
   const widths = short.map((head) => Math.max(head.length, 'not run'.length))
-  const row = (cells: readonly string[]): string => cells.map((cell, index) => cell.padEnd(index === 0 ? nameWidth : widths[index - 1]!)).join('  ')
-  const lines = [row(['case', ...short]).trimEnd()]
+  // Each case's size (#406, ADR 0088), a case over the Card Budget marked `*`.
+  const sizeOf = (name: string): string => {
+    const size = sizes.get(name)
+    return size === undefined ? '' : `${size.over ? '*' : ''}${size.chars}`
+  }
+  const sizeWidth = sizes.size === 0 ? 0 : Math.max('chars'.length, ...names.map((name) => sizeOf(name).length))
+  const row = (cells: readonly string[], size: string): string =>
+    [cells[0]!.padEnd(nameWidth), ...(sizeWidth > 0 ? [size.padStart(sizeWidth)] : []), ...cells.slice(1).map((cell, index) => cell.padEnd(widths[index]!))].join('  ')
+  const lines = [row(['case', ...short], 'chars').trimEnd()]
   let failing = 0
   let unrun = 0
   for (const [index, name] of names.entries()) {
@@ -278,7 +285,7 @@ export function formatJevGate(columns: readonly GateColumn[]): string {
       unrun += 1
       notes.push((cells[0] as { notRun: string }).notRun)
     }
-    lines.push([row([name, ...marks]), ...notes].join('  ').trimEnd())
+    lines.push([row([name, ...marks], sizeOf(name)), ...notes].join('  ').trimEnd())
   }
   const run = (column: GateColumn): number => column.cells.filter((cell) => !('notRun' in cell)).length
   const passed = (column: GateColumn): number => column.cells.filter((cell) => !('notRun' in cell) && cell.verdict.pass).length
@@ -287,6 +294,28 @@ export function formatJevGate(columns: readonly GateColumn[]): string {
   lines.push(`${names.length} case${names.length === 1 ? '' : 's'}: ${tally}; through on every model ${every}${unrun > 0 ? `; ${unrun} not run on any` : ''}`)
   lines.push(failing === 0 ? 'GATE PASS' : `GATE FAIL — ${failing} case${failing === 1 ? '' : 's'} fail${failing === 1 ? 's' : ''} on at least one model`)
   return lines.join('\n')
+}
+
+/** A case's ask as the Card Budget reads it (#406, ADR 0088): its size in characters, and whether it is over the budget. */
+export interface CaseSize {
+  readonly chars: number
+  readonly over: boolean
+}
+
+/** The Card Budget's line (#406): the budget, and the cases over it — named, or marked in the gate's table. */
+export function formatCardBudget(tokens: number, chars: number, sizes: ReadonlyMap<string, CaseSize>, named: boolean): string {
+  const over = [...sizes].filter(([, size]) => size.over)
+  const head = `Card Budget ${tokens} tokens, ${chars} chars: `
+  if (over.length === 0) return `${head}no case over it`
+  const count = `${over.length} case${over.length === 1 ? '' : 's'} over it`
+  return named ? `${head}${count}: ${over.map(([name, size]) => `${name} ${size.chars} chars`).join(', ')}` : `${head}${count} (marked *)`
+}
+
+/** What a host counted (#406): the range of characters per token over the asks it answered with a count; none when it gave none. */
+export function formatCharsPerToken(model: string, counts: readonly { readonly chars: number; readonly tokens: number }[]): string[] {
+  if (counts.length === 0) return []
+  const ratios = counts.map((count) => count.chars / count.tokens)
+  return [`${model.slice(model.lastIndexOf('/') + 1)} counted ${counts.length} asks: ${Math.min(...ratios).toFixed(2)}–${Math.max(...ratios).toFixed(2)} chars per token`]
 }
 
 /** Why a case failed, on one line: the problem, or each expectation that did not hold. */

@@ -84,6 +84,8 @@ describe('buildDecisionReport', () => {
       jevAsked: 3,
       jevAnswered: 2,
       jevLatency: { p50: 260, p95: 800 },
+      jevRefused: {},
+      jevInputTokens: null,
       misfires: 3,
       misfiresBySignal: { back: 2, opposite_scroll: 1 },
       names: { page: 0, learned: 0 },
@@ -233,6 +235,19 @@ describe('formatCommandReport', () => {
     const report = buildDecisionReport(log)
     expect(report.tasks).toMatchObject({ count: 3, hops: { p50: 1, max: 2 }, split: 1 })
     expect(formatCommandReport(buildReactionReport([]), report).at(-1)).toBe('tasks: 3 | ended local_match 2, done 1 | hops p50 1, max 2 | overruns by hop: none | lines split into Steps: 1')
+  })
+
+  it('prints the refusals by status and the hosts\' token counts, so a card over its budget reads from the report (#406, ADR 0088)', () => {
+    const answered = (turnId: string, inputTokens: number): DecisionRecord => {
+      const base = decision(turnId, 'jev')
+      return { ...base, jev: { ...(base.jev as object), inputTokens } as DecisionRecord['jev'] }
+    }
+    const refused: DecisionRecord = { ...decision('t3', 'best_guess'), jev: { model: 'mammoth', latencyMs: 298, reason: 'http', httpStatus: 422, message: 'prompt has 16645 tokens, exceeding max_len 16384' } }
+    const report = buildDecisionReport([answered('t1', 9000), answered('t2', 15000), refused, decision('t4', 'best_guess')])
+
+    expect(report.jevRefused).toEqual({ 422: 1 })
+    expect(report.jevInputTokens).toEqual({ p50: 9000, max: 15000 })
+    expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain('jev refused 1 (422 1) | input tokens p50 9000 max 15000')
   })
 
   it('prints nothing when neither family has a record', () => {

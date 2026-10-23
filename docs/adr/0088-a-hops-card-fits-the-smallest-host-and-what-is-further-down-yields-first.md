@@ -75,8 +75,66 @@ lost; a measured tie goes to (ii), cheapest to reverse. Jev is asked once,
 
 ### Measured at build (#406)
 
-_Filled in by the build: the ratio, the grown cases, each arm's count on
-Mammoth and Elephant, the Jev run, and the live line ending done._
+Built on base `21b5925a`, 2026-10-23. Gate: Mammoth ∩ Elephant
+(`decision-models/baseten-{mammoth-27b,elephant-9b}-latest`), each arm a
+script over the stored cases, one run each (both models deterministic:
+arm A run twice gave the same cells).
+
+**Grown cases** (6): `turn-mvl5n50y-1` (the Playwright install hop of
+`cli-2-mvl5n3jn`, also `turn-mvl59cdi-1`), `turn-mvkwcnu2-3`
+(`cli-2-mvkwcigu` hop 3), `turn-mvl5g89b-4`, `turn-mvl5dtuv-4`,
+`turn-mvl5kpp9-1`, each 51–63k characters and refused 422 by both hosts
+as recorded; and the live hop below, `turn-mvl7tbjr-1`. With them the
+corpus is 149 cases; the baseline is Mammoth 136/144, Elephant 122/144,
+121 through.
+
+**What the host counts.** Baseten answered asks it reported at up to
+17,615 `input_tokens` and refused one whose "prompt" was 16,645: the cap
+is on one prompt, the state with one question, not the request (Jev's own
+limits are per request and per question). Over the four refusals the
+state plus the action card ran 2.70–3.25 characters per counted token, the
+link-heavy GitHub card lowest; the largest such prompt that was answered
+was 46,035 characters, the smallest refused 48,031. So the budget reads
+the largest prompt an ask makes (`promptChars`), built at 2.6 characters
+a token: 16,384 tokens is 42,598 characters. The whole ask is kept only
+for the chars-per-token line against `input_tokens`.
+
+**Which list yields first.** A (opens, then right-clicks, then shows) and
+B (shows first), with the budget measured over the whole ask: identical,
+cell for cell — Mammoth 140/144, Elephant 125/144, 124 through, the four
+422s through on both, and both losing `turn-mvkwclvb-2` on Elephant (yes
+0.73 → 0.69). A measured tie. C needs a position on every collected link
+and block, which no stored ask carries, so the measure cannot reach it
+without collecting every case again: named and unbuilt, and the tie goes
+to A, the order the builder already had.
+
+**The double ride**, on A with the whole-ask budget: (i) 125 through
+(Mammoth 141/145, Elephant 126/145); (ii) 113 (Mammoth 135, Elephant
+114), losing 18 cells that passed before; (iii) 120 (Mammoth 135,
+Elephant 122), losing 9 and failing the Turing case. (i) wins: links,
+refs and passage blocks ride the card as before. With the per-prompt
+budget no recorded case needs (ii) or (iii) to fit.
+
+**The measure of the budget**, on A (i): the whole ask (above) against
+the largest prompt. Both 125 through; the whole-ask budget loses
+`turn-mvkwclvb-2` on Elephant, the per-prompt budget cuts it 3.5k
+characters instead of 6.5k and keeps it, and loses nothing that passed
+before. Its one miss is a new case, `turn-mvl5n50y-1` on Elephant, whose
+passage pick goes to the "Install" heading (view-3 0.43) over the command
+under it; the Verdict still reads yes. Per prompt is built; the nine cases
+over the budget are stored as it cuts them.
+
+**Jev** (`--with-jev`, once, on the built cards): 124/149, 115 through on
+all three. Of the nine cut cases Jev fails `turn-mvkwclvb-2` (not_yet
+0.58); Jev was not asked the uncut corpus, so whether the cut moved it is
+not known.
+
+**Live**, Mammoth under the CLI harness: "how do i install it" on
+github.com/microsoft/playwright picked the Install show (0.61); hop 1's
+ask was 45.6k characters, the host counted 15,993 tokens and answered,
+the Verdict read yes 0.97 and the Task ended done. The passage pick, the
+install command, was 0.65, under the Choice bar, so nothing was said
+(ledger `cli-2-mvl7t9z8`); the stored case of the same page gets 0.75.
 
 ## Considered options
 

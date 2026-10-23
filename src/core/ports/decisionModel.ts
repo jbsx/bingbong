@@ -73,6 +73,8 @@ export type DecisionResult<Q extends DecisionQuestions> =
       readonly latencyMs: number
       /** The versioned model id that answered, as the vendor reported it. */
       readonly model: string
+      /** The host's own count of the ask's tokens (#406, ADR 0088), when it reported one: what a card's size is read against. */
+      readonly inputTokens?: number
     }
   | {
       readonly status: 'unavailable'
@@ -90,6 +92,8 @@ export interface DecisionModel {
   readonly model: string
   /** False for a text-only model (#395): an ask that needs an image (the Mark Ask) is then not made. Absent, it reads them. */
   readonly readsImages?: boolean
+  /** The Card Budget every ask of it is built to (#406, ADR 0088), in the host's tokens; absent, the default. */
+  readonly cardBudget?: number
   /** Never rejects: every failure resolves to an `unavailable` result. */
   ask<const Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>>
 }

@@ -97,7 +97,7 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
 export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, overrides: { readonly timeoutMs?: number } = {}): DecisionModel {
   switch (routing.protocol) {
     case 'systemone':
-      return createJevDecisionModel(routing.endpoint, { timeoutMs: overrides.timeoutMs ?? routing.timeoutMs, images: routing.images })
+      return { ...createJevDecisionModel(routing.endpoint, { timeoutMs: overrides.timeoutMs ?? routing.timeoutMs, images: routing.images }), cardBudget: routing.cardBudget }
   }
 }
 

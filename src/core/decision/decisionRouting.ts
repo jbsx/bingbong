@@ -5,6 +5,8 @@
 // Everything is config (environment); both the base URL and the pinned
 // model id are overridable.
 
+import { CARD_BUDGET_ENV_KEY, cardBudgetTokens } from './cardBudget.ts'
+
 export interface ModelEndpointConfig {
   /** API root, e.g. https://api.typesafe.ai */
   baseUrl: string
@@ -52,6 +54,8 @@ export type DecisionRouting =
       readonly timeoutMs: number
       /** Whether the model reads images; when not, an ask that carries one is unavailable at once. */
       readonly images: boolean
+      /** The Card Budget (#406, ADR 0088), in the host's tokens: one number for every model. */
+      readonly cardBudget: number
     }
   | { readonly configured: false; readonly reason: string }
 
@@ -69,6 +73,7 @@ export function decisionEnvKeys(): string[] {
     DECISION_TIMEOUT_ENV_KEY,
     DECISION_IMAGES_ENV_KEY,
     DECISION_PROTOCOL_ENV_KEY,
+    CARD_BUDGET_ENV_KEY,
   ]
 }
 
@@ -122,5 +127,6 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
     protocol,
     timeoutMs,
     images: images !== 'false',
+    cardBudget: cardBudgetTokens(env),
   }
 }

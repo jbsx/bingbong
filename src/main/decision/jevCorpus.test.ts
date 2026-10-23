@@ -238,16 +238,17 @@ describe('pnpm jev:replay over a corpus folder', () => {
     const textOnly = (model: string, targets: Record<string, Record<string, number>>) => Object.assign(new FakeJev(targets), { model, readsImages: false })
     const mammoth = textOnly('host/mammoth', { 'state-a': { 'ref-21': 0.9 }, 'state-b': { 'ref-27': 0.6 } })
     const elephant = textOnly('host/elephant', { 'state-a': { 'ref-21': 0.8 }, 'state-b': { none: 0.55, 'ref-27': 0.45 } })
-    const gate = await gateCorpus(dir, { env: {}, models: [mammoth, elephant] }, { models: [] })
+    const gate = await gateCorpus(dir, { env: { BINGBONG_DECISION_PROMPT_TOKENS: '100' }, models: [mammoth, elephant] }, { models: [] })
     expect(gate.code).toBe(1)
     expect(gate.report).toBe(
       [
-        'case    mammoth  elephant',
-        'a-both  PASS     PASS',
-        'b-one   PASS     FAIL      elephant: target=ref-27 chose none 0.55',
-        'c-mark  not run  not run   an image case: --with-jev asks Jev',
+        'case    chars  mammoth  elephant',
+        'a-both     65  PASS     PASS',
+        'b-one      65  PASS     FAIL      elephant: target=ref-27 chose none 0.55',
+        'c-mark     73  not run  not run   an image case: --with-jev asks Jev',
         '3 cases: mammoth 2/2, elephant 1/2; through on every model 1; 1 not run on any',
         'GATE FAIL — 1 case fails on at least one model',
+        'Card Budget 100 tokens, 260 chars: no case over it',
         'Jev latency over 4 answers: p50 1ms, p90 1ms, max 1ms',
       ].join('\n'),
     )
@@ -283,6 +284,27 @@ describe('pnpm jev:replay over a corpus folder', () => {
     const unnamed = await gateCorpus(dir, { env: { BASETEN_API_KEY: 'k' } }, { models: [] })
     expect(unnamed.code).toBe(2)
     expect(unnamed.report).toContain('--models a,b or set BINGBONG_GATE_MODELS')
+  })
+
+  it('prints each case\'s size, marks one over the Card Budget, and the chars per token the hosts counted (#406, ADR 0088)', async () => {
+    saveCase('a-small', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-large', `state-b ${'x'.repeat(400)}`, [{ question: 'target', label: 'ref-21' }])
+    const counted: DecisionModel = {
+      model: 'host/mammoth',
+      async ask(request) {
+        const answers = { target: { type: 'choice', choice: 'ref-21', confidence: 0.9, probabilities: { 'ref-21': 0.9 } } }
+        return { status: 'answered', answers: answers as never, latencyMs: 1, model: 'host/mammoth', inputTokens: Math.round(request.state.length / 2) }
+      },
+    }
+    const env = { BINGBONG_DECISION_PROMPT_TOKENS: '100' }
+    const gate = await gateCorpus(dir, { env, models: [counted] }, { models: [] })
+    expect(gate.report).toContain('case     chars  mammoth')
+    expect(gate.report).toContain('a-small     65  PASS')
+    expect(gate.report).toContain('b-large   *466  PASS')
+    expect(gate.report).toContain('Card Budget 100 tokens, 260 chars: 1 case over it (marked *)')
+    expect(gate.report).toContain('mammoth counted 2 asks: 2.40–22.25 chars per token')
+    const replay = await replayCorpus(dir, { env, model: counted })
+    expect(replay.report).toContain('Card Budget 100 tokens, 260 chars: 1 case over it: b-large 466 chars')
   })
 
   it('says so when the folder holds no case', async () => {

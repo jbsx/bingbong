@@ -11,6 +11,7 @@ import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
+import { promptChars } from '../decision/cardBudget'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title, the text in
@@ -851,6 +852,8 @@ function textFurtherDownLines(page: CommandPage, hop: HopContext | undefined, ca
  */
 export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>, card?: { readonly action: DecisionChoiceQuestion }, heard?: readonly NameHearing[]): string {
   const shown = offered(page, hop)
+  // The links the card asked beside it opens, and no other (#406, ADR 0088): a link the Card Budget cut is no line of the state either.
+  const links = card === undefined ? shown.links : shown.links.filter((link) => Object.hasOwn(card.action.options, `open-${link.n}`))
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
@@ -869,7 +872,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     'Refs (number, kind, label, address, states):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page, marked)}`),
     ...(marked !== undefined ? [`The page now, each control with no words boxed in red with its number: ${MARKS_IMAGE}`] : []),
-    ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
+    ...(links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
     ...textFurtherDownLines(page, hop, card),
   ].join('\n')
 }
@@ -974,10 +977,10 @@ export function commandQuestions(
   text: string,
   pageRead: CommandPage,
   hop?: HopContext,
-  options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[] } = {},
+  options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[]; readonly further?: number } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media))
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), options.further)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
@@ -1030,8 +1033,8 @@ export type WhereQuestions = CommandQuestions & { readonly outcome: DecisionChoi
  * it moved none of 40 measured Where Ask picks. The passage Choice rides
  * beside that Verdict as beside every hop's (#401, ADR 0087).
  */
-export function whereQuestions(text: string, page: CommandPage, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): WhereQuestions {
-  return withPassage({ ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where', heard }), outcome: outcomeQuestion() }, page, undefined)
+export function whereQuestions(text: string, page: CommandPage, { appliance, heard, further }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[]; readonly further?: number } = {}): WhereQuestions {
+  return withPassage({ ...commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where', heard, further }), outcome: outcomeQuestion() }, page, undefined)
 }
 
 /**
@@ -1066,8 +1069,8 @@ export function isTextlessGuess(action: DecisionChoiceAnswer, questions: Command
  * once more with the page's image beside it, every option as it was but
  * a marked ref's, which reads "the control marked N"; no `steps`.
  */
-export function markQuestions(text: string, page: CommandPage, { appliance, marked, heard }: { readonly appliance?: Appliance; readonly marked: ReadonlySet<number>; readonly heard?: readonly NameHearing[] }): CommandQuestions {
-  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'mark', marked, heard })
+export function markQuestions(text: string, page: CommandPage, { appliance, marked, heard, further }: { readonly appliance?: Appliance; readonly marked: ReadonlySet<number>; readonly heard?: readonly NameHearing[]; readonly further?: number }): CommandQuestions {
+  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'mark', marked, heard, further })
 }
 
 /**
@@ -1092,6 +1095,7 @@ function actionQuestion(
   setAside: readonly SetAside[],
   marked?: ReadonlySet<number>,
   facts?: ApplianceFacts,
+  further = Infinity,
 ): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside, texts)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
@@ -1123,10 +1127,17 @@ function actionQuestion(
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const ops = take(reached.flatMap(opsOf))
   const scrolls = take(reached.flatMap(scrollsOf))
-  const opened = take(links)
-  const menus = take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`)))
+  // What is further down yields to the Card Budget (#406, ADR 0088): the first `further` of the opens, the right-clicks and the shows, in that order, each list nearest the view first.
+  let yielded = further
+  const nearest = <T>(items: readonly T[]): readonly T[] => {
+    const kept = items.slice(0, Math.max(0, yielded))
+    yielded -= kept.length
+    return kept
+  }
+  const opened = nearest(take(links))
+  const menus = nearest(take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`))))
   // The Show Ops take what room is left (ADR 0086): on a full card the refs win. They stand just before the page's own scroll.
-  const showOps = take(texts.filter((target) => kept(`show-${target.n}`))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
+  const showOps = nearest(take(texts.filter((target) => kept(`show-${target.n}`)))).map((target) => [`show-${target.n}`, showOpAction(target.block, target.n)] as const)
   const scrollAt = refLess.findIndex(([verb]) => verb === 'scroll_up' || verb === 'scroll_down')
   const refLessLines = showOps.length === 0 ? refLess : refLess.map(([verb, line]) => [verb, verb === 'scroll_down' ? SCROLL_DOWN_PAST_SHOWS : line] as const)
   const verbs = scrollAt < 0 ? [...refLessLines, ...showOps] : [...refLessLines.slice(0, scrollAt), ...showOps, ...refLessLines.slice(scrollAt)]
@@ -1290,9 +1301,9 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
  * spoken "close" walks the Dismissal Ladder with Jev's choice on it as a
  * Step Aside does. Null when the pop-up offers no control to choose.
  */
-export function dismissPhraseQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
+export function dismissPhraseQuestions(text: string, page: CommandPage, { appliance, further }: { readonly appliance?: Appliance; readonly further?: number } = {}): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
   const dismiss = dismissQuestion(page)
-  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, appliance }), dismiss }
+  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, appliance, further }), dismiss }
 }
 
 /**
@@ -1318,9 +1329,9 @@ export const PROGRESS_FLOOR = Math.round((1 - DEFAULT_DECISION_THRESHOLDS.choice
 /** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice; with a block in view, the passage Choice (#401). */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion; readonly passage?: DecisionChoiceQuestion }
 
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): HopQuestions {
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance, heard, further }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[]; readonly further?: number } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  const asked = { ...commandQuestions(text, pageRead, hop, { appliance, heard }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  const asked = { ...commandQuestions(text, pageRead, hop, { appliance, heard, further }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
   return withPassage(asked, pageRead, hop)
 }
 
@@ -1357,11 +1368,43 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
  */
 export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
 
-export function partialQuestions(text: string, page: CommandPage, { appliance, heard }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[] } = {}): PartialQuestions {
+export function partialQuestions(text: string, page: CommandPage, { appliance, heard, further }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[]; readonly further?: number } = {}): PartialQuestions {
   return {
-    ...commandQuestions(text, page, undefined, { steps: false, appliance, heard }),
+    ...commandQuestions(text, page, undefined, { steps: false, appliance, heard, further }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
+}
+
+/** Whether a card label offers something further down (#406, ADR 0088): an open, a right-click or a show, what yields to the Card Budget. */
+const isFurther = (label: string): boolean => /^(open|menu|show)-\d+$/.test(label)
+
+/**
+ * An ask built to the Card Budget (#406, ADR 0088): the card `build`
+ * makes, with the state `stateOf` reads over it, keeping the most of what
+ * is further down that fits `budget` characters — none of what makes the
+ * hop is ever cut, so a card whose rest is over the budget goes with
+ * nothing further down. No budget, the whole card.
+ */
+export function fitCard<Q extends CommandQuestions>(budget: number | undefined, build: (further: number) => Q, stateOf: (questions: Q) => string): { questions: Q; state: string } {
+  const ask = (further: number): { questions: Q; state: string } => {
+    const questions = build(further)
+    return { questions, state: stateOf(questions) }
+  }
+  const whole = ask(Infinity)
+  const fits = ({ questions, state }: { questions: Q; state: string }): boolean => budget === undefined || promptChars(state, questions) <= budget
+  if (fits(whole)) return whole
+  // The size grows with each item kept: the most that fits is found by halving.
+  let [low, high] = [0, Object.keys(whole.questions.action.options).filter(isFurther).length - 1]
+  let best = ask(0)
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const tried = ask(middle)
+    if (fits(tried)) {
+      best = tried
+      low = middle + 1
+    } else high = middle - 1
+  }
+  return best
 }
 
 type ActionAnswers = {

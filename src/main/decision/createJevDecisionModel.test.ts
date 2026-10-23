@@ -56,7 +56,7 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
 
     const result = await model.ask({ state: '[p1] one\n[p2] two', questions: QUESTIONS })
 
-    expect(result).toEqual({ status: 'answered', answers: ANSWERS, latencyMs: 95, model: 'jev-1.13.0' })
+    expect(result).toEqual({ status: 'answered', answers: ANSWERS, latencyMs: 95, model: 'jev-1.13.0', inputTokens: 10 })
     expect(model.model).toBe('jev-1.13.0')
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('https://jev.example/v1/systemone')
@@ -161,6 +161,22 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
     const result = await createJevDecisionModel(ENDPOINT, { fetch }).ask({ state: 's', questions: QUESTIONS })
     expect(result).toMatchObject({ status: 'unavailable', reason: 'http', httpStatus: status })
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the host\'s message on a refused card, and the host\'s input tokens on an answer (#406, ADR 0088)', async () => {
+    const refusal = 'OneJev prompt has 16645 tokens, exceeding max_len 16384; prompts are never truncated'
+    const { fetch } = fakeFetch(
+      async () => json(422, { error: { message: refusal } }),
+      async () => json(200, { model: 'mammoth', answers: ANSWERS, usage: { input_tokens: 15210, output_tokens: 0 } }),
+    )
+    const model = createJevDecisionModel(ENDPOINT, { fetch })
+
+    const refused = await model.ask({ state: 's', questions: QUESTIONS })
+    const answered = await model.ask({ state: 's', questions: QUESTIONS })
+
+    expect(refused).toMatchObject({ status: 'unavailable', reason: 'http', httpStatus: 422 })
+    expect(refused.status === 'unavailable' && refused.message).toContain('exceeding max_len 16384')
+    expect(answered).toMatchObject({ status: 'answered', inputTokens: 15210 })
   })
 
   it('resolves a connection failure to unavailable without retrying it', async () => {

@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvl7t9z8",
+  "transcript": "how do i install it",
+  "at": 1792774777488,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Typed on the microsoft/playwright repo page (live 2026-10-23, #406 tree on base 21b5925a, Mammoth, CLI harness): hop 0 chose show-39 'Install' 0.61 and put npm init playwright@latest in view; hop 1's ask fit the Card Budget (45.6k chars, 15,993 host tokens, answered) and the Verdict read yes 0.97, so the Task ended done; the passage Choice picked view-4 'npm init playwright@latest' at 0.65 (view-3 'Install' 0.22), under the 0.7 bar, so nothing was said. The stored case of the same page (turn-mvl5n50y-1) gets 0.75 on Mammoth",
+  "meant": "The Verdict's yes ends the Task and the install command is said word for word",
+  "log": "decision-1792774767725-1.jsonl"
+}

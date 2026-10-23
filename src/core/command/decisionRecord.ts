@@ -26,6 +26,8 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
+  /** The host's own count of the ask's tokens (#406, ADR 0088), when it reported one. */
+  readonly inputTokens?: number
   readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number; readonly passage?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
@@ -47,11 +49,18 @@ export interface JevDetail {
   }
 }
 
-/** Jev did not answer: the reason, and how long the wait cost. */
+/** Jev did not answer: the reason, and how long the wait cost; a refusal's status and the host's own words (#406), so a 422 reads from the record. */
 export interface JevUnavailable {
   readonly model: string
   readonly latencyMs: number
   readonly reason: DecisionUnavailableReason
+  readonly httpStatus?: number
+  readonly message?: string
+}
+
+/** An unavailable answer as the record keeps it (#406): the message only beside a status, where it is the host's. */
+export function jevUnavailableOf(result: { readonly model: string; readonly latencyMs: number; readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number }): JevUnavailable {
+  return { model: result.model, latencyMs: result.latencyMs, reason: result.reason, ...(result.httpStatus !== undefined ? { httpStatus: result.httpStatus, message: result.message } : {}) }
 }
 
 export interface DecisionRecord {
@@ -236,7 +245,7 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 }
 
 /** Jev's answers as the record keeps them. */
-export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string): JevDetail {
+export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string, inputTokens?: number): JevDetail {
   const amount = 'amount' in answers ? answers.amount : undefined
   const extent = 'extent' in answers ? answers.extent : undefined
   const where = 'where' in answers ? answers.where : undefined
@@ -247,6 +256,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
   return {
     model,
     latencyMs,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
     confidence: {
       action: answers.action.confidence,
       slot: answers.slot.confidence,

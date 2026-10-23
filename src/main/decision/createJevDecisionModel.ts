@@ -113,11 +113,13 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
         const body = typeof response === 'object' && response !== null ? (response as Record<string, unknown>) : {}
         const answers = readDecisionAnswers(request.questions, body.answers)
         if (answers === null) return unavailable('malformed', 'the answers did not match the questions asked')
+        const usage = typeof body.usage === 'object' && body.usage !== null ? (body.usage as Record<string, unknown>) : {}
         return {
           status: 'answered',
           answers,
           latencyMs: now() - started,
           model: typeof body.model === 'string' ? body.model : endpoint.model,
+          ...(typeof usage.input_tokens === 'number' ? { inputTokens: usage.input_tokens } : {}),
         }
       } catch (error) {
         const { reason, httpStatus } = reasonOf(error)

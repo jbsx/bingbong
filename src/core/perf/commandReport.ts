@@ -45,6 +45,10 @@ export interface DecisionReport {
   jevAnswered: number
   /** Over every Jev call made; null when none was. */
   jevLatency: { p50: number; p95: number } | null
+  /** The calls a host refused (#406), by HTTP status: a 422 is a card over the host's prompt. */
+  jevRefused: Record<number, number>
+  /** The hosts' own token counts over the answered calls that carry one (#406, ADR 0088); null when none does. */
+  jevInputTokens: { p50: number; max: number } | null
   misfires: number
   /** Misfires by the signal that recorded them. */
   misfiresBySignal: Partial<Record<MisfireSignal, number>>
@@ -124,6 +128,8 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     jevAsked: 0,
     jevAnswered: 0,
     jevLatency: null,
+    jevRefused: {},
+    jevInputTokens: null,
     misfires: 0,
     misfiresBySignal: {},
     names: { page: 0, learned: 0 },
@@ -132,6 +138,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     picks: { remembered: 0, searched: 0 },
   }
   const latencies: number[] = []
+  const tokens: number[] = []
   const leads: number[] = []
   /** Each Task's hop count, by its id and, in a line read as Steps, its Step. */
   const taskHops = new Map<string, number>()
@@ -167,9 +174,13 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       report.jevAsked += 1
       if (record.reading === 'jev') report.jevAnswered += 1
       if (record.jev !== undefined && Number.isFinite(record.jev.latencyMs)) latencies.push(record.jev.latencyMs)
+      if (record.jev !== undefined && 'httpStatus' in record.jev && typeof record.jev.httpStatus === 'number') report.jevRefused[record.jev.httpStatus] = (report.jevRefused[record.jev.httpStatus] ?? 0) + 1
+      if (record.jev !== undefined && 'inputTokens' in record.jev && typeof record.jev.inputTokens === 'number') tokens.push(record.jev.inputTokens)
     }
   }
   report.jevLatency = percentiles(latencies)
+  const sortedTokens = [...tokens].sort((a, b) => a - b)
+  report.jevInputTokens = sortedTokens.length === 0 ? null : { p50: nearestRankPercentile(sortedTokens, 50), max: sortedTokens.at(-1)! }
   report.earlyFire.lead = percentiles(leads)
   report.tasks.count = taskHops.size
   report.tasks.split = splitLines.size
@@ -187,6 +198,14 @@ function table(headers: string[], rows: string[][]): string[] {
 /** One table row of Reaction stats. */
 function rowOf(s: ReactionStats): string[] {
   return [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)]
+}
+
+/** The refusals by status (#406): ` | jev refused 2 (422 2)`; nothing when none. */
+function refusedText(refused: Record<number, number>): string {
+  const byStatus = Object.entries(refused).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]))
+  if (byStatus.length === 0) return ''
+  const total = byStatus.reduce((sum, [, count]) => sum + count, 0)
+  return ` | jev refused ${total} (${byStatus.map(([status, count]) => `${status} ${count}`).join(', ')})`
 }
 
 function percent(part: number, whole: number): string {
@@ -218,7 +237,9 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
       decisions.jevAsked === 0
         ? 'jev asked 0'
         : `jev asked ${decisions.jevAsked} (${percent(decisions.jevAsked, decisions.commands)}), answered ${decisions.jevAnswered}` +
-          (decisions.jevLatency ? `, latency p50 ${formatMs(decisions.jevLatency.p50)} p95 ${formatMs(decisions.jevLatency.p95)}` : '')
+          (decisions.jevLatency ? `, latency p50 ${formatMs(decisions.jevLatency.p50)} p95 ${formatMs(decisions.jevLatency.p95)}` : '') +
+          refusedText(decisions.jevRefused) +
+          (decisions.jevInputTokens ? ` | input tokens p50 ${decisions.jevInputTokens.p50} max ${decisions.jevInputTokens.max}` : '')
     const signals = Object.entries(decisions.misfiresBySignal)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([signal, count]) => `${signal} ${count}`)

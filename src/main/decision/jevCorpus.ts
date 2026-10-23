@@ -6,12 +6,15 @@ import { askImageFile, type AskRecord } from '../../core/decision/askRecord.ts'
 import { resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   expectationProblem,
+  formatCardBudget,
+  formatCharsPerToken,
   formatJevGate,
   formatJevRepeat,
   formatJevReplay,
   judgeJevCase,
   parseExpectation,
   readJevCase,
+  type CaseSize,
   type CaseVerdict,
   type GateCell,
   type GateColumn,
@@ -27,6 +30,7 @@ import { collectDecisionRecords } from '../perf/collectDecisionRecords.ts'
 import { collectJsonlFamily } from '../perf/collectPerfRecords.ts'
 import { ASK_FILE_PATTERN } from '../perf/perfFiles.ts'
 import { createRoutedDecisionModel } from './createDecisionModel.ts'
+import { askChars, cardBudgetChars, cardBudgetTokens, promptChars } from '../../core/decision/cardBudget.ts'
 
 // The Jev corpus on disk (#338): a folder of case files, each a recorded
 // ask and the answer each question should get, which `pnpm jev:replay`
@@ -96,16 +100,41 @@ export async function replayCorpus(dir: string, deps: ReplayDeps, options: Repla
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
   const repeat = Math.max(1, Math.floor(options.repeat ?? 1))
-  const { repeats, latencies } = await askCorpus(dir, entries, model, repeat)
+  const { repeats, latencies, counts } = await askCorpus(dir, entries, model, repeat)
   const verdicts = repeats.flatMap((each) => each.runs)
-  const report = [repeat === 1 ? formatJevReplay(verdicts, model.model) : formatJevRepeat(repeats, model.model), ...latencyLine(latencies)].join('\n')
+  const budget = budgetOf(deps.env, entries)
+  const report = [
+    repeat === 1 ? formatJevReplay(verdicts, model.model) : formatJevRepeat(repeats, model.model),
+    formatCardBudget(budget.tokens, budget.chars, budget.sizes, true),
+    ...formatCharsPerToken(model.model, counts),
+    ...latencyLine(latencies),
+  ].join('\n')
   return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report }
 }
 
+/** The Card Budget the env sets (#406, ADR 0088), and each case's size against it. */
+function budgetOf(env: Record<string, string | undefined>, entries: readonly CorpusEntry[]): { tokens: number; chars: number; sizes: Map<string, CaseSize> } {
+  const tokens = cardBudgetTokens(env)
+  const chars = cardBudgetChars(tokens)
+  const sizes = new Map<string, CaseSize>()
+  for (const entry of entries) {
+    if (typeof entry.case === 'string') continue
+    const size = promptChars(entry.case.ask.state, entry.case.ask.questions)
+    sizes.set(entry.name, { chars: size, over: size > chars })
+  }
+  return { tokens, chars, sizes }
+}
+
 /** Every case asked of one model `repeat` times, in corpus order; a case that is not one, or whose image is gone, is one failed run. */
-async function askCorpus(dir: string, entries: readonly CorpusEntry[], model: DecisionModel, repeat: number): Promise<{ repeats: RepeatVerdict[]; latencies: number[] }> {
+async function askCorpus(
+  dir: string,
+  entries: readonly CorpusEntry[],
+  model: DecisionModel,
+  repeat: number,
+): Promise<{ repeats: RepeatVerdict[]; latencies: number[]; counts: { chars: number; tokens: number }[] }> {
   const repeats: RepeatVerdict[] = []
   const latencies: number[] = []
+  const counts: { chars: number; tokens: number }[] = []
   for (const entry of entries) {
     if (typeof entry.case === 'string') {
       repeats.push({ name: entry.name, runs: [{ name: entry.name, pass: false, problem: entry.case }] })
@@ -128,12 +157,13 @@ async function askCorpus(dir: string, entries: readonly CorpusEntry[], model: De
       const batch = Array.from({ length: Math.min(RUNS_AT_ONCE, repeat - from) }, ask)
       for (const result of await Promise.all(batch)) {
         if (result.status === 'answered') latencies.push(result.latencyMs)
+        if (result.status === 'answered' && result.inputTokens !== undefined) counts.push({ chars: askChars(request.state, request.questions), tokens: result.inputTokens })
         runs.push(judgeJevCase(entry.name, jevCase, result))
       }
     }
     repeats.push({ name: entry.name, runs })
   }
-  return { repeats, latencies }
+  return { repeats, latencies, counts }
 }
 
 export interface GateDeps {
@@ -184,11 +214,13 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
   const columns: GateColumn[] = []
   const latencies: number[] = []
+  const counted: string[] = []
   for (const model of models) {
     // An image case is not asked of a model that reads no images: not run, not failed.
     const asked = model.readsImages === false ? entries.filter((entry) => typeof entry.case === 'string' || Object.keys(entry.case.ask.images ?? {}).length === 0) : entries
     const run = await askCorpus(dir, asked, model, 1)
     latencies.push(...run.latencies)
+    counted.push(...formatCharsPerToken(model.model, run.counts))
     const byName = new Map(run.repeats.map((repeat) => [repeat.name, repeat.runs[0]!]))
     columns.push({
       model: model.model,
@@ -198,7 +230,8 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
       }),
     })
   }
-  const report = [formatJevGate(columns), ...latencyLine(latencies)].join('\n')
+  const budget = budgetOf(deps.env, entries)
+  const report = [formatJevGate(columns, budget.sizes), formatCardBudget(budget.tokens, budget.chars, budget.sizes, false), ...counted, ...latencyLine(latencies)].join('\n')
   const pass = columns.every((column) => column.cells.every((cell) => 'notRun' in cell || cell.verdict.pass))
   return { code: pass ? 0 : 1, report }
 }
