@@ -845,8 +845,14 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
     expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where', 'outcome', 'progress'])
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
-    expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
+    expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way')
     expect(questions.outcome.instructions).toContain('the action they asked for has happened')
+  })
+
+  it('tells the Verdict a cookie strip that covers nothing is not in the way (#404)', () => {
+    const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
+    expect(questions.outcome.instructions).toContain('a cookie strip or other notice on the page that covers nothing is not in the way')
+    expect(questions.outcome.instructions).not.toContain('cookie notice or challenge covers')
   })
 
   it('asks the dismiss Choice over a pop-up (#354): escape and every dialog control a dismissal may click, with what a close is and what is a way through', () => {

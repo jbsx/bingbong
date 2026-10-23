@@ -1164,16 +1164,18 @@ export interface Verdict {
  * off their words and "Done so far", not the page alone, so an action the
  * user asked for ("close the pop-up") can be done on a page that is no
  * one's goal. A pop-up covering the page is asked first, so a wall stays a
- * sure `in_the_way` whatever the words. Asked at every hop past the first
- * beside the verb, so an end is a verdict and never a verb's plurality: a
- * Task ends on a sure `yes`, meets a wall on a sure `in_the_way`, and says
- * it is not sure otherwise.
+ * sure `in_the_way` whatever the words; a cookie strip that covers nothing
+ * is said not to be one (#404: a cookie notice named among the walls read
+ * every strip on BBC, Reddit and gov.uk as one). Asked at every hop past
+ * the first beside the verb, so an end is a verdict and never a verb's
+ * plurality: a Task ends on a sure `yes`, meets a wall on a sure
+ * `in_the_way`, and says it is not sure otherwise.
  */
 function outcomeQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions:
-      'Is what the user asked for done? First: if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.',
+      'Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.',
     options: {
       yes: 'done: the page shows it, or the action they asked for has happened',
       in_the_way: 'a pop-up or prompt covers the page now',

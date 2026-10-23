@@ -1,0 +1,125 @@
+{
+  "turnId": "turn-mvjombar-4",
+  "transcript": "how much is it to renew online",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792682071742,
+  "expect": [
+    {
+      "question": "outcome",
+      "not": "in_the_way"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"how much is it to renew online\"\nThis is step 5 of the task. Done so far: scroll down a screen (the address did not change; \"Getting your first adult passport\", \"Get a passport urgently\" and \"Passport Check and Send service\" appeared); click \"Renew or replace your adult passport\" (opened gov.uk/renew-adult-passport); navigate https://www.gov.uk/renew-adult-passport/renew (opened gov.uk/renew-adult-passport/renew); navigate https://www.passport.service.gov.uk/filter?_ga=2.80103903.932495294.1537777477-946183992.1475581620 (opened passport.service.gov.uk/filter/overseas?_ga=2.80103903.932495294.1537777477-946183992.1475581620)\nPages visited: https://www.gov.uk/passport-fees https://www.gov.uk/renew-adult-passport https://www.gov.uk/renew-adult-passport/renew https://www.passport.service.gov.uk/filter/overseas?_ga=2.80103903.932495294.1537777477-946183992.1475581620\nPage: https://www.passport.service.gov.uk/filter/overseas?_ga=2.80103903.932495294.1537777477-946183992.1475581620 — \"Do you live in the UK? – Apply for a passport – GOV.UK\"\nText in view: \"Cookies on Apply for a passport\" · \"We use some essential cookies to make this service work.\" · \"We’d also like to use analytics cookies so we can understand how you use this service and make improvements.\" · \"Important\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"GOV.UK\" https://www.gov.uk/\n[2] link \"Apply for a passport\" https://www.passport.service.gov.uk/start\n[3] link \"feedback (opens in new tab)\" https://ukhomeoffice.qualtrics.com/jfe/form/SV_24Be2uI6YrZL7yS\n[4] button \"true Accept analytics cookies\"\n[5] button \"false Reject analytics cookies\"\n[6] link \"View cookies\" https://www.passport.service.gov.uk/help/cookies?redirect=true\nLinks further down the page (name, address):\n[link-1] link \"Cymraeg\" https://www.passport.service.gov.uk/filter/overseas?lang=cy\n[link-2] link \"Help (opens in new tab)\" https://www.passport.service.gov.uk/help\n[link-3] link \"Accessibility (opens in new tab)\" https://www.passport.service.gov.uk/help/accessibility-statement\n[link-4] link \"Privacy (opens in new tab)\" https://www.passport.service.gov.uk/help/privacy\n[link-5] link \"Terms and conditions (opens in new tab)\" https://www.passport.service.gov.uk/help/terms-and-conditions\n[link-6] link \"Open Government Licence v3.0\" https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/\n[link-7] link \"© Crown copyright\" https://www.nationalarchives.gov.uk/information-management/re-using-public-sector-information/uk-government-licensing-framework/crown-copyright/",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"GOV.UK\" https://www.gov.uk/",
+          "click-2": "click [2] link \"Apply for a passport\" https://www.passport.service.gov.uk/start",
+          "click-3": "click [3] link \"feedback (opens in new tab)\" https://ukhomeoffice.qualtrics.com/jfe/form/SV_24Be2uI6YrZL7yS",
+          "click-4": "click [4] button \"true Accept analytics cookies\"",
+          "click-5": "click [5] button \"false Reject analytics cookies\"",
+          "click-6": "click [6] link \"View cookies\" https://www.passport.service.gov.uk/help/cookies?redirect=true",
+          "open-1": "open result link \"Cymraeg\" https://www.passport.service.gov.uk/filter/overseas?lang=cy",
+          "open-2": "open result link \"Help (opens in new tab)\" https://www.passport.service.gov.uk/help",
+          "open-3": "open result link \"Accessibility (opens in new tab)\" https://www.passport.service.gov.uk/help/accessibility-statement",
+          "open-4": "open result link \"Privacy (opens in new tab)\" https://www.passport.service.gov.uk/help/privacy",
+          "open-5": "open result link \"Terms and conditions (opens in new tab)\" https://www.passport.service.gov.uk/help/terms-and-conditions",
+          "open-6": "open result link \"Open Government Licence v3.0\" https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+          "open-7": "open result link \"© Crown copyright\" https://www.nationalarchives.gov.uk/information-management/re-using-public-sector-information/uk-government-licensing-framework/crown-copyright/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "how",
+          "s0-1": "how much",
+          "s0-2": "how much is",
+          "s0-3": "how much is it",
+          "s0-4": "how much is it to",
+          "s0-5": "how much is it to renew",
+          "s0-6": "how much is it to renew online",
+          "s1-1": "much",
+          "s1-2": "much is",
+          "s1-3": "much is it",
+          "s1-4": "much is it to",
+          "s1-5": "much is it to renew",
+          "s1-6": "much is it to renew online",
+          "s2-2": "is",
+          "s2-3": "is it",
+          "s2-4": "is it to",
+          "s2-5": "is it to renew",
+          "s2-6": "is it to renew online",
+          "s3-3": "it",
+          "s3-4": "it to",
+          "s3-5": "it to renew",
+          "s3-6": "it to renew online",
+          "s4-4": "to",
+          "s4-5": "to renew",
+          "s4-6": "to renew online",
+          "s5-5": "renew",
+          "s5-6": "renew online",
+          "s6-6": "online"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on passport.service.gov.uk that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on passport.service.gov.uk but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      }
+    }
+  }
+}

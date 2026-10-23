@@ -249,7 +249,8 @@ runner-up)
 **Verdict**:
 The answer every Hop past the first carries beside its Command: is this page what
 the user asked for — yes, something is in the way of it (a sign-in prompt, a
-pop-up, a cookie notice, a challenge), or not yet. An end is a Verdict,
+pop-up, a challenge covering the page; never a consent strip that covers
+nothing), or not yet. An end is a Verdict,
 never an action's: a Task ends `done` only on a sure yes, and a sure
 yes at a Hop past the first ends it before any action fires. Hop 0 carries
 no Verdict — a Command is read before anything was done — so it always acts
