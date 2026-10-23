@@ -123,8 +123,8 @@ wanted from it; it may name a site, the fix for it never does. A daily
 scenario the app has no road for counts, with the state `missing`.
 Effort breaks ties only. The ranked list and the method are in
 `docs/agents/yield.md`. Every "work on this next", every triage order
-and every audit order names the scenario it serves, its place on the
-list, its state with dated evidence, and what the one change does to it.
+and every audit order names the scenario it serves, its yield, its state
+with dated evidence, and what the one change does to it.
 
 ### Triage labels
 
