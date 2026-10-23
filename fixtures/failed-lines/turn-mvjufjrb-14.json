@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Step 3 of 'Search NKBHD': Clear and type NKBHD had worked (YouTube's own suggestions showed Marques Brownlee @mkbhd); the submit was the next hop and its read timed out at 1502 ms on Mammoth. Nothing said; the owner then needed 'Pressed search', 'Click on Search', 'Click on the Submit button' x2 and 'Press Enter' to get the box submitted",
   "meant": "Submit the search",
-  "log": "decision-1792691664816-1.jsonl"
+  "log": "decision-1792691664816-1.jsonl",
+  "claimedBy": "#398"
 }
