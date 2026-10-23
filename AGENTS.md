@@ -56,6 +56,49 @@ shown the media's state and could not be offered its ops on any other
 site. ADR 0080 is the fix shape: the ref carries the state, offers every
 op its kind allows, and Jev picks the op and the amount.
 
+## Ties are measured, never assumed
+
+A fork is a point in a change where two designs would both do: two card
+wordings, two shapes for an op, two thresholds, two places a wait could
+sit. Most forks are decided before they are reached: by the owner in the
+turn, the issue's grill, an ADR, a line in this file, CONTEXT.md, or the
+code already beside it; naming, file placement and code shape always
+are. A fork none of these decides is a tie. A tie the owner would feel,
+one that changes what a scenario on the Yield list does, says, or how
+fast, is settled by measurement, never by the argument that sounds best;
+the rest go either way.
+
+To measure a tie:
+
+- Name the measure before building, from what the repo already keeps:
+  the gate (`pnpm jev:gate`), the unit and e2e suites, `pnpm perf:report`,
+  the ledger, a live run under the CLI harness. A measure chosen after
+  the numbers are in is a preference wearing them.
+- Grow the measure to reach the fork before comparing arms. A tie on the
+  card gets its corpus cases first (`pnpm jev:candidates`, `jev:case`),
+  drawn from real lines in the asks log or the ledger, since a case
+  written with an arm in mind measures the writer; a tie in timing gets
+  its perf span; a tie on the screen gets its e2e shot. The gate passing
+  a fork no case reaches has measured nothing.
+- Build every arm in the worktree, run each under that one measure, and
+  keep the one that measures best with nothing that passed before lost.
+  A difference inside the measure's noise is a measured tie (`--repeat N`
+  shows the noise), and a measured tie goes to the arm cheapest to
+  reverse. The losing arm leaves the tree; the record keeps it. An arm,
+  or the measure to reach it, that would cost more than the change it
+  serves is named and left unbuilt, and the fork is a guess (below).
+- Record the arms, the measure, the numbers and the winner where the
+  choice is kept: the commit message, the issue, or the ADR when the
+  choice outlives the change.
+- A fork no measure in the repo can reach or be grown to reach, where
+  only the owner's day would tell, is a guess: take the arm cheapest to
+  reverse, say it is a guess in the record, and name what would settle
+  it so the next report can.
+
+Widening the card (above) is the standing instance, with the gate as its
+measure. Measuring runs on the free models; Jev joins only on
+`--with-jev` or the owner's word in the turn.
+
 ## Where things land
 
 - **The command seam** is `src/main/run/commandRunner.ts`. A typed or spoken
