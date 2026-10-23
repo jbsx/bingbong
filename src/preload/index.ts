@@ -28,6 +28,7 @@ import { USAGE_IPC } from '../core/usage/ipcChannels'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { EnvFileView } from '../core/settings/envEntries'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
@@ -144,6 +145,9 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(SETTINGS_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(SETTINGS_IPC.changed, wrapped)
     },
+    envFile: (): Promise<EnvFileView> => ipcRenderer.invoke(SETTINGS_IPC.envList),
+    setEnv: (key: string, value: string | null): Promise<EnvFileView> => ipcRenderer.invoke(SETTINGS_IPC.envSet, key, value),
+    openEnvFile: (): Promise<string> => ipcRenderer.invoke(SETTINGS_IPC.envOpen),
   },
   feedPanel: {
     getState: (): Promise<FeedPanelState | null> => ipcRenderer.invoke(PANEL_IPC.get),

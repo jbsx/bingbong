@@ -11,6 +11,7 @@ import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { EnvFileView } from '../core/settings/envEntries'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
@@ -24,6 +25,7 @@ export type { UsageSnapshot }
 export type { CalendarEvent, CalendarRange }
 export type { PipelineEvent }
 export type { AppSettings }
+export type { EnvFileView }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
 export type { LaunchConfig }
 
@@ -92,6 +94,12 @@ export interface BingbongSettingsApi {
   get(): Promise<AppSettings>
   update(settings: AppSettings): Promise<AppSettings>
   onChanged(listener: (settings: AppSettings) => void): () => void
+  /** The `.env`'s keys; a secret's value is only its last four characters. */
+  envFile(): Promise<EnvFileView>
+  /** Set one key in the `.env`, or remove it with null; answers the file after. */
+  setEnv(key: string, value: string | null): Promise<EnvFileView>
+  /** Open the `.env` in the system's editor, creating it if missing; answers an error message, empty on success. */
+  openEnvFile(): Promise<string>
 }
 
 export interface BingbongTtsApi {

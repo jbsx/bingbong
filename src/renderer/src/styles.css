@@ -1940,6 +1940,38 @@ details[open] > .settings-summary::before {
   background: var(--raise);
 }
 
+/* The Environment section: one `.env` key a row, its value, Save once changed, Remove. */
+.settings-env-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.settings-env-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+}
+
+.settings-env-row input.settings-env-key {
+  flex: 0 0 40%;
+}
+
+.settings-env-open {
+  margin-bottom: 12px;
+}
+
+.settings-section[aria-label='environment'] .settings-field:not(:has(.settings-env-key)) .settings-label {
+  font-family: ui-monospace, monospace;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.settings-env-shadowed {
+  color: var(--fail);
+}
+
 /* The page's foot: Back, what the last save did, Save. */
 .settings-actions {
   display: flex;

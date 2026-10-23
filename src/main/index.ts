@@ -32,9 +32,10 @@ import { resolvePreloadPath } from './preloadPath'
 import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
+import { registerEnvFileIpc } from './settings/attachEnvFile'
 import { settingsToEnv } from '../core/settings/settings'
 import { layerEnv } from '../core/settings/dotEnv'
-import { loadEnvFile } from './envFile'
+import { loadEnvFile, resolveEnvFilePath } from './envFile'
 import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
@@ -149,7 +150,9 @@ const settingsStore = createSettingsStore(join(app.getPath('userData'), 'setting
 // currentEnv() resolves. Boot-scoped launch flags (kiosk, idle timeout) stay
 // argv/process-env — the renderer's preload reads its own process env and
 // must never disagree with main's.
-const envFileValues = loadEnvFile(process.env, app.getAppPath())
+// The Settings page's Environment section rewrites the file and hands the
+// new values back here, so what currentEnv() reads live follows at once.
+let envFileValues = loadEnvFile(process.env, app.getAppPath())
 
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
@@ -574,6 +577,13 @@ app.whenReady().then(async () => {
   registerCalendarIpc(calendarFixture ? [createStandInCalendarSource(calendarFixture)] : [])
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
+  registerEnvFileIpc({
+    path: resolveEnvFilePath(process.env, app.getAppPath()),
+    processEnv: process.env,
+    onWritten: (values) => {
+      envFileValues = values
+    },
+  })
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.

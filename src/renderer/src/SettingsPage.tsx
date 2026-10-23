@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
+import { isEnvKey, isSecretKey, type EnvFileView } from '../../core/settings/envEntries'
 import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
@@ -123,6 +124,10 @@ const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string;
       { id: 'weight', title: 'Weight' },
       { id: 'ai usage', title: 'AI usage' },
     ],
+  },
+  {
+    group: 'System',
+    sections: [{ id: 'environment', title: 'Environment' }],
   },
 ]
 
@@ -307,6 +312,145 @@ function LearnedTermsSection() {
           }}
         />
       </Field>
+    </Section>
+  )
+}
+
+/**
+ * The `.env` (#76): every key the file sets, each one changed or removed on
+ * the spot — written straight to the file, comments kept, as Speech
+ * vocabulary acts without the page's Save. A secret shows only its last four
+ * characters; typing replaces it whole.
+ */
+function EnvironmentSection() {
+  const [file, setFile] = useState<EnvFileView | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [newKey, setNewKey] = useState('')
+  const [newValue, setNewValue] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    window.bingbong.settings
+      .envFile()
+      .then((view) => {
+        if (!cancelled) setFile(view)
+      })
+      .catch((cause: unknown) => reportRendererFault('settings.envFile', cause))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const set = async (key: string, value: string | null): Promise<boolean> => {
+    try {
+      setFile(await window.bingbong.settings.setEnv(key, value))
+      setDrafts(({ [key]: _written, ...rest }) => rest)
+      setError('')
+      return true
+    } catch (cause) {
+      reportRendererFault('settings.setEnv', cause)
+      setError(`Could not write ${key} to the file.`)
+      return false
+    }
+  }
+
+  const add = async () => {
+    const key = newKey.trim()
+    if (!isEnvKey(key)) {
+      setError('A name is letters, digits and underscores, not starting with a digit.')
+      return
+    }
+    if (await set(key, newValue)) {
+      setNewKey('')
+      setNewValue('')
+    }
+  }
+
+  const open = async () => {
+    const failure = await window.bingbong.settings.openEnvFile().catch((cause: unknown) => String(cause))
+    setError(failure === '' ? '' : `Could not open the file: ${failure}`)
+    if (failure === '') setFile(await window.bingbong.settings.envFile())
+  }
+
+  const entries = file?.entries ?? []
+  return (
+    <Section id="environment" title="Environment" hint={file === null ? 'Reading the .env…' : !file.exists ? 'No .env yet' : `${entries.length} ${entries.length === 1 ? 'key' : 'keys'} in ${file.path}`}>
+      <p className="settings-note">
+        The keys and routing in the app&apos;s <code>.env</code>. A change is written to the file at once, its comments kept. The decision model and the news writer read it from the next command; voice, wake word and speech read it at the next start.
+      </p>
+      <span className="settings-card-row settings-env-open">
+        <button type="button" className="settings-button" onClick={() => void open()}>
+          Open in editor
+        </button>
+      </span>
+      {entries.map((entry) => {
+        const draft = drafts[entry.key]
+        const changed = draft !== undefined && draft !== (entry.secret ? '' : entry.value)
+        return (
+          <Fragment key={entry.key}>
+            <Field label={entry.key}>
+              <span className="settings-env-row">
+                <input
+                  type={entry.secret ? 'password' : 'text'}
+                  value={draft ?? (entry.secret ? '' : entry.value)}
+                  placeholder={entry.secret ? (entry.value === '' ? 'hidden' : `hidden · …${entry.value}`) : '(empty)'}
+                  aria-label={entry.key}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setDrafts({ ...drafts, [entry.key]: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && changed) void set(entry.key, draft)
+                  }}
+                />
+                {changed ? (
+                  <button type="button" className="settings-button settings-button--primary" onClick={() => void set(entry.key, draft)}>
+                    Save
+                  </button>
+                ) : null}
+                <button type="button" className="settings-term-remove" aria-label={`Remove ${entry.key}`} onClick={() => void set(entry.key, null)}>
+                  Remove
+                </button>
+              </span>
+            </Field>
+            {entry.shadowed ? <p className="settings-note settings-env-shadowed">The app was started with {entry.key} set in its environment, which wins over this file.</p> : null}
+          </Fragment>
+        )
+      })}
+      <Field label="Add a key">
+        <span className="settings-env-row">
+          <input
+            type="text"
+            className="settings-env-key"
+            value={newKey}
+            placeholder="NAME"
+            aria-label="New key name"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setNewKey(event.target.value)}
+          />
+          <input
+            type={isSecretKey(newKey.trim()) ? 'password' : 'text'}
+            value={newValue}
+            placeholder="value"
+            aria-label="New key value"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setNewValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void add()
+            }}
+          />
+          <button type="button" className="settings-button" disabled={newKey.trim() === ''} onClick={() => void add()}>
+            Add
+          </button>
+        </span>
+      </Field>
+      {error === '' ? null : (
+        <p className="settings-role-status settings-role-status--off" role="alert">
+          {error}
+        </p>
+      )}
     </Section>
   )
 }
@@ -839,6 +983,8 @@ export function SettingsPage({
           />
         </Section>
 
+        <h2 className="settings-group">System</h2>
+        <EnvironmentSection />
       </div>
 
       <div className="settings-actions">

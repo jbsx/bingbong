@@ -5,4 +5,8 @@ export const SETTINGS_IPC = {
   /** Which agent roles resolve right now (#76). */
   routingStatus: 'settings:routingStatus',
   routingStatusChanged: 'settings:routingStatusChanged',
+  /** The `.env` on the Settings page: its keys, one set or removal, and the file opened in the system's editor. */
+  envList: 'settings:envList',
+  envSet: 'settings:envSet',
+  envOpen: 'settings:envOpen',
 } as const
