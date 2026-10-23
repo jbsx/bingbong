@@ -123,3 +123,22 @@ The first acting seam is removed: ADR 0069 is superseded by its own capture
 rule, and the seams a Run can act on are the Result Pick and the Effort
 Tier. A Decision Record in a trace taken before then may still name
 `passage`.
+
+## Note (#403, 2026-10-23)
+
+A Choice bar reads the chosen label's probability, never the vendor's
+`confidence`. The two disagree one way only: in every live decision log of
+October 2026, whenever they fall on opposite sides of 0.7 it is the
+probability that clears, about 0.1 above the confidence, on Jev and Mammoth
+alike. The runner read the confidence while the Jev corpus gate read the
+probability, so a case could pass the gate and its Task still end unsure.
+Measured on `pnpm jev:gate` (Mammoth and Elephant, one run each) over 104
+cases, 21 of them grown from the live splits with the truth read off each
+card: the probability put 77 through on every model, the confidence 74;
+every case that differed was a right yes the probability ended done, and no
+not-done case became a sure yes. One function, `choiceProbability`, is the
+number every Choice bar and the gate read. The bar stays 0.7 and is the same
+for every Decision Model: a model whose answer stays under it shows a card
+problem, not a bar to lower. The dismiss, consent-decline and Textless bars
+read the same number by a guess no measure reached (no live split changes
+what they do); a dismiss or decline case from a live split would settle it.
