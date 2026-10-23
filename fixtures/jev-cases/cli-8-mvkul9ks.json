@@ -1,0 +1,117 @@
+{
+  "turnId": "cli-8-mvkul9ks",
+  "transcript": "Search for weather in London",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792752566729,
+  "expect": [
+    {
+      "question": "action",
+      "label": "search-8"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Search for weather in London\"\nPage: https://www.google.com/ — \"Google\"\nText in view: \"What's on your mind?\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"About\" https://about.google/?fg=1&utm_source=google-GB&utm_medium=referral&utm_campaign=hp-header\n[2] link \"Store\" https://store.google.com/GB?utm_source=hp_header&utm_medium=google_ooo&utm_campaign=GS100042&hl=en-GB\n[3] link \"Gmail Gmail\" https://mail.google.com/mail/&ogbl\n[4] link \"Search for Images Images\" https://www.google.com/imghp?hl=en&ogbl\n[5] link \"Google apps\" https://www.google.co.uk/intl/en/about/products role=button expanded=false\n[6] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?hl=en&passive=true&continue=https://www.google.com/&ec=futura_exp_og_so_72776762_e\n[7] button \"Add files and tools\" hasPopup=menu\n[8] searchbox \"Search\" autocomplete=both hasPopup=listbox expanded=false\n[9] button \"Search by voice\"\n[10] button \"Search by image\"\n[11] link \"AI Mode\"\n[12] button \"🍌 Create images\"\n[13] button \"Ask about files\"\n[14] button \"Brainstorm\"\n[15] button \"I'm Feeling Lucky\"\n[16] link \"Advertising\" https://www.google.com/intl/en_uk/ads/?subid=ww-ww-et-g-awa-a-g_hpafoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpafooter&fg=1\n[17] link \"Business\" https://www.google.com/services/?subid=ww-ww-et-g-awa-a-g_hpbfoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpbfooter&fg=1\n[18] link \"How Search works\" https://google.com/search/howsearchworks/?fg=1\n[19] link \"Build, create, and do more with AI tools from Google\" https://ai.google/helpful-tools/?utm_source=googlehpfooter&utm_medium=housepromos&utm_campaign=bottom-footer\n[20] link \"Privacy\" https://policies.google.com/privacy?hl=en-GB&fg=1\n[21] link \"Terms\" https://policies.google.com/terms?hl=en-GB&fg=1\n[22] button \"Settings\" hasPopup=menu expanded=false menu holds \"Search settings\", \"Advanced search\", \"Your data in Search\", \"Personalisation and cookies\", \"Search history\", \"Search help\", \"Send feedback\", \"Dark theme: Off\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"About\" https://about.google/?fg=1&utm_source=google-GB&utm_medium=referral&utm_campaign=hp-header",
+          "click-2": "click [2] link \"Store\" https://store.google.com/GB?utm_source=hp_header&utm_medium=google_ooo&utm_campaign=GS100042&hl=en-GB",
+          "click-3": "click [3] link \"Gmail Gmail\" https://mail.google.com/mail/&ogbl",
+          "click-4": "click [4] link \"Search for Images Images\" https://www.google.com/imghp?hl=en&ogbl",
+          "click-5": "click [5] link \"Google apps\" https://www.google.co.uk/intl/en/about/products role=button expanded=false",
+          "click-6": "click [6] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?hl=en&passive=true&continue=https://www.google.com/&ec=futura_exp_og_so_72776762_e",
+          "click-7": "click [7] button \"Add files and tools\" hasPopup=menu",
+          "search-8": "search for the words with [8] searchbox \"Search\" autocomplete=both hasPopup=listbox expanded=false: its words replaced, then submitted",
+          "type-8": "type the words into [8] searchbox \"Search\" autocomplete=both hasPopup=listbox expanded=false",
+          "click-8": "click [8] searchbox \"Search\" autocomplete=both hasPopup=listbox expanded=false",
+          "click-9": "click [9] button \"Search by voice\"",
+          "click-10": "click [10] button \"Search by image\"",
+          "click-11": "click [11] link \"AI Mode\"",
+          "click-12": "click [12] button \"🍌 Create images\"",
+          "click-13": "click [13] button \"Ask about files\"",
+          "click-14": "click [14] button \"Brainstorm\"",
+          "click-15": "click [15] button \"I'm Feeling Lucky\"",
+          "click-16": "click [16] link \"Advertising\" https://www.google.com/intl/en_uk/ads/?subid=ww-ww-et-g-awa-a-g_hpafoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpafooter&fg=1",
+          "click-17": "click [17] link \"Business\" https://www.google.com/services/?subid=ww-ww-et-g-awa-a-g_hpbfoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpbfooter&fg=1",
+          "click-18": "click [18] link \"How Search works\" https://google.com/search/howsearchworks/?fg=1",
+          "click-19": "click [19] link \"Build, create, and do more with AI tools from Google\" https://ai.google/helpful-tools/?utm_source=googlehpfooter&utm_medium=housepromos&utm_campaign=bottom-footer",
+          "click-20": "click [20] link \"Privacy\" https://policies.google.com/privacy?hl=en-GB&fg=1",
+          "click-21": "click [21] link \"Terms\" https://policies.google.com/terms?hl=en-GB&fg=1",
+          "click-22": "click [22] button \"Settings\" hasPopup=menu expanded=false menu holds \"Search settings\", \"Advanced search\", \"Your data in Search\", \"Personalisation and cookies\", \"Search history\", \"Search help\", \"Send feedback\", \"Dark theme: Off\"",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "menu-22": "right-click [22] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Search",
+          "s0-1": "Search for",
+          "s0-2": "Search for weather",
+          "s0-3": "Search for weather in",
+          "s0-4": "Search for weather in London",
+          "s1-1": "for",
+          "s1-2": "for weather",
+          "s1-3": "for weather in",
+          "s1-4": "for weather in London",
+          "s2-2": "weather",
+          "s2-3": "weather in",
+          "s2-4": "weather in London",
+          "s3-3": "in",
+          "s3-4": "in London",
+          "s4-4": "London"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      }
+    }
+  }
+}

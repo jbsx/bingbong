@@ -7,5 +7,7 @@
   "happened": "The line said again 8 s later on the same card: none 0.82, Where Ask none 0.92, nothing done (see turn-mvjufxbt-18). The owner then said 'Press Enter', which submitted",
   "meant": "Click the Search button [6]",
   "log": "decision-1792691664816-1.jsonl",
-  "claimedBy": "#398"
+  "claimedBy": "#398",
+  "fixedBy": "bbe1a056",
+  "case": "turn-mvjug41f-19-kind"
 }

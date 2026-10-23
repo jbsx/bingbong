@@ -1,0 +1,129 @@
+{
+  "turnId": "cli-14-mvkun2ns",
+  "transcript": "Search for dataclasses",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792752651077,
+  "expect": [
+    {
+      "question": "action",
+      "label": "search-4"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Search for dataclasses\"\nPage: https://docs.python.org/3/library/pprint.html — \"pprint — Data pretty printer — Python 3.15.1 documentation\"\nText in view: \"dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3.0 2.7 2.6\" · \"3.15.1 Documentation »\" · \"The Python standard library »\" · \"Data Types »\" · \"Source code: Lib/pprint.py\" · \"The pprint module provides a capability to “pretty-print” arbitrary Python data structures in a form which can be used as input to the interpreter. If the formatted structures include objects which are not fundamental Python types, the representation may not be loadable. This may be the case if obje\" · \"The formatted representation keeps objects on a single line if it can, and breaks them onto multiple lines if they don’t fit within the allowed width, adjustable by the width parameter defaulting to 80 characters.\" · \"Changed in version 3.9: Added support for pretty-printing types.SimpleNamespace.\" · \"Changed in version 3.10: Added support for pretty-printing dataclasses.dataclass.\" · \"Functions\" · \"pprint.pp(object, stream=None, indent=1, width=80, depth=None, *, compact=False, expand=False, sort_dicts=False, underscore_numbers=False): Prints the formatted representation of object, followed by a newline. This function may be used in the interactive interpreter instead of the print() function f\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] button \"\" role=LabelText\n[2] link \"Python logo\" https://www.python.org/\n[3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false\n[4] searchbox \"Quick search Quick search\"\n[5] button[submit] \"Go\"\n[6] link \"3.15.1 Documentation\" https://docs.python.org/3/index.html\n[7] link \"The Python standard library\" https://docs.python.org/3/library/index.html\n[8] link \"Data Types\" https://docs.python.org/3/library/datatypes.html keyshortcuts=\"Alt+U\"\n[9] link \"pprint — Data pretty printer\"\n[10] link \"Lib/pprint.py\" https://github.com/python/cpython/tree/3.15/Lib/pprint.py\n[11] link \"types.SimpleNamespace types.SimpleNamespace\" https://docs.python.org/3/library/types.html#types.SimpleNamespace\n[12] link \"dataclasses.dataclass dataclasses.dataclass\" https://docs.python.org/3/library/dataclasses.html#dataclasses.dataclass\n[13] link \"print() print\" https://docs.python.org/3/builtins/functions.html#print\nText further down the page, not on screen yet (number, text):\n[text-1] \"Improve this page\"\n[text-2] \"Show source\"\n[text-3] \"pprint.pprint(object, stream=None, indent=1, width=80, depth=None, *, compact=False, expand=False, sort_dicts=True, underscore_numbers=False): Alias for pp() with sort_dicts set to True by default, which would automatically sort the dictionaries’ keys, you might want to use pp() instead where it is \"\n[text-4] \"pprint.pformat(object, indent=1, width=80, depth=None, *, compact=False, expand=False, sort_dicts=True, underscore_numbers=False): Return the formatted representation of object as a string. indent, width, depth, compact, expand, sort_dicts and underscore_numbers are passed to the PrettyPrinter const\"\n[text-5] \"pprint.isreadable(object): Determine if the formatted representation of object is “readable”, or can be used to reconstruct the value using eval(). This always returns False for recursive objects. >>> pprint.isreadable(stuff) False\"\n[text-6] \"pprint.isrecursive(object): Determine if object requires a recursive representation. This function is subject to the same limitations as noted in saferepr() below and may raise an RecursionError if it fails to detect a recursive object.\"\n[text-7] \"pprint.saferepr(object): Return a string representation of object, protected against recursion in some common data structures, namely instances of dict, list and tuple or subclasses whose __repr__ has not been overridden. If the representation of object exposes a recursive entry, the recursive refer\"\n[text-8] \"PrettyPrinter Objects\"\n[text-9] \"class pprint.PrettyPrinter(indent=1, width=80, depth=None, stream=None, *, compact=False, expand=False, sort_dicts=True, underscore_numbers=False): Construct a PrettyPrinter instance. Arguments have the same meaning as for pp(). Note that they are in a different order, and that sort_dicts defaults t\"\n[text-10] \"PrettyPrinter instances have the following methods:\"\n[text-11] \"PrettyPrinter.pformat(object): Return the formatted representation of object. This takes into account the options passed to the PrettyPrinter constructor.\"\n[text-12] \"PrettyPrinter.pprint(object): Print the formatted representation of object on the configured stream, followed by a newline.\"\n[text-13] \"The following methods provide the implementations for the corresponding functions of the same names. Using these methods on an instance is slightly more efficient since new PrettyPrinter objects don’t need to be created.\"\n[text-14] \"PrettyPrinter.isreadable(object): Determine if the formatted representation of the object is “readable,” or can be used to reconstruct the value using eval(). Note that this returns False for recursive objects. If the depth parameter of the PrettyPrinter is set and the object is deeper than allowed,\"\n[text-15] \"PrettyPrinter.isrecursive(object): Determine if the object requires a recursive representation.\"\n[text-16] \"This method is provided as a hook to allow subclasses to modify the way objects are converted to strings. The default implementation uses the internals of the saferepr() implementation.\"\n[text-17] \"PrettyPrinter.format(object, context, maxlevels, level): Returns three values: the formatted version of object as a string, a flag indicating whether the result is readable, and a flag indicating whether recursion was detected. The first argument is the object to be presented. The second is a dictio\"\n[text-18] \"Example\"\n[text-19] \"To demonstrate several uses of the pp() function and its parameters, let’s fetch information about a project from PyPI:\"\n[text-20] \">>> import json\\n>>> import pprint\\n>>> from urllib.request import urlopen\\n>>> with urlopen('https://pypi.org/pypi/sampleproject/1.2.0/json') as resp:\\n...     project_info = json.load(resp)['info']\"\n[text-21] \"In its basic form, pp() shows the whole object:\"\n[text-22] \">>> pprint.pp(project_info)\\n{'author': 'The Python Packaging Authority',\\n 'author_email': 'pypa-dev@googlegroups.com',\\n 'bugtrack_url': None,\\n 'classifiers': ['Development Status :: 3 - Alpha',\\n                 'Intended Audience :: Developers',\\n                 'License :: OSI Approved :: MIT Licen\"\n[text-23] \"The result can be limited to a certain depth (ellipsis is used for deeper contents):\"\n[text-24] \">>> pprint.pp(project_info, depth=1)\\n{'author': 'The Python Packaging Authority',\\n 'author_email': 'pypa-dev@googlegroups.com',\\n 'bugtrack_url': None,\\n 'classifiers': [...],\\n 'description': 'A sample Python project\\\\n'\\n                '=======================\\\\n'\\n                '\\\\n'\\n                '\"\n[text-25] \"Additionally, maximum character width can be suggested. If a long object cannot be split, the specified width will be exceeded:\"\n[text-26] \">>> pprint.pp(project_info, depth=1, width=60)\\n{'author': 'The Python Packaging Authority',\\n 'author_email': 'pypa-dev@googlegroups.com',\\n 'bugtrack_url': None,\\n 'classifiers': [...],\\n 'description': 'A sample Python project\\\\n'\\n                '=======================\\\\n'\\n                '\\\\n'\\n       \"\n[text-27] \"Lastly, we can format like pretty-printed JSON with the expand parameter. Best results are achieved with a higher indent value:\"\n[text-28] \">>> pprint.pp(project_info, indent=4, expand=True)\\n{\\n   'author': 'The Python Packaging Authority',\\n   'author_email': 'pypa-dev@googlegroups.com',\\n   'bugtrack_url': None,\\n   'classifiers': [\\n      'Development Status :: 3 - Alpha',\\n      'Intended Audience :: Developers',\\n      'License :: OSI App\"\n[text-29] \"© Copyright 2001 Python Software Foundation. This page is licensed under the Python Software Foundation License Version 2. Examples, recipes, and other code in the documentation are additionally licensed under the Zero Clause BSD License. See History and License for more information. The Python Soft\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] button \"\" role=LabelText",
+          "click-2": "click [2] link \"Python logo\" https://www.python.org/",
+          "type-3": "type the words into [3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false",
+          "click-3": "click [3] input \"Python version dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3…\" hasPopup=menu expanded=false",
+          "search-4": "search for the words with [4] searchbox \"Quick search Quick search\": its words replaced, then submitted",
+          "type-4": "type the words into [4] searchbox \"Quick search Quick search\"",
+          "click-4": "click [4] searchbox \"Quick search Quick search\"",
+          "click-5": "click [5] button[submit] \"Go\"",
+          "click-6": "click [6] link \"3.15.1 Documentation\" https://docs.python.org/3/index.html",
+          "click-7": "click [7] link \"The Python standard library\" https://docs.python.org/3/library/index.html",
+          "click-8": "click [8] link \"Data Types\" https://docs.python.org/3/library/datatypes.html keyshortcuts=\"Alt+U\"",
+          "click-9": "click [9] link \"pprint — Data pretty printer\"",
+          "click-10": "click [10] link \"Lib/pprint.py\" https://github.com/python/cpython/tree/3.15/Lib/pprint.py",
+          "click-11": "click [11] link \"types.SimpleNamespace types.SimpleNamespace\" https://docs.python.org/3/library/types.html#types.SimpleNamespace",
+          "click-12": "click [12] link \"dataclasses.dataclass dataclasses.dataclass\" https://docs.python.org/3/library/dataclasses.html#dataclasses.dataclass",
+          "click-13": "click [13] link \"print() print\" https://docs.python.org/3/builtins/functions.html#print",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] \"Improve this page\" is in view",
+          "show-2": "scroll until [text-2] \"Show source\" is in view",
+          "show-3": "scroll until [text-3] \"pprint.pprint(object, stream=None, indent=1, width=80, depth=None, *, compact=Fa\" is in view",
+          "show-4": "scroll until [text-4] \"pprint.pformat(object, indent=1, width=80, depth=None, *, compact=False, expand=\" is in view",
+          "show-5": "scroll until [text-5] \"pprint.isreadable(object): Determine if the formatted representation of object i\" is in view",
+          "show-6": "scroll until [text-6] \"pprint.isrecursive(object): Determine if object requires a recursive representat\" is in view",
+          "show-7": "scroll until [text-7] \"pprint.saferepr(object): Return a string representation of object, protected aga\" is in view",
+          "show-8": "scroll until [text-8] \"PrettyPrinter Objects\" is in view",
+          "show-9": "scroll until [text-9] \"class pprint.PrettyPrinter(indent=1, width=80, depth=None, stream=None, *, compa\" is in view",
+          "show-10": "scroll until [text-10] \"PrettyPrinter instances have the following methods:\" is in view",
+          "show-11": "scroll until [text-11] \"PrettyPrinter.pformat(object): Return the formatted representation of object. Th\" is in view",
+          "show-12": "scroll until [text-12] \"PrettyPrinter.pprint(object): Print the formatted representation of object on th\" is in view",
+          "show-13": "scroll until [text-13] \"The following methods provide the implementations for the corresponding function\" is in view",
+          "show-14": "scroll until [text-14] \"PrettyPrinter.isreadable(object): Determine if the formatted representation of t\" is in view",
+          "show-15": "scroll until [text-15] \"PrettyPrinter.isrecursive(object): Determine if the object requires a recursive \" is in view",
+          "show-16": "scroll until [text-16] \"This method is provided as a hook to allow subclasses to modify the way objects \" is in view",
+          "show-17": "scroll until [text-17] \"PrettyPrinter.format(object, context, maxlevels, level): Returns three values: t\" is in view",
+          "show-18": "scroll until [text-18] \"Example\" is in view",
+          "show-19": "scroll until [text-19] \"To demonstrate several uses of the pp() function and its parameters, let’s fetch\" is in view",
+          "show-20": "scroll until [text-20] \">>> import json\\n>>> import pprint\\n>>> from urllib.request import urlopen\\n>>> wit\" is in view",
+          "show-21": "scroll until [text-21] \"In its basic form, pp() shows the whole object:\" is in view",
+          "show-22": "scroll until [text-22] \">>> pprint.pp(project_info)\\n{'author': 'The Python Packaging Authority',\\n 'autho\" is in view",
+          "show-23": "scroll until [text-23] \"The result can be limited to a certain depth (ellipsis is used for deeper conten\" is in view",
+          "show-24": "scroll until [text-24] \">>> pprint.pp(project_info, depth=1)\\n{'author': 'The Python Packaging Authority'\" is in view",
+          "show-25": "scroll until [text-25] \"Additionally, maximum character width can be suggested. If a long object cannot \" is in view",
+          "show-26": "scroll until [text-26] \">>> pprint.pp(project_info, depth=1, width=60)\\n{'author': 'The Python Packaging \" is in view",
+          "show-27": "scroll until [text-27] \"Lastly, we can format like pretty-printed JSON with the expand parameter. Best r\" is in view",
+          "show-28": "scroll until [text-28] \">>> pprint.pp(project_info, indent=4, expand=True)\\n{\\n   'author': 'The Python Pa\" is in view",
+          "show-29": "scroll until [text-29] \"© Copyright 2001 Python Software Foundation. This page is licensed under the Pyt\" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Search",
+          "s0-1": "Search for",
+          "s0-2": "Search for dataclasses",
+          "s1-1": "for",
+          "s1-2": "for dataclasses",
+          "s2-2": "dataclasses"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on docs.python.org that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on docs.python.org but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

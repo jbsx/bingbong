@@ -1,0 +1,133 @@
+{
+  "turnId": "cli-12-mvkumgyl",
+  "transcript": "Search for elections",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792752622965,
+  "expect": [
+    {
+      "question": "action",
+      "label": "search-17"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"Search for elections\"\nPage: https://www.bbc.co.uk/search — \"BBC - Search\"\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] link \"We use cookies\" https://www.bbc.co.uk/usingthebbc/cookies/what-do-i-need-to-know-about-cookies/\n[2] button \"Accept additional cookies\"\n[3] button \"Reject additional cookies\"\n[4] link \"Let me choose\" https://www.bbc.co.uk/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/\n[5] link \"BBC Homepage\" https://www.bbc.co.uk/\n[6] link \"Sign in\" https://session.bbc.co.uk/session?lang=en-GB&ptrt=https%3A%2F%2Fwww.bbc.co.uk%2Fsearch&sequenceId=bd04d397-3de3-42a6-8796-42626d3ff1ab\n[7] link \"Notifications\" https://www.bbc.co.uk/notifications\n[8] link \"Home\" https://www.bbc.co.uk/\n[9] link \"News\" https://www.bbc.co.uk/news\n[10] link \"Sport\" https://www.bbc.co.uk/sport\n[11] link \"Weather\" https://www.bbc.co.uk/weather\n[12] link \"iPlayer\" https://www.bbc.co.uk/iplayer\n[13] link \"Sounds\" https://www.bbc.co.uk/sounds\n[14] link \"Bitesize\" https://www.bbc.co.uk/bitesize\n[15] link \"More menu\" https://www.bbc.co.uk/search#global-navigation-more-menu role=button hasPopup=menu expanded=false\n[16] link \"Search BBC\" https://www.bbc.co.uk/search?d=SEARCH_PS\n[17] searchbox \"Input your search term Search the BBC\" autocomplete=list hasPopup=listbox expanded=false\n[18] button[submit] \"Search\"\n[19] link \"Danny Robins counts down to Halloween\" https://www.bbc.co.uk/sounds/brand/m0010x7c?at_mid=y89pILcrqP&at_campaign=Uncanny_TLEO&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=m0010x7c&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=consumption&at_link_title=Uncanny_TLEO&at_bbc_team=BBC\n[20] button \"Subscribe Add Uncanny to My Sounds\"\n[21] button \"Subscribe Add Uncanny to My Sounds\" expanded=false\n[22] link \"The mystery of the 1907 disappearance of the Irish Crown Jewels\" https://www.bbc.co.uk/sounds/play/m0032qfx?at_mid=KtBz5zhAey&at_campaign=The_Mystery_of_The_King_The_Thief_and_the_Fall_Guy&at_medium=display_ad&at_campaign_type=owned&at_nation=NIR&at_audience_id=SS&at_product=sounds&at_brand=m00236v0&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=consumption&at_link_title=The_Mystery_of_The_King_The_Thief_and_the_Fall_Guy&at_bbc_team=BBC\n[23] button \"Subscribe Add The Mystery Of... to My Sounds\"\n[24] button \"Subscribe Add The Mystery Of... to My Sounds\" expanded=false\n[25] link \"The Tailenders play cricket with Prince William\" https://www.bbc.co.uk/sounds/play/p0pgmxwm?at_mid=KBrGzA5ch1&at_campaign=Tailenders_Cricket_on_the_Mall_with_Prince_William&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=p02pcb4w&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=awareness&at_link_title=Tailenders_Cricket_on_the_Mall_with_Prince_William&at_bbc_team=BBC\n[26] button \"Subscribe Add Tailenders to My Sounds\"\n[27] button \"Subscribe Add Tailenders to My Sounds\" expanded=false\n[28] link \"How charities use sport to support people's mental health\" https://www.bbc.co.uk/sounds/play/m0032qn6?at_mid=t1Qrco1bHP&at_campaign=Cafe_Hope_Sporting_Solidarity&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=m001xwqx&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=awareness&at_link_title=Cafe_Hope_Sporting_Solidarity&at_bbc_team=BBC\n[29] button \"Subscribe Add Café Hope to My Sounds\"\n[30] button \"Subscribe Add Café Hope to My Sounds\" expanded=false",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"We use cookies\" https://www.bbc.co.uk/usingthebbc/cookies/what-do-i-need-to-know-about-cookies/",
+          "click-2": "click [2] button \"Accept additional cookies\"",
+          "click-3": "click [3] button \"Reject additional cookies\"",
+          "click-4": "click [4] link \"Let me choose\" https://www.bbc.co.uk/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/",
+          "click-5": "click [5] link \"BBC Homepage\" https://www.bbc.co.uk/",
+          "click-6": "click [6] link \"Sign in\" https://session.bbc.co.uk/session?lang=en-GB&ptrt=https%3A%2F%2Fwww.bbc.co.uk%2Fsearch&sequenceId=bd04d397-3de3-42a6-8796-42626d3ff1ab",
+          "click-7": "click [7] link \"Notifications\" https://www.bbc.co.uk/notifications",
+          "click-8": "click [8] link \"Home\" https://www.bbc.co.uk/",
+          "click-9": "click [9] link \"News\" https://www.bbc.co.uk/news",
+          "click-10": "click [10] link \"Sport\" https://www.bbc.co.uk/sport",
+          "click-11": "click [11] link \"Weather\" https://www.bbc.co.uk/weather",
+          "click-12": "click [12] link \"iPlayer\" https://www.bbc.co.uk/iplayer",
+          "click-13": "click [13] link \"Sounds\" https://www.bbc.co.uk/sounds",
+          "click-14": "click [14] link \"Bitesize\" https://www.bbc.co.uk/bitesize",
+          "click-15": "click [15] link \"More menu\" https://www.bbc.co.uk/search#global-navigation-more-menu role=button hasPopup=menu expanded=false",
+          "click-16": "click [16] link \"Search BBC\" https://www.bbc.co.uk/search?d=SEARCH_PS",
+          "search-17": "search for the words with [17] searchbox \"Input your search term Search the BBC\" autocomplete=list hasPopup=listbox expanded=false: its words replaced, then submitted",
+          "type-17": "type the words into [17] searchbox \"Input your search term Search the BBC\" autocomplete=list hasPopup=listbox expanded=false",
+          "click-17": "click [17] searchbox \"Input your search term Search the BBC\" autocomplete=list hasPopup=listbox expanded=false",
+          "click-18": "click [18] button[submit] \"Search\"",
+          "click-19": "click [19] link \"Danny Robins counts down to Halloween\" https://www.bbc.co.uk/sounds/brand/m0010x7c?at_mid=y89pILcrqP&at_campaign=Uncanny_TLEO&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=m0010x7c&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=consumption&at_link_title=Uncanny_TLEO&at_bbc_team=BBC",
+          "click-20": "click [20] button \"Subscribe Add Uncanny to My Sounds\"",
+          "click-21": "click [21] button \"Subscribe Add Uncanny to My Sounds\" expanded=false",
+          "click-22": "click [22] link \"The mystery of the 1907 disappearance of the Irish Crown Jewels\" https://www.bbc.co.uk/sounds/play/m0032qfx?at_mid=KtBz5zhAey&at_campaign=The_Mystery_of_The_King_The_Thief_and_the_Fall_Guy&at_medium=display_ad&at_campaign_type=owned&at_nation=NIR&at_audience_id=SS&at_product=sounds&at_brand=m00236v0&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=consumption&at_link_title=The_Mystery_of_The_King_The_Thief_and_the_Fall_Guy&at_bbc_team=BBC",
+          "click-23": "click [23] button \"Subscribe Add The Mystery Of... to My Sounds\"",
+          "click-24": "click [24] button \"Subscribe Add The Mystery Of... to My Sounds\" expanded=false",
+          "click-25": "click [25] link \"The Tailenders play cricket with Prince William\" https://www.bbc.co.uk/sounds/play/p0pgmxwm?at_mid=KBrGzA5ch1&at_campaign=Tailenders_Cricket_on_the_Mall_with_Prince_William&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=p02pcb4w&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=awareness&at_link_title=Tailenders_Cricket_on_the_Mall_with_Prince_William&at_bbc_team=BBC",
+          "click-26": "click [26] button \"Subscribe Add Tailenders to My Sounds\"",
+          "click-27": "click [27] button \"Subscribe Add Tailenders to My Sounds\" expanded=false",
+          "click-28": "click [28] link \"How charities use sport to support people's mental health\" https://www.bbc.co.uk/sounds/play/m0032qn6?at_mid=t1Qrco1bHP&at_campaign=Cafe_Hope_Sporting_Solidarity&at_medium=display_ad&at_campaign_type=owned&at_nation=NET&at_audience_id=SS&at_product=sounds&at_brand=m001xwqx&at_ptr_name=bbc&at_ptr_type=media&at_format=image&at_objective=awareness&at_link_title=Cafe_Hope_Sporting_Solidarity&at_bbc_team=BBC",
+          "click-29": "click [29] button \"Subscribe Add Café Hope to My Sounds\"",
+          "click-30": "click [30] button \"Subscribe Add Café Hope to My Sounds\" expanded=false",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "menu-15": "right-click [15] to open its menu",
+          "menu-16": "right-click [16] to open its menu",
+          "menu-17": "right-click [17] to open its menu",
+          "menu-18": "right-click [18] to open its menu",
+          "menu-19": "right-click [19] to open its menu",
+          "menu-20": "right-click [20] to open its menu",
+          "menu-21": "right-click [21] to open its menu",
+          "menu-22": "right-click [22] to open its menu",
+          "menu-23": "right-click [23] to open its menu",
+          "menu-24": "right-click [24] to open its menu",
+          "menu-25": "right-click [25] to open its menu",
+          "menu-26": "right-click [26] to open its menu",
+          "menu-27": "right-click [27] to open its menu",
+          "menu-28": "right-click [28] to open its menu",
+          "menu-29": "right-click [29] to open its menu",
+          "menu-30": "right-click [30] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Search",
+          "s0-1": "Search for",
+          "s0-2": "Search for elections",
+          "s1-1": "for",
+          "s1-2": "for elections",
+          "s2-2": "elections"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on bbc.co.uk that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on bbc.co.uk but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}
