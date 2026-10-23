@@ -750,7 +750,7 @@ const MAX_TEXT_FURTHER_DOWN = 6000
 
 /** A Text Further Down entry's line in the state: `[text-2] "…"`. */
 function textEntry(target: TextTarget): string {
-  return `[text-${target.n}] ${JSON.stringify(target.block.text)}`
+  return `[text-${target.n}] ${target.block.kind !== undefined ? `${target.block.kind} ` : ''}${JSON.stringify(target.block.text)}`
 }
 
 /**

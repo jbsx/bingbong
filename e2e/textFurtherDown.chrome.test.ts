@@ -9,7 +9,8 @@ import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrom
 // Text Further Down and the Show Op (#393, ADR 0086), in a real headless
 // Chrome at 1000×700. The blocks below the view — a list item, a pre
 // block and a bare prose run, and the text below a same-origin frame's own
-// fold — are listed with their node; a hidden panel and the text in view
+// fold — are listed with their node, and with their kind where their
+// element has one (#405); a hidden panel and the text in view
 // are not. A Show Op brings its block into view with one evaluate: a
 // quarter down the view, as the page scroll's outcome says it; a block
 // gone from the page is refused.
@@ -26,6 +27,7 @@ const PAGE = `<!doctype html><html><head><title>recipe</title></head><body style
     <div style="height:2000px"></div>
     <ul><li id="flour">Ingredients: 2 cups basmati rice, 500 g chicken thighs</li></ul>
     <div style="height:1500px"></div>
+    <h2 style="margin:0">Method</h2>
     <pre id="code">json.dumps(data, indent=4)</pre>
     <div style="height:1500px"></div>
     <div id="run">A loose run of prose sitting in a div of its own, far down the page.<div>x</div></div>
@@ -76,11 +78,12 @@ describe.skipIf(!canDriveChrome)('Text Further Down in a real Chrome (#393)', ()
     await chrome.evaluate('window.scrollTo(0, 0)')
     const page = await controller.collectPage()
 
-    expect(page.textBelow?.map((block) => [block.text, block.frame])).toEqual([
-      ["The last comment, below the frame's own fold.", 'embed'],
-      ['Ingredients: 2 cups basmati rice, 500 g chicken thighs', null],
-      ['json.dumps(data, indent=4)', null],
-      ['A loose run of prose sitting in a div of its own, far down the page.', null],
+    expect(page.textBelow?.map((block) => [block.text, block.frame, block.kind])).toEqual([
+      ["The last comment, below the frame's own fold.", 'embed', undefined],
+      ['Ingredients: 2 cups basmati rice, 500 g chicken thighs', null, 'list item'],
+      ['Method', null, 'heading'],
+      ['json.dumps(data, indent=4)', null, 'code'],
+      ['A loose run of prose sitting in a div of its own, far down the page.', null, undefined],
     ])
     expect(page.viewportText).toContain('Chicken Biryani')
   })

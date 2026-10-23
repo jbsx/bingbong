@@ -373,7 +373,7 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   switch (block.kind) {
     case 'text':
       if (typeof block.text !== 'string') return null
-      return { kind: 'text', text: block.text, ...(block.heading === true ? { heading: true } : {}), ...placement }
+      return { kind: 'text', text: block.text, ...(block.heading === true ? { heading: true } : {}), ...(block.role === 'heading' || block.role === 'list item' ? { role: block.role } : {}), ...placement }
     case 'pre':
       return typeof block.text === 'string' ? { kind: 'pre', text: block.text, ...placement } : null
     case 'row':

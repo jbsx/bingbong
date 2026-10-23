@@ -109,10 +109,20 @@ describe('renderPageText — Text Further Down (#393, ADR 0086)', () => {
       { kind: 'text', text: 'No node', below: true },
     ]
     expect(renderPageText(collected).textBelow).toEqual([
-      { text: 'flour | 200 g', frame: null, node: 2 },
+      { text: 'flour | 200 g', kind: 'table row', frame: null, node: 2 },
       { text: 'y'.repeat(300), frame: null, node: 3 },
-      { text: 'json.dumps(x, indent=4)', frame: 'f1', node: 6 },
+      { text: 'json.dumps(x, indent=4)', kind: 'code', frame: 'f1', node: 6 },
     ])
+  })
+
+  it('names what each block is by its element (#405): a heading, a list item, a table row, code; a paragraph or a definition is no kind', () => {
+    const collected: CollectedTextBlock[] = [
+      { kind: 'text', text: 'Install', role: 'heading', below: true, node: 0 },
+      { kind: 'text', text: 'npm init playwright@latest', role: 'list item', below: true, node: 1 },
+      { kind: 'text', text: 'Playwright is a framework for testing.', below: true, node: 2 },
+      { kind: 'definitions', items: [{ term: true, text: 'Fee' }, { term: false, text: '£94.50' }], below: true, node: 3 },
+    ]
+    expect(renderPageText(collected).textBelow.map((block) => block.kind)).toEqual(['heading', 'list item', undefined, undefined])
   })
 })
 

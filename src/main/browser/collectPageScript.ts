@@ -582,6 +582,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   // Rendered and wholly below the viewport (#393): a hidden block has no box and is never below.
   const rectBelow = (rect) => rect.width >= 1 && rect.height >= 1 && rect.top >= vh
+  // What a text block is, by its element (#405): the Show Op's line names it, so a question reads which block answers it.
+  const BLOCK_ROLES = { H2: 'heading', H3: 'heading', LI: 'list item' }
   const rawBlock = (el) => {
     switch (tagOf(el)) {
       case 'TR':
@@ -596,7 +598,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
             .map((item) => ({ term: tagOf(item) === 'DT', text: textOf(item) }))
         }
       default:
-        return { kind: 'text', text: textOf(el) }
+        return { kind: 'text', text: textOf(el), ...(BLOCK_ROLES[tagOf(el)] ? { role: BLOCK_ROLES[tagOf(el)] } : {}) }
     }
   }
   // Near enough for the collected-text bound, which only has to stop an
@@ -626,7 +628,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     textBlocks.push(block)
   }
   // A frame's h1 is its first block at its iframe's place, not the page's.
-  if (heading) take({ kind: 'text', text: textOf(heading), ...(inFrame ? {} : { heading: true }) }, heading)
+  if (heading) take({ kind: 'text', text: textOf(heading), role: 'heading', ...(inFrame ? {} : { heading: true }) }, heading)
   // An iframe's place in the text (#378, ADR 0081): the page merge puts its
   // frame's own text here. The iframe itself carries no prose; one inside a
   // tag block takes the place just after it. Past the collected-text bound

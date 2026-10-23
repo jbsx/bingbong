@@ -357,12 +357,14 @@ export function describeCommand(command: Command, page?: CommandPage): string {
 
 /**
  * A Show Op in words (#393, ADR 0086), the block by its first 80
- * characters: the card's option with the entry's number `n`, and without
- * it as the Feed and "Done so far" name what was done — one sentence, so
- * the two never drift apart.
+ * characters: the card's option with the entry's number `n` and the
+ * block's kind (#405), and without them as the Feed and "Done so far" name
+ * what was done — one sentence, so the two never drift apart. The kind
+ * rides the option only, as it was measured.
  */
 export function showOpAction(block: TextBelow, n?: number): string {
-  return `scroll until ${n !== undefined ? `[text-${n}] ` : ''}${JSON.stringify(block.text.slice(0, 80))} is in view`
+  const which = n !== undefined ? `[text-${n}] ${block.kind !== undefined ? `${block.kind} ` : ''}` : ''
+  return `scroll until ${which}${JSON.stringify(block.text.slice(0, 80))} is in view`
 }
 
 /** A music line as the Feed names it (#343): `play <words>`, `queue <words>`, `play <words> next`, `skip`, `loop off`, `volume 40`. */

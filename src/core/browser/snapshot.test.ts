@@ -82,11 +82,17 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
           { kind: 'text', text: 'Luggage', heading: true, inView: true, node: 0 },
           { kind: 'pre', text: 'indent=4', below: true, node: 1 },
           { kind: 'text', text: 'Bad node', below: true, node: 'x' } as never,
+          { kind: 'text', text: 'Install', role: 'heading', below: true, node: 2 },
+          { kind: 'text', text: 'Odd role', role: 'banner', below: true, node: 3 } as never,
         ],
       }),
     )
 
-    expect(commandPageOf(buildPageSnapshot(parsed)).textBelow).toEqual([{ text: 'indent=4', frame: null, node: 1 }])
+    expect(commandPageOf(buildPageSnapshot(parsed)).textBelow).toEqual([
+      { text: 'indent=4', kind: 'code', frame: null, node: 1 },
+      { text: 'Install', kind: 'heading', frame: null, node: 2 },
+      { text: 'Odd role', frame: null, node: 3 },
+    ])
   })
 
   it('reads an older payload’s digest as the whole collected text', () => {

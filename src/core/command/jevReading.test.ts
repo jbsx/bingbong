@@ -1514,6 +1514,16 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
     ])
   })
 
+  it('names what a block is on its entry and on its Show Op, and never in "Done so far" (#405)', () => {
+    const page = { ...DOCS, textBelow: [{ text: 'Install', kind: 'heading' as const, frame: null, node: 4 }, { ...pretty, kind: 'code' as const }] }
+    const questions = hopQuestions('how do i install it', page, HOP)
+    expect(questions.action.options['show-1']).toBe('scroll until [text-1] heading "Install" is in view')
+    expect(questions.action.options['show-2']).toBe(`scroll until [text-2] code ${JSON.stringify(pretty.text.slice(0, 80))} is in view`)
+    expect(commandState('how do i install it', page, HOP, undefined, undefined, questions).split('\n').slice(-2)).toEqual(['[text-1] heading "Install"', `[text-2] code ${JSON.stringify(pretty.text)}`])
+    const shown = readCommandAnswers({ action: choice('show-1'), slot: choice('none'), extent: choice('screen') }, 'x', page, HOP)
+    expect(doneAction(shown, page)).toBe('scroll until "Install" is in view')
+  })
+
   it('puts no entry on the state without the card it is asked beside, and none for a page with nothing below', () => {
     expect(commandState('show me how to pretty print', DOCS)).not.toContain('Text further down')
     const bare = { ...DOCS, textBelow: [] }

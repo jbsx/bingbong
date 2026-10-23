@@ -15,6 +15,8 @@ export type CollectedTextBlock = (
       text: string
       /** The page's h1, collected first; a later block with its text repeats it. */
       heading?: boolean
+      /** What its element is (#405): a heading (the h1, an h2 or h3) or a list item; absent for a paragraph or a prose run. */
+      role?: 'heading' | 'list item'
     }
   | { kind: 'row'; cells: string[] }
   | {
@@ -47,6 +49,22 @@ export type CollectedTextBlock = (
   frame?: string
 }
 
+/** The kinds of block a Show Op names (#405): a measured widening, the kind beside the block's text. */
+export type TextBlockKind = 'heading' | 'code' | 'table row' | 'list item'
+
+function kindOf(block: CollectedTextBlock): TextBlockKind | undefined {
+  switch (block.kind) {
+    case 'text':
+      return block.role
+    case 'row':
+      return 'table row'
+    case 'pre':
+      return 'code'
+    default:
+      return undefined
+  }
+}
+
 /**
  * A block of Text Further Down (#393, ADR 0086, CONTEXT.md): its text as
  * the card quotes it, held to 300 characters, and where its Show Op finds
@@ -55,6 +73,8 @@ export type CollectedTextBlock = (
  */
 export interface TextBelow {
   readonly text: string
+  /** What the block is (#405), as its entry and Show Op name it; absent for a paragraph, a prose run or a definition. */
+  readonly kind?: TextBlockKind
   readonly frame: string | null
   readonly node: number
 }
@@ -162,7 +182,8 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
       if (viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) viewportText.push(inView)
       else pastCap.add(inView)
     } else if (block.below === true && block.node !== undefined) {
-      below.push({ text: lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH), frame: block.frame ?? null, node: block.node })
+      const kind = kindOf(block)
+      below.push({ text: lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH), ...(kind !== undefined ? { kind } : {}), frame: block.frame ?? null, node: block.node })
     }
   }
   // A block below that repeats one before it, or one in view, is said once: where it first is.
