@@ -3738,11 +3738,19 @@ describe('a pop-up covering the page (#336)', () => {
     expect(records.filter((record) => record.type === 'misfire')).toEqual([])
   })
 
-  it('a consent wall\'s reject is the policy\'s: clicked with no Jev call', async () => {
+  it('a consent wall\'s reject is the fallback under Jev\'s bar: unanswered, the policy\'s reject is clicked (ADR 0089)', async () => {
     const refs = [ref(1, 'link', 'Home', { href: 'https://x.com/home' }), ref(5, 'button', 'Accept all', { layer: 'dialog' }), ref(6, 'button', 'Reject all', { layer: 'dialog' })]
     const { browser, decision, runner } = sheetHarness(refs, false, [6])
     await runner.run('close this', { source: 'spoken' })
-    expect(decision.requests).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+    expect(browser.clicks).toEqual([6])
+  })
+
+  it('over a consent wall, Jev\'s sure pick ranks above the policy\'s reject (ADR 0089)', async () => {
+    const refs = [ref(1, 'link', 'Home', { href: 'https://x.com/home' }), ref(5, 'button', 'Reject all', { layer: 'dialog' }), ref(6, 'button', 'Continue without accepting', { layer: 'dialog' }), ref(7, 'button', 'Accept all', { layer: 'dialog' })]
+    const { browser, decision, runner } = sheetHarness(refs, false, [6])
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), dismiss: choice('ref-6', 0.9) } })
+    await runner.run('close this', { source: 'spoken' })
     expect(browser.clicks).toEqual([6])
   })
 

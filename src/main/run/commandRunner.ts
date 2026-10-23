@@ -8,7 +8,7 @@ import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
-import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
+import { dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
@@ -734,8 +734,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * pop-up can be tried.
    */
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
-    const ruled = ruledDismissal(page)
-    const model = ruled === null ? deps.decisionModel() : null
+    // Jev is asked over every pop-up, a consent wall's too: its sure pick ranks above the consent policy's reject (ADR 0089).
+    const model = deps.decisionModel()
     const ask = model === null || dismissPhraseQuestions(text, page) === null ? null : budgeted(model, (further) => dismissPhraseQuestions(text, page, { appliance: appliance(), further })!, (questions) => commandState(text, page, undefined, undefined, undefined, questions))
     const result = model === null || ask === null ? null : await askJev(model, 'command', turnId, ask.state, ask.questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null

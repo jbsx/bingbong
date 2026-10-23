@@ -684,8 +684,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
     const labels = controls.map((ref) => ref.label)
     if (!isConsentDialog(snapshot.dialogText, labels)) return null
-    // Privacy first (ADR 0061): the rule's reject, else the one Jev finds declining, else the accept.
-    const choice = consentRejectOf(labels) ?? (await chosenConsent(snapshot.dialogText, labels)) ?? consentAcceptOf(labels)
+    // Jev's sure pick of the control that declines first (ADR 0089), else the rule's reject (privacy first, ADR 0061), else the accept.
+    const choice = (await chosenConsent(snapshot.dialogText, labels)) ?? consentRejectOf(labels) ?? consentAcceptOf(labels)
     if (choice === null) return null
     const target = controls[choice]
     const at = addressOfRef(target.ref)

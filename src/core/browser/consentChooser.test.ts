@@ -35,6 +35,11 @@ describe('the consent question', () => {
   it('asks nothing when every control accepts', () => {
     expect(consentQuestion('We use cookies', ['Accept all', 'OK'])).toBeNull()
   })
+
+  it('never offers a way through that costs: a reject that pays or subscribes (ADR 0089)', () => {
+    expect(Object.keys(consentQuestion('We value your privacy', ['Yes, I’m happy', 'Reject all and subscribe', 'Manage cookies'])!.questions.decline.options)).toEqual(['none', 'c-0', 'c-2'])
+    expect(consentQuestion('Choose how you use our site', ['Reject & Pay', 'Accept cookies and read free content'])).toBeNull()
+  })
 })
 
 describe('the consent chooser', () => {

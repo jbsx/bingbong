@@ -1899,7 +1899,7 @@ describe('createCdpBrowserController dialog tiers', () => {
     expect(text.startsWith('dismissed consent dialog: clicked [2] "Continue without accepting"')).toBe(true)
   })
 
-  it('accepts as before when Jev finds no reject, and never asks when the rule reads one', async () => {
+  it('accepts as before when Jev finds no reject; a wall the rule reads still asks Jev first, its reject the fallback (ADR 0089)', async () => {
     const wall = unreadRejectWall()
     const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
     const cdp = new FakeCdp(cleared)
@@ -1920,7 +1920,7 @@ describe('createCdpBrowserController dialog tiers', () => {
       },
     })
     expect((await ruledController.readPage()).startsWith('dismissed consent dialog: clicked [2] "Reject all"')).toBe(true)
-    expect(asks).toBe(0)
+    expect(asks).toBe(1)
   })
 
   it('auto-dismisses a consent dialog on read_page and reports it in one line', async () => {

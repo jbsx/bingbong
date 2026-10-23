@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandPage } from './command'
-import { dialogControls, dialogDismissal, dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal } from './dismissDialog'
+import { dialogControls, dialogDismissal, dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf } from './dismissDialog'
 
 // The dismiss rule (#336, ADR 0076): with a dialog open, a dismiss phrase
 // closes it — its close control clicked, else Escape pressed — decided
@@ -132,12 +132,38 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
     expect(dialogControls(BANNER).map((ref) => ref.ref)).toEqual([1, 9, 11])
   })
 
-  it('Jev\'s sure choice comes before the label rung, its unsure one after, and Escape chosen sure comes first of all but the consent policy', () => {
+  it('Jev\'s sure choice comes first of all, the consent policy included (ADR 0089); its unsure one after the label rung', () => {
     const sheet: CommandPage = { ...SHEET, refs: [...SHEET.refs, { ref: 12, kind: 'button', label: 'Nah', href: null, inputType: null }], dialog: { text: 'Join', refs: [7, 8, 9, 12] } }
     expect(dismissalLadder(sheet, { choice: { ref: 12 }, probability: 0.9 })).toEqual([click(12), click(9), ESCAPE])
     expect(dismissalLadder(sheet, { choice: { ref: 12 }, probability: 0.4 })).toEqual([click(9), click(12), ESCAPE])
     expect(dismissalLadder(sheet, { choice: 'escape', probability: 0.9 })).toEqual([ESCAPE, click(9)])
-    expect(dismissalLadder(BANNER, { choice: { ref: 1 }, probability: 0.9 })).toEqual([click(11), click(1), ESCAPE])
+    expect(dismissalLadder(BANNER, { choice: { ref: 1 }, probability: 0.9 })).toEqual([click(1), click(11), ESCAPE])
+    // Unsure, the consent policy's reject is the fallback under the bar.
+    expect(dismissalLadder(BANNER, { choice: { ref: 1 }, probability: 0.4 })).toEqual([click(11), click(1), ESCAPE])
+  })
+
+  it('a consent-or-pay wall: the reject that pays or subscribes is a way through, never clicked by the rule (ADR 0089)', () => {
+    const wall: CommandPage = {
+      ...BANNER,
+      refs: [
+        { ref: 6, kind: 'button', label: 'Personalised advertising and content', href: null, inputType: null },
+        { ref: 7, kind: 'button', label: 'Reject & Pay', href: null, inputType: null },
+        { ref: 8, kind: 'button', label: 'Accept cookies and read free content', href: null, inputType: null },
+      ],
+      dialog: { text: 'Choose how you use our site', refs: [6, 7, 8] },
+    }
+    expect(dismissalLadder(wall)).toEqual([click(8), ESCAPE])
+    const guardian: CommandPage = {
+      ...BANNER,
+      refs: [
+        { ref: 3, kind: 'button', label: 'Yes, I’m happy', href: null, inputType: null },
+        { ref: 4, kind: 'button', label: 'Reject all and subscribe', href: null, inputType: null },
+        { ref: 5, kind: 'button', label: 'Accept all', href: null, inputType: null },
+      ],
+      dialog: { text: 'We value your privacy', refs: [3, 4, 5] },
+    }
+    expect(dismissalLadder(guardian)[0]).not.toEqual(click(4))
+    expect(dismissalLadder(guardian)).not.toContainEqual(click(4))
   })
 
   it('Jev\'s choice of a way through, a link or a ref outside the dialog is not a rung: the guards hold whoever chose', () => {
@@ -173,10 +199,6 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
     }
     expect(dismissalLadder(wall)).toEqual([click(20), ESCAPE])
     expect(dismissalLadder(wall, { choice: { ref: 21 }, probability: 0.9 })).toEqual([click(21), click(20), ESCAPE])
-    // The policy settles only a reject it reads; anything else is Jev's to choose.
-    expect(ruledDismissal(wall)).toBeNull()
-    expect(ruledDismissal(BANNER)).toEqual(click(11))
-    expect(ruledDismissal(SHEET)).toBeNull()
   })
 
   it('each rung once: Jev choosing the labelled close leaves one click of it', () => {

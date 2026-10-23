@@ -1,21 +1,19 @@
 import type { AskRecord } from '../decision/askRecord'
 import { choiceProbability, type DecisionChoiceQuestion, type DecisionModel } from '../ports/decisionModel'
 import { reportFault } from '../trace/fault'
-import { isAcceptStyle, type ConsentChooser } from './dialogPolicy'
+import { costsAWayThrough, isAcceptStyle, type ConsentChooser } from './dialogPolicy'
 
 // The consent wall's reject, found by Jev (owner's rule 2026-10-19: the
-// widest net, no label list deciding alone). The privacy-first policy (ADR
-// 0061) stays code: a control the rule reads as declining is clicked at
-// once, with no ask. Only when the rule reads none as declining — before
-// the policy would fall back to accepting — is Jev asked which control
-// declines, over every control of the wall that does not accept, so a
-// "Continue without accepting" or a "Refuse" the rule never listed is
-// still found. Jev unsure, unavailable or answering none: the accept
-// stands, as before.
+// widest net, no label list deciding alone). Jev is asked which control
+// declines, over every control of the wall that neither accepts nor is a
+// way through that costs, so a "Continue without accepting" or a "Refuse"
+// the rule never listed is found. Its sure pick ranks first (ADR 0089);
+// the privacy-first rule's reject (ADR 0061) is the fallback under the
+// bar, and the accept after it.
 
 /** The question asked over a consent wall's controls: which one declines, or none. Null when every control accepts. */
 export function consentQuestion(dialogText: string, controlLabels: readonly string[]): { state: string; questions: { decline: DecisionChoiceQuestion } } | null {
-  const offered = controlLabels.flatMap((label, index) => (isAcceptStyle(label) || label.trim() === '' ? [] : [[`c-${index}`, JSON.stringify(label)] as const]))
+  const offered = controlLabels.flatMap((label, index) => (isAcceptStyle(label) || costsAWayThrough(label) || label.trim() === '' ? [] : [[`c-${index}`, JSON.stringify(label)] as const]))
   if (offered.length === 0) return null
   return {
     state: [`A cookie consent notice covers a web page: ${JSON.stringify(dialogText)}`, 'Its controls:', ...controlLabels.map((label, index) => `[c-${index}] ${JSON.stringify(label)}`)].join('\n'),
@@ -58,6 +56,6 @@ export function createConsentChooser(model: () => DecisionModel | null, sureAbov
     if (match === null || choiceProbability(result.answers.decline) < sureAbove) return null
     const index = Number(match[1])
     const label = controlLabels[index]
-    return label === undefined || isAcceptStyle(label) ? null : index
+    return label === undefined || isAcceptStyle(label) || costsAWayThrough(label) ? null : index
   }
 }

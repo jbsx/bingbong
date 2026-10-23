@@ -31,6 +31,45 @@ const NECESSARY_ONLY_RE = /\b(necessary|essential)\b.*\bonly\b|\bonly\b.*\b(nece
 const WITHOUT_OPTIONAL_RE = /\b(without|no|none of)\s+(the\s+)?optional\b/i
 const ACCEPT_STYLE_RE = /\b(accept|allow|agree|ok|okay|got it)\b/i
 
+/**
+ * The words of a way through a pop-up rather than out of it (owner's rule
+ * 2026-10-19, hard policy: never a dismissal, whoever chose it). The costly
+ * ones ask something of the user — an account, a subscription, a payment,
+ * an app; the rest ("Continue with Google", "Accept") agree to what the
+ * pop-up asks.
+ */
+const COSTLY_THROUGH_WORDS = String.raw`(?:sign ?in|sign ?up|log ?in|log ?on|register|create (?:an? )?account|subscribe|install|download|get the app|open (?:in )?(?:the )?app|buy|pay|checkout|upgrade|join|start (?:free )?trial)`
+const THROUGH_WORDS = String.raw`(?:${COSTLY_THROUGH_WORDS}|continue with|accept|agree|allow|enable)`
+
+/** A label's words as the veto reads them: lower case, apostrophes dropped, letters and digits only. */
+const wordsOf = (label: string): string =>
+  label
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/** Whether a label goes through by these words — one that refuses them ("Don't allow", "No, don't subscribe") goes out; "No account? Sign up" still goes through. */
+function goesThrough(label: string, words: string): boolean {
+  const refused = new RegExp(String.raw`\b(?:dont|do not|never|not)(?: \w+)? ${words}\b`, 'g')
+  return new RegExp(String.raw`\b${words}\b`).test(wordsOf(label).replace(refused, ' '))
+}
+
+/** Whether a control's label is a way through the pop-up rather than out of it: never a dismissal, whoever chose it. */
+export function isWayThrough(label: string): boolean {
+  return goesThrough(label, THROUGH_WORDS)
+}
+
+/**
+ * Whether a control's label is a way through that costs (ADR 0089): "Reject
+ * all and subscribe", "Reject & Pay". A consent wall's reject that is one
+ * declines nothing for free, so neither the rule nor Jev's chooser clicks it.
+ */
+export function costsAWayThrough(label: string): boolean {
+  return goesThrough(label, COSTLY_THROUGH_WORDS)
+}
+
 /** Whether a consent control's label declines the optional cookies, by the rule. */
 export function isRejectStyle(label: string): boolean {
   return REJECT_VERB_RE.test(label) || NECESSARY_ONLY_RE.test(label) || WITHOUT_OPTIONAL_RE.test(label)
@@ -41,9 +80,9 @@ export function isAcceptStyle(label: string): boolean {
   return ACCEPT_STYLE_RE.test(label) && !isRejectStyle(label)
 }
 
-/** The control the rule reads as declining, first of them; null when none does. */
+/** The control the rule reads as declining, first of them, never one that costs (ADR 0089); null when none does. */
 export function consentRejectOf(controlLabels: readonly string[]): number | null {
-  const reject = controlLabels.findIndex(isRejectStyle)
+  const reject = controlLabels.findIndex((label) => isRejectStyle(label) && !costsAWayThrough(label))
   return reject === -1 ? null : reject
 }
 
@@ -64,10 +103,11 @@ export function chooseConsentDismissal(controlLabels: string[]): number | null {
 }
 
 /**
- * Finds the control that declines a consent wall's optional cookies when
- * the rule reads none as declining (owner's rule 2026-10-19: the widest net,
- * Jev chooses): the index of a control among the labels, or null when none
- * declines, or no one could be asked. Never an accept-style control.
+ * Finds the control that declines a consent wall's optional cookies (owner's
+ * rule 2026-10-19: the widest net, Jev chooses): the index of a control
+ * among the labels, or null when none declines, Jev is unsure, or no one
+ * could be asked. Its sure pick ranks above the rule's reject (ADR 0089).
+ * Never an accept-style control, nor a way through that costs.
  */
 export type ConsentChooser = (dialogText: string, controlLabels: readonly string[]) => Promise<number | null>
 
