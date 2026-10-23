@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvkw7iq1",
+  "transcript": "what is the weather like",
+  "at": 1792755285354,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Typed on the YouTube watch page (rerun 2026-10-23, main 17f82618): hop 0 none 0.62, the Where Ask searched the whole line 0.97, DuckDuckGo showed its weather box for the IP's city (Tower Hamlets) and hop 1 read yes 0.98: done in 2 calls and 4.5 s with nothing said. The Idle Screen already holds today's forecast for the settings city; the card never carries it and no verb says it",
+  "meant": "Say today's weather for the settings city, from what the appliance already holds",
+  "log": "decision-1792755258819-1.jsonl"
+}

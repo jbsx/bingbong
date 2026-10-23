@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvkw8yms",
+  "transcript": "What's the weather like in London?",
+  "at": 1792755352500,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "Typed on duckduckgo.com (rerun 2026-10-23, main 17f82618): search-5 'weather like in London' 0.44 landed on DuckDuckGo's weather box (Cloudy, 12°, the hourly and the week on the card's Text in view line), hop 1 read yes 0.98 and the Task ended done after one action and 3.7 s with nothing said: the screen is the only answer. Every done ending of the rerun's 9 question lines was silent",
+  "meant": "Say the forecast the page shows",
+  "log": "decision-1792755344933-1.jsonl"
+}

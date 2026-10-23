@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvkwji1f",
+  "transcript": "What's the weather like in Gurgaon?",
+  "at": 1792755847231,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "Typed on the YouTube watch page (rerun 2026-10-23, main 17f82618, Mammoth): hop 0 search 0.64 with the slot 'Gurgaon' (s5-5 0.67 over the whole line), DuckDuckGo showed Wikipedia and maps, no weather; hop 1 search-2 'Gurgaon' again (the same words it had just searched); hop 2 search-2 'weather like in Gurgaon' landed on the weather box and hop 3 read yes 0.98: done after 3 actions and 12.7 s, nothing said. Same slot miss as turn-mvjdxr5q-f and turn-mvjms11y-1",
+  "meant": "Search the whole question once, land on the forecast, say it",
+  "log": "decision-1792755837242-1.jsonl"
+}

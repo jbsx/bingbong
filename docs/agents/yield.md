@@ -72,8 +72,8 @@ until the owner does. The state and its evidence are set by reproduction
 
 | scenario | on a normal day | per day | state | distance | yield | evidence |
 |---|---|---|---|---|---|---|
-| question | ask a question and get an answer: weather, a fact, a how-to | ~5 | `missing` | 4 | 20 | reads `none`, "No response" |
 | play | play something by words | ~10 | `partly`, names misheard | 2 | 20 | stt ledger lines 2026-10-21/22 |
+| question | ask a question and get an answer: weather, a fact, a how-to | ~5 | `breaks` | 3 | 15 | rerun 2026-10-23 on main 17f82618, 9 lines: 5 end done, every done silent (cli-2-mvkw8yms); the time has no road (cli-2-mvkw7388); the slot drops the question 3 of 3 from YouTube (cli-2-mvkwji1f, cli-4-mvkwkang, cli-6-mvkwl3aw) |
 | search | search for something, on the web or on the site open, and land on it | ~5 | `breaks` | 3 | 15 | 4 of 27 multi-hop Tasks done, counted 2026-10-23; #398 |
 | open | open a site or page by name | ~5 | `breaks` | 3 | 15 | 0 of 16 multi-hop Tasks done, counted 2026-10-23 |
 | read | read or move through the page open: scroll, read it, show the part about X | ~5 | `partly` | 2 | 10 | scroll works; cli-10-mvjkuljs |
