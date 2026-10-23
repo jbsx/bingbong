@@ -8,6 +8,10 @@ and ties rules, ADR 0076, ADR 0086, the issue's own text, #353 and the
 naming rule; the owner ruled the sixth, that Jev is asked once at the end.
 Amends ADR 0086 (the room the Choice has left is now also a size).
 
+Amended 2026-10-23 by #407: what is further down yields right-clicks
+first, then links, then shows, and the budget is built at 2.38 characters
+a token.
+
 ## Context
 
 A hop past the first offers every unvisited link on the page. Each link
@@ -42,8 +46,9 @@ would be a widening no gate reaches.
 What makes the hop is never cut: the words, the page line, the refs in
 view, Text in view, the Verdict, Noul, passage and slot Choices, the verbs
 and the appliance's facts. What is further down competes for the room
-left, in ADR 0086's order: opens, then menus, then shows, each list in
-reading order so what is nearest the view survives.
+left: shows first, then opens, then menus (#407), in the Choice's 255
+options and in the budget alike, each list in reading order so what is
+nearest the view survives. A block below holds what a link only leads to.
 
 A refusal that still comes (a 422, Jev's 400 `max_tokens_exceeded`) ends
 the hop `unavailable` as today, with no second call and no guess; the
@@ -135,6 +140,17 @@ ask was 45.6k characters, the host counted 15,993 tokens and answered,
 the Verdict read yes 0.97 and the Task ended done. The passage pick, the
 install command, was 0.65, under the Choice bar, so nothing was said
 (ledger `cli-2-mvl7t9z8`); the stored case of the same page gets 0.75.
+
+### Re-measured (#407)
+
+Six cases grown from live runs on GitHub READMEs. Arms are rewrites of
+the stored cards from uncut sources. Shows-first with no stop gave 133
+through against today's 129, losing nothing. Shows-first with the stop
+kept lost one case; whole blocks lost two Elephant picks. Live hop cards
+were refused at 2.48–2.56 characters a token, so by this ADR's method
+(the least ratio on a refused prompt, less 0.1) the budget is built at
+2.38: 16,384 tokens is 38,993 characters. The gate cannot tell 2.38 from
+2.6, because no stored card is refused at either. Arm C is still unbuilt.
 
 ## Considered options
 

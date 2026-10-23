@@ -8,6 +8,9 @@ something empirically, then do so … make sure no suggested fix violates the
 widen guideline in AGENTS.md and where unsure between equally sensible
 options, you test empirically".
 
+Amended by #407: the list has no stop of its own; the Choice's room and
+the Card Budget (ADR 0088) bound it.
+
 ## Context
 
 #393 asked whether Jev should see what the action card leaves out: text
@@ -26,8 +29,8 @@ Eats recipe, "show me the ingredients" took four actions to get there.
 The blocks below the view are listed at the end of the card as Text
 Further Down, one `[text-N] "…"` entry each, in reading order. A block is
 held to 300 characters, as the blocks in view are, and an entry that
-repeats a label already on the card is left out. The list stops at 6000
-characters. Each entry carries a Show Op, `show-N`: "scroll until [text-N]
+repeats a label already on the card is left out. Every block is listed;
+the room and the Card Budget are the bound. Each entry carries a Show Op, `show-N`: "scroll until [text-N]
 "…" is in view". It is one evaluate that scrolls that block's element into
 view, on any site. The ops take only the room the Choice has left under
 its 255 options.

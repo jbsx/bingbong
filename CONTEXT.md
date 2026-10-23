@@ -209,8 +209,8 @@ context, menu
 The size, in the host's own tokens, that every section of an Action Card
 competes under by rule. One number for every model, the smallest host's,
 so the card the Decision Model gets is the card the gate measured. What
-makes the hop is never cut; what is further down yields first, nearest
-the view last.
+makes the hop is never cut; of what is further down, the right-clicks
+yield first, then the links, then the blocks, the farthest first.
 _Avoid_: cap, limit, max_len, context window, truncation
 
 **Text Further Down**:
@@ -218,8 +218,7 @@ The blocks of a page's text below the view, listed at the end of the
 action card as numbered targets (`[text-N]`), never as page content: text
 the page does not show is something the Decision Model can act on, not
 something the Verdict reads as shown. In reading order, labels already on
-the card left out, up to 6000 characters, and only in the room the Choice
-has left.
+the card left out, as many as the Choice's room and the Card Budget hold.
 _Avoid_: learn more, read further, more text
 
 **Show Op**:
