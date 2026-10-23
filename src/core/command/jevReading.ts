@@ -852,7 +852,7 @@ function textFurtherDownLines(page: CommandPage, hop: HopContext | undefined, ca
  */
 export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>, card?: { readonly action: DecisionChoiceQuestion }, heard?: readonly NameHearing[]): string {
   const shown = offered(page, hop)
-  // The links the card asked beside it opens, and no other (#406, ADR 0088): a link the Card Budget cut is no line of the state either.
+  // The links the card asked beside it opens, and no other (#406, ADR 0088): a link the Card Budget or the option cap left off the card is no line of the state either, as a block further down is never an entry without its op.
   const links = card === undefined ? shown.links : shown.links.filter((link) => Object.hasOwn(card.action.options, `open-${link.n}`))
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
@@ -1128,11 +1128,11 @@ function actionQuestion(
   const ops = take(reached.flatMap(opsOf))
   const scrolls = take(reached.flatMap(scrollsOf))
   // What is further down yields to the Card Budget (#406, ADR 0088): the first `further` of the opens, the right-clicks and the shows, in that order, each list nearest the view first.
-  let yielded = further
+  let toKeep = further
   const nearest = <T>(items: readonly T[]): readonly T[] => {
-    const kept = items.slice(0, Math.max(0, yielded))
-    yielded -= kept.length
-    return kept
+    const near = items.slice(0, Math.max(0, toKeep))
+    toKeep -= near.length
+    return near
   }
   const opened = nearest(take(links))
   const menus = nearest(take(reached.filter((ref) => clickable(ref) && kept(`menu-${ref.ref}`))))

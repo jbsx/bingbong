@@ -1727,8 +1727,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
       const heard = hearingOf(task.text, page, spoken)
-      const ask = model === null ? null : budgeted(model, (further) => hopQuestions(task.text, page, context, { appliance: appliance(), heard, further }), (questions) => commandState(task.text, page, context, task.step, undefined, questions, heard))
-      const result = superseded(task) || model === null || ask === null ? null : await askJev(model, 'hop', turnId, ask.state, ask.questions)
+      const ask = superseded(task) || model === null ? null : budgeted(model, (further) => hopQuestions(task.text, page, context, { appliance: appliance(), heard, further }), (questions) => commandState(task.text, page, context, task.step, undefined, questions, heard))
+      const result = model === null || ask === null ? null : await askJev(model, 'hop', turnId, ask.state, ask.questions)
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
