@@ -143,8 +143,9 @@ exec --no-startup-id "systemctl --user import-environment DISPLAY XAUTHORITY; sy
 
 i3 starts no graphical-session target, so this line is what hands the
 service the display. Run inside the session, the script starts the service
-at once; otherwise it starts at the next i3 login. After that the only step
-by hand is the Jev key, `TYPESAFE_API_KEY`, in Settings › Environment. At
+at once; otherwise it starts at the next i3 login. After that the only steps
+by hand are the Jev key, `TYPESAFE_API_KEY`, and, if the kiosk keeps its logs
+in the Log Bucket (below), its lines, both in Settings › Environment. At
 boot the app checks for `aplay`, a microphone and a display; anything
 missing is a line in the fault log and under Settings › This computer.
 
@@ -181,7 +182,10 @@ Setup is the "Log Bucket" block of `.env.example`, with:
 - **a billing notification** on the Cloudflare account, as the backstop:
   going over the free tier is billed, not blocked.
 
-The settings are read at boot, so restart the app after changing them; with
+On the kiosk the lines, with `BINGBONG_LOG_MACHINE=kiosk`, go in Settings ›
+Environment, which saves them to the packaged app's `.env`,
+`~/.config/bingbong/.env`. The settings are read at boot, so restart the app
+after changing them (`systemctl --user restart bingbong`); with
 them partly set it prints one line naming what is missing. The logs are not
 encrypted; their privacy rests on the private bucket and the scoped token.
 
