@@ -3746,12 +3746,12 @@ describe('a pop-up covering the page (#336)', () => {
       browser.snapshot = { ...browser.snapshot, refs: [SHEET_REFS[0]!], dialogOpen: false, dialogText: '', dialogTexts: [] }
       return line
     }
-    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('text-2') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('popup-2') } })
     await runner.run('close this', { source: 'spoken' })
     const asked = decision.requests[0]!.questions as { dismiss?: DecisionChoiceQuestion }
     // "Sign in" is a way through, as a control and as text: neither is offered.
-    expect(Object.keys(asked.dismiss!.options)).toEqual(['escape', 'text-1', 'text-2'])
-    expect(asked.dismiss!.options['text-2']).toBe('the text "×" in the pop-up, not listed as a control: a click lands on it')
+    expect(Object.keys(asked.dismiss!.options)).toEqual(['escape', 'popup-1', 'popup-2'])
+    expect(asked.dismiss!.options['popup-2']).toBe('the text "×" in the pop-up, not listed as a control: a click lands on it')
     expect(browser.clickedTexts).toEqual([close])
     expect(browser.clicks).toEqual([])
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])

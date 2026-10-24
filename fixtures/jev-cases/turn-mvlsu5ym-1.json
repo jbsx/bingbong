@@ -135,9 +135,9 @@
           "ref-1": "button \"×\"",
           "ref-2": "button \"DISABLE\"",
           "ref-3": "button \"Continue without supporting us\" role=paragraph",
-          "text-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
-          "text-2": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
-          "text-3": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it"
+          "popup-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-2": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-3": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it"
         }
       }
     }

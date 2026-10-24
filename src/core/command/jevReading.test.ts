@@ -956,15 +956,15 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(dismiss.options).toEqual({
       escape: 'no control closes it: press the Escape key',
       'ref-9': 'button "DISABLE"',
-      'text-1': 'the text "Looks like your ad blocker is on." in the pop-up, not listed as a control: a click lands on it',
-      'text-2': 'the text "×" in the pop-up, not listed as a control: a click lands on it',
-      'text-3': 'the text "Continue without supporting us" in the pop-up, not listed as a control: a click lands on it',
+      'popup-1': 'the text "Looks like your ad blocker is on." in the pop-up, not listed as a control: a click lands on it',
+      'popup-2': 'the text "×" in the pop-up, not listed as a control: a click lands on it',
+      'popup-3': 'the text "Continue without supporting us" in the pop-up, not listed as a control: a click lands on it',
     })
     expect(dismiss.instructions).toContain("Some of the pop-up's text is offered too, where a control may not have been listed as one.")
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('text-3', 0.7) }, covered)).toEqual({ choice: { text: { text: 'Continue without supporting us', frame: 'consent', node: 3 } }, probability: 0.7 })
-    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('text-4', 0.9) }, covered)).toBeNull()
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('popup-3', 0.7) }, covered)).toEqual({ choice: { text: { text: 'Continue without supporting us', frame: 'consent', node: 3 } }, probability: 0.7 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('popup-4', 0.9) }, covered)).toBeNull()
     // A pop-up with no control to click but text to land on is asked about: the class #414 does not reach.
-    expect(dismissPhraseQuestions('close', { ...covered, dialog: { ...covered.dialog!, refs: [] } })!.dismiss.options).toHaveProperty('text-2')
+    expect(dismissPhraseQuestions('close', { ...covered, dialog: { ...covered.dialog!, refs: [] } })!.dismiss.options).toHaveProperty('popup-2')
   })
 
   it("keeps the dismiss Choice to 255 options: the pop-up's text yields to its controls", () => {
@@ -973,7 +973,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     const page: CommandPage = { url: 'https://example.com/', title: 'Example', refs, dialog: { text: 'Pick one', refs: refs.map((ref) => ref.ref), texts } }
     const options = Object.keys(dismissPhraseQuestions('close', page)!.dismiss.options)
     expect(options).toHaveLength(255)
-    expect(options.filter((label) => label.startsWith('text-'))).toEqual(['text-1', 'text-2', 'text-3', 'text-4'])
+    expect(options.filter((label) => label.startsWith('popup-'))).toEqual(['popup-1', 'popup-2', 'popup-3', 'popup-4'])
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {
@@ -1847,7 +1847,7 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     const texts = options.slice(2)
     expect(texts.length).toBeGreaterThan(10)
     expect(texts.length).toBeLessThan(30)
-    expect(texts).toEqual(texts.map((_, index) => `text-${index + 1}`))
+    expect(texts).toEqual(texts.map((_, index) => `popup-${index + 1}`))
     expect(cut.questions.dismiss!.instructions).toContain("Some of the pop-up's text")
     // What is further down is not cut for the dismiss Choice's prompt: with a hundred links, every open stays and only the text yields.
     const long: CommandPage = { ...covered, dialog: { ...covered.dialog!, texts: covered.dialog!.texts!.map((piece) => ({ ...piece, text: piece.text.padEnd(400, 'p') })) } }
@@ -1857,7 +1857,7 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     const { dismiss: _dismiss, ...rest } = linked.questions
     const linkedCut = fitCard(promptChars(linked.state, rest), linkedBuild, linkedState)
     expect(labels(linkedCut.questions, 'open')).toHaveLength(100)
-    expect(Object.keys(linkedCut.questions.dismiss?.options ?? {}).filter((label) => label.startsWith('text-')).length).toBeLessThan(30)
+    expect(Object.keys(linkedCut.questions.dismiss?.options ?? {}).filter((label) => label.startsWith('popup-')).length).toBeLessThan(30)
     // With no room for any, the instructions no longer say it is offered.
     const none = fitCard(promptChars(cut.state, { dismiss: { ...cut.questions.dismiss!, options: { escape: '', 'ref-40': 'button "DISABLE"' } } }) - 100, coveredBuild, coveredState)
     expect(none.questions.dismiss?.instructions ?? '').not.toContain("Some of the pop-up's text")

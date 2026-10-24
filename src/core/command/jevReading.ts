@@ -1309,6 +1309,8 @@ export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandP
  * through, the "never" sentence said by class alone left every target on
  * Escape; both together closed every target and lured no control card.
  * The controls come first, and the text yields to the 255-option cap.
+ * Its options are `popup-N`, never `text-N`: the same card's state numbers
+ * Text Further Down `[text-N]`, and one name would point at two things.
  */
 function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
   if (page.dialog === undefined) return null
@@ -1323,7 +1325,7 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
     options: {
       escape: 'no control closes it: press the Escape key',
       ...Object.fromEntries(controls.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
-      ...Object.fromEntries(texts.map((piece, index) => [`text-${index + 1}`, `the text ${JSON.stringify(piece.text)} in the pop-up, not listed as a control: a click lands on it`])),
+      ...Object.fromEntries(texts.map((piece, index) => [`popup-${index + 1}`, `the text ${JSON.stringify(piece.text)} in the pop-up, not listed as a control: a click lands on it`])),
     },
   }
 }
@@ -1393,7 +1395,7 @@ export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: Co
   const { choice } = answers.dismiss
   const probability = choiceProbability(answers.dismiss)
   if (choice === 'escape') return { choice: 'escape', probability }
-  const text = /^text-(\d+)$/.exec(choice)
+  const text = /^popup-(\d+)$/.exec(choice)
   if (text !== null) {
     const piece = offeredDialogTexts(page)[Number(text[1]) - 1]
     return piece === undefined ? null : { choice: { text: piece }, probability }
@@ -1469,7 +1471,7 @@ export function fitCard<Q extends CommandQuestions>(budget: number | undefined, 
 function fitDialogText<Q extends CommandQuestions>(budget: number | undefined, fitted: { questions: Q; state: string }, stateOf: (questions: Q) => string): { questions: Q; state: string } {
   const dismiss = (fitted.questions as { readonly dismiss?: DecisionChoiceQuestion }).dismiss
   if (budget === undefined || dismiss === undefined) return fitted
-  const texts = Object.keys(dismiss.options).filter((label) => /^text-\d+$/.test(label))
+  const texts = Object.keys(dismiss.options).filter((label) => /^popup-\d+$/.test(label))
   const keeping = (kept: number): DecisionChoiceQuestion => {
     const options = Object.fromEntries(Object.entries(dismiss.options).filter(([label]) => !texts.slice(kept).includes(label)))
     return kept > 0 ? { ...dismiss, options } : { ...dismiss, instructions: dismiss.instructions.replace(` ${DISMISS_TEXT_OFFERED}`, ''), options }

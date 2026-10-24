@@ -6,7 +6,7 @@
   "expect": [
     {
       "question": "dismiss",
-      "label": "text-2|text-5"
+      "label": "popup-2|popup-5"
     }
   ],
   "ask": {
@@ -102,11 +102,11 @@
         "options": {
           "escape": "no control closes it: press the Escape key",
           "ref-1": "button \"DISABLE\"",
-          "text-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
-          "text-2": "the text \"×\" in the pop-up, not listed as a control: a click lands on it",
-          "text-3": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
-          "text-4": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it",
-          "text-5": "the text \"Continue without supporting us\" in the pop-up, not listed as a control: a click lands on it"
+          "popup-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-2": "the text \"×\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-3": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-4": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-5": "the text \"Continue without supporting us\" in the pop-up, not listed as a control: a click lands on it"
         }
       }
     }
