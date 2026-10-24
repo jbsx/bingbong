@@ -1211,6 +1211,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(played?.video !== undefined ? { video: played.video } : {}),
       ...(played?.pick !== undefined ? { pick: played.pick } : {}),
     })
+    // An action on the pop-up itself (#417): whether it is still open is read from the page after it, whatever its own outcome.
+    const onPopup = command.dismiss === true || actsOnDialog(command, page)
     try {
       const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
       if (!current()) return ended('superseded')
@@ -1246,10 +1248,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const state = browser.state()
         const landedOn = { tool: name, outcome: { ok: true as const, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}), ...(state.status !== undefined ? { status: state.status } : {}) }
         // A landing ends the Task with its line only on a fact (ADR 0089); a title or a body that reads as one goes to the Verdict.
-        // An action on the pop-up refused because its control is hidden, inert or covered (#417): still open is read from the page, whatever the refusal says.
+        // Refused because its control is hidden, inert or covered, an action on the pop-up has not failed when the pop-up went (#417); a rung's pop-up still open is read below, as `stayed`.
         const refused = spokenFailureOf(landedOn)
-        const onDialog = (refused === 'blocked' || refused === 'consent') && (command.dismiss === true || actsOnDialog(command, page))
-        const landedFailure = onDialog && (command.dismiss === true || !(await dialogStillOpen())) ? null : refused
+        const refusedOnPopup = (refused === 'blocked' || refused === 'consent') && onPopup
+        const landedFailure = refusedOnPopup && (command.dismiss === true || !(await dialogStillOpen())) ? null : refused
         const suspected = landedFailure === null ? suspectedFailureOf(landedOn) : null
         suspect = suspected === null ? null : { failure: suspected, url: landedUrl(result) ?? state.url ?? undefined }
         const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
@@ -1286,20 +1288,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     } catch (error) {
       if (!current()) return ended('superseded')
       const message = error instanceof Error ? error.message : String(error)
-      // An action on the pop-up that threw — its frame gone with it (#417): still open is read from the page.
-      const onPopup = command.dismiss === true || actsOnDialog(command, page)
-      const open = onPopup ? await dialogStillOpen() : true
+      // An action on the pop-up that threw — its frame gone with it (#417): gone, it landed; a rung's still open is the next rung's, or at the last the pop-up still open.
+      const open = onPopup && (await dialogStillOpen())
       if (!current()) return ended('superseded')
-      if (!open || (command.dismiss === true && reacting.deferStay === true)) {
+      const stayed = open && command.dismiss === true
+      if ((onPopup && !open) || (stayed && reacting.deferStay === true)) {
         react('settled')
         publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
         inFlight = null
         publish({ type: 'done', turnId, outcome: 'done', at: at() })
-        return ended(open ? 'stayed' : 'landed')
+        return ended(stayed ? 'stayed' : 'landed')
       }
       react('failed')
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-      answerFailure(turnId, failureLineOf(name, message))
+      answerFailure(turnId, stayed ? SPOKEN_FAILURES.dialogStayed : failureLineOf(name, message))
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { ...ended('wall'), error: message }

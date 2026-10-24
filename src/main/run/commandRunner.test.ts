@@ -2564,6 +2564,20 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
         })
 
+        it('a last rung that throws with the sheet still open says the pop-up is still open, not its error', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          browser.pressKey = async () => {
+            throw new Error('the page did not answer')
+          }
+          decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([1])
+          expect(failures(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.dialogStayed })])
+          expect(decisions(records).at(-1)).toMatchObject({ verb: 'press', stepAside: true, ended: 'wall' })
+        })
+
         it("Jev's own click on the pop-up, refused as not shown because the pop-up left, is no wall: the Verdict reads the page it leaves", async () => {
           const h = taskHarness()
           const { browser, events, records, decision, runner } = h

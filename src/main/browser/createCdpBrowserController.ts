@@ -738,14 +738,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** What the open dialog shows, read in place in the top and, for a framed control, in its frame; null once its frame has gone. */
   async function dialogFace(frame: string | null): Promise<string | null> {
+    let top: unknown
     try {
-      const top = await evaluateInPage<unknown>(`(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(false) : null)()`)
-      const inFrame = frame === null ? null : await evaluateInFrame<unknown>(frame, `(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(true) : null)()`)
-      return `${String(top)}\n${String(inFrame)}`
-    } catch {
-      // The frame went with the sheet: what it showed is no more.
+      top = await evaluateInPage<unknown>(`(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(false) : null)()`)
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.dialogFace', error)
       return null
     }
+    // A frame that went with the sheet shows nothing more.
+    const inFrame = frame === null ? null : await evaluateInFrame<unknown>(frame, `(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(true) : null)()`).catch(() => 'gone')
+    return `${String(top)}\n${String(inFrame)}`
   }
 
   /**
@@ -758,7 +760,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function awaitSheetLeft(face: string | null, frame: string | null): Promise<void> {
     const start = subspans?.now()
     let outcome: 'gone' | 'changed' | 'bound' = 'bound'
-    for (let waited = 0; waited < SHEET_LEFT_MS; waited += SHEET_POLL_MS) {
+    // The bound is the clock's, reads and all: a slow frame's reads do not stretch it.
+    const until = clock.now() + SHEET_LEFT_MS
+    while (clock.now() < until) {
       if (!(await dialogOpenInPlace())) {
         outcome = 'gone'
         break
@@ -1825,9 +1829,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function clickRef(ref: number, button: MouseButton = 'left'): Promise<string> {
     const watch = page.watchArrival?.()
     const frame = addressOfRef(ref).frame
-    // A control of the open dialog, as the model was shown it (#417): what the dialog showed before the click.
+    // A button or link of the open dialog, as the model was shown it (#417) — a field never closes a sheet: what the dialog showed before the click.
     const shown = lastSnapshot === undefined ? undefined : findSnapshotRef(lastSnapshot, ref)
-    const onDialog = button === 'left' && shown?.layer === 'dialog'
+    const onDialog = button === 'left' && shown?.layer === 'dialog' && (shown.kind === 'button' || shown.kind === 'link')
     const face = onDialog ? await dialogFace(frame) : null
     await armReadiness(frame)
     const attempt = await performClick(ref, button)

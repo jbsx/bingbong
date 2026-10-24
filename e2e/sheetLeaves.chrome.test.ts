@@ -36,7 +36,7 @@ const FRAMED = (closeMs: number, close: string) => `<body>${PAGE}${SHEET('<ifram
 
 const PAGES: Record<string, string> = {
   '/cmp': CMP_FRAME,
-  '/fade': `<body>${PAGE}${SHEET('<p>We use cookies</p><button id="decline">Decline</button><button id="more">Learn more</button><button id="prefs" aria-expanded="false">Preferences</button><div id="panel" hidden><p>Analytics</p></div>', 'transition:opacity 1200ms')}
+  '/fade': `<body>${PAGE}${SHEET('<p>We use cookies</p><button id="decline">Decline</button><button id="more">Learn more</button><input aria-label="Email"><button id="prefs" aria-expanded="false">Preferences</button><div id="panel" hidden><p>Analytics</p></div>', 'transition:opacity 1200ms')}
 <script>
   const sheet = document.getElementById('sheet')
   document.getElementById('decline').onclick = () => { sheet.style.opacity = '0'; sheet.addEventListener('transitionend', () => sheet.remove()) }
@@ -94,6 +94,7 @@ describe.skipIf(!canDriveChrome)("a click on the open dialog's control waits for
     ["the framed wall's Preferences, which redraws it (the claimed lines' hop 1)", '/fastcmp', 'Preferences'],
     ['an accordion that opens more of the sheet', '/fade', 'Preferences'],
     ["a framed wall's switch", '/fastcmp', 'Analytics'],
+    ['a field on the sheet, which a click only focuses', '/fade', 'Email'],
   ])('%s keeps the dialog open and does not wait out the bound', async (_, path, label) => {
     const { controller, control } = await shown(path, label)
     const started = performance.now()
