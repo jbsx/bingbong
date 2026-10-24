@@ -1371,7 +1371,7 @@ listener is delegated still is not one.
 
 - **The pop-up's text is offered.** Beside the controls, the dismiss
   Choice offers each element of the dialog's layer, in view, with text of
-  its own and inside no ref: `text-N: the text "…" in the pop-up, not
+  its own and inside no ref: `popup-N: the text "…" in the pop-up, not
   listed as a control: a click lands on it`. The instructions say some of
   the pop-up's text is offered where a control may not have been listed
   as one. A chosen text is clicked at its box centre and is a rung like a
