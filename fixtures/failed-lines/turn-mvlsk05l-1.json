@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvlsk05l-1",
+  "transcript": "accept cookies",
+  "at": 1792809618448,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "'accept cookies' on bbcgoodfood.com (main 6486d6e1, Mammoth): hop 0 clicked the Sourcepoint frame's [11] 'Accept cookies and read free content with personalised ads' (0.68) and the consent fallback reported it dismissed; the wall did clear, but hop 1 collected while it was still up (dialogOpen=true), read in_the_way 0.75, clicked [14] 'Accept All & Continue' in a frame already gone ('the frame 5:5 is gone') and the Task ended wall. The next read showed the page with no dialog. turn-mvihv054-1's class on a third occasion, a second site",
+  "meant": "The Task ends done once the accept click has closed the wall; a hop after a click on a dialog control reads the page once the sheet has left, as a consent dismissal already waits for (awaitDialogGone)",
+  "log": "decision-1792809591287-1.jsonl",
+  "claimedBy": "#417"
+}
