@@ -347,7 +347,11 @@ met: instead of ending, the runner fires the Dismissal Ladder's rungs as
 that Hop, one after another until the pop-up closes, and the Task goes on
 from the page it leaves. No second Jev call decides to close: the hop's own
 ask carried the dismiss Choice. Each rung counts toward the cap; a pop-up
-still open after the last rung is a wall ("The pop-up is still open."). The
+still open after the last rung is a wall ("The pop-up is still open.").
+Still open is read from the page after the rung, whatever the rung's own
+outcome: a rung refused because its control is hidden, inert or in a frame
+that has gone has not failed when the pop-up went with it, and the Task goes
+on from the page it leaves. The
 same Obstacle met again is the wall. A sure yes ends the Task after the
 existing page-change check, without waiting for a future pop-up (owner,
 2026-10-22). A pop-up already present when that check runs is read again
