@@ -89,7 +89,9 @@ them, and a "scroll this region" op is a separate decision.
 - Outside a dialog's layer, a React or jQuery control with a delegated
   listener and no Vimium cue stays invisible, as it does to Vimium. Inside
   the layer, a listener of the element's own makes it a ref (#414). A
-  delegated one still does not, unless it carries a `tabindex`.
+  delegated one still does not, unless it carries a `tabindex`. Over a
+  pop-up, the dismiss Choice offers that control's text in its place
+  (#416, ADR 0076).
 - Measured on #414: the anti-adblock dialog gives 3 refs with the two cues
   and 1 without. `browser-collect` with a dialog open adds 0.6 ms to the
   median, against a ≤15 ms budget, and with no dialog open it adds

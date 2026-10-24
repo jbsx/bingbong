@@ -1360,3 +1360,28 @@ The Local Match fires an exact line only when it has one reading on
 every page; the intent lines, "the first result" and a bare word that
 is no Known Address go to Jev. The dismiss phrase, the close-label
 fallback and the through-veto stay, for the reasons ADR 0089 gives.
+
+## Amendment 2026-10-24 — the dismiss Choice offers the pop-up's own text (#416)
+
+publicholidays.co.uk's anti-adblock dialog (`turn-mvlq72ay-4`) closes on
+a × and on "Continue without supporting us", and neither was a ref. The
+dismiss Choice offered DISABLE, which leads further in, and `escape`,
+which the dialog ignores. #414 makes those two refs; a close whose
+listener is delegated still is not one.
+
+- **The pop-up's text is offered.** Beside the controls, the dismiss
+  Choice offers each element of the dialog's layer, in view, with text of
+  its own and inside no ref: `text-N: the text "…" in the pop-up, not
+  listed as a control: a click lands on it`. The instructions say some of
+  the pop-up's text is offered where a control may not have been listed
+  as one. A chosen text is clicked at its box centre and is a rung like a
+  control, with the same through-veto read on its words.
+- **The "never" sentence is said by class:** "Never one that does what
+  the pop-up asks of you, such as sign in, sign up, subscribe, accept,
+  agree, allow or install. Only one that leaves without doing it."
+- **Measured** (Mammoth and Elephant, no Jev): the text alone left
+  Elephant on DISABLE (0.50), and the rewording alone left every target
+  on Escape. Both together picked × or Continue on both models, and every
+  text option on 10 control cards scored ≤ 0.00. A "not offered" answer
+  passed too, but costs a second call when chosen. Gate: N cases through,
+  none lost.

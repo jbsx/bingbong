@@ -361,7 +361,8 @@ once, Escape last: the control Jev chose when sure (ADR 0089), the consent
 policy's control (reject first, accept second), a control whose label
 begins as a close does (close, dismiss, not now, skip, no thanks, ×…),
 Jev's choice when unsure, Escape. Never a link, a field or a way through
-(sign in, subscribe, accept, agree, install…), whoever chose it — the
+(sign in, subscribe, accept, agree, install…), whoever chose it, and a
+piece of the pop-up's text by its words as a control by its label — the
 policy's reject included: one that pays or subscribes is no reject. A
 Dismiss Phrase fires the first rung; a Step Aside walks the ladder.
 _Avoid_: close heuristic, fallback chain, label list
@@ -370,8 +371,10 @@ _Avoid_: close heuristic, fallback chain, label list
 The question a Hop read over a pop-up asks Jev beside the verb and the
 Verdict: which control closes the pop-up and leaves the page as it was.
 Every control of the dialog's layer a dismissal may click is offered,
-beside `escape`. Its answer is a rung of the Dismissal Ladder, placed by how
-sure Jev was; the record keeps it.
+beside `escape`, and so is every piece of the layer's own text in view that
+no control holds, as a place a click may land: a close that no cue made a
+control is still on offer. Its answer is a rung of the Dismissal Ladder,
+placed by how sure Jev was; the record keeps it.
 _Avoid_: close question, dismissal target
 
 **Obstacle**:
