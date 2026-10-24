@@ -38,11 +38,10 @@ import { layerEnv } from '../core/settings/dotEnv'
 import { loadEnvFile, resolveEnvFilePath } from './envFile'
 import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
-import { createMainTts } from './tts/createMainTts'
+import { createMainTts, createPreviewRenderer } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
 import { createKokoroSynthesizer } from './tts/createKokoroSynthesizer'
 import { createVoicePreviews } from './tts/createVoicePreviews'
-import { createPreviewRenderer } from './tts/createMainTts'
 import { DEFAULT_TTS_VOICE } from '../core/tts/ttsVoices'
 import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
@@ -444,6 +443,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
   const ducking = createDucking((on) => void music.player.duck(on))
   win.on('closed', speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
+  // A spoken line cuts a voice preview short (#412): the two never sound together.
+  win.on('closed', speakingGate.onSpeakingChange((speaking) => speaking && voicePreviews.stop()))
   win.on('closed', timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,

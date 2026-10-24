@@ -110,6 +110,8 @@ RUN printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > /etc/a
 COPY --from=builder /app/out ./out
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
+# The voice picker's shipped preview clips (#412), read beside out/.
+COPY resources/tts-samples ./resources/tts-samples
 COPY --from=assets /assets /opt/bingbong/assets
 COPY docker/entrypoint.sh /usr/local/bin/bingbong-entrypoint
 COPY scripts/kiosk-seed.ts ./scripts/kiosk-seed.ts

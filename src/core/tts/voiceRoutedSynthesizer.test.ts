@@ -64,6 +64,28 @@ describe('createVoiceRoutedSynthesizer', () => {
     expect(faults).toEqual([expect.objectContaining({ site: 'tts.voiceRoutedSynthesizer.kokoro', message: 'kokoro model not fetched yet' })])
   })
 
+  it('reports a failure once while it repeats, sentence after sentence, and again after Kokoro has spoken', async () => {
+    setFaultSink((report) => faults.push(report))
+    let fail: Error | undefined = new Error('the Kokoro model is not fetched yet')
+    const kokoro: KokoroSynthesizer = {
+      synthesize: async (line) => {
+        if (fail) throw fail
+        return bytes(`kokoro:${line}`)
+      },
+    }
+    const synth = createVoiceRoutedSynthesizer({ getVoiceId: () => 'kokoro:af_heart', kokoro, piper: fakePiper() })
+
+    await synth.synthesize('One.')
+    await synth.synthesize('Two.')
+    await synth.synthesize('Three.')
+    expect(faults).toHaveLength(1)
+    fail = undefined
+    await synth.synthesize('Four.')
+    fail = new Error('the Kokoro model is not fetched yet')
+    await synth.synthesize('Five.')
+    expect(faults).toHaveLength(2)
+  })
+
   it('speaks a kokoro: id it does not know through Piper, with the fault reported', async () => {
     setFaultSink((report) => faults.push(report))
     const kokoro = fakeKokoro()

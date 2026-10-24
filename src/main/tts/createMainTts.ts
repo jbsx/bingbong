@@ -56,7 +56,8 @@ export function createPreviewRenderer(config: PiperConfig, kokoro: MainKokoroSyn
     const kokoroVoice = kokoroVoiceOf(voiceId)
     if (kokoroVoice !== null) {
       if (kokoro === null) throw new Error('Kokoro is off')
-      return kokoro.synthesize(PREVIEW_LINE, kokoroVoice)
+      // A voice no line has used yet has no style file: the preview fetches it.
+      return kokoro.synthesize(PREVIEW_LINE, kokoroVoice, { waitForVoice: true })
     }
     return createPiperSynthesizer({ bin: config.bin, voicesDir: config.voicesDir, getVoiceId: () => voiceId }).synthesize(PREVIEW_LINE)
   }

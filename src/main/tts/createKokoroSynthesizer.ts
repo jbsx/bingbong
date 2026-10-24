@@ -93,11 +93,15 @@ export function createKokoroSynthesizer(deps: KokoroSynthesizerDeps): MainKokoro
     return style
   }
 
-  /** Refuses the line, without waiting, while a file it needs is still to come. */
-  function requireFetched(voice: KokoroVoice): void {
+  /** Refuses the line, without waiting, while a file it needs is still to come; a preview waits for its voice's small file. */
+  async function requireFetched(voice: KokoroVoice, waitForVoice: boolean): Promise<void> {
     if (!kokoroModelReady(deps.modelsDir, store)) {
       void fetchModel().catch((error: unknown) => reportFault('tts.createKokoroSynthesizer.fetchModel', error))
       throw new Error('the Kokoro model is not fetched yet')
+    }
+    if (waitForVoice) {
+      await fetchVoice(voice.name)
+      return
     }
     if (!kokoroVoiceReady(deps.modelsDir, voice.name, store)) {
       void fetchVoice(voice.name).catch((error: unknown) => reportFault('tts.createKokoroSynthesizer.fetchVoice', error))
@@ -128,8 +132,8 @@ export function createKokoroSynthesizer(deps: KokoroSynthesizerDeps): MainKokoro
   }
 
   return {
-    async synthesize(text, voice) {
-      requireFetched(voice)
+    async synthesize(text, voice, options = {}) {
+      await requireFetched(voice, options.waitForVoice === true)
       const run = chain.then(() => sayLine(text, voice))
       chain = run.catch(() => {})
       return run

@@ -1,7 +1,7 @@
 {
   "name": "bingbong",
   "version": "0.1.0",
-  "description": "Bing Bong (kachow) — a voice-driven browser shell: embedded Chromium with a numbered-ref interaction surface, dashboard, local STT/TTS, and Jev as the one model",
+  "description": "Bing Bong (kachow) \u2014 a voice-driven browser shell: embedded Chromium with a numbered-ref interaction surface, dashboard, local STT/TTS, and Jev as the one model",
   "type": "module",
   "packageManager": "pnpm@10.17.1",
   "main": "out/main/index.js",

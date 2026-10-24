@@ -99,6 +99,25 @@ describe('createKokoroSynthesizer', () => {
     expect(fetched).toEqual(['https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_george.bin'])
   })
 
+  it('fetches a voice’s style file and then says the line, when asked to wait for it (a preview)', async () => {
+    const { store, fetched } = fakeStore(['model.onnx', 'tokenizer.json'])
+    const { runtime, runs } = fakeRuntime()
+    const kokoro = createKokoroSynthesizer({ modelsDir: MODELS, store, loadRuntime: async () => runtime, phonemize: async () => ['ab'], readFile })
+
+    const wav = parseWav(await kokoro.synthesize('Hello', { name: 'bm_george', language: 'en' }, { waitForVoice: true }))!
+    expect(fetched).toEqual(['https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_george.bin'])
+    expect(runs).toHaveLength(1)
+    expect(wav.sampleRate).toBe(24000)
+  })
+
+  it('refuses a preview at once while the model itself is not fetched, rather than wait out its download', async () => {
+    const { store } = fakeStore([])
+    const { runtime } = fakeRuntime()
+    const kokoro = createKokoroSynthesizer({ modelsDir: MODELS, store, loadRuntime: async () => runtime, phonemize: async (t) => [t], readFile })
+
+    await expect(kokoro.synthesize('ab', heart, { waitForVoice: true })).rejects.toThrow(/model is not fetched yet/)
+  })
+
   it('says a fetched sentence through the graph: padded ids, the style row of its token count, speed 1, a 24 kHz WAV', async () => {
     const { store } = fakeStore(['model.onnx', 'tokenizer.json', 'voices/af_heart.bin'])
     const { runtime, runs, loads } = fakeRuntime()

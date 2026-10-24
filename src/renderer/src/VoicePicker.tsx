@@ -16,13 +16,14 @@ export function VoicePicker({ voices, value, onChange }: { voices: readonly TtsV
 
   useEffect(() => () => window.bingbong.tts.stopPreview(), [])
 
-  const preview = (voiceId: string): void => {
-    if (playingRef.current === voiceId) {
+  /** `row` is the row's own id, so Default and Heart (one voice) do not both show ■. */
+  const preview = (row: string, voiceId: string): void => {
+    if (playingRef.current === row) {
       window.bingbong.tts.stopPreview()
       return
     }
-    playingRef.current = voiceId
-    setPlaying(voiceId)
+    playingRef.current = row
+    setPlaying(row)
     setPreviewError(null)
     void window.bingbong.tts
       .preview(voiceId)
@@ -31,7 +32,7 @@ export function VoicePicker({ voices, value, onChange }: { voices: readonly TtsV
       })
       .catch((error: unknown) => setPreviewError(error instanceof Error ? error.message : String(error)))
       .finally(() => {
-        if (playingRef.current !== voiceId) return
+        if (playingRef.current !== row) return
         playingRef.current = null
         setPlaying(null)
       })
@@ -62,11 +63,11 @@ export function VoicePicker({ voices, value, onChange }: { voices: readonly TtsV
         <button
           type="button"
           className="voice-preview"
-          aria-label={playing === voiceId ? `Stop ${voice.label}` : `Preview ${voice.label}`}
-          aria-pressed={playing === voiceId}
-          onClick={() => preview(voiceId)}
+          aria-label={playing === id ? `Stop ${voice.label}` : `Preview ${voice.label}`}
+          aria-pressed={playing === id}
+          onClick={() => preview(id, voiceId)}
         >
-          {playing === voiceId ? '■' : '▶'}
+          {playing === id ? '■' : '▶'}
         </button>
       )}
     </div>

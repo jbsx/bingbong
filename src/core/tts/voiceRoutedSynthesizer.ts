@@ -4,7 +4,8 @@ import { KOKORO_PREFIX, kokoroVoiceOf, type KokoroVoice, type TtsEngine } from '
 
 /** Kokoro in main (#412): one line in a given voice → WAV bytes; rejects at once while its model is still being fetched. */
 export interface KokoroSynthesizer {
-  synthesize(text: string, voice: KokoroVoice): Promise<Uint8Array>
+  /** `waitForVoice`: fetch the voice's style file (~0.5 MB) rather than refuse while it is missing, as a preview does; the model is never waited on. */
+  synthesize(text: string, voice: KokoroVoice, options?: { waitForVoice?: boolean }): Promise<Uint8Array>
 }
 
 export interface VoiceRoutedSynthesizerDeps {
@@ -26,10 +27,20 @@ export function piperVoiceFor(voiceId: string, fallbackVoice: string): string {
  * to the engine its voice id names, Kokoro for `kokoro:<voice>`, Piper for
  * the rest. A Kokoro line that cannot be said, because the model is not
  * fetched yet or the engine failed, is said by Piper in the fallback
- * voice and the fault reported, so speech is never silent on a first boot.
+ * voice and the fault reported once per cause, so speech is never silent on a first
+ * boot and the fault log is not a line per sentence of it.
  */
 export function createVoiceRoutedSynthesizer(deps: VoiceRoutedSynthesizerDeps): SpeechSynthesizer {
   let last: TtsEngine | null = null
+  /** The failure last reported: one fault per cause, not one per sentence while a fetch runs. Cleared once Kokoro speaks. */
+  let reported: string | null = null
+
+  function report(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message === reported) return
+    reported = message
+    reportFault('tts.voiceRoutedSynthesizer.kokoro', error)
+  }
 
   async function viaPiper(text: string): Promise<Uint8Array> {
     last = 'piper'
@@ -42,15 +53,16 @@ export function createVoiceRoutedSynthesizer(deps: VoiceRoutedSynthesizerDeps): 
       if (deps.kokoro === null || !voiceId.startsWith(KOKORO_PREFIX)) return viaPiper(text)
       const voice = kokoroVoiceOf(voiceId)
       if (voice === null) {
-        reportFault('tts.voiceRoutedSynthesizer.kokoro', new Error(`no Kokoro voice '${voiceId}'`))
+        report(new Error(`no Kokoro voice '${voiceId}'`))
         return viaPiper(text)
       }
       try {
         const wav = await deps.kokoro.synthesize(text, voice)
         last = 'kokoro'
+        reported = null
         return wav
       } catch (error) {
-        reportFault('tts.voiceRoutedSynthesizer.kokoro', error)
+        report(error)
         return viaPiper(text)
       }
     },

@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { KOKORO_MAX_TOKENS, KOKORO_STYLE_DIM } from '../../core/tts/kokoro'
 import { ensureModelFiles, modelFilesComplete, type MoonshineModelStore } from '../moonshine/moonshineModels'
 
 // Where Kokoro-82M lives (#412): <userData>/models/<KOKORO_DIR>, fetched once
@@ -17,9 +18,9 @@ export const KOKORO_FILES = [
   { name: 'tokenizer.json', url: `${URL_BASE}/tokenizer.json`, minBytes: 3_000 },
 ] as const
 
-/** A voice's style file: 510 × 256 float32. */
+/** A voice's style file: one float32 style vector per token count. */
 export function kokoroVoiceFile(name: string): { name: string; url: string; minBytes: number } {
-  return { name: join('voices', `${name}.bin`), url: `${URL_BASE}/voices/${name}.bin`, minBytes: 510 * 256 * 4 }
+  return { name: join('voices', `${name}.bin`), url: `${URL_BASE}/voices/${name}.bin`, minBytes: KOKORO_MAX_TOKENS * KOKORO_STYLE_DIM * Float32Array.BYTES_PER_ELEMENT }
 }
 
 export function kokoroDir(modelsDir: string): string {
