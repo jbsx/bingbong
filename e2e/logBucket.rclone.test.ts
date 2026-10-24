@@ -93,6 +93,13 @@ describe.skipIf(!hasRclone)('log-bucket.sh trim', () => {
     expect(result.status, result.stderr).toBe(0)
     expect(readdirSync(join(bucket, 'kiosk'))).toHaveLength(3)
   })
+
+  it('fails, deleting nothing, when the bucket cannot be measured', () => {
+    const env = configured(['BINGBONG_LOG_BUCKET_HIGH_GB=0', 'BINGBONG_LOG_BUCKET_LOW_GB=0'])
+    const result = run('trim', { ...env, BINGBONG_LOG_BUCKET: join(root, 'missing') })
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toMatch(/could not measure/)
+  })
 })
 
 describe.skipIf(!hasRclone)('log-bucket.sh copy', () => {

@@ -160,7 +160,10 @@ Setup is the "Log Bucket" block of `.env.example`, copied into
 
 The sidecar reads only the `BINGBONG_LOG_*` and `RCLONE_CONFIG_R2_*` lines
 of the file, so the model keys never enter it. Without them it logs one
-line and idles, and `scripts/kiosk-setup.sh` warns. The logs are not
+line and idles, and `scripts/kiosk-setup.sh` warns; it reads them when it
+starts, so after filling them in run `docker compose restart log-bucket`.
+`kiosk-setup.sh` also creates `./data/.config/bingbong/logs`, which the
+sidecar mounts and docker must not create root-owned. The logs are not
 encrypted; their privacy rests on the private bucket and the scoped token.
 
 On the dev PC, install [rclone](https://rclone.org/install/), put the same

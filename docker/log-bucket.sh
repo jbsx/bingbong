@@ -22,8 +22,9 @@ say() { printf '%s log-bucket: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
 load_env() {
   [ -r "$ENV_FILE" ] || return 0
-  # One `KEY=value` per line; `export `, surrounding quotes and CRLF handled
-  # as the app's own parser does (src/core/settings/dotEnv.ts).
+  # One `KEY=value` per line; `export `, one pair of surrounding quotes and
+  # CRLF are handled. Unlike the app's parser (src/core/settings/dotEnv.ts),
+  # escapes inside double quotes are left as written.
   while IFS= read -r line || [ -n "$line" ]; do
     line=$(printf '%s' "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/^export[[:space:]]\{1,\}//')
     case $line in
@@ -50,6 +51,10 @@ LOW_GB=${BINGBONG_LOG_BUCKET_LOW_GB:-7}
 # until the bucket is under the low mark; another machine's are never touched.
 trim() {
   bytes=$(rclone size "r2:$BUCKET" --json | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
+  if [ -z "$bytes" ]; then
+    say "space check: could not measure r2:$BUCKET"
+    return 1
+  fi
   high=$(awk -v gb="$HIGH_GB" 'BEGIN { printf "%.0f", gb * 1e9 }')
   low=$(awk -v gb="$LOW_GB" 'BEGIN { printf "%.0f", gb * 1e9 }')
   if [ "$bytes" -le "$high" ]; then
@@ -58,7 +63,8 @@ trim() {
   fi
   list=$(mktemp)
   tab=$(printf '\t')
-  rclone lsf -R --files-only --format tsp --separator "$tab" "r2:$BUCKET/$MACHINE" \
+  # The upload time, from the listing itself: no HEAD per object.
+  rclone lsf -R --files-only --use-server-modtime --format tsp --separator "$tab" "r2:$BUCKET/$MACHINE" \
     | sort \
     | awk -F "$tab" -v total="$bytes" -v low="$low" 'total >= low { total -= $2; print $3 }' > "$list"
   count=$(wc -l < "$list" | tr -d ' ')
@@ -75,29 +81,35 @@ configured() {
 
 # `copy`, never `sync`: the kiosk's own purge must never delete anything in
 # the bucket. With --max-age and --no-traverse the bucket is never listed;
-# only the few files written in the last hour are checked and uploaded, so
-# the Class A count is fixed by the schedule, not the load.
+# only the few files written since the last copy are checked and uploaded,
+# so the Class A count is fixed by the schedule, not the load.
 copy() {
   rclone copy "$SOURCE" "r2:$BUCKET/$MACHINE/" --no-traverse "$@"
 }
 
 run() {
   if ! configured; then
-    say "not configured (BINGBONG_LOG_BUCKET, BINGBONG_LOG_MACHINE and RCLONE_CONFIG_R2_* in config/.env); idle"
+    say "not configured (BINGBONG_LOG_BUCKET, BINGBONG_LOG_MACHINE and RCLONE_CONFIG_R2_* in config/.env); idle until restarted"
     # Asleep, not exited: restart: unless-stopped never spins.
     exec sleep 2147483647
   fi
   say "copying $SOURCE to r2:$BUCKET/$MACHINE/ every 5 min; space check daily (over $HIGH_GB GB, down to $LOW_GB GB)"
-  # Once at start without the age limit: what was written while the sidecar
-  # was down goes up too. Each file is checked, nothing already there re-sent.
-  copy || say "catch-up copy failed; the 5-minute copies carry on"
+  # Each copy reaches back to the last one that succeeded, plus an hour:
+  # nothing written during an outage is left behind. The first has no age
+  # limit, so what was written while the sidecar was down goes up too; each
+  # file is checked, nothing already there re-sent.
+  last_ok=0
   last_trim=0
   while :; do
-    copy --max-age 1h || say "copy failed; next try in 5 min"
-    now=$(date +%s)
-    if [ $((now - last_trim)) -ge 86400 ]; then
+    started=$(date +%s)
+    if [ "$last_ok" -eq 0 ]; then
+      copy && last_ok=$started || say "copy failed; next try in 5 min"
+    else
+      copy --max-age "$((started - last_ok + 3600))s" && last_ok=$started || say "copy failed; next try in 5 min"
+    fi
+    if [ $((started - last_trim)) -ge 86400 ]; then
       trim || say "space check failed; next try tomorrow"
-      last_trim=$now
+      last_trim=$started
     fi
     sleep 300
   done

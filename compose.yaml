@@ -58,7 +58,9 @@ services:
     entrypoint: ["/bin/sh", "/log-bucket.sh", "run"]
     environment:
       BINGBONG_LOG_MACHINE: kiosk
-      BINGBONG_LOG_SOURCE: /data/.config/bingbong/logs
+      # The token is scoped to the one bucket: without this, every upload
+      # first tries CreateBucket and is refused.
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
       # No rclone config file: the remote is the RCLONE_CONFIG_R2_* lines.
       # Empty, rclone stops logging "config file not found" on every run.
       RCLONE_CONFIG: ""
@@ -66,8 +68,13 @@ services:
       HOME: /tmp
       TZ: ${TZ:-Etc/UTC}
     volumes:
-      # All of ./data, not its logs dir: a bind source that does not exist
-      # yet is created root-owned, and the app could not write its profile.
-      - ./data:/data:ro
+      # Never created by docker: a missing source would be made root-owned
+      # and the app could not write its profile. kiosk-setup.sh creates it.
+      - type: bind
+        source: ./data/.config/bingbong/logs
+        target: /logs
+        read_only: true
+        bind:
+          create_host_path: false
       - ./config/.env:/config/.env:ro
       - ./docker/log-bucket.sh:/log-bucket.sh:ro

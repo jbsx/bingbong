@@ -7,13 +7,18 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { planLogsPull } from '../src/main/logs/logsPull.ts'
+import { planLogsPull } from '../src/core/logs/logsPull.ts'
 
 let dotEnv = ''
 try {
   dotEnv = readFileSync(join(import.meta.dirname, '..', '.env'), 'utf8')
-} catch {
+} catch (error) {
   // No root .env: the settings can still come from the process environment.
+  // A present-but-unreadable one is said, never silently skipped.
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    console.error(`logs:pull: could not read the root .env: ${String(error)}`)
+    process.exit(1)
+  }
 }
 
 const plan = planLogsPull(process.argv.slice(2), dotEnv, process.env)
@@ -28,4 +33,4 @@ if (result.error) {
   process.exit(1)
 }
 if (result.status !== 0) process.exit(result.status ?? 1)
-console.log(`logs:pull: ${plan.argv[1]} → ${plan.dir}\n  next: pnpm perf:report ${plan.dir}`)
+console.log(`logs:pull: ${plan.remote} → ${plan.dir}\n  next: pnpm perf:report ${plan.dir}`)

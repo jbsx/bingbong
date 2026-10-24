@@ -1,4 +1,4 @@
-import { parseDotEnv } from '../../core/settings/dotEnv.ts'
+import { parseDotEnv } from '../settings/dotEnv.ts'
 
 // `pnpm logs:pull [machine] [dir]` (#418): copy one machine's folder of the
 // Log Bucket to a local folder, which perf:report, jev:candidates and the
@@ -9,7 +9,7 @@ import { parseDotEnv } from '../../core/settings/dotEnv.ts'
 const SETTING = /^(BINGBONG_LOG_[A-Z0-9_]+|RCLONE_CONFIG_R2_[A-Z0-9_]+)$/
 
 export type LogsPullPlan =
-  | { dir: string; argv: string[]; env: Record<string, string> }
+  | { remote: string; dir: string; argv: string[]; env: Record<string, string> }
   | { missing: string[] }
 
 export function planLogsPull(
@@ -26,5 +26,6 @@ export function planLogsPull(
 
   const machine = args[0]?.trim() || 'kiosk'
   const dir = args[1]?.trim() || `kiosk-logs/${machine}`
-  return { dir, argv: ['copy', `r2:${env.BINGBONG_LOG_BUCKET}/${machine}/`, dir], env }
+  const remote = `r2:${env.BINGBONG_LOG_BUCKET}/${machine}/`
+  return { remote, dir, argv: ['copy', remote, dir], env }
 }

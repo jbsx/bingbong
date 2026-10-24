@@ -95,6 +95,12 @@ elif [ -w data ]; then
 else
   fail "./data not writable by UID $(id -u)" "sudo chown -R $(id -u):$(id -g) data"
 fi
+# The log-bucket sidecar mounts the logs dir itself, which docker must not
+# create (it would be root-owned and the app could not write its profile).
+if [ -w data ] && [ ! -d data/.config/bingbong/logs ]; then
+  mkdir -p data/.config/bingbong/logs
+  pass "./data/.config/bingbong/logs created for the log-bucket sidecar"
+fi
 
 # --- wake heads (custom-trained, no download source) -----------------------
 staged=1

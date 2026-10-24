@@ -12,6 +12,7 @@ describe('planLogsPull', () => {
   it("copies the kiosk's folder to kiosk-logs/kiosk by default", () => {
     const plan = planLogsPull([], dotEnv, {})
     expect(plan).toEqual({
+      remote: 'r2:bingbong-logs/kiosk/',
       dir: 'kiosk-logs/kiosk',
       argv: ['copy', 'r2:bingbong-logs/kiosk/', 'kiosk-logs/kiosk'],
       env: {
