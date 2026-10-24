@@ -2,6 +2,12 @@
 
 ## Status
 
+Amended on 2026-10-24 by #423: a Site Question, a site's own confirm, is
+relayed to the user and answered by their next line, never by the loop. A
+confirm usually guards what `back` cannot undo, so "a Misfire is recovered,
+never prevented" does not reach it. When no one is sure of the answer, it
+is refused.
+
 Amended on 2026-10-23 by ADR 0087: a Task that ends done on a sure yes
 speaks the Answer Passage, the block of the page Jev chose as stating what
 was asked, in place of "Done." or silence.

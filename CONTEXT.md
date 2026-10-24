@@ -397,7 +397,8 @@ of this", "the pop-up" or "the dialog". With a dialog open they are settled
 before the Decision Model is asked: the Dismissal Ladder's first rung fires
 (the dialog's own close control, never a link, else Escape), and the Answer
 is "Closed the pop-up.". With no dialog open the same words read as they
-always did.
+always did. With a Site Question open, a Dismiss Phrase refuses it, before
+the Dismissal Ladder is considered.
 _Avoid_: close command, escape phrase
 
 **Command**:
@@ -421,6 +422,17 @@ text to type, the address to navigate to. Chosen from the Utterance's own words,
 never composed — a Name Match may carry them in the page's spelling, and
 that is the one amendment.
 _Avoid_: argument, parameter, entity, free text
+
+**Site Question**:
+A native `confirm` the page raises (the only native dialog Electron puts to
+anyone: `prompt()` is unsupported, and Electron settles a leave-page warning
+itself). The app says "The page asks: <text> Yes or no?" and the page waits;
+the Task that raised it stays under way. The user's next line answers it
+before anything else reads it: yes, ok or confirm accept; no, cancel or a
+Dismiss Phrase refuse; any other line is Jev's, as accept, refuse or a new
+Command, which refuses and then runs. Jev unsure or unavailable, it is
+refused: "Refused the page's question."
+_Avoid_: confirmation, native dialog prompt
 
 **Site Scope**:
 The site a `search` spoken on a page is looked for on, when the Decision Model
