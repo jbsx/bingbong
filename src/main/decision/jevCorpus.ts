@@ -307,7 +307,7 @@ export function listCandidates(logsDir: string): Candidate[] {
   const signals = new Map<string, MisfireRecord[]>()
   for (const record of records) {
     if (record.type === 'decision') decisions.set(record.turnId, record)
-    else signals.set(record.turnId, [...(signals.get(record.turnId) ?? []), record])
+    else if (record.type === 'misfire') signals.set(record.turnId, [...(signals.get(record.turnId) ?? []), record])
   }
   const asks = collectAsks(logsDir)
   return [...signals].map(([turnId, misfires]): Candidate => {

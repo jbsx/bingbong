@@ -28,6 +28,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  clear                    clear the focused field',
   '  screenshot [path]        save a jpeg screenshot (default: the downloads dir)',
   '  stop                     interrupt the command in flight — with none, pause the music',
+  '  mark this as a failure [with the hint <words>]   keep the last task for later (or: flag that, that was wrong)',
   '  help                     this text',
 ]
 

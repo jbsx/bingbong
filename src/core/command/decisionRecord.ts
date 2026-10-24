@@ -197,7 +197,37 @@ export interface MisfireRecord {
   readonly hop?: number
 }
 
-export type CommandLogRecord = DecisionRecord | MisfireRecord
+/**
+ * A Flag (#421): the user said the previous Task did not do what was
+ * meant. It names that Task by its id, carries the hint said with it, the
+ * page the pane stood on and the shot taken of it, kept under
+ * `flags/<taskId>/` past the purge. It is no Misfire signal: the Misfire
+ * counts stay what they mean.
+ */
+export interface FlagRecord {
+  readonly type: 'flag'
+  /** The flag line's own turn. */
+  readonly turnId: string
+  /** The Task it flags: hop 0's turn id of the one before the flag line. */
+  readonly taskId: string
+  readonly at: number
+  readonly hint?: string
+  readonly url: string
+  /** The pane as the flag fired, as a path under the logs dir; absent when the shot failed. */
+  readonly shot?: string
+}
+
+/**
+ * Where a Flag keeps its Task (#421): the Task's records and the shot
+ * copied where the purge does not reach (`taskAt`, when the Task fired,
+ * bounds the logs read for them); answers the shot's path under the logs
+ * dir, or null when none was kept.
+ */
+export interface FlagKeeper {
+  keep(flag: Omit<FlagRecord, 'shot'>, shot: Uint8Array | null, taskAt: number): string | null
+}
+
+export type CommandLogRecord = DecisionRecord | MisfireRecord | FlagRecord
 
 /** The next Command this long after one reads as its recovery. */
 export const MISFIRE_WINDOW_MS = 3_000

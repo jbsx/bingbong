@@ -531,6 +531,18 @@ fix is chosen. An issue claims every open line it covers; closing it
 marks each fixed and guarded, or ruled.
 _Avoid_: bug report, ticket, known issue
 
+**Flag**:
+The user's word, in normal use, that the previous Task did not do what
+was meant: "mark this as a failure", "flag that" or "that was wrong",
+optionally followed by "with the hint <words>" (#421). An exact line, never
+Jev's and never a Command: it touches no page and ends or resumes no Task.
+It keeps the previous Task — every hop and Step, by its Task id — with the
+pane's shot as it stood, out of reach of the 7-day purge. A Flag is the
+strongest candidate `pnpm bugs:candidates` has, and the one from a normal
+day of use; it is still a candidate, never a Failed Line by itself. It is
+no Misfire: the Misfire counts stay what they mean.
+_Avoid_: mark, report (Mark Ask is taken)
+
 **Stage**:
 The first point of the pipeline that failed a Failed Line, in the
 pipeline's order: `stt` (the words heard were not the words said), `turn`

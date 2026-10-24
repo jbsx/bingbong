@@ -14,10 +14,22 @@ are prose about the ledger, never a second copy of it.
   pipeline a scenario breaks; what to fix comes from the yield list
   (`docs/agents/yield.md`).
 - `pnpm bugs:candidates [logs-dir]` — lines in the decision logs that look
-  failed and are not in the ledger, each with what pointed at it.
+  failed and are not in the ledger, each with what pointed at it. Flagged
+  lines come first, with their hints.
 - `pnpm bugs:add <turnId> --stage <stage> --happened "…" --meant "…"` —
   one entry from its logged record. On an entry that exists, `--claimed
   #NNN`, `--fixed <sha>`, `--case <name>` and `--ruled "…"` update it.
+
+## Flags
+
+A Flag (#421) is the owner saying "mark this as a failure [with the hint
+…]" in normal use: the previous Task, its records and the pane's shot are
+kept in `<logs>/flags/<taskId>/`, past the 7-day purge, and reach
+`pnpm logs:pull` from the kiosk. It is the strongest candidate and the one
+source of failed lines from a normal day, but it is still a candidate:
+read the copy and the shot, then `bugs:add <taskId> --stage <s> --meant
+"…"` — the hint stands for `--happened` when none is given, and the copy
+stands for the decision log once that has rolled away.
 
 ## After a post mortem
 

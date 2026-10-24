@@ -151,6 +151,8 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       if (record.signal === 'overrun' && typeof record.hop === 'number') report.tasks.overrunsByHop[record.hop] = (report.tasks.overrunsByHop[record.hop] ?? 0) + 1
       continue
     }
+    // A Flag (#421) is the user's word on a Task, no Command: `pnpm bugs:candidates` reads it.
+    if (record.type === 'flag') continue
     report.commands += 1
     if (record.task !== undefined) {
       const key = record.task.step === undefined ? record.task.id : `${record.task.id}#${record.task.step}`

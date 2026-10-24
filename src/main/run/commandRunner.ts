@@ -63,6 +63,8 @@ import {
   type CommandReading,
   type CommandSource,
   type DecisionRecord,
+  type FlagKeeper,
+  type FlagRecord,
   type NameSource,
   type PickSource,
   type TaskEnded,
@@ -72,10 +74,10 @@ import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
-import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
+import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appWords, placeName, placeSettings, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
-import { grammarErrorOf } from '../../core/command/cliGrammar'
+import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
@@ -258,6 +260,8 @@ export interface CommandRunnerDeps {
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
   app?: AppControl
+  /** The Flag keeper (#421); absent, a flag is logged and nothing is copied. */
+  flags?: FlagKeeper
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -479,6 +483,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let prepared: PreparedPage | null = null
   /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; target: number | null; key?: Command['key']; at: number } | null = null
+  /** The last Task fired or logged (#421): hop 0's turn id, what a Flag names, and when it began. */
+  let lastTask: { id: string; at: number } | null = null
+  /** A `stop` or `help` is no Task a Flag means (#421): "stop", then "flag that", flags what was stopped. */
+  const taskSeen = (id: string, firedAt: number, verb: Command['verb']): void => {
+    if (verb !== 'stop' && verb !== 'help' && lastTask?.id !== id) lastTask = { id, at: firedAt }
+  }
   /** The Jev-read hop that last fired (#328), for the overrun signal; null once a Command read otherwise fires, or one is counted. */
   let jevHop: { turnId: string; hop: number; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
@@ -521,6 +531,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   function log(record: CommandLogRecord): void {
+    if (record.type === 'decision') taskSeen(record.task?.id ?? record.turnId, record.at, record.verb)
     try {
       deps.decisionLog?.write(record)
     } catch (error) {
@@ -1191,6 +1202,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
     previous = { turnId, verb: command.verb, target: command.target, key: command.key, at: firedAt }
+    if (task.hop === 0) taskSeen(task.id, firedAt, command.verb)
     // A Jev-read hop: what an overrun is read against, until the next one fires.
     jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken' && reacting.ownMove !== true) learnFrom(command, matched, firedAt)
@@ -1364,6 +1376,41 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       releaseLanding?.()
       reacting.settled()
     }
+  }
+
+  /**
+   * A Flag (#421): the last Task is kept for later inspection — its
+   * record in the decision log, its records and the pane's shot where the
+   * purge does not reach — and the page is not touched. A shot that fails
+   * leaves the flag without one.
+   */
+  async function flag(turnId: string, text: string, hint: string | undefined): Promise<void> {
+    const firedAt = at()
+    publish({ type: 'command', turnId, text, action: 'flag', keepsIdle: true, task: { id: turnId, hop: 0 }, at: firedAt })
+    const task = lastTask
+    if (task !== null) await keepTask(turnId, task, firedAt, hint)
+    const said = task === null ? FLAG_ANSWERS.nothing : FLAG_ANSWERS.flagged
+    answer(turnId, said, task === null ? 'muted' : undefined)
+    if (deps.speech !== undefined) void say(deps.speech, turnId, said)
+    publish({ type: 'done', turnId, outcome: 'done', at: at() })
+  }
+
+  /** The Flag's keeping (#421): the pane's shot, the Task's copy, and the `flag` record. */
+  async function keepTask(turnId: string, task: { id: string; at: number }, firedAt: number, hint: string | undefined): Promise<void> {
+    let shot: Uint8Array | null = null
+    try {
+      shot = await browser.screenshot()
+    } catch (error) {
+      reportFault('run.commandRunner.flagShot', error, { turnId })
+    }
+    const record: Omit<FlagRecord, 'shot'> = { type: 'flag', turnId, taskId: task.id, at: firedAt, ...(hint !== undefined ? { hint } : {}), url: browser.state().url ?? '' }
+    let kept: string | null = null
+    try {
+      kept = deps.flags?.keep(record, shot, task.at) ?? null
+    } catch (error) {
+      reportFault('run.commandRunner.flagKeep', error, { turnId })
+    }
+    log({ ...record, ...(kept !== null ? { shot: kept } : {}) })
   }
 
   function summarize(turnId: string): void {
@@ -2082,6 +2129,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
     const stopsSomething = quick?.verb === 'stop' && !idle()
     if (headsAnotherVerb(words) && !stopsSomething) return null
+    // A Flag (#421) is never Jev's, nor a Command: "mark this as a" waits for its Endpoint.
+    if (headsFlagLine(words)) return null
     // An exact Player line (#343) is the grammar's: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
     const dismissed = await dismissPage(words, quick, prepared)
@@ -2454,6 +2503,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command.
+      const flagged = readFlagLine(trimmed)
+      if (flagged !== null) {
+        if (source === 'spoken') observeTerms(trimmed)
+        await flag(turnId, trimmed, flagged.hint)
+        if (options?.turnId !== undefined) summarize(options.turnId)
+        return true
+      }
       // When it was given (#330): an abandoned reading is filed here, however late its reading ends.
       const givenAt = at()
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).

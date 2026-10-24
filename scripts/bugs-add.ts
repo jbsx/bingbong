@@ -2,7 +2,8 @@
 // `pnpm bugs:add <turnId> --stage <stage> --happened "…" --meant "…"` (#371):
 // one Failed Line written to the ledger from its logged record — the words,
 // when, spoken or typed, the log file — with the first stage that failed
-// it, what happened and what was meant. On an entry that exists, any field
+// it, what happened and what was meant (a flagged line's hints, #421, when
+// --happened is not given). On an entry that exists, any field
 // given replaces it: `--claimed #NNN` the issue that covers it, `--fixed
 // <sha>` the commit, `--case <name>` the corpus case or e2e test guarding
 // it, `--ruled "…"` the owner ruling that closes it. Node runs this .ts

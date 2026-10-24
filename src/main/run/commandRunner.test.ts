@@ -151,6 +151,8 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   /** The images the ask log saved beside its asks (#382), by the file each was saved as. */
   const images = new Map<string, Uint8Array>()
   const screenshots: string[] = []
+  /** What the Flag keeper was handed (#421): each flag and its shot. */
+  const kept: { flag: Parameters<NonNullable<CommandRunnerDeps['flags']>['keep']>[0]; shot: Uint8Array | null }[] = []
   /** Each wait on the clock the runner asked for, in ms: none passes. */
   const sleeps: number[] = []
   const admitted: string[] = []
@@ -194,6 +196,12 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(player ? { player } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
     knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com', settings: 'settings.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
+    flags: {
+      keep: (flag, shot) => {
+        kept.push({ flag, shot })
+        return shot === null ? null : `flags/${flag.taskId}/${flag.turnId}.jpg`
+      },
+    },
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -217,7 +225,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const land = (landing: PageLanding): void => {
     for (const listener of landingListeners) listener(landing)
   }
-  return { browser, events, records, asks, images, screenshots, sleeps, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
+  return { browser, events, records, asks, images, screenshots, kept, sleeps, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
@@ -346,6 +354,119 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
     await runner.run('where are the comments', { source: 'typed' })
     expect(decision.requests).toHaveLength(2)
     expect(Object.keys(cardOf(decision.requests[1]!).options).some((label) => label.startsWith('panel_') || label.startsWith('set_'))).toBe(false)
+  })
+})
+
+describe('the Flag (#421)', () => {
+  const displays = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+
+  it('a spoken flag with a hint keeps the previous Task by its id, with the pane as it stands, and says "Flagged." — no Jev call, the page untouched', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, records, kept, decision, runner } = harness({ speech })
+    await runner.run('reload')
+    const taskId = records.find((record) => record.type === 'decision')!.turnId
+    browser.screenshotBytes = new Uint8Array([1, 2, 3])
+    const reloads = browser.reloads
+    await runner.run("Mark this as a failure with the hint couldn't load the page", { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(browser.reloads).toBe(reloads)
+    expect(browser.navigations).toEqual([])
+    expect(kept).toEqual([{ flag: expect.objectContaining({ type: 'flag', taskId, hint: "couldn't load the page", url: 'https://example.com/' }), shot: new Uint8Array([1, 2, 3]) }])
+    const flag = records.find((record) => record.type === 'flag')
+    expect(flag).toMatchObject({ type: 'flag', taskId, hint: "couldn't load the page", url: 'https://example.com/', shot: `flags/${taskId}/${kept[0]!.flag.turnId}.jpg` })
+    expect(flag!.turnId).not.toBe(taskId)
+    // The flag line is no Command of its own: no decision record, and it keeps the Idle Screen up.
+    expect(records.filter((record) => record.type === 'decision')).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ action: 'flag', keepsIdle: true })
+    expect(displays(events).at(-1)).toBe('Flagged.')
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Flagged.'])
+  })
+
+  it('a typed flag with no hint does the same, without a hint', async () => {
+    const { records, runner } = harness()
+    await runner.run('reload')
+    await runner.run('mark this as a failure')
+    const flag = records.find((record) => record.type === 'flag')
+    expect(flag).toBeDefined()
+    expect(flag).not.toHaveProperty('hint')
+  })
+
+  it('flags the last Task, not the flag before it: flagging twice keeps two records of the one Task', async () => {
+    const { records, runner } = harness()
+    await runner.run('reload')
+    await runner.run('flag that')
+    await runner.run('that was wrong with the hint again')
+    const flags = records.filter((record) => record.type === 'flag')
+    expect(flags.map((flag) => flag.type === 'flag' && flag.taskId)).toEqual([records[0]!.turnId, records[0]!.turnId])
+  })
+
+  it('with no Task yet says so and keeps nothing', async () => {
+    const { events, kept, records, runner } = harness()
+    await runner.run('flag that')
+    expect(kept).toEqual([])
+    expect(records).toEqual([])
+    expect(displays(events)).toEqual(['Nothing to flag yet.'])
+  })
+
+  it('a shot that fails still writes the flag, without the shot, and logs a fault', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    try {
+      const { browser, kept, records, runner } = harness()
+      await runner.run('reload')
+      browser.screenshot = async () => {
+        throw new Error('no pane')
+      }
+      await runner.run('flag that')
+      expect(kept).toEqual([{ flag: expect.objectContaining({ type: 'flag' }), shot: null }])
+      expect(records.find((record) => record.type === 'flag')).not.toHaveProperty('shot')
+      expect(faults.map((fault) => fault.site)).toContain('run.commandRunner.flagShot')
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('a ref labelled "flag" or "mark" keeps its own reading: one word is never a flag line (ADR 0089)', async () => {
+    const { browser, decision, kept, records, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: [ref(5, 'button', 'Flag'), ref(6, 'button', 'Mark')] }
+    await runner.run('click flag')
+    // A whole line a ref carries is Jev's as readily as the grammar's (ADR 0089), and never the Flag's.
+    decision.script.push({ answers: { action: choice('click-6'), slot: choice('none') } })
+    await runner.run('mark', { source: 'spoken' })
+    expect(kept).toEqual([])
+    expect(records.some((record) => record.type === 'flag')).toBe(false)
+    expect(browser.clicks.slice(0, 2)).toEqual([5, 6])
+  })
+
+  it('a spoken flag over a ref labelled "Mark" fires nothing on its first word: the Endpoint flags, the page untouched', async () => {
+    const { browser, decision, kept, runner } = harness()
+    await runner.run('reload')
+    browser.snapshot = { ...browser.snapshot, refs: [ref(6, 'button', 'Mark')] }
+    decision.script.push({ answers: { action: choice('click-6'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
+    await runner.consider('mark')
+    await flushMicrotasks()
+    await runner.run('mark this as a failure', { source: 'spoken' })
+    expect(browser.clicks).toEqual([])
+    expect(decision.requests).toEqual([])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('a stop or help after a Task is no Task of its own: the flag names the Task before it', async () => {
+    const { records, runner } = harness()
+    await runner.run('reload')
+    const taskId = records[0]!.turnId
+    await runner.run('stop')
+    await runner.run('help')
+    await runner.run('flag that')
+    expect(records.find((record) => record.type === 'flag')).toMatchObject({ taskId })
+  })
+
+  it('a partial that may yet be a flag line never fires early, and is never Jev\'s', async () => {
+    const { decision, events, runner } = harness()
+    await runner.consider('mark this as a')
+    await flushMicrotasks()
+    expect(decision.requests).toEqual([])
+    expect(events).toEqual([])
   })
 })
 

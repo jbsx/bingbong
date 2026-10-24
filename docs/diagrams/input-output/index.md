@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-24, base `6c642783` + #420](versions/2026-10-24-6c642783-app-on-card/chart.html), in which the app's panel, views and one settings line are on the action card, the settings line opening a second ask with every setting's ops; one op chosen changes the app and says the new value (#420). [Overview](versions/2026-10-24-6c642783-app-on-card/overview.png) · [changes](versions/2026-10-24-6c642783-app-on-card/changes.md)
+**Latest:** [2026-10-24, base `1353179c` + #421](versions/2026-10-24-1353179c-flag/chart.html), in which a Flag line keeps the previous Task for later, with no Jev call and no page action (#421). [Overview](versions/2026-10-24-1353179c-flag/overview.png) · [changes](versions/2026-10-24-1353179c-flag/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-24 | `1353179c` + #421 | [chart](versions/2026-10-24-1353179c-flag/chart.html) | "mark this as a failure [with the hint …]" keeps the previous Task's records and a shot under logs/flags/ and says "Flagged."; never Jev's, nothing in flight is superseded. [changes](versions/2026-10-24-1353179c-flag/changes.md) |
 | 2026-10-24 | `6c642783` + #420 | [chart](versions/2026-10-24-6c642783-app-on-card/chart.html) | The panel, views and one settings line are on the card (not on the Where Ask); `settings` opens a second ask offering every setting's ops; a chosen op changes the app, says the new value and ends the Task; `open settings` (and weight, dashboard, panel, feed) is Jev's. [changes](versions/2026-10-24-6c642783-app-on-card/changes.md) |
 | 2026-10-24 | `20f843b5` + #417 | [chart](versions/2026-10-24-20f843b5-sheet-leaves/chart.html) | A click on the pop-up waits up to 2 s for it to leave or show something else; a refused or frame-gone action on a pop-up that left goes on. [changes](versions/2026-10-24-20f843b5-sheet-leaves/changes.md) |
 | 2026-10-24 | `4d7b48a6` + #416 | [chart](versions/2026-10-24-4d7b48a6-dialog-text/chart.html) | Over a pop-up Jev may pick a piece of its own text no control holds, clicked where it shows; the "never" sentence is said by class. [changes](versions/2026-10-24-4d7b48a6-dialog-text/changes.md) |

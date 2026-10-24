@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // `pnpm bugs:candidates [logs-dir] [--ledger <dir>]` (#371): the lines in
 // the decision logs that look failed and are not yet in the Failed Lines
-// ledger — the same words again within 30 s, a Task ended short (cap,
+// ledger — a Flag (#421) first, with its hints, then the same words again
+// within 30 s, a Task ended short (cap,
 // unsure, wall, unchanged, not found), a hop-0 `none` Jev was unsure of, a
 // resume right after, an undo, or a Misfire signal — each with what
 // pointed at it, for `pnpm bugs:add`. Node runs this .ts directly via type

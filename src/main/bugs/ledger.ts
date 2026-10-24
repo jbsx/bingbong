@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isStage, readFailedLine, whenOf, type FailedLine, type FailedLineStage } from '../../core/bugs/failedLine.ts'
-import type { DecisionRecord, MisfireSignal, TaskEnded } from '../../core/command/decisionRecord'
+import type { CommandLogRecord, DecisionRecord, FlagRecord, MisfireSignal, TaskEnded } from '../../core/command/decisionRecord'
 import { toErrorMessage } from '../../core/errors.ts'
 import { reportFault } from '../../core/trace/fault.ts'
+import { FLAGS_DIR, flagDirOf } from '../logs/flagKeeper.ts'
 import { collectDecisionRecords } from '../perf/collectDecisionRecords.ts'
 import { DECISION_FILE_PATTERN } from '../perf/perfFiles.ts'
 
@@ -63,8 +64,8 @@ const NONE_UNSURE_BELOW = 0.6
 const SCROLLS: ReadonlySet<string> = new Set(['scroll_up', 'scroll_down'])
 const FAILED_ENDS: ReadonlySet<TaskEnded> = new Set(['cap', 'unsure', 'wall', 'unchanged', 'not_found'])
 
-/** What pointed at a line: the next Command repeated it, its Task ended short, Jev read none unsure, a resume followed, the runner undid it, or a Misfire signal. */
-export type BugSignal = 'repeat' | `ended:${TaskEnded}` | 'none' | 'resumed' | 'undo' | `misfire:${MisfireSignal}`
+/** What pointed at a line: the user flagged it (#421), the next Command repeated it, its Task ended short, Jev read none unsure, a resume followed, the runner undid it, or a Misfire signal. */
+export type BugSignal = 'flagged' | 'repeat' | `ended:${TaskEnded}` | 'none' | 'resumed' | 'undo' | `misfire:${MisfireSignal}`
 
 export interface BugCandidate {
   /** Hop 0's turn id: the Task's. */
@@ -72,6 +73,8 @@ export interface BugCandidate {
   readonly at: number
   readonly transcript: string
   readonly signals: readonly BugSignal[]
+  /** What the Flags of it said (#421), in the order said; absent when none said any. */
+  readonly hints?: readonly string[]
 }
 
 const normal = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, '').replace(/\s+/g, ' ').trim()
@@ -83,9 +86,41 @@ const isHop0 = (record: DecisionRecord): boolean => hopOf(record) === 0 && recor
 const resumes = (record: DecisionRecord): boolean =>
   record.verb === 'resume' || (record.verb === 'play' && (record.music !== undefined ? record.music.kind === 'unpause' : record.slot === null && record.video === undefined && !('capability' in record)))
 
-/** `pnpm bugs:candidates`: the Tasks in the logs a signal points at, in time order, less those the ledger already holds. */
+/**
+ * The decision log's records and the Flag copies' under `flags/` (#421),
+ * each once: a flagged Task is still read after its own log has rolled
+ * away.
+ */
+function logRecords(logsDir: string): CommandLogRecord[] {
+  const flags = join(logsDir, FLAGS_DIR)
+  let kept: string[] = []
+  if (existsSync(flags)) {
+    try {
+      kept = readdirSync(flags)
+    } catch (error) {
+      reportFault('bugs.ledger.logRecords.listFlags', error)
+    }
+  }
+  const seen = new Set<string>()
+  return [collectDecisionRecords(logsDir).records, ...kept.map((taskId) => collectDecisionRecords(flagDirOf(logsDir, taskId)).records)].flat().filter((record) => {
+    const key = JSON.stringify(record)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** Every hint the Flags of a Task said (#421), in the order said. */
+function hintsOf(records: readonly CommandLogRecord[], taskId: string): string[] {
+  return records
+    .filter((record): record is FlagRecord => record.type === 'flag' && record.taskId === taskId)
+    .sort((a, b) => a.at - b.at)
+    .flatMap((record) => (record.hint !== undefined ? [record.hint] : []))
+}
+
+/** `pnpm bugs:candidates`: the Tasks in the logs a signal points at, flagged ones first (#421), each in time order, less those the ledger already holds. */
 export function listBugCandidates(logsDir: string, ledger: readonly FailedLine[]): BugCandidate[] {
-  const records = collectDecisionRecords(logsDir).records
+  const records = logRecords(logsDir)
   const decisions = records.filter((record): record is DecisionRecord => record.type === 'decision').sort((a, b) => a.at - b.at)
   const hop0 = decisions.filter(isHop0)
   const found = new Map<string, { at: number; transcript: string; signals: Set<BugSignal> }>()
@@ -108,22 +143,33 @@ export function listBugCandidates(logsDir: string, ledger: readonly FailedLine[]
   }
   for (const record of records) {
     if (record.type === 'misfire') flag(record.turnId, `misfire:${record.signal}`)
+    if (record.type === 'flag') flag(record.taskId, 'flagged')
   }
   const known = new Set(ledger.map((line) => line.turnId))
   return [...found]
     .filter(([task]) => !known.has(task))
-    .map(([turnId, entry]): BugCandidate => ({ turnId, at: entry.at, transcript: entry.transcript, signals: [...entry.signals] }))
-    .sort((a, b) => a.at - b.at)
+    .map(([turnId, entry]): BugCandidate => {
+      const hints = entry.signals.has('flagged') ? hintsOf(records, turnId) : []
+      // The user's own word comes before what the logs suggest.
+      const signals = [...entry.signals].sort((a, b) => Number(b === 'flagged') - Number(a === 'flagged'))
+      return { turnId, at: entry.at, transcript: entry.transcript, signals, ...(hints.length > 0 ? { hints } : {}) }
+    })
+    .sort((a, b) => Number(b.signals.includes('flagged')) - Number(a.signals.includes('flagged')) || a.at - b.at)
 }
 
 export function formatBugCandidates(candidates: readonly BugCandidate[], logsDir: string): string {
   if (candidates.length === 0) return `no failed-looking lines in ${logsDir} that the ledger does not hold`
-  const rows = candidates.map((candidate) => `${candidate.turnId}  ${whenOf(candidate.at)}  "${candidate.transcript}"  ${candidate.signals.join(',')}`)
-  return [...rows, '', 'add one: pnpm bugs:add <turnId> --stage <stage> --happened "…" --meant "…" [--claimed #NNN]'].join('\n')
+  const rows = candidates.map((candidate) => `${candidate.turnId}  ${whenOf(candidate.at)}  "${candidate.transcript}"  ${candidate.signals.join(',')}${candidate.hints !== undefined ? `  hint: ${candidate.hints.map((hint) => `"${hint}"`).join('; ')}` : ''}`)
+  return [...rows, '', 'add one: pnpm bugs:add <turnId> --stage <stage> --happened "…" --meant "…" [--claimed #NNN] (a flagged line takes its hint as --happened)'].join('\n')
 }
 
-/** The hop-0 record of a turn and the log file holding it; null when no file does. */
+/** The hop-0 record of a turn and the log file holding it, in the logs or, once they have rolled, its Flag copy (#421); null when no file does. */
 function findDecision(logsDir: string, turnId: string): { record: DecisionRecord; log: string } | null {
+  const kept = flagDirOf(logsDir, turnId)
+  return findDecisionIn(logsDir, turnId, '') ?? (existsSync(kept) ? findDecisionIn(kept, turnId, `${FLAGS_DIR}/${turnId}/`) : null)
+}
+
+function findDecisionIn(logsDir: string, turnId: string, logPrefix: string): { record: DecisionRecord; log: string } | null {
   let names: string[]
   try {
     names = readdirSync(logsDir).filter((name) => DECISION_FILE_PATTERN.test(name)).sort()
@@ -149,7 +195,7 @@ function findDecision(logsDir: string, turnId: string): { record: DecisionRecord
         continue
       }
       const record = parsed as Partial<DecisionRecord>
-      if (record.type === 'decision' && record.turnId === turnId && typeof record.transcript === 'string' && typeof record.at === 'number') return { record: record as DecisionRecord, log: name }
+      if (record.type === 'decision' && record.turnId === turnId && typeof record.transcript === 'string' && typeof record.at === 'number') return { record: record as DecisionRecord, log: `${logPrefix}${name}` }
     }
   }
   return null
@@ -168,8 +214,9 @@ export interface FailedLineFields {
 
 /**
  * Write a ledger entry for a logged turn, or update the one it has. A new
- * entry needs the stage and both lines, and the turn in the logs; an
- * update takes any field. Nothing is written for an unknown stage.
+ * entry needs the stage and both lines, and the turn in the logs; a
+ * flagged turn's hints stand for what happened when none is given (#421).
+ * An update takes any field. Nothing is written for an unknown stage.
  */
 export function addFailedLine(logsDir: string, dir: string, turnId: string, fields: FailedLineFields): { path: string; replaced: boolean } | { error: string } {
   if (fields.stage !== undefined && !isStage(fields.stage)) return { error: `"${fields.stage}" is not a stage: stt, turn, local_match, reading, missing_option, runner, player or page` }
@@ -181,10 +228,12 @@ export function addFailedLine(logsDir: string, dir: string, turnId: string, fiel
   if (existing !== undefined) base = existing.line as FailedLine
   else {
     const stage = fields.stage
-    if (stage === undefined || fields.happened === undefined || fields.meant === undefined) return { error: `no entry for ${turnId} yet: --stage, --happened and --meant are needed` }
+    const hints = fields.happened === undefined ? hintsOf(logRecords(logsDir), turnId) : []
+    const happened = fields.happened ?? (hints.length > 0 ? hints.join('; ') : undefined)
+    if (stage === undefined || happened === undefined || fields.meant === undefined) return { error: `no entry for ${turnId} yet: --stage, --happened and --meant are needed` }
     const found = findDecision(logsDir, turnId)
     if (found === null) return { error: `no decision record for ${turnId} in ${logsDir}` }
-    base = { turnId, transcript: found.record.transcript, at: found.record.at, source: found.record.source, log: found.log, stage: stage as FailedLineStage, happened: fields.happened, meant: fields.meant }
+    base = { turnId, transcript: found.record.transcript, at: found.record.at, source: found.record.source, log: found.log, stage: stage as FailedLineStage, happened, meant: fields.meant }
   }
   const { stage, ...rest } = fields
   const line = readFailedLine({ ...base, ...(stage !== undefined ? { stage } : {}), ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)) })

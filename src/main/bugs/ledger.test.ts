@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -95,6 +95,25 @@ describe('listBugCandidates', () => {
     expect(found.map((c) => c.turnId)).toEqual(['t1', 't3'])
   })
 
+  const flag = (turnId: string, taskId: string, at: number, hint?: string): object => ({ type: 'flag', turnId, taskId, at, url: 'https://example.com/', ...(hint !== undefined ? { hint } : {}) })
+
+  it('lists a flagged Task first, once, with every hint said of it (#421)', () => {
+    const found = candidates([decision('t1', 1_000, 'a', { ended: 'wall' }), decision('t2', 5_000, 'open cats'), flag('f1', 't2', 9_000, "couldn't load the page"), flag('f2', 't2', 9_500, 'again'), flag('f3', 't2', 9_800)])
+    expect(found).toEqual([
+      { turnId: 't2', at: 5_000, transcript: 'open cats', signals: ['flagged'], hints: ["couldn't load the page", 'again'] },
+      { turnId: 't1', at: 1_000, transcript: 'a', signals: ['ended:wall'] },
+    ])
+    expect(formatBugCandidates(found, logs).split('\n')[0]).toMatch(/^t2  .*  "open cats"  flagged  hint: "couldn't load the page"; "again"$/)
+  })
+
+  it('reads a flagged Task from its flag copy once the decision log has rolled away (#421)', () => {
+    const kept = join(logs, 'flags', 't2')
+    mkdirSync(kept, { recursive: true })
+    writeFileSync(join(kept, 'decision-t2.jsonl'), jsonl([decision('t2', 5_000, 'open cats'), flag('f1', 't2', 9_000, 'wrong')]))
+    // The live log still holds the flag itself: it is read once.
+    expect(candidates([flag('f1', 't2', 9_000, 'wrong')])).toEqual([{ turnId: 't2', at: 5_000, transcript: 'open cats', signals: ['flagged'], hints: ['wrong'] }])
+  })
+
   it('formats each candidate with its signals, and says when there are none', () => {
     const found = candidates([decision('t1', Date.UTC(2026, 9, 21, 11, 52), 'Skip 10 seconds ahead.', { ended: 'cap' })])
     const report = formatBugCandidates(found, logs)
@@ -155,6 +174,17 @@ describe('the ledger folder', () => {
     expect(updated).toMatchObject({ stage: 'missing_option', happened: 'h', fixedBy: 'abc1234', case: 'jev-case-1' })
     addFailedLine(logs, dir, 't1', { stage: 'runner', ruled: 'accepted' })
     expect(JSON.parse(readFileSync(join(dir, 't1.json'), 'utf8'))).toMatchObject({ stage: 'runner', ruled: 'accepted', fixedBy: 'abc1234' })
+  })
+
+  it("takes a flag's hints as what happened, and finds the turn in its flag copy once the logs have rolled (#421)", () => {
+    const kept = join(logs, 'flags', 't7')
+    mkdirSync(kept, { recursive: true })
+    writeFileSync(join(kept, 'decision-t7.jsonl'), jsonl([decision('t7', 7_000, 'play cats'), { type: 'flag', turnId: 'f1', taskId: 't7', at: 8_000, url: '', hint: 'wrong video' }]))
+    expect(addFailedLine(logs, dir, 't7', { stage: 'reading', meant: 'the cats video' })).toEqual({ path: join(dir, 't7.json'), replaced: false })
+    expect(JSON.parse(readFileSync(join(dir, 't7.json'), 'utf8'))).toMatchObject({ turnId: 't7', transcript: 'play cats', log: 'flags/t7/decision-t7.jsonl', happened: 'wrong video', meant: 'the cats video' })
+    // A happened given wins over the hint.
+    expect(addFailedLine(logs, dir, 't7', { happened: 'opened the dogs video' })).toMatchObject({ replaced: true })
+    expect(JSON.parse(readFileSync(join(dir, 't7.json'), 'utf8'))).toMatchObject({ happened: 'opened the dogs video' })
   })
 
   it('refuses an unknown stage, a bad claim, a new entry missing a line, a turn the logs do not hold, and a file that is not an entry', () => {

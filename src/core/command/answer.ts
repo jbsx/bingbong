@@ -24,6 +24,12 @@ export const STOPPED_ANSWERS = {
   nothing: 'Nothing to stop.',
 } as const
 
+/** A Flag's Answer (#421): the previous Task kept, or none in this run to keep. */
+export const FLAG_ANSWERS = {
+  flagged: 'Flagged.',
+  nothing: 'Nothing to flag yet.',
+} as const
+
 /** Why Jev gave no reading, as the "No command found." line gives it. */
 const JEV_UNAVAILABLE: Record<DecisionUnavailableReason, string> = {
   timeout: "Jev didn't answer in time",

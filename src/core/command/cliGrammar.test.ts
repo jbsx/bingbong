@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { grammarErrorOf, parseCliCommand } from './cliGrammar'
+import { grammarErrorOf, headsFlagLine, parseCliCommand, readFlagLine } from './cliGrammar'
 
 describe('parseCliCommand', () => {
   it('parses navigate with its url input', () => {
@@ -197,5 +197,41 @@ describe('the menu verb (#363, ADR 0079)', () => {
     expect(parseCliCommand('menu 7')).toEqual({ ok: true, command: { type: 'menu', ref: 7 } })
     expect(parseCliCommand('menu')).toEqual({ ok: false, error: "menu: expected a ref number, e.g. 'menu 7'" })
     expect(grammarErrorOf('menu the player')).toBe('Menu needs the number of an item, like “menu 7”.')
+  })
+})
+
+describe('the Flag line (#421)', () => {
+  it('reads each fixed head as a Flag with no hint, typed or as spoken', () => {
+    expect(readFlagLine('mark this as a failure')).toEqual({})
+    expect(readFlagLine('Mark this as a failure.')).toEqual({})
+    expect(readFlagLine('flag that')).toEqual({})
+    expect(readFlagLine('That was wrong!')).toEqual({})
+  })
+
+  it('takes the words after "with the hint" as the hint, as they were said', () => {
+    expect(readFlagLine("mark this as a failure with the hint couldn't load the page")).toEqual({ hint: "couldn't load the page" })
+    expect(readFlagLine('Mark this as a failure, with the hint: it opened the wrong video.')).toEqual({ hint: 'it opened the wrong video' })
+    expect(readFlagLine('flag that with the hint')).toEqual({})
+    expect(readFlagLine('flag that with  the, hint wrong page')).toEqual({ hint: 'wrong page' })
+  })
+
+  it("reads nothing else as a Flag: a one-word head is a ref's label, and words past a head are not a hint", () => {
+    expect(readFlagLine('flag')).toBeNull()
+    expect(readFlagLine('mark')).toBeNull()
+    expect(readFlagLine('click flag')).toBeNull()
+    expect(readFlagLine('flag that comment')).toBeNull()
+    expect(readFlagLine('that was wrong of me to say')).toBeNull()
+  })
+
+  it('holds a partial that may yet be a Flag line, so it never fires early (Early Fire, #326)', () => {
+    expect(headsFlagLine('mark this')).toBe(true)
+    expect(headsFlagLine('Mark this as a')).toBe(true)
+    expect(headsFlagLine('flag that with the hint couldn')).toBe(true)
+    // A head's first word, whole, waits too: a ref labelled "Mark" must not fire under "mark this as a failure".
+    expect(headsFlagLine('Mark')).toBe(true)
+    expect(headsFlagLine('flag')).toBe(true)
+    expect(headsFlagLine('fla')).toBe(false)
+    expect(headsFlagLine('open')).toBe(false)
+    expect(headsFlagLine('mark the second one')).toBe(false)
   })
 })

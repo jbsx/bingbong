@@ -24,6 +24,7 @@ import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/att
 import { createCommandRunner, type CommandRunner } from './run/commandRunner'
 import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
 import { createDecisionLogSink } from './run/decisionLogSink'
+import { createFlagKeeper } from './logs/flagKeeper'
 import { createAskLogSink } from './run/askLogSink'
 import { createFaultLogSink } from './logs/faultLogSink'
 import { createLogBucketUploader } from './logs/logBucketUploader'
@@ -186,6 +187,8 @@ setFaultSink(createFaultLogSink(logsDir))
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
 const decisionLog = createDecisionLogSink(logsDir)
 const askLog = createAskLogSink(logsDir)
+// A Flag (#421) keeps its Task's records and the pane's shot under logs/flags/, past the purge.
+const flagKeeper = createFlagKeeper(logsDir)
 
 // Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
 // one app-global lexicon.json beside the settings file. The settings page
@@ -500,6 +503,7 @@ async function createWindow(): Promise<BrowserWindow> {
     subspans: browserSubspans,
     decisionLog,
     askLog,
+    flags: flagKeeper,
     onEffect: (listener) => {
       effectListeners.add(listener)
       return () => effectListeners.delete(listener)

@@ -81,6 +81,52 @@ export function grammarErrorOf(line: string): string | null {
   }
 }
 
+/**
+ * The Flag's fixed heads (#421): two words or more, so a ref labelled
+ * "flag" or "mark" keeps its own reading (ADR 0089). Adding one is a
+ * grammar change.
+ */
+const FLAG_HEADS: readonly string[] = ['mark this as a failure', 'flag that', 'that was wrong']
+const HINT_MARK = 'with the hint'
+/** The mark in the line as given: its words with whatever {@link flagWords} reads as a space between them. */
+const HINT_MARK_RE = /with[^\p{L}\p{N}']+the[^\p{L}\p{N}']+hint/iu
+
+const flagWords = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * The Flag line (#421): a fixed head, the whole line or followed by
+ * `with the hint <words>`, typed or as spoken; its hint as it was said,
+ * less the punctuation around it. Null for any other line. It is the
+ * runner's own, never a Command, and never Jev's.
+ */
+export function readFlagLine(line: string): { hint?: string } | null {
+  const words = flagWords(line)
+  const head = FLAG_HEADS.find((candidate) => words === candidate || words.startsWith(`${candidate} ${HINT_MARK}`))
+  if (head === undefined) return null
+  if (words === head || words === `${head} ${HINT_MARK}`) return {}
+  // The hint's own spelling: everything after the mark in the line as given, however it was spaced or punctuated.
+  const mark = HINT_MARK_RE.exec(line)
+  const hint = mark === null ? '' : line.slice(mark.index + mark[0].length).replace(/^[\s,:;—-]+/, '').replace(/[\s.!?]+$/, '')
+  return hint === '' ? {} : { hint }
+}
+
+/**
+ * Whether a partial may yet be a Flag line (#326): a head's first word,
+ * whole, or more of it, or a head and more; it waits for its Endpoint, so
+ * a ref labelled "Mark" never fires under "mark this as a failure".
+ */
+export function headsFlagLine(partial: string): boolean {
+  const words = flagWords(partial).split(' ').filter(Boolean)
+  if (words.length === 0) return false
+  if (words.length === 1) return FLAG_HEADS.some((head) => head.split(' ')[0] === words[0])
+  return FLAG_HEADS.some((head) => {
+    const said = head.split(' ')
+    if (words.length > said.length) return words.slice(0, said.length).join(' ') === head
+    const last = words.length - 1
+    return words.every((word, index) => (index === last ? said[index]!.startsWith(word) : said[index] === word))
+  })
+}
+
 /** The verbs the grammar reads only as the whole line. */
 const WORDLESS_HEADS: ReadonlySet<string> = new Set(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
 
