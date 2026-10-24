@@ -35,8 +35,8 @@ describe('speech e2e', () => {
     log = join(dir, 'tts.log')
     const voices = join(dir, 'voices')
     await mkdir(voices)
-    await writeFile(join(voices, 'en_US-ryan-medium.onnx'), '')
-    await writeFile(join(voices, 'en_US-ryan-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx'), '')
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
     harness = await startHarness({
       launchArgs: ['--browser-cli'],
       pipeStdio: true,

@@ -16,8 +16,6 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } 
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { IdleShown } from '../core/idle/ipcChannels'
-import type { TtsVoiceEntry } from '../core/tts/ttsVoices'
-import type { SpeakOutcome } from '../core/ports/tts'
 
 export type { BrowserPaneState, PaneRect }
 export type { LastPage }
@@ -105,11 +103,8 @@ export interface BingbongSettingsApi {
 }
 
 export interface BingbongTtsApi {
-  /** The settings picker's voices (#412): the Kokoro ones, then the installed Piper ones, each with its cost. */
-  listVoices(): Promise<TtsVoiceEntry[]>
-  /** Play the voice's sample line, stopping any preview playing; resolves when it ends or is stopped. */
-  preview(voiceId: string): Promise<SpeakOutcome>
-  stopPreview(): void
+  /** Installed piper voice ids, for the settings picker. */
+  listVoices(): Promise<string[]>
 }
 
 export interface BingbongLearnedTermsApi {

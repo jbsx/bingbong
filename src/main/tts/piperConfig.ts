@@ -7,14 +7,12 @@ export interface PiperConfig {
   bin: string
   /** Dir holding `<voice>.onnx` + `<voice>.onnx.json` files. */
   voicesDir: string
-  /** The Piper voice a line falls back to when Kokoro cannot say it (#412); the settings page's ttsVoice, Kokoro af_heart by default, is the voice. */
+  /** Base voice; the settings page's ttsVoice overrides this at speak time. */
   voiceId: string
   /** The player spoken text streams into (#327); default aplay on PATH. The TTS e2e scripts it. */
   playerBin: string
   /** The player's ALSA device: 'null' when the run is muted (tests, agents), else aplay's default. */
   playerDevice?: string
-  /** Where Kokoro's model is fetched to (#412): <userData>/models. Null with BINGBONG_KOKORO=off (the e2e), every line then Piper's. */
-  kokoroModelsDir: string | null
 }
 
 export function resolvePiperConfig(env: Record<string, string | undefined>, userDataDir: string): PiperConfig {
@@ -24,6 +22,5 @@ export function resolvePiperConfig(env: Record<string, string | undefined>, user
     voiceId: env.BINGBONG_PIPER_VOICE?.trim() || DEFAULT_PIPER_VOICE,
     playerBin: env.BINGBONG_APLAY_BIN?.trim() || 'aplay',
     ...(shouldMuteAudio(env) ? { playerDevice: 'null' } : {}),
-    kokoroModelsDir: env.BINGBONG_KOKORO?.trim() === 'off' ? null : join(userDataDir, 'models'),
   }
 }

@@ -463,31 +463,6 @@ describe('speech coordinator — perf spans (#31, #327)', () => {
     expect(records).toEqual([{ turnId: 'turn-1', stage: 'tts-synthesis', durMs: 150, at: AT, t: 150, detail: { index: 0, spawns: 1 } }])
   })
 
-  it('names the engine that said each sentence, and the first sentence’s on first sound (#412)', async () => {
-    const { records, state, tracer } = fakePerfHarness()
-    const engines = ['kokoro', 'piper']
-    const synth = Object.assign(new FakeSynth(), { lastEngine: () => engines[0] ?? null })
-    const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, tracer })
-
-    const outcome = tts.speak('One. Two.', { turnId: 'turn-1' })
-    state.monotonicMs = 400
-    synth.finishNext()
-    await flush()
-    engines.shift()
-    state.monotonicMs = 450
-    synth.finishNext()
-    await flush()
-    player.streams[0]!.finish()
-    await outcome
-
-    expect(records.filter((r) => r.stage !== 'tts-playback')).toEqual([
-      { turnId: 'turn-1', stage: 'tts-synthesis', durMs: 400, at: AT, t: 400, detail: { index: 0, spawns: 1, engine: 'kokoro' } },
-      { turnId: 'turn-1', stage: 'tts-first-sound', durMs: 400, at: AT, t: 400, detail: { engine: 'kokoro' } },
-      { turnId: 'turn-1', stage: 'tts-synthesis', durMs: 50, at: AT, t: 450, detail: { index: 1, spawns: 1, engine: 'piper' } },
-    ])
-  })
-
   it('logs nothing for texts without a turn id — download announcements', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const synth = new FakeSynth()

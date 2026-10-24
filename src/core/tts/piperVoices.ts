@@ -2,7 +2,7 @@
 // the voices dir. Ids are the filename without the extension; a bare id like
 // the default resolves to its quality-suffixed file.
 
-export const DEFAULT_PIPER_VOICE = 'en_US-ryan'
+export const DEFAULT_PIPER_VOICE = 'en_GB-alba'
 export const DEFAULT_PIPER_SAMPLE_RATE = 22050
 
 const MODEL_SUFFIX = '.onnx'

@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 ENV SILERO_URL=https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx \
     OWW_URL=https://github.com/dscripka/openWakeWord/releases/download/v0.5.1 \
     MOONSHINE_SMALL_URL=https://huggingface.co/Immortalizer/moonshine-streaming-small-onnx/resolve/main \
-    PIPER_VOICES_URL=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium
+    PIPER_VOICES_URL=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium
 
 RUN mkdir -p models/wake models/moonshine-small voices \
  && curl -fsSL -o models/silero_vad.onnx "$SILERO_URL" \
@@ -51,8 +51,8 @@ RUN mkdir -p models/wake models/moonshine-small voices \
  && curl -fsSL -o models/moonshine-small/encoder_model.onnx "$MOONSHINE_SMALL_URL/encoder_model_quantized.onnx" \
  && curl -fsSL -o models/moonshine-small/decoder_model_merged.onnx "$MOONSHINE_SMALL_URL/decoder_model_merged_quantized.onnx" \
  && curl -fsSL -o models/moonshine-small/tokenizer.json "$MOONSHINE_SMALL_URL/tokenizer.json" \
- && curl -fsSL -o voices/en_US-ryan-medium.onnx "$PIPER_VOICES_URL/en_US-ryan-medium.onnx" \
- && curl -fsSL -o voices/en_US-ryan-medium.onnx.json "$PIPER_VOICES_URL/en_US-ryan-medium.onnx.json"
+ && curl -fsSL -o voices/en_GB-alba-medium.onnx "$PIPER_VOICES_URL/en_GB-alba-medium.onnx" \
+ && curl -fsSL -o voices/en_GB-alba-medium.onnx.json "$PIPER_VOICES_URL/en_GB-alba-medium.onnx.json"
 
 # minBytes floors mirror src/main/moonshine/moonshineModels.ts and the
 # upstream release sizes: a truncated fetch fails the build instead of
@@ -64,7 +64,7 @@ RUN bytes() { stat -c %s "$1"; } \
  && test "$(bytes models/moonshine-small/encoder_model.onnx)" -ge 70000000 \
  && test "$(bytes models/moonshine-small/decoder_model_merged.onnx)" -ge 145000000 \
  && test "$(bytes models/moonshine-small/tokenizer.json)" -ge 3000000 \
- && test "$(bytes voices/en_US-ryan-medium.onnx)" -ge 10000000
+ && test "$(bytes voices/en_GB-alba-medium.onnx)" -ge 10000000
 
 # Custom-trained wake heads — no download source; staged by kiosk-setup.sh.
 # Named explicitly so an unstaged head fails the build loudly.
@@ -110,8 +110,6 @@ RUN printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > /etc/a
 COPY --from=builder /app/out ./out
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
-# The voice picker's shipped preview clips (#412), read beside out/.
-COPY resources/tts-samples ./resources/tts-samples
 COPY --from=assets /assets /opt/bingbong/assets
 COPY docker/entrypoint.sh /usr/local/bin/bingbong-entrypoint
 COPY scripts/kiosk-seed.ts ./scripts/kiosk-seed.ts

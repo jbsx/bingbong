@@ -280,8 +280,8 @@ async function writeFakeTts(userDataDir: string): Promise<{ piperBin: string; bi
   await chmod(piperBin, 0o755)
   await writeFile(join(binDir, 'aplay'), '#!/bin/sh\ncat > /dev/null\n')
   await chmod(join(binDir, 'aplay'), 0o755)
-  await writeFile(join(voicesDir, 'en_US-ryan-medium.onnx'), '')
-  await writeFile(join(voicesDir, 'en_US-ryan-medium.onnx.json'), '{"audio":{"sample_rate":22050}}\n')
+  await writeFile(join(voicesDir, 'en_GB-alba-medium.onnx'), '')
+  await writeFile(join(voicesDir, 'en_GB-alba-medium.onnx.json'), '{"audio":{"sample_rate":22050}}\n')
   return { piperBin, binDir, voicesDir }
 }
 

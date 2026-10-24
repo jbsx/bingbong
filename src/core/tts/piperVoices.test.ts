@@ -8,8 +8,8 @@ import {
 } from './piperVoices'
 
 describe('default piper voice', () => {
-  it('is en_US-ryan', () => {
-    expect(DEFAULT_PIPER_VOICE).toBe('en_US-ryan')
+  it('is en_GB-alba', () => {
+    expect(DEFAULT_PIPER_VOICE).toBe('en_GB-alba')
   })
 })
 

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
 import { isEnvKey, isSecretKey, type EnvFileView } from '../../core/settings/envEntries'
 import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel, IDLE_AFTER_MINUTES } from '../../core/settings/settings'
-import type { TtsVoiceEntry } from '../../core/tts/ttsVoices'
+import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../../core/idle/columns'
 import { asDateFormat, asTimeFormat, dateOptions, timeOfDay } from '../../core/idle/timeFormat'
@@ -16,12 +16,13 @@ import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { defaultWeightSettings, EMPTY_BODY, POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, withoutPerson, type WeightSettings } from '../../core/scale/weightSettings'
 import { reportRendererFault } from './diagnostics'
 import { WeatherCityPicker } from './WeatherCityPicker'
-import { VoicePicker } from './VoicePicker'
 import { markedSection } from './settingsIndexMark'
 import { useScaleStatus, useWeighIns } from './useWeight'
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
+/** Select value for "the saved voice is not installed right now". */
+const STALE_VOICE_VALUE = '__stale__'
 
 function sameSettings(a: AppSettings, b: AppSettings): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -59,8 +60,8 @@ function useMicrophones(): MicOption[] {
   return mics
 }
 
-function useTtsVoices(): TtsVoiceEntry[] {
-  const [voices, setVoices] = useState<TtsVoiceEntry[]>([])
+function useTtsVoices(): string[] {
+  const [voices, setVoices] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -761,6 +762,7 @@ export function SettingsPage({
 
   const dirty = !sameSettings({ ...draft, scale: settings.scale }, settings)
   const micKnown = draft.micId === 'default' || mics.some((mic) => mic.deviceId === draft.micId)
+  const voiceKnown = draft.ttsVoice === '' || voices.includes(draft.ttsVoice)
 
   const submit = async () => {
     // The remembered scale is main's to write (Forget saves at once): a draft never carries an older one back.
@@ -867,14 +869,25 @@ export function SettingsPage({
             Parakeet hears best. The Moonshine models are lighter, for a machine too slow for it.
             Each loads the next time the app starts.
           </p>
-          <div className="settings-field settings-field--voices">
-            <span className="settings-label">TTS voice</span>
-            <VoicePicker voices={voices} value={draft.ttsVoice} onChange={(ttsVoice) => setDraft({ ...draft, ttsVoice })} />
-          </div>
-          <p className="settings-note">
-            Kokoro sounds best and costs the most to say a line; Piper is the voice while Kokoro&apos;s model downloads (~330 MB).
-            The bar is each voice&apos;s synthesis cost against the costliest listed. A voice applies from the next line.
-          </p>
+          <Field label="TTS voice">
+            <select
+              value={voiceKnown ? draft.ttsVoice : STALE_VOICE_VALUE}
+              aria-label="TTS voice"
+              onChange={(event) => setDraft({ ...draft, ttsVoice: event.target.value })}
+            >
+              <option value="">Default ({DEFAULT_PIPER_VOICE})</option>
+              {voices.map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice}
+                </option>
+              ))}
+              {voiceKnown ? null : (
+                <option value={STALE_VOICE_VALUE} disabled>
+                  Previously selected voice ({draft.ttsVoice}, not installed)
+                </option>
+              )}
+            </select>
+          </Field>
         </Section>
 
         <LearnedTermsSection />

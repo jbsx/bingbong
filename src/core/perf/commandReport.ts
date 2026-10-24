@@ -33,8 +33,6 @@ export interface ReactionReport {
   byFire: { early: ReactionStats | null; endpoint: ReactionStats | null }
   /** The `tts-first-sound` spans (#327): speak call to the first sample handed to the player; null when none. */
   firstSound: ReactionStats | null
-  /** The same spans per engine (#412), `tts-first-sound (kokoro)` and so on, once more than one has spoken; an untagged span is Piper's, the only engine before Kokoro. */
-  firstSoundByEngine: ReactionStats[]
 }
 
 export interface DecisionReport {
@@ -96,14 +94,9 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
   const early: number[] = []
   const endpoint: number[] = []
   const firstSound: number[] = []
-  const firstSoundByEngine = new Map<string, number[]>()
   const byVerb = new Map<string, number[]>()
   for (const record of records) {
-    if (record.stage === FIRST_SOUND_STAGE) {
-      firstSound.push(record.durMs)
-      const engine = typeof record.detail?.engine === 'string' ? record.detail.engine : 'piper'
-      firstSoundByEngine.set(engine, [...(firstSoundByEngine.get(engine) ?? []), record.durMs])
-    }
+    if (record.stage === FIRST_SOUND_STAGE) firstSound.push(record.durMs)
     if (record.stage !== REACTION_STAGE) continue
     all.push(record.durMs)
     ;(record.detail?.earlyFire === true ? early : endpoint).push(record.durMs)
@@ -119,10 +112,6 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
       .sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb)),
     byFire: { early: early.length === 0 ? null : statsOf('early', early), endpoint: endpoint.length === 0 ? null : statsOf('endpoint', endpoint) },
     firstSound: firstSound.length === 0 ? null : statsOf(FIRST_SOUND_STAGE, firstSound),
-    firstSoundByEngine:
-      firstSoundByEngine.size < 2
-        ? []
-        : [...firstSoundByEngine.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([engine, durations]) => statsOf(`${FIRST_SOUND_STAGE} (${engine})`, durations)),
   }
 }
 
@@ -233,7 +222,7 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
   if (reaction.overall !== null || reaction.firstSound !== null) {
     lines.push('reaction (Endpoint to first effect), by verb:')
     // The speech rows beside it (#327): the speak call to the first spoken sample.
-    const stats = [...(reaction.overall ? [reaction.overall] : []), ...reaction.byVerb, ...(reaction.firstSound ? [reaction.firstSound] : []), ...reaction.firstSoundByEngine]
+    const stats = [...(reaction.overall ? [reaction.overall] : []), ...reaction.byVerb, ...(reaction.firstSound ? [reaction.firstSound] : [])]
     lines.push(...table(['verb', 'count', 'p50', 'p95', 'max'], stats.map(rowOf)))
     const fired = [reaction.byFire.early, reaction.byFire.endpoint].filter((row): row is ReactionStats => row !== null)
     if (reaction.byFire.early !== null) {

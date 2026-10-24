@@ -130,11 +130,6 @@ export async function ensureMoonshineModels(
   return ensureModelFiles(join(modelsDir, spec.dir), spec.files, store)
 }
 
-/** Whether every file is in dir, whole: an engine that must not wait on a fetch asks before it starts one (#412). */
-export function modelFilesComplete(dir: string, files: readonly { name: string; minBytes: number }[], store: MoonshineModelStore): boolean {
-  return files.every((file) => isComplete(store, join(dir, file.name), file.minBytes))
-}
-
 /** Fetches each file missing from dir, or smaller than a finished download (any engine's set, #358). */
 export async function ensureModelFiles(
   dir: string,

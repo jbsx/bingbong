@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -33,25 +33,14 @@ describe('settings page e2e', () => {
   let harness: Harness
   let userDataDir: string
   let usage: UsageStandIn
-  let dashboardSession: string
-  let ttsLog: string
 
   beforeAll(async () => {
     // The owner's two providers, so the AI usage section lists their windows, "7d Fable" among them.
     usage = await startUsageStandIn(2)
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-settings-'))
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ usageDashboard: usage.settings }), 'utf8')
-    // Two installed Piper voices for the TTS voice picker (#412): a medium one, and a high one no clip ships for.
-    const voices = join(userDataDir, 'voices')
-    await mkdir(voices)
-    for (const [id, quality] of [['en_US-ryan-medium', 'medium'], ['en_US-amy-high', 'high']] as const) {
-      await writeFile(join(voices, `${id}.onnx`), '')
-      await writeFile(join(voices, `${id}.onnx.json`), JSON.stringify({ audio: { sample_rate: 22050, quality } }))
-    }
-    ttsLog = join(userDataDir, 'tts.log')
-    harness = await startHarness({ userDataDir, env: { BINGBONG_FAKE_TTS_LOG: ttsLog } })
+    harness = await startHarness({ userDataDir })
     const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })
-    dashboardSession = sessionId
     harness.cdp.on('Fetch.requestPaused', (params) => {
       const { requestId } = params as { requestId: string }
       void harness.cdp.send(
@@ -153,93 +142,6 @@ describe('settings page e2e', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(status).toContain('Saved')
-  })
-
-  it('lists the Kokoro voices and the installed Piper voices, each with its cost bar and a preview that plays (#412)', async () => {
-    if (!(await harness.dashboardEval<boolean>(`!!document.querySelector('.settings-page')`))) {
-      await harness.clickDashboardElement('.settings-toggle')
-      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.settings-page')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
-    }
-    await harness.dashboardEval(`(() => { const details = document.querySelector('section[aria-label="voice"] details'); if (!details.open) details.open = true })()`)
-    const picker = await waitFor(
-      async () => {
-        const found = await harness.dashboardEval<{ groups: { title: string; voices: string[] }[]; checked: string; costs: Record<string, string>; widths: Record<string, string>; previews: number; rows: number }>(`(() => {
-          const picker = document.querySelector('[role="radiogroup"][aria-label="TTS voice"]')
-          if (!picker) return null
-          const rows = [...picker.querySelectorAll('.voice-row')]
-          return {
-            groups: [...picker.querySelectorAll('[role="group"]')].map((group) => ({ title: group.getAttribute('aria-label'), voices: [...group.querySelectorAll('input[type="radio"]')].map((input) => input.value) })),
-            checked: picker.querySelector('input[type="radio"]:checked')?.value ?? null,
-            costs: Object.fromEntries(rows.map((row) => [row.dataset.voice, row.querySelector('.voice-cost-percent')?.textContent ?? ''])),
-            widths: Object.fromEntries(rows.map((row) => [row.dataset.voice, row.querySelector('.voice-cost-fill')?.style.width ?? ''])),
-            previews: picker.querySelectorAll('button.voice-preview').length,
-            rows: rows.length,
-          }
-        })()`)
-        return found !== null && found.groups.some((group) => group.title === 'Piper (installed)') ? found : undefined
-      },
-      { timeoutMs: 10000, intervalMs: 100 },
-    )
-    // Default (Kokoro Heart), then the two groups.
-    expect(picker.groups.map((group) => group.title)).toEqual(['Kokoro', 'Piper (installed)'])
-    expect(picker.groups[0]!.voices).toHaveLength(28)
-    expect(picker.groups[0]!.voices[0]).toBe('kokoro:af_heart')
-    expect(picker.groups[1]!.voices).toEqual(['en_US-amy-high', 'en_US-ryan-medium'])
-    expect(picker.checked).toBe('')
-    // Cost as a share of the costliest class listed, Kokoro: no seconds anywhere.
-    expect(picker.costs['']).toBe('100%')
-    expect(picker.costs['kokoro:bm_george']).toBe('100%')
-    expect(picker.costs['en_US-amy-high']).toBe('60%')
-    expect(picker.costs['en_US-ryan-medium']).toBe('15%')
-    expect(picker.widths['en_US-ryan-medium']).toBe('15%')
-    expect(picker.previews).toBe(picker.rows)
-    expect(await harness.dashboardEval<string>(`document.querySelector('.voice-picker').textContent`)).not.toMatch(/\d\s?s\b|seconds/)
-
-    const shots = process.env.BINGBONG_SETTINGS_SHOT_DIR ?? join(tmpdir(), 'bingbong-settings-shot')
-    await mkdir(shots, { recursive: true })
-    await harness.dashboardEval(`document.querySelector('.voice-picker').scrollIntoView({ block: 'center' })`)
-    // The list's top (Default, Kokoro) and its end (Piper's 60% and 15%), in both themes.
-    for (const end of ['top', 'end'] as const) {
-      await harness.dashboardEval(`(() => { const list = document.querySelector('.voice-picker'); list.scrollTop = ${end === 'top' ? 0 : 'list.scrollHeight'} })()`)
-      for (const scheme of ['dark', 'light'] as const) {
-        await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, dashboardSession)
-        await new Promise((resolve) => setTimeout(resolve, 400))
-        const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, dashboardSession)
-        await writeFile(join(shots, `tts-voice-picker-${end}-${scheme}.png`), Buffer.from(data, 'base64'))
-      }
-    }
-    await harness.cdp.send('Emulation.setEmulatedMedia', { features: [] }, dashboardSession)
-
-    // ▶ plays the voice's shipped clip through the speech player: the scripted aplay, on the null device.
-    const plays = async (): Promise<string[]> => (await readFile(ttsLog, 'utf8').catch(() => '')).split('\n').filter((line) => line.startsWith('aplay '))
-    await harness.clickDashboardElement('[data-voice="kokoro:bm_george"] button.voice-preview')
-    const played = await waitFor(async () => {
-      const lines = await plays()
-      return lines.length > 0 ? lines : undefined
-    }, { timeoutMs: 10000, intervalMs: 100 })
-    // The shipped bm_george clip: 7.83 s of 24 kHz 16-bit mono after its 44-byte header.
-    expect(played[0]).toMatch(/^aplay -D null .*bytes=375852$/)
-
-    // A voice with no shipped clip is rendered on its first preview, through the real synthesizer (the scripted piper here), and kept.
-    // One preview at a time: the af_heart clip it cuts short may never reach the log, so only its successor is waited for.
-    await harness.clickDashboardElement('[data-voice="kokoro:af_heart"] button.voice-preview')
-    await harness.clickDashboardElement('[data-voice="en_US-amy-high"] button.voice-preview')
-    expect(await harness.dashboardEval<number>(`document.querySelectorAll('button.voice-preview[aria-pressed="true"]').length`)).toBeLessThanOrEqual(1)
-    await waitFor(async () => ((await readFile(join(userDataDir, 'tts-previews', 'en_US-amy-high.wav')).catch(() => null)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
-    expect((await readFile(ttsLog, 'utf8')).split('\n')).toContain(`piper-line Okay, the timer is set for ten minutes. I found three results for pasta recipes; the first one is from Serious Eats.`)
-    // The rendered clip: the scripted piper's 0.1 s of 22.05 kHz silence.
-    await waitFor(async () => ((await plays()).some((line) => line.endsWith('bytes=4454')) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
-
-    // Choosing still happens through the picker and Save.
-    await harness.clickDashboardElement('[data-voice="kokoro:bm_george"] input[type="radio"]')
-    await harness.clickDashboardElement('.settings-button--primary')
-    await waitFor(
-      async () => {
-        const raw = await readFile(join(userDataDir, 'settings.json'), 'utf8').catch(() => undefined)
-        return raw !== undefined && JSON.parse(raw).ttsVoice === 'kokoro:bm_george' ? true : undefined
-      },
-      { timeoutMs: 10000, intervalMs: 250 },
-    )
   })
 
   it('marks the section a click in the index opened, the last ones too, until the page is scrolled by hand', async () => {

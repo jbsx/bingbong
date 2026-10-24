@@ -38,11 +38,8 @@ import { layerEnv } from '../core/settings/dotEnv'
 import { loadEnvFile, resolveEnvFilePath } from './envFile'
 import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
-import { createMainTts, createPreviewRenderer } from './tts/createMainTts'
+import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
-import { createKokoroSynthesizer } from './tts/createKokoroSynthesizer'
-import { createVoicePreviews } from './tts/createVoicePreviews'
-import { DEFAULT_TTS_VOICE } from '../core/tts/ttsVoices'
 import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
@@ -198,20 +195,9 @@ const utteranceDumper = createUtteranceDumper({
   enabled: audioDumpEnabled(currentEnv()),
 })
 
-// Piper TTS: binary, voices dir, and fallback voice come from env (defaults
-// suffice for a standard install); the settings page's voice wins per line,
-// Kokoro af_heart by default (#412). One Kokoro for the app, its model
-// fetched to <userData>/models on demand and shared with the previews.
+// Piper TTS: binary, voices dir, and base voice come from env (defaults
+// suffice for a standard install); the settings page's voice wins per line.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
-const kokoro = piperConfig.kokoroModelsDir === null ? null : createKokoroSynthesizer({ modelsDir: piperConfig.kokoroModelsDir })
-// The picker's ▶ (#412): shipped clips first, else rendered once and kept; one aplay, so a muted run's previews are silent too.
-const voicePreviews = createVoicePreviews({
-  // From the built main (out/main), as the preload and renderer are: the app path is out/main under the e2e's launch.
-  samplesDir: join(__dirname, '../../resources/tts-samples'),
-  cacheDir: join(app.getPath('userData'), 'tts-previews'),
-  player: createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice }),
-  render: createPreviewRenderer(piperConfig, kokoro),
-})
 
 // Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
 // the models load once. Scripted doubles ride the same seam for e2e. The
@@ -433,9 +419,8 @@ async function createWindow(): Promise<BrowserWindow> {
   const speakingGate = createSpeakingGate(
     createMainTts({
       config: piperConfig,
-      kokoro,
       pane: pane.view.webContents,
-      getVoiceId: () => settingsStore.get().ttsVoice.trim() || DEFAULT_TTS_VOICE,
+      getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
       prefetch: true,
     }),
@@ -443,8 +428,6 @@ async function createWindow(): Promise<BrowserWindow> {
   // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
   const ducking = createDucking((on) => void music.player.duck(on))
   win.on('closed', speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
-  // A spoken line cuts a voice preview short (#412): the two never sound together.
-  win.on('closed', speakingGate.onSpeakingChange((speaking) => speaking && voicePreviews.stop()))
   win.on('closed', timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
@@ -544,14 +527,7 @@ async function createWindow(): Promise<BrowserWindow> {
     vad: voice.vad,
     transcriber: voice.transcriber,
     turn: voice.turn,
-    // Barge-in stops a voice preview as it stops speech (#412).
-    tts: {
-      speak: (text, options) => speakingGate.tts.speak(text, options),
-      stop: () => {
-        speakingGate.tts.stop()
-        voicePreviews.stop()
-      },
-    },
+    tts: speakingGate.tts,
     wake: wakeDetector
       ? {
           detector: wakeDetector,
@@ -619,7 +595,7 @@ app.whenReady().then(async () => {
   })
   app.on('will-quit', () => scaleListener?.stop())
   registerFeedPanelIpc()
-  registerTtsIpc({ voicesDir: () => piperConfig.voicesDir, previews: voicePreviews })
+  registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own

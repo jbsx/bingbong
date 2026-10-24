@@ -3,18 +3,13 @@ import { join } from 'node:path'
 import { resolvePiperConfig } from './piperConfig'
 
 describe('resolvePiperConfig', () => {
-  it('defaults to piper on PATH, voices under userData, en_US-ryan', () => {
+  it('defaults to piper on PATH, voices under userData, en_GB-alba', () => {
     expect(resolvePiperConfig({}, '/data')).toEqual({
       bin: 'piper',
       voicesDir: join('/data', 'voices'),
-      voiceId: 'en_US-ryan',
+      voiceId: 'en_GB-alba',
       playerBin: 'aplay',
-      kokoroModelsDir: join('/data', 'models'),
     })
-  })
-
-  it('turns Kokoro off when BINGBONG_KOKORO=off', () => {
-    expect(resolvePiperConfig({ BINGBONG_KOKORO: 'off' }, '/data').kokoroModelsDir).toBeNull()
   })
 
   it('honours env overrides', () => {
@@ -28,7 +23,7 @@ describe('resolvePiperConfig', () => {
         },
         '/data',
       ),
-    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay', kokoroModelsDir: join('/data', 'models') })
+    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay' })
   })
 
   it('plays to the null device when the run is muted', () => {
