@@ -1774,6 +1774,12 @@ microphone, and speakers, running the app full-screen as its only
 application. The Hardware Floor is defined against it.
 _Avoid_: server, deployment environment, target machine
 
+**Release**:
+A build of the app published from the `production` branch, the only build
+the Kiosk runs. The Kiosk installs a new Release only while the Idle Screen
+is up.
+_Avoid_: deploy, push, nightly
+
 **Hardware Floor**:
 The reference minimum machine every default must satisfy — currently the
 target kiosk: a dual-core mobile-class CPU (i3-7100U) with integrated

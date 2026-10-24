@@ -2,7 +2,7 @@
 
 > **Superseded 2026-10-24 (owner):** the project never uses Docker. The kiosk
 > runs the app directly on the host; how it is packaged and installed is
-> #419. The X11/Pulse passthrough, the `./data` bind mount and the image seed
+> #419 and ADR 0090. The X11/Pulse passthrough, the `./data` bind mount and the image seed
 > below no longer apply.
 
 Bing Bong is deployed to the kiosk (the Hardware Floor machine) as a Docker
