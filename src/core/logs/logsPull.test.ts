@@ -3,39 +3,32 @@ import { planLogsPull } from './logsPull'
 
 const dotEnv = [
   'TYPESAFE_API_KEY=sk-secret',
-  'BINGBONG_LOG_BUCKET=bingbong-logs',
-  'RCLONE_CONFIG_R2_TYPE=s3',
-  'RCLONE_CONFIG_R2_PROVIDER=Cloudflare',
+  'BINGBONG_LOG_BUCKET=kachow',
+  'BINGBONG_LOG_BUCKET_ENDPOINT=https://account.r2.cloudflarestorage.com',
+  'BINGBONG_LOG_BUCKET_ACCESS_KEY_ID=id',
+  'BINGBONG_LOG_BUCKET_SECRET_ACCESS_KEY=secret',
 ].join('\n')
 
 describe('planLogsPull', () => {
-  it("copies the kiosk's folder to kiosk-logs/kiosk by default", () => {
-    const plan = planLogsPull([], dotEnv, {})
-    expect(plan).toEqual({
-      remote: 'r2:bingbong-logs/kiosk/',
+  it("pulls the kiosk's folder to kiosk-logs/kiosk by default", () => {
+    expect(planLogsPull([], dotEnv, {})).toMatchObject({
+      machine: 'kiosk',
       dir: 'kiosk-logs/kiosk',
-      argv: ['copy', 'r2:bingbong-logs/kiosk/', 'kiosk-logs/kiosk'],
-      env: {
-        BINGBONG_LOG_BUCKET: 'bingbong-logs',
-        RCLONE_CONFIG_R2_TYPE: 's3',
-        RCLONE_CONFIG_R2_PROVIDER: 'Cloudflare',
-      },
+      settings: { bucket: 'kachow', endpoint: 'https://account.r2.cloudflarestorage.com' },
     })
   })
 
   it('takes the machine and the folder from the arguments', () => {
-    const plan = planLogsPull(['den', '/tmp/den-logs'], dotEnv, {})
-    expect(plan).toMatchObject({ dir: '/tmp/den-logs', argv: ['copy', 'r2:bingbong-logs/den/', '/tmp/den-logs'] })
+    expect(planLogsPull(['den', '/tmp/den-logs'], dotEnv, {})).toMatchObject({ machine: 'den', dir: '/tmp/den-logs' })
   })
 
   it('lets the process environment win over the root .env', () => {
-    const plan = planLogsPull([], dotEnv, { BINGBONG_LOG_BUCKET: 'other-bucket', PATH: '/bin' })
-    expect(plan).toMatchObject({ argv: ['copy', 'r2:other-bucket/kiosk/', 'kiosk-logs/kiosk'] })
+    expect(planLogsPull([], dotEnv, { BINGBONG_LOG_BUCKET: 'other' })).toMatchObject({ settings: { bucket: 'other' } })
   })
 
   it('names the missing settings instead of running', () => {
-    expect(planLogsPull([], 'TYPESAFE_API_KEY=sk-secret', {})).toEqual({
-      missing: ['BINGBONG_LOG_BUCKET', 'RCLONE_CONFIG_R2_TYPE'],
+    expect(planLogsPull([], 'BINGBONG_LOG_BUCKET=kachow', {})).toEqual({
+      missing: ['BINGBONG_LOG_BUCKET_ENDPOINT', 'BINGBONG_LOG_BUCKET_ACCESS_KEY_ID', 'BINGBONG_LOG_BUCKET_SECRET_ACCESS_KEY'],
     })
   })
 })

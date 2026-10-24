@@ -32,8 +32,6 @@ as fast as it can, built on this shell.
   closed with their URL reported; an embedder-level adblocker runs on the
   pane's partition; agent-initiated downloads land in
   `~/Downloads/bingbong_downloads/` and are announced.
-- **Ships as an appliance.** The kiosk image and compose file are unchanged
-  from `main`.
 
 ## Quickstart
 
@@ -120,54 +118,36 @@ BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # wake scores (object form scripts each h
 
 ## Kiosk deployment
 
-The appliance ships as a container (ADR 0023) — full voice loop, real
-screen, one command, no downloads on the kiosk:
+There is no kiosk build yet: the app will be installed on the kiosk host
+directly, never in a container (#419). The custom wake heads, which have no
+download source, are kept in `models/wake/`.
 
-```sh
-cp .env.example config/.env   # fill the keys
-scripts/kiosk-setup.sh        # diagnose-only preflight
-docker compose up --build -d
-```
+## The Log Bucket (optional)
 
-Run it inside the kiosk's X session (`xhost +local:` grants the container
-access to the screen). X11 and the PulseAudio socket are passed through, so
-the dashboard renders on the physical screen and mic/speakers work
-unchanged. Every model — Silero VAD, openWakeWord, the custom wake heads,
-Moonshine Small, the Piper voice — is baked into the image and seeded into
-`./data` on first boot. All durable state (Browser Profile, Settings,
-downloads) lives in `./data`: delete it for a fresh start, copy it to
-migrate.
+The app deletes log files older than 7 days. On a machine that names itself
+with `BINGBONG_LOG_MACHINE`, the app also copies its logs dir, `ask-images/`
+included, to a Cloudflare R2 bucket under `<bucket>/<machine>/` every 5
+minutes, from its own main process: no extra program, no new dependency. It
+only ever copies: nothing the app purges is deleted from the bucket. The
+bucket is never listed to decide what to send; at start each file is checked
+once, and from then on only files that changed are uploaded, so the requests
+stay far inside R2's free tier at any load. Once a day it measures the
+bucket; over 8 GB it deletes this machine's oldest uploads until the bucket
+is under 7 GB, so storage stays inside the free tier's 10 GB.
 
-### The Log Bucket (optional)
-
-The app deletes log files older than 7 days. Beside it, compose runs a
-`log-bucket` sidecar (the pinned `rclone/rclone` image, `docker/log-bucket.sh`)
-that copies the logs, `ask-images/` included, to a Cloudflare R2 bucket
-under `<bucket>/kiosk/` every 5 minutes. It only ever copies: nothing the
-kiosk purges is deleted from the bucket. The uploads are fixed by the
-schedule (about 43k Class A requests a month, 4% of R2's free tier, at any
-load). Once a day it measures the bucket; over 8 GB it deletes this
-machine's oldest files until the bucket is under 7 GB, so storage stays
-inside the free tier's 10 GB.
-
-Setup is the "Log Bucket" block of `.env.example`, copied into
-`config/.env` with:
+Setup is the "Log Bucket" block of `.env.example`, with:
 
 - **an R2 API token** you create in the Cloudflare dashboard with Object
   Read & Write on this bucket only (a private bucket that holds only logs);
 - **a billing notification** on the Cloudflare account, as the backstop:
   going over the free tier is billed, not blocked.
 
-The sidecar reads only the `BINGBONG_LOG_*` and `RCLONE_CONFIG_R2_*` lines
-of the file, so the model keys never enter it. Without them it logs one
-line and idles, and `scripts/kiosk-setup.sh` warns; it reads them when it
-starts, so after filling them in run `docker compose restart log-bucket`.
-`kiosk-setup.sh` also creates `./data/.config/bingbong/logs`, which the
-sidecar mounts and docker must not create root-owned. The logs are not
+The settings are read at boot, so restart the app after changing them; with
+them partly set it prints one line naming what is missing. The logs are not
 encrypted; their privacy rests on the private bucket and the scoped token.
 
-On the dev PC, install [rclone](https://rclone.org/install/), put the same
-lines in the root `.env`, and pull a machine's folder:
+On the dev PC, the same lines without `BINGBONG_LOG_MACHINE` (so the dev
+PC's own logs are never sent) let you pull a machine's folder:
 
 ```sh
 pnpm logs:pull [machine] [dir]   # default: kiosk → kiosk-logs/kiosk
@@ -219,9 +199,8 @@ ddcutil getvcp 10               # current brightness (VCP feature 0x10)
 ddcutil setvcp 10 40            # set 40 %; each call takes about 0.1–0.5 s
 ```
 
-The kiosk container would also need `ddcutil` in its image and the
-monitor's `/dev/i2c-N` passed through (`devices:` in the compose file); the
-image does neither yet.
+On the kiosk this is host setup like any other; how the kiosk is installed
+is #419.
 
 ## Observability
 

@@ -6,9 +6,6 @@ graphify-out/
 .DS_Store
 *.tsbuildinfo
 .env
-# Kiosk deployment runtime state + secrets (ADR 0023).
-config/
-data/
 
 # Scratch artifacts of main's evaluation harnesses (removed on kachow) that
 # may still sit on disk from a main checkout: never committed here either.

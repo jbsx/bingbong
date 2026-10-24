@@ -1,5 +1,10 @@
 # Containerized kiosk deployment
 
+> **Superseded 2026-10-24 (owner):** the project never uses Docker. The kiosk
+> runs the app directly on the host; how it is packaged and installed is
+> #419. The X11/Pulse passthrough, the `./data` bind mount and the image seed
+> below no longer apply.
+
 Bing Bong is deployed to the kiosk (the Hardware Floor machine) as a Docker
 appliance: `docker compose up --build -d` on the box, with the X11 socket and
 the PulseAudio unix socket passed through so the dashboard renders on the

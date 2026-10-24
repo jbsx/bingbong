@@ -26,6 +26,9 @@ import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserCont
 import { createDecisionLogSink } from './run/decisionLogSink'
 import { createAskLogSink } from './run/askLogSink'
 import { createFaultLogSink } from './logs/faultLogSink'
+import { createLogBucketUploader } from './logs/logBucketUploader'
+import { createS3Client } from './logs/s3Client'
+import { logBucketStartup } from '../core/logs/logBucket'
 import { setFaultSink } from '../core/trace/fault'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
@@ -586,6 +589,21 @@ app.whenReady().then(async () => {
   })
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
+  // The Log Bucket (#418): on a machine that names itself, the logs dir is
+  // copied to R2 every five minutes. Read once at boot; a settings change
+  // takes a restart.
+  const logBucket = logBucketStartup(currentEnv())
+  if (logBucket.line) console.log(logBucket.line)
+  if (logBucket.start) {
+    const stopLogBucket = createLogBucketUploader({
+      logsDir,
+      machine: logBucket.start.machine,
+      highBytes: logBucket.start.highBytes,
+      lowBytes: logBucket.start.lowBytes,
+      client: createS3Client(logBucket.start),
+    }).start()
+    app.on('will-quit', stopLogBucket)
+  }
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
   const scaleFixture = process.env[SCALE_FIXTURE_ENV]
   scaleListener = attachScaleListener({
