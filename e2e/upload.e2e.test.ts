@@ -43,7 +43,7 @@ function chooserWindows(): string[] {
   return tree.split('\n').filter((line) => /"(Open Files?|Select Files?|File Upload)"/.test(line))
 }
 
-const LINES = { invoice: 'upload the invoice I downloaded', photo: 'attach a photo of me', cv: 'attach my cv' } as const
+const LINES = { invoice: 'upload the invoice I downloaded', photo: 'attach a photo of me', cv: 'attach my cv', again: 'put the notes on it instead' } as const
 
 describe('upload e2e: a file chooser becomes the Shelf ask, the file set and never sent', () => {
   let harness: Harness
@@ -78,6 +78,8 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
         readingOf(LINES.photo, 'none', { file: 'file-1' }),
         readingOf(LINES.cv, 'click-1'),
         readingOf(LINES.cv, 'none', { file: 'none' }),
+        readingOf(LINES.again, 'click-1'),
+        readingOf(LINES.again, 'none', { file: 'file-3' }),
       ),
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
@@ -124,6 +126,13 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
     await cli(harness, LINES.cv, /^(clicked \[1\]|error:)/)
     expect(await recordOf(LINES.cv)).toMatchObject({ upload: { file: null, shelf: 3 } })
     expect(await changes()).toHaveLength(before)
+    expect(chooserWindows()).toEqual([])
+  }, 30_000)
+
+  it('a field whose chooser was left unanswered opens again: the next line sets its file', async () => {
+    await cli(harness, LINES.again, /^(clicked \[1\]|error:)/)
+    expect(await recordOf(LINES.again)).toMatchObject({ upload: { file: 'notes.txt' } })
+    expect((await changes()).at(-1)).toEqual({ id: 'doc', names: ['notes.txt'] })
     expect(chooserWindows()).toEqual([])
   }, 30_000)
 })

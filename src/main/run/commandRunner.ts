@@ -1333,9 +1333,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         answer(turnId, result)
         if (deps.speech !== undefined) void say(deps.speech, turnId, result)
       } else if (uploaded !== null) {
-        // An upload's Answer (#424): the file set, said; or that none was, a failure. Nothing is sent.
+        // An upload's Answer (#424): the file set, said; or that none was, a failure naming why. Nothing is sent.
         if (uploaded.file === null) {
-          answerFailure(turnId, SPOKEN_FAILURES.noShelfFile)
+          answerFailure(turnId, SPOKEN_FAILURES[uploaded.reason === 'unread' ? 'notFinished' : uploaded.reason === 'unset' ? 'failed' : 'noShelfFile'])
           outcome = 'wall'
         } else {
           const said = `Attached ${uploaded.file}.`
@@ -1432,20 +1432,21 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return []
     })
     const model = deps.decisionModel()
-    if (files.length === 0 || model === null) return { file: null, shelf: files.length }
+    if (files.length === 0) return { file: null, reason: 'empty', shelf: 0 }
+    if (model === null) return { file: null, reason: 'unread', shelf: files.length }
     const state = browser.state()
     const ask = fitShelfAsk(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS), text, { url: state.url ?? '', title: state.title ?? '' }, chooser, files, at())
     const result = await askJev(model, 'shelf', turnId, ask.state, ask.questions, `${turnId}-shelf`)
-    if (result.status !== 'answered') return { file: null, shelf: ask.files.length, ask: result.askId, jev: jevUnavailableOf(result) }
+    if (result.status !== 'answered') return { file: null, reason: 'unread', shelf: ask.files.length, ask: result.askId, jev: jevUnavailableOf(result) }
     const file = readShelfAnswer(result.answers.file, ask.files)
     const asked = { shelf: ask.files.length, ask: result.askId, jev: shelfJevDetailOf(result.answers.file, result.latencyMs, result.model, result.inputTokens) }
-    if (file === null) return { file: null, ...asked }
+    if (file === null) return { file: null, reason: 'none', ...asked }
     try {
       if (browser.attachFiles === undefined) throw new Error('no file chooser on this surface')
       await browser.attachFiles(chooser, [file.path])
     } catch (error) {
       reportFault('run.commandRunner.attachFiles', error, { turnId })
-      return { file: null, ...asked }
+      return { file: null, reason: 'unset', ...asked }
     }
     return { file: file.name, ...asked }
   }

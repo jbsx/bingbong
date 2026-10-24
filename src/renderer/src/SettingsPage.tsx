@@ -1027,7 +1027,7 @@ export function SettingsPage({
                 void window.bingbong.settings
                   .pickFolder()
                   .then((folder) => {
-                    if (folder !== '') setDraft({ ...draft, shelfFolder: folder })
+                    if (folder !== '') setDraft((now) => ({ ...now, shelfFolder: folder }))
                   })
                   .catch(() => {})
               }}

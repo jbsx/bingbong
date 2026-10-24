@@ -736,7 +736,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /** The file field's own facts, read on its node: null for a node gone. */
-  async function fileFieldFacts(node: number): Promise<{ multiple: boolean; accept: string; label: string } | null> {
+  async function fileFieldFacts(node: number): Promise<Omit<FileChooser, 'node'> | null> {
     const resolved = await cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', { backendNodeId: node })
     const objectId = resolved.object?.objectId
     if (objectId === undefined) return null

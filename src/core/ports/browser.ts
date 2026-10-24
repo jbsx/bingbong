@@ -1,5 +1,5 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
-import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
+import type { FileFieldFacts, PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
 import type { ScrollExtent } from '../browser/scrollOp'
 import type { DialogText, TextBelow } from '../browser/pageText'
@@ -269,14 +269,10 @@ export interface BrowserController {
   attachFiles?(chooser: FileChooser, paths: readonly string[]): Promise<void>
 }
 
-/** A file chooser the page opened (#424), as the OS dialog would have shown it: its field's facts. */
-export interface FileChooser {
+/** A file chooser the page opened (#424), as the OS dialog would have shown it: its field's facts — `accept` and `multiple` as its ref line carries them. */
+export interface FileChooser extends FileFieldFacts {
   /** The file input's DOM node, by the backend id the chooser named. */
   readonly node: number
-  /** The field takes several files (`multiple`). */
-  readonly multiple: boolean
-  /** The field's `accept`, as the page wrote it; '' when it has none. */
-  readonly accept: string
   /** The field's name as the page gives it: its label, `aria-label`, `title` or `name`; '' when it has none. */
   readonly label: string
 }

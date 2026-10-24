@@ -1,5 +1,5 @@
 import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
-import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
+import { fileFieldClause, type MediaFacts, type PageLink, type PageMedia, type RegionFacts } from '../browser/snapshot'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import { isRealPage } from '../browser/lastPage'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
@@ -219,7 +219,7 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   // What a search box holds rides its line (#398): stale words in the box are what a type used to append to.
   const words = ref.searchBox !== undefined && ref.searchBox.holds !== '' ? ` holds ${JSON.stringify(ref.searchBox.holds)}` : ''
   // A file field's accept and multiple ride its line (#424): facts of the field, as a media ref's state is (ADR 0080).
-  const file = ref.fileField !== undefined ? `${ref.fileField.accept !== '' ? ` accepts ${JSON.stringify(ref.fileField.accept)}` : ''}${ref.fileField.multiple ? ' takes several files' : ''}` : ''
+  const file = ref.fileField !== undefined ? fileFieldClause(ref.fileField) : ''
   return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${file}${states}${holds}${media}${switches}${region}`
 }
 

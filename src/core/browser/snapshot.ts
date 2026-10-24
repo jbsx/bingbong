@@ -215,6 +215,11 @@ export interface FileFieldFacts {
   readonly multiple: boolean
 }
 
+/** A file field's facts as its line says them (#424): ` accepts "…"` and ` takes several files`, each when it holds. */
+export function fileFieldClause(facts: FileFieldFacts): string {
+  return `${facts.accept !== '' ? ` accepts ${JSON.stringify(facts.accept)}` : ''}${facts.multiple ? ' takes several files' : ''}`
+}
+
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region'
 
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM

@@ -1,6 +1,7 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { FileChooser } from '../ports/browser'
 import { promptChars } from '../decision/cardBudget'
+import { fileFieldClause } from '../browser/snapshot'
 import { describeShelfFile, type ShelfFile } from '../shelf/shelf'
 
 // The Shelf ask (#424, ADR 0092): the page opened its file chooser —
@@ -25,9 +26,7 @@ const MAX_FILES = 254
 
 /** The file field as the state names it: its label, what it accepts and whether it takes several, as its ref line says them. */
 function fieldOf(chooser: FileChooser): string {
-  const label = chooser.label !== '' ? ` ${JSON.stringify(chooser.label)}` : ''
-  const accepts = chooser.accept !== '' ? ` accepts ${JSON.stringify(chooser.accept)}` : ''
-  return `file field${label}${accepts}${chooser.multiple ? ' takes several files' : ''}`
+  return `file field${chooser.label !== '' ? ` ${JSON.stringify(chooser.label)}` : ''}${fileFieldClause(chooser)}`
 }
 
 /**

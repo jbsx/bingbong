@@ -144,6 +144,8 @@ export interface DecisionRecord {
 /** An upload as the record keeps it (#424). */
 export interface UploadDetail {
   readonly file: string | null
+  /** Why no file was set: the Shelf was empty, Jev read none, Jev did not answer (or none was configured), or the set failed. */
+  readonly reason?: 'empty' | 'none' | 'unread' | 'unset'
   readonly shelf: number
   readonly ask?: string
   readonly jev?: ShelfJevDetail | JevUnavailable

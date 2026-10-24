@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -31,6 +31,15 @@ describe('readShelf (#424)', () => {
     ])
   })
 
+  it('reads a folder named twice — by a symlink, a trailing slash or from `~` — once', async () => {
+    const downloads = join(root, 'bingbong_downloads')
+    await mkdir(downloads)
+    await writeFile(join(downloads, 'invoice.pdf'), 'pdf')
+    await symlink(downloads, join(root, 'link'))
+    const shelf = await readShelf([downloads, join(root, 'link'), `${downloads}/`, '~/bingbong_downloads'], root)
+    expect(shelf.map((file) => file.name)).toEqual(['invoice.pdf'])
+  })
+
   it('finds a spoken folder under home, or a path as written, and none for a folder that is not there', async () => {
     await mkdir(join(root, 'Documents', 'Invoices'), { recursive: true })
     expect(await findFolder('my documents folder', root)).toBe(join(root, 'Documents'))
@@ -38,6 +47,7 @@ describe('readShelf (#424)', () => {
     expect(await findFolder('~/Documents/', root)).toBe(join(root, 'Documents'))
     expect(await findFolder(join(root, 'Documents', 'Invoices'), root)).toBe(join(root, 'Documents', 'Invoices'))
     expect(await findFolder('/no/such/folder', root)).toBeNull()
+    expect(await findFolder('~Documents', root)).toBe(join(root, 'Documents'))
     expect(await findFolder('music', root)).toBeNull()
   })
 })

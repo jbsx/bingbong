@@ -308,7 +308,18 @@ describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf 
     const display = events.filter((event) => event.type === 'display')
     expect(display.map((event) => event.type === 'display' && event.text)).toEqual([SPOKEN_FAILURES.noShelfFile])
     expect(display[0]).toMatchObject({ failure: true })
-    expect(records.find((record) => record.type === 'decision')).toMatchObject({ ended: 'terminal', upload: { file: null, shelf: 0 } })
+    expect(records.find((record) => record.type === 'decision')).toMatchObject({ ended: 'terminal', upload: { file: null, reason: 'empty', shelf: 0 } })
+  })
+
+  it('a Shelf ask Jev does not answer sets nothing and says it could not finish — never that no file fits', async () => {
+    const { browser, decision, events, records, runner } = harness({ shelf: { files: async () => shelfFiles(Date.now()) } })
+    uploadPage(browser)
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, { unavailable: 'timeout' })
+    await runner.run('attach the invoice', { source: 'typed' })
+
+    expect(browser.attached).toEqual([])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual([SPOKEN_FAILURES.notFinished])
+    expect(records.find((record) => record.type === 'decision')).toMatchObject({ upload: { file: null, reason: 'unread', shelf: 2 } })
   })
 
   it('a Shelf ask that reads none sets nothing, and says no file fits', async () => {

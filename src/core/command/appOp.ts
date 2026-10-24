@@ -330,51 +330,6 @@ export function placeSettings(state: AppState, path: SettingPath, place: PickedP
   return group.length === 0 ? (next as unknown as AppSettings) : withSetting(state.settings, group, next)
 }
 
-/** The words a spoken folder is said with that name no folder: "my documents folder" is Documents. */
-const FOLDER_FILLER: ReadonlySet<string> = new Set(['my', 'the', 'a', 'folder', 'directory', 'in', 'inside', 'under', 'of', 'from'])
-
-/** A name's words, lower case, the filler aside. */
-const folderWords = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word !== '' && !FOLDER_FILLER.has(word))
-
-/**
- * The folder spoken words name (#424), among the home folder's own: one
- * whose path below home is a run of those words, else one whose own name
- * is — the longest run first, so a Slot that holds the setting's own words
- * too ("upload folder to documents", as Elephant read it on the gate) still
- * finds Documents; at each, the shallowest folder, and only when no other
- * at its depth is too. Null for none, or a name two share; a lookup by
- * name, as the weather city's is by the geocoder, never a guess.
- */
-export function folderOfWords(words: string, home: string, folders: readonly string[]): string | null {
-  const said = folderWords(words)
-  for (let length = said.length; length > 0; length--) {
-    for (let start = 0; start + length <= said.length; start++) {
-      const found = folderOfRun(said.slice(start, start + length), home, folders)
-      if (found !== null) return found
-    }
-  }
-  return null
-}
-
-/** The one folder these words name: by its path below home, else by its own name. */
-function folderOfRun(said: readonly string[], home: string, folders: readonly string[]): string | null {
-  const same = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ')
-  const below = (folder: string): string[] => folder.slice(home.length).split('/').filter((part) => part !== '')
-  const pick = (matches: (folder: string) => boolean): string | null => {
-    const found = folders.filter(matches)
-    const depth = Math.min(...found.map((folder) => below(folder).length))
-    const shallowest = found.filter((folder) => below(folder).length === depth)
-    return shallowest.length === 1 ? shallowest[0]! : null
-  }
-  const inHome = folders.filter((folder) => folder.startsWith(`${home}/`))
-  const byPath = pick((folder) => inHome.includes(folder) && same(below(folder).flatMap(folderWords), said))
-  return byPath ?? pick((folder) => inHome.includes(folder) && same(folderWords(below(folder).at(-1) ?? ''), said))
-}
-
 /** A picked place as its Answer names it: `Paris, Île-de-France, France`. */
 export const placeName = (place: PickedPlace): string => (place.where === '' ? place.name : `${place.name}, ${place.where}`)
 

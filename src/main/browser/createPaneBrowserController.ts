@@ -79,6 +79,10 @@ export function createPaneBrowserController(
   wc.debugger.on('detach', () => {
     attached = false
     pageEventsEnabled = false
+    // Interception goes with the debugger (#424): re-armed at once, not at the next Command, so a click in between opens no OS dialog.
+    setImmediate(() => {
+      if (!wc.isDestroyed()) void cdp.send('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {})
+    })
   })
 
   const cdp: CdpDebugger = {
