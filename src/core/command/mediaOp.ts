@@ -119,7 +119,7 @@ export function amountQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions:
-      'Only when the action skips forward or back in a video or audio, or changes its volume or speed: how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For the volume or the speed, choose to when the words carry the level, else up or down and how far. Ignored for every other action.',
+      'Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting\'s amount, the panel\'s width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.',
     options: {
       words: 'as far as the words say: the number they carry, in seconds, or in minutes when they say minutes',
       moment: 'a moment: a hundredth of its length',
@@ -128,15 +128,15 @@ export function amountQuestion(): DecisionChoiceQuestion {
       lot: 'a lot: a quarter of its length',
       half: 'half of its length',
       end: 'all the way: to the end, or back to the start',
-      to: 'the volume or speed to the number the words carry',
-      'up-little': 'the volume or speed up a little',
-      'up-step': 'the volume or speed up a step',
-      'up-lot': 'the volume or speed up a lot',
-      'up-all': 'the volume or speed up as far as it goes',
-      'down-little': 'the volume or speed down a little',
-      'down-step': 'the volume or speed down a step',
-      'down-lot': 'the volume or speed down a lot',
-      'down-all': 'the volume or speed down as far as it goes',
+      to: 'the volume, speed or app number to the number the words carry',
+      'up-little': 'the volume, speed or app number up a little',
+      'up-step': 'the volume, speed or app number up a step',
+      'up-lot': 'the volume, speed or app number up a lot',
+      'up-all': 'the volume, speed or app number up as far as it goes',
+      'down-little': 'the volume, speed or app number down a little',
+      'down-step': 'the volume, speed or app number down a step',
+      'down-lot': 'the volume, speed or app number down a lot',
+      'down-all': 'the volume, speed or app number down as far as it goes',
     },
   }
 }

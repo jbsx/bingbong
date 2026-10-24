@@ -13,6 +13,7 @@ import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeO
 import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateLevel, seekAmount, volumeLevel, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 import { promptChars } from '../decision/cardBudget'
+import { appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title, the text in
@@ -106,11 +107,12 @@ const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click 
 const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
 const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
 
-/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); and the Last Page's name, which `resume` reopens (#408). */
+/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); and the app itself — its panel, view and settings, each op an option (#420). */
 export interface Appliance {
   readonly queued?: boolean
   readonly facts?: ApplianceFacts
   readonly lastPage?: string
+  readonly app?: AppState
 }
 
 /**
@@ -996,12 +998,13 @@ export function commandQuestions(
   options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[]; readonly further?: number } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), resumeOption(options.appliance, pageRead), options.further)
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), resumeOption(options.appliance, pageRead), options.further, options.appliance?.app)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
-  // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
+  // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek;
+  // and beside one that offers an app amount (#420, ADR 0091): a setting's number, the panel's width.
   // The Extent rides every ask (#383, ADR 0085): the page's own scroll reads it as a Scroll Op does.
   const extended = { ...action, extent: extentQuestion() }
-  const reading: Asked<typeof extended, 'amount'> = card.mediaOps ? { ...extended, amount: amountQuestion() } : extended
+  const reading: Asked<typeof extended, 'amount'> = card.amounts ? { ...extended, amount: amountQuestion() } : extended
   const site = scopableSite(pageRead.url, hop)
   const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
@@ -1114,7 +1117,8 @@ function actionQuestion(
   facts?: ApplianceFacts,
   resume: readonly [string, string][] = [],
   further = Infinity,
-): { question: DecisionChoiceQuestion; mediaOps: boolean } {
+  app?: AppState,
+): { question: DecisionChoiceQuestion; amounts: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside, texts)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
@@ -1127,10 +1131,13 @@ function actionQuestion(
   // question is what would reveal or find the thing on the page: there the facts read Gurgaon's weather as the
   // home city's (gate 2026-10-23), and the first ask already offered them.
   const factOptions = facts === undefined || asked === 'where' ? [] : Object.entries(sayOptions(facts)).filter(([label]) => kept(label))
+  // The app itself (#420, ADR 0091): its panel, views and settings by kind, each line carrying the state — never on the
+  // Where Ask, which asks what would reveal or find the thing on the page, as for the facts.
+  const appOps = app === undefined || asked === 'where' ? [] : appCardOptions(app).filter((option) => kept(option.label))
   const refLess = Object.entries(REFLESS_DESCRIPTIONS)
     .filter(([verb]) => kept(verb))
     .map(([verb, line]) => [verb, verb === 'none' ? CARD_ASKS[asked].none : line] as const)
-  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length + resume.length)
+  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length + resume.length + appOps.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
@@ -1186,9 +1193,10 @@ function actionQuestion(
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
       ...Object.fromEntries(factOptions),
       ...Object.fromEntries(resume),
+      ...Object.fromEntries(appOps.map((option) => [option.label, option.line])),
     },
   }
-  return { question, mediaOps: ops.length > 0 }
+  return { question, amounts: ops.length > 0 || appOps.some((option) => takesAmount(option.op)) }
 }
 
 /** Where a heard name came from, as the Hearing line says it. */
@@ -1706,8 +1714,54 @@ function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside
   return isAside(action.choice, page, setAside, texts) ? (rankedOffered(action, page, setAside, texts)[0] ?? 'none') : action.choice
 }
 
-/** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them. */
-export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
+/**
+ * An app op reading (#420, ADR 0091): the op, with the Amount Choice's level
+ * rung for an amount — `to` when none was given — and the words its
+ * number is read from, the whole line (the Slot may hold the number alone,
+ * without its unit); for a setting the words carry, a place or a time, the
+ * Slot's words, else the whole line.
+ */
+function appCommand(op: AppOp, answers: CommandAnswers | HopAnswers, text: string): Command {
+  const words = slotSpanOf(answers.slot) !== null ? slotWords(answers.slot, text) : text
+  const amount = takesAmount(op) ? { rung: levelOf(answers) ?? 'to', words: text } : {}
+  const carried = op.kind === 'words' ? { words } : {}
+  return { verb: 'app', target: null, slot: null, app: { ...op, ...amount, ...carried } }
+}
+
+/** The settings ask's questions (#420): which setting the words change and to what, the Slot and the Amount beside it. */
+export type SettingQuestions = {
+  readonly action: DecisionChoiceQuestion
+  readonly slot: DecisionChoiceQuestion
+  readonly amount: DecisionChoiceQuestion
+}
+export type SettingAnswers = { readonly [K in keyof SettingQuestions]: DecisionChoiceAnswer }
+
+/**
+ * The settings ask (#420, ADR 0091 as measured): asked once the card's one
+ * `settings` line is chosen, over the same state — every setting's ops by
+ * its kind, each line carrying the state now, and `none` when no setting
+ * here is what the words change.
+ */
+export function settingQuestions(text: string, app: AppState, heard?: readonly NameHearing[]): SettingQuestions {
+  return {
+    action: {
+      type: 'choice',
+      instructions: "The user's words change one of the app's settings. Which setting, set to what? Choose none when no setting here is what the words change.",
+      options: { ...Object.fromEntries(settingOptions(app).map((option) => [option.label, option.line])), none: 'no setting here is what the words change' },
+    },
+    slot: slotQuestion(text, heard),
+    amount: amountQuestion(),
+  }
+}
+
+/** The Command the settings ask's answers make: the setting op chosen, with its Amount or its words; none for `none`. */
+export function readSettingAnswers(answers: SettingAnswers, text: string, app: AppState): Command {
+  const op = answers.action.choice === 'none' ? null : appOpOf(answers.action.choice, app)
+  return op === null || op.kind === 'settings' ? { verb: 'none', target: null, slot: null } : appCommand(op, answers as unknown as CommandAnswers, text)
+}
+
+/** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them; `app`, the app as the card offered it (#420). */
+export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext, app?: AppState): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
   const texts = textTargetsOf(pageRead, hop)
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [], texts)
@@ -1716,6 +1770,9 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   // A fact the appliance holds (#402): said, the page untouched.
   const fact = factOfLabel(label)
   if (fact !== null) return { verb: 'say', target: null, slot: null, fact }
+  // An op on the app itself (#420, ADR 0091): the page untouched.
+  const appOp = app === undefined ? null : appOpOf(label, app)
+  if (appOp !== null) return appCommand(appOp, answers, text)
   // A Show Op (#393, ADR 0086) is a scroll down that brings its block into view.
   const show = showOf(label, texts)
   if (show !== null) return { verb: 'scroll_down', target: null, slot: null, show }

@@ -1,0 +1,117 @@
+{
+  "recordedAt": 1792771645931,
+  "transcript": "switch to dark mode",
+  "note": "#420: an acceptance line of #420, asked over a blank pane — the settings ask, after the card's settings line; the ask rebuilt by the production card (ADR 0091 as measured)",
+  "expect": [
+    {
+      "question": "action",
+      "label": "set_appearance_dark"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"switch to dark mode\"\nPage: about:blank — \"\"\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "The user's words change one of the app's settings. Which setting, set to what? Choose none when no setting here is what the words change.",
+        "options": {
+          "set_web_zoom_percent": "app setting: web page zoom, now 130% (75–200%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
+          "set_tts_voice_default": "app setting: voice (the voice the app speaks in), now the default voice — set it to the default voice",
+          "set_tts_voice_en_gb_alba_medium": "app setting: voice (the voice the app speaks in), now the default voice — set it to en_GB-alba-medium",
+          "set_stt_engine_parakeet": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Parakeet",
+          "set_stt_engine_medium": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Medium",
+          "set_stt_engine_small": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Small",
+          "set_stt_engine_base": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Base",
+          "set_adblock_enabled_on": "app setting: ad blocking, now on — turn it on",
+          "set_adblock_enabled_off": "app setting: ad blocking, now on — turn it off",
+          "set_appearance_system": "app setting: appearance (light or dark mode), now as this computer — set it to as this computer",
+          "set_appearance_light": "app setting: appearance (light or dark mode), now as this computer — set it to light mode",
+          "set_appearance_dark": "app setting: appearance (light or dark mode), now as this computer — set it to dark mode",
+          "set_time_format_system": "app setting: clock (12-hour or 24-hour), now as this computer — set it to as this computer",
+          "set_time_format_12": "app setting: clock (12-hour or 24-hour), now as this computer — set it to 12-hour",
+          "set_time_format_24": "app setting: clock (12-hour or 24-hour), now as this computer — set it to 24-hour",
+          "set_clock_seconds_on": "app setting: seconds on the clock, now off — turn it on",
+          "set_clock_seconds_off": "app setting: seconds on the clock, now off — turn it off",
+          "set_date_format_long": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Saturday 24 October",
+          "set_date_format_long_year": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Saturday, 24 October 2026",
+          "set_date_format_short": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Sat 24 Oct",
+          "set_date_format_numeric": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to 24/10/2026",
+          "set_week_start_system": "app setting: first day of the week, now as this computer — set it to as this computer",
+          "set_week_start_monday": "app setting: first day of the week, now as this computer — set it to Monday",
+          "set_week_start_sunday": "app setting: first day of the week, now as this computer — set it to Sunday",
+          "set_week_start_saturday": "app setting: first day of the week, now as this computer — set it to Saturday",
+          "set_idle_after_minutes_0": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to the launch default",
+          "set_idle_after_minutes_1": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 1 minute",
+          "set_idle_after_minutes_2": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 2 minutes",
+          "set_idle_after_minutes_5": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 5 minutes",
+          "set_idle_after_minutes_10": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 10 minutes",
+          "set_idle_after_minutes_15": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 15 minutes",
+          "set_idle_after_minutes_30": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 30 minutes",
+          "set_idle_after_minutes_60": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 60 minutes",
+          "set_night_dim_enabled_on": "app setting: night dimming (the Idle Screen darkened at night), now off — turn it on",
+          "set_night_dim_enabled_off": "app setting: night dimming (the Idle Screen darkened at night), now off — turn it off",
+          "set_night_dim_from": "app setting: night dimming start, now 23:00 — set it to the time of day the words carry, the Slot carrying it",
+          "set_night_dim_to": "app setting: night dimming end, now 07:00 — set it to the time of day the words carry, the Slot carrying it",
+          "set_night_dim_brightness_percent": "app setting: night dimming brightness (how bright the Idle Screen stays while dimmed), now 40% (10–90%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
+          "set_weather_city": "app setting: weather city, now London — set it to the place the words name, the Slot carrying it",
+          "set_weather_units_metric": "app setting: weather units, now Celsius — set it to Celsius",
+          "set_weather_units_imperial": "app setting: weather units, now Celsius — set it to Fahrenheit",
+          "set_idle_cards_weather_on": "app setting: Idle Screen card \"weather\", now shown — show it",
+          "set_idle_cards_weather_off": "app setting: Idle Screen card \"weather\", now shown — hide it",
+          "set_idle_cards_calendar_on": "app setting: Idle Screen card \"calendar\", now shown — show it",
+          "set_idle_cards_calendar_off": "app setting: Idle Screen card \"calendar\", now shown — hide it",
+          "set_idle_cards_last_page_on": "app setting: Idle Screen card \"last page\", now shown — show it",
+          "set_idle_cards_last_page_off": "app setting: Idle Screen card \"last page\", now shown — hide it",
+          "set_idle_cards_weight_on": "app setting: Idle Screen card \"weight\", now shown — show it",
+          "set_idle_cards_weight_off": "app setting: Idle Screen card \"weight\", now shown — hide it",
+          "set_idle_cards_usage_on": "app setting: Idle Screen card \"AI usage\", now shown — show it",
+          "set_idle_cards_usage_off": "app setting: Idle Screen card \"AI usage\", now shown — hide it",
+          "set_idle_cards_news_on": "app setting: Idle Screen card \"news\", now shown — show it",
+          "set_idle_cards_news_off": "app setting: Idle Screen card \"news\", now shown — hide it",
+          "set_idle_cards_music_on": "app setting: Idle Screen card \"music\", now shown — show it",
+          "set_idle_cards_music_off": "app setting: Idle Screen card \"music\", now shown — hide it",
+          "none": "no setting here is what the words change"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "switch",
+          "s0-1": "switch to",
+          "s0-2": "switch to dark",
+          "s0-3": "switch to dark mode",
+          "s1-1": "to",
+          "s1-2": "to dark",
+          "s1-3": "to dark mode",
+          "s2-2": "dark",
+          "s2-3": "dark mode",
+          "s3-3": "mode"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      }
+    }
+  }
+}

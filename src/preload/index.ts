@@ -23,6 +23,7 @@ import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
+import { APP_VIEW_IPC, type AppViewShown } from '../core/app/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
 import { USAGE_IPC } from '../core/usage/ipcChannels'
 import type { UsageSnapshot } from '../core/usage/usage'
@@ -56,6 +57,16 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, page: LastPage | null): void => listener(page)
       ipcRenderer.on(BROWSER_IPC.lastPageChanged, wrapped)
       return () => ipcRenderer.removeListener(BROWSER_IPC.lastPageChanged, wrapped)
+    },
+  },
+  view: {
+    onShow: (listener: (shown: AppViewShown) => void): (() => void) => {
+      const wrapped = (_event: unknown, shown: AppViewShown): void => listener(shown)
+      ipcRenderer.on(APP_VIEW_IPC.show, wrapped)
+      return () => ipcRenderer.removeListener(APP_VIEW_IPC.show, wrapped)
+    },
+    reportShown: (shown: AppViewShown): void => {
+      ipcRenderer.send(APP_VIEW_IPC.shown, shown)
     },
   },
   idle: {

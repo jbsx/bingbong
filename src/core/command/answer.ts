@@ -177,6 +177,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'play':
     // A fact's Answer (#402) is its own sentence, filled when it fires.
     case 'say':
+    // An app op's Answer (#420) names the new value, known once it has fired.
+    case 'app':
     case 'none':
       return null
   }

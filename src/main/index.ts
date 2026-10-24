@@ -49,6 +49,7 @@ import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
+import { attachAppControl } from './app/attachAppControl'
 import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
@@ -484,6 +485,9 @@ async function createWindow(): Promise<BrowserWindow> {
   // The CLI harness hears the runner's events beside the window: it prints
   // what the Command's turn published.
   const commandListeners = new Set<(event: PipelineEvent) => void>()
+  // The app itself on the card (#420, ADR 0091): its panel, views and settings.
+  const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
+  win.on('closed', appControl.detach)
   const runner = createCommandRunner({
     browser: controller,
     decisionModel,
@@ -523,6 +527,8 @@ async function createWindow(): Promise<BrowserWindow> {
       nowPlaying: music.player.nowPlaying(),
       timer: timer.state(),
     }),
+    // The app's panel, views and settings (#420): each op an option on the card, a change one hop.
+    app: appControl.control,
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.

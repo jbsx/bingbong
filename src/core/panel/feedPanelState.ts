@@ -1,15 +1,16 @@
 // Feed panel layout state (#45): overlay-vs-docked mode plus the open
 // state, as a pure fold over the manual controls. Main owns one fold per
 // window and broadcasts changes; the dashboard renders layout from it, the overlay renders chrome.
-// ADR 0021: voice never opens the panel — a command shows the Peek Card
-// (its own fold in peekCardState.ts); only human acts open it, and an open
-// panel stays open through a Command's `done` (#331).
+// ADR 0021 (amended by ADR 0091, #420): a command shows the Peek Card (its
+// own fold in peekCardState.ts), save one whose words ask for the panel —
+// "show the activity panel" may open it; an open panel stays open through
+// a Command's `done` (#331).
 
 export type FeedPanelMode = 'overlay' | 'docked'
 
 export interface FeedPanelState {
   mode: FeedPanelMode
-  /** Open by human act only, and held through a Command's `done` (#331). */
+  /** Opened by a human act or a Command that asks for the panel (#420), and held through a Command's `done` (#331). */
   open: boolean
   /** Panel width in px (#65) — one folded value both renderers apply. */
   width: number
@@ -148,6 +149,8 @@ export function readStoredFeedWidth(
 export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
   setMode(mode: FeedPanelMode): void
   setWidth(width: number): void
+  /** Opens or closes it: a Command whose words ask for the panel (#420, ADR 0021 as amended). */
+  setOpen(open: boolean): void
   toggleOpen(): void
   state(): FeedPanelState
 } {
@@ -165,6 +168,9 @@ export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
       // Callers clamp against the live window; the fold just refuses junk
       // so a malformed payload can never corrupt the broadcast state.
       if (isUsableFeedPanelWidth(width)) state = { ...state, width: Math.round(width) }
+    },
+    setOpen(open) {
+      if (open !== state.open) state = { ...state, open }
     },
     toggleOpen() {
       state = { ...state, open: !state.open }

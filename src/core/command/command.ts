@@ -7,6 +7,7 @@ import type { MusicAction } from '../music/musicWords'
 import type { ApplianceFact } from './applianceFacts'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
 import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
+import { describeAppOp, type AppOpAction } from './appOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -21,7 +22,8 @@ import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
  * {@link JEV_VERBS} on its action card (#370) — a click, type or menu on
  * each ref, a media ref's Media Ops (#372, ADR 0080: the `media` verb,
  * its op on the Command), the rest as they are — and `play` through the
- * Appliance Verbs (#374), and `say` through the facts' options (#402);
+ * Appliance Verbs (#374), `say` through the facts' options (#402), and
+ * `app` through the app's own options — its panel, views and settings (#420);
  * `screenshot`, `help`, `resume` and `timer` are the CLI grammar's alone,
  * reached only through the Local Match.
  */
@@ -48,6 +50,7 @@ export const COMMAND_VERBS = [
   'timer',
   'play',
   'say',
+  'app',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
@@ -58,9 +61,10 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
  * The browser's verbs the Decision Model chooses among (#324), `none`
  * included. `play` is not one: Jev reaches the Player through the
  * Appliance Verbs, offered beside these while a Player is wired (#374);
- * nor `say`, reached through the option of the fact it says (#402).
+ * nor `say`, reached through the option of the fact it says (#402), nor
+ * `app`, through the app's own options (#420).
  */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -96,6 +100,8 @@ export interface Command {
   readonly music?: MusicAction
   /** For `say` (#402): the fact the appliance holds that the Answer says. */
   readonly fact?: ApplianceFact
+  /** For `app` (#420, ADR 0091): the op on the app itself — its panel, a view, a setting — with the Amount rung or the words it takes. */
+  readonly app?: AppOpAction
   /** For `media` (#372, ADR 0080): the Media Op on the target ref's element — a seek's rung and seconds, a volume's or a speed's level. */
   readonly mediaOp?: MediaOpAction
   /**
@@ -229,12 +235,13 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
  * `none`, the Player's (#344: the search and the watch page happen in
  * the hidden pane, and the music plays on there), a Media Op (#372: one
  * evaluate on the element, which plays on under the Idle Screen as a
- * song does) and a fact the appliance says (#402). A Command carrying one
+ * song does), a fact the appliance says (#402) and an op on the app itself
+ * (#420), which acts on no page. A Command carrying one
  * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
  * {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media' || verb === 'say'
+  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media' || verb === 'say' || verb === 'app'
 }
 
 /** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
@@ -249,13 +256,15 @@ export function verbOpensPage(verb: CommandVerb): boolean {
 
 /**
  * Whether this Command leaves the Idle Screen up: its verb does, unless it
- * is "show the video", which wakes the dashboard on the watch page (#344).
+ * is "show the video", which wakes the dashboard on the watch page (#344),
+ * or an app op on the panel or a view (#420), which shows on the dashboard.
  * On a blank pane every Command does but one that opens a page (#361): the
  * blank pane is never worth the screen, so a `scroll down` there answers
  * over the Idle Screen.
  */
 export function commandKeepsIdle(command: Command, paneHasPage = true): boolean {
   if (!paneHasPage && !verbOpensPage(command.verb)) return true
+  if (command.verb === 'app') return command.app?.kind !== 'panel' && command.app?.kind !== 'panelWidth' && command.app?.kind !== 'view'
   return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
 
@@ -355,6 +364,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return describeMusic(command.music, command.slot)
     case 'say':
       return `say ${command.fact === 'playing' ? 'the song playing' : `the ${command.fact ?? 'fact'}`}`
+    case 'app':
+      return command.app !== undefined ? describeAppOp(command.app) : 'app'
     case 'none':
       return 'not a command'
     default:

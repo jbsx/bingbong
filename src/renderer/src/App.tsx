@@ -29,12 +29,15 @@ import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 import { voiceHint } from '../../core/voice/voiceHint'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
+import type { AppView } from '../../core/command/appOp'
 
 export function App() {
   const assistant = useAssistant()
   const { settings, save } = useSettings()
   // Settings and the Weight page (#350) are full-window views beside the browsing dashboard, each with its own Back.
-  const [view, setView] = useState<'dashboard' | 'settings' | 'weight'>('dashboard')
+  const [view, setView] = useState<AppView>('dashboard')
+  // The Settings section a Command asked for (#420), brought to the top; `at` moves it again when asked twice.
+  const [section, setSection] = useState<{ id: string; at: number } | null>(null)
   // The Person the Weight page opens on (#351): Jaish, unless a row of the Weight card named another.
   const [weightPerson, setWeightPerson] = useState(JAISH)
   // The Idle Prompt (#361): its draft while open, null while closed; and whether its field holds focus.
@@ -101,6 +104,16 @@ export function App() {
     idleNow()
   }, [idleNow])
   useEffect(() => window.bingbong.idle.onEnter(() => setView('dashboard')), [])
+  // A Command that asks for a view shows it (#420, ADR 0091), Settings at its section; main is told the view showing, whoever moved it.
+  useEffect(
+    () =>
+      window.bingbong.view.onShow((shown) => {
+        setView(shown.view)
+        setSection(shown.section !== undefined ? { id: shown.section, at: Date.now() } : null)
+      }),
+    [],
+  )
+  useEffect(() => window.bingbong.view.reportShown(view === 'settings' && section !== null ? { view, section: section.id } : { view }), [view, section])
   useEffect(() => {
     const unsubEvent = window.bingbong.assistant.onEvent((event) => {
       if (!idleUp.current || wakesIdleScreen(event)) ping()
@@ -280,7 +293,7 @@ export function App() {
         >
           {view === 'settings' ? (
             settings ? (
-              <SettingsPage settings={settings} onSave={save} onClose={() => setView('dashboard')} />
+              <SettingsPage settings={settings} onSave={save} onClose={() => setView('dashboard')} section={section} />
             ) : (
               <p className="settings-loading">Loading settings…</p>
             )

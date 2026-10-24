@@ -14,7 +14,9 @@ import { pageReadPartLine } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
-import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import type { AppChange, AppState } from '../../core/command/appOp'
+import { defaultSettings } from '../../core/settings/settings'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
@@ -139,7 +141,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -186,11 +188,12 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.speech ? { speech: options.speech } : {}),
     ...(options?.timer ? { timer: options.timer } : {}),
     ...(options?.facts ? { facts: options.facts } : {}),
+    ...(options?.app ? { app: options.app } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
-    knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
+    knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com', settings: 'settings.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -244,6 +247,105 @@ describe('what the appliance knows (#402)', () => {
     await runner.consider("what's the weather")
     await flushMicrotasks()
     expect(events.some((event) => event.type === 'display')).toBe(false)
+  })
+})
+
+describe('the app itself on the card (#420, ADR 0091)', () => {
+  /** An app whose changes land at once: the panel's and the settings' as asked, the view as shown. */
+  function fakeApp(start: Partial<AppState> = {}) {
+    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', settings: defaultSettings(), voices: [], ...start }
+    const changes: AppChange[] = []
+    const app: AppControl = {
+      state: () => state,
+      apply: async (change) => {
+        changes.push(change)
+        if (change.kind === 'panel') state = { ...state, panel: { ...state.panel, ...(change.open !== undefined ? { open: change.open } : {}), ...(change.mode !== undefined ? { mode: change.mode } : {}), ...(change.width !== undefined ? { width: change.width } : {}) } }
+        if (change.kind === 'view') state = { ...state, view: change.view, ...(change.section !== undefined ? { section: change.section } : {}) }
+        if (change.kind === 'settings') state = { ...state, settings: change.settings }
+        return state
+      },
+      findPlace: async (words) => (words === 'Paris' ? { name: 'Paris', where: 'Île-de-France, France', latitude: 48.85, longitude: 2.35 } : null),
+    }
+    return { app, changes }
+  }
+
+  it('"hide the activity panel" closes it in one hop, the result said, the dashboard woken', async () => {
+    const speech = new FakeSpeech()
+    const { app, changes } = fakeApp()
+    const { browser, decision, events, records, runner } = harness({ app, speech })
+    decision.script.push({ answers: { action: choice('panel_close'), slot: choice('none') } })
+    await runner.run('hide the activity panel', { source: 'spoken' })
+    expect(cardOf(decision.requests[0]!).options.panel_close).toContain('now open, overlay, 536 px wide')
+    expect(changes).toEqual([{ kind: 'panel', open: false }])
+    expect(events.find((event) => event.type === 'command')).not.toHaveProperty('keepsIdle')
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Closed the activity panel.'])
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ reading: 'jev', verb: 'app', ended: 'terminal' })])
+  })
+
+  it('"turn off the adblocker" changes the setting with no page change and says the new value, the Idle Screen kept', async () => {
+    const speech = new FakeSpeech()
+    const { app, changes } = fakeApp()
+    const { browser, decision, events, runner } = harness({ app, speech })
+    decision.script.push({ answers: { action: choice('settings'), slot: choice('none') } }, { answers: { action: choice('set_adblock_enabled_off'), slot: choice('none'), amount: choice('to') } })
+    await runner.run('turn off the adblocker', { source: 'spoken' })
+    // The card names the settings in one line; the settings ask carries each one's ops, over the same state.
+    expect(Object.keys(cardOf(decision.requests[0]!).options).some((label) => label.startsWith('set_'))).toBe(false)
+    expect(cardOf(decision.requests[0]!).options.settings).toContain('ad blocking')
+    expect(cardOf(decision.requests[1]!).options.set_adblock_enabled_off).toContain('ad blocking, now on — turn it off')
+    expect(decision.requests[1]!.state).toBe(decision.requests[0]!.state)
+    expect(changes).toEqual([{ kind: 'settings', settings: { ...defaultSettings(), adblockEnabled: false } }])
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ keepsIdle: true })
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Ad blocking turned off.'])
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Ad blocking turned off.'])
+    expect(browser.navigations).toEqual([])
+  })
+
+  it('asks the Amount beside an app amount, and makes the panel wider by the rung read', async () => {
+    const { app, changes } = fakeApp()
+    const { decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('panel_width'), slot: choice('none'), amount: choice('up-step') } })
+    await runner.run('make the panel wider', { source: 'typed' })
+    expect(decision.requests[0]!.questions).toHaveProperty('amount')
+    expect(changes).toEqual([{ kind: 'panel', width: 696 }])
+  })
+
+  it('"open settings" is Jev\'s once the app is on the card: never the Known Address settings.com', async () => {
+    const { app, changes } = fakeApp()
+    const { browser, decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('show_settings'), slot: choice('none') } })
+    await runner.run('open settings', { source: 'typed' })
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+    expect(changes).toEqual([{ kind: 'view', view: 'settings' }])
+  })
+
+  it('sets a spoken weather city to the geocoder\'s first match, coordinates kept, the Answer naming the place picked', async () => {
+    const { app, changes } = fakeApp()
+    const { decision, events, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('settings'), slot: choice('s5-5') } }, { answers: { action: choice('set_weather_city'), slot: choice('s5-5'), amount: choice('to') } })
+    await runner.run('set the weather city to Paris', { source: 'typed' })
+    expect(changes).toEqual([{ kind: 'settings', settings: { ...defaultSettings(), weather: { city: 'Paris', units: 'metric', latitude: 48.85, longitude: 2.35 } } }])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Weather city set to Paris, Île-de-France, France.'])
+  })
+
+  it('a settings ask that reads none is no Command, and nothing changes', async () => {
+    const { app, changes } = fakeApp()
+    const { decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('settings'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), amount: choice('to') } })
+    await runner.run('make it nicer', { source: 'typed' })
+    expect(decision.requests).toHaveLength(2)
+    expect(changes).toEqual([])
+  })
+
+  it('offers no app op on the Where Ask', async () => {
+    const { app } = fakeApp()
+    const { decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('not_yet') } })
+    await runner.run('where are the comments', { source: 'typed' })
+    expect(decision.requests).toHaveLength(2)
+    expect(Object.keys(cardOf(decision.requests[1]!).options).some((label) => label.startsWith('panel_') || label.startsWith('set_'))).toBe(false)
   })
 })
 

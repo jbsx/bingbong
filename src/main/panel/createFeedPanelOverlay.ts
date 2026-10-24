@@ -77,6 +77,8 @@ export interface FeedPanelOverlay {
   /** The width drag ended: restore the view bounds from the reported slot (#65). */
   endResize(): void
   toggle(): void
+  /** Opens or closes it: a Command whose words ask for the panel (#420, ADR 0021 as amended). */
+  setOpen(open: boolean): void
   state(): FeedPanelState
   /**
    * Registers Ctrl/Cmd+Shift+F on an input surface's webContents (the pane)
@@ -250,6 +252,11 @@ export function attachFeedPanelOverlayToWindow(
     toggle() {
       fold.toggleOpen()
       broadcast()
+    },
+    setOpen(open) {
+      const before = fold.state()
+      fold.setOpen(open)
+      if (fold.state() !== before) broadcast()
     },
     state: () => fold.state(),
     registerShortcut,

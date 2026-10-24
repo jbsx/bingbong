@@ -38,6 +38,17 @@ describe('createFeedPanelStateFold', () => {
     expect(fold.state().open).toBe(false)
   })
 
+  it('setOpen opens or closes it as a Command asks (#420), the same state twice changing nothing', () => {
+    const fold = createFeedPanelStateFold()
+    fold.setOpen(true)
+    const opened = fold.state()
+    expect(opened.open).toBe(true)
+    fold.setOpen(true)
+    expect(fold.state()).toBe(opened)
+    fold.setOpen(false)
+    expect(fold.state().open).toBe(false)
+  })
+
   it('setMode switches layout mode independently of open state', () => {
     const fold = createFeedPanelStateFold()
     fold.toggleOpen()

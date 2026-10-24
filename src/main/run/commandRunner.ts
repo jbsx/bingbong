@@ -28,6 +28,8 @@ import {
   hopQuestions,
   partialQuestions,
   readCommandAnswers,
+  readSettingAnswers,
+  settingQuestions,
   readDismissChoice,
   readPassage,
   readProgress,
@@ -72,12 +74,13 @@ import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
+import { appAnswer, appChangeOf, appWords, placeName, placeSettings, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
-import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS } from '../../core/decision/cardBudget'
+import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars } from '../../core/decision/cardBudget'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
@@ -202,6 +205,15 @@ export interface CommandTerms {
   observe(text: string): void
 }
 
+/** The app's own surfaces as the runner reaches them (#420): what they are now, and one change made to them. */
+export interface AppControl {
+  state(): AppState
+  /** Makes the change — the panel's, the view's, the settings' — and resolves the app as it is after it. */
+  apply(change: Exclude<AppChange, { kind: 'place' }>): Promise<AppState>
+  /** The geocoder's first match for spoken words (ADR 0091's guess); null for none. */
+  findPlace(words: string): Promise<PickedPlace | null>
+}
+
 export interface CommandRunnerDeps {
   browser: BrowserController & Pick<VisualGroundingController, 'showRef'>
   /** The Decision Model the role resolves to now; null when none is configured. */
@@ -244,6 +256,8 @@ export interface CommandRunnerDeps {
   player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
+  /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
+  app?: AppControl
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -317,6 +331,9 @@ function endedByReading(reading: CommandReading, verb: Command['verb'], wordsPas
 
 /** The Command a line Jev could not read becomes (#353): the Local Match already settled none, and nothing guesses. */
 const UNREAD: Command = { verb: 'none', target: null, slot: null }
+
+/** Whether a reading chose the card's one `settings` line (#420): which setting is the settings ask's to read. */
+const isSettingsLine = (command: Command): boolean => command.verb === 'app' && command.app?.kind === 'settings'
 
 /** The verbs whose record waits for the action (#328): a continuing verb's landing, the video `play` opened or queued (#343), and a Media Op's refusal (#372). */
 function recordedAfterFiring(verb: Command['verb']): boolean {
@@ -427,6 +444,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'play', args: { ...command.music, ...(command.slot !== null ? { words: command.slot } : {}) } }
     case 'say':
       return { name: 'say', args: { fact: command.fact } }
+    case 'app':
+      return { name: 'app', args: { ...command.app } }
     default:
       return { name: command.verb, args: {} }
   }
@@ -439,7 +458,9 @@ interface PreparedPage {
 }
 
 export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
-  const knownAddress = (word: string): string | null => deps.knownAddress?.(word) ?? null
+  // A bare word the app's own surfaces carry ("open settings") has two readings (#420, ADR 0089): never a Known Address, Jev's.
+  const ownWords = appWords()
+  const knownAddress = (word: string): string | null => (deps.app !== undefined && ownWords.has(word.toLowerCase()) ? null : (deps.knownAddress?.(word) ?? null))
   const { browser, publish, tracer } = deps
   /** The Command whose action is in flight, if one is. */
   let inFlight: { turnId: string; generation: number } | null = null
@@ -475,8 +496,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   const appliance = (): Appliance | undefined => {
     const last = deps.lastPage?.() ?? null
-    if (deps.player === undefined && deps.facts === undefined && last === null) return undefined
+    if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null) return undefined
     return {
+      ...(deps.app !== undefined ? { app: deps.app.state() } : {}),
       ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}),
       ...(deps.facts !== undefined ? { facts: deps.facts() } : {}),
       // `resume` is Jev's to offer on a blank pane (#408): the Last Page by its title, else its address.
@@ -788,14 +810,34 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const result = await askJev(model, 'command', turnId, ask.state, ask.questions, options.askId)
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
-    return { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
+    const reading: Reading = { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
+    return split === null && isSettingsLine(reading.command) ? readSetting(turnId, text, ask.state, reading, heard) : reading
+  }
+
+  /**
+   * The settings ask (#420): the card's one `settings` line chosen, which
+   * setting the words change and to what is asked once more over the same
+   * state, the settings' ops on its card — the words alone when the state
+   * would carry that card past the Card Budget. Its reading is the line's;
+   * `none`, or no answer, is no Command.
+   */
+  async function readSetting(turnId: string, text: string, state: string, first: Reading, heard: readonly NameHearing[]): Promise<Reading> {
+    const model = deps.decisionModel()
+    const app = deps.app?.state()
+    if (model === null || app === undefined) return { ...first, command: UNREAD }
+    const questions = settingQuestions(text, app, heard)
+    const fits = promptChars(state, questions) <= cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS)
+    const result = await askJev(model, 'setting', turnId, fits ? state : commandState(text, { url: '', title: '', refs: [] }), questions, `${first.ask ?? turnId}-setting`)
+    if (result.status !== 'answered') return { ...first, command: UNREAD, jev: jevUnavailableOf(result), ask: result.askId }
+    // The card's own pick stands as the reading's action: a settings ask that reads none never sends the line to the Where Ask, the app's line having been chosen.
+    return { ...first, command: readSettingAnswers(result.answers, text, app), jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId }
   }
 
   /** A hop 0 reading of Jev's answer to the action card; one it did not answer is no Command, and nothing guesses (#353). */
   function readingOf(result: DecisionResult<CommandQuestions> & { readonly askId: string }, text: string, page: CommandPage): Reading {
     if (result.status === 'answered') {
       return {
-        command: readCommandAnswers(result.answers, text, page),
+        command: readCommandAnswers(result.answers, text, page, undefined, deps.app?.state()),
         page,
         reading: 'jev',
         jevAsked: true,
@@ -1026,6 +1068,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (deps.facts === undefined || command.fact === undefined) throw new Error('no facts on this surface')
         return factAnswer(command.fact, withPageSong(deps.facts(), page.media))
       }
+      case 'app': {
+        // An op on the app itself (#420, ADR 0091): one change, its Answer filled from the app as it is after it.
+        if (deps.app === undefined || command.app === undefined) throw new Error('no app on this surface')
+        const before = deps.app.state()
+        const change = appChangeOf(command.app, before)
+        if (change === null) throw new Error('the words carry no value for it')
+        if (change.kind !== 'place') return appAnswer(command.app, before, await deps.app.apply(change))
+        const place = await deps.app.findPlace(change.words)
+        if (place === null) throw new Error(`no place found for ${JSON.stringify(change.words)}`)
+        const after = await deps.app.apply({ kind: 'settings', settings: placeSettings(before, change.path, place) })
+        return appAnswer(command.app, before, after, undefined, placeName(place))
+      }
       case 'stop':
         return 'stopped'
       case 'none':
@@ -1231,8 +1285,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (!current()) return ended('superseded')
         // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
         react('display', shownAt)
-      } else if (command.verb === 'say') {
-        // A fact's Answer (#402) is its sentence: shown, and spoken where there is a voice.
+      } else if (command.verb === 'say' || command.verb === 'app') {
+        // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice.
         answer(turnId, result)
         if (deps.speech !== undefined) void say(deps.speech, turnId, result)
       } else if (played !== null) {
@@ -1803,8 +1857,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const stalled = judged !== null && progress !== null && progress <= PROGRESS_FLOOR
       const aside = stalled ? setAsideOf(judged.command, judged.page) : null
       const placed: TaskHop = { ...hopOf(task, hop), ...(progress !== null ? { progress } : {}) }
+      const hopCommand = readCommandAnswers(result.answers, task.text, page, aside !== null ? { ...context, setAside: [...task.setAside, aside] } : context, deps.app?.state())
       const read: Reading = {
-        command: readCommandAnswers(result.answers, task.text, page, aside !== null ? { ...context, setAside: [...task.setAside, aside] } : context),
+        // The settings line is asked out at hop 0 alone: past it a Task has acted on the page, and a setting is no next step.
+        command: isSettingsLine(hopCommand) ? UNREAD : hopCommand,
         page,
         reading: 'jev',
         jevAsked: true,
@@ -2050,12 +2106,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (stale() || result.status !== 'answered') return null
     const noul = result.answers.complete.noul
     if (noul < DEFAULT_DECISION_THRESHOLDS.noul) return null
-    const command = readCommandAnswers(result.answers, words, page)
+    const command = readCommandAnswers(result.answers, words, page, undefined, deps.app?.state())
     if (command.verb === 'none') return null
     // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
     if (command.music?.kind === 'search') return null
     // So does a fact (#402): "what's the weather" may yet be "what's the weather in Gurgaon", which the home city's does not answer.
     if (command.verb === 'say') return null
+    // And an app op (#420): "set the idle timeout to 1" may yet be "… 10 minutes".
+    if (command.verb === 'app') return null
     return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId, action: result.answers.action, noul }
   }
 

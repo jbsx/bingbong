@@ -17,6 +17,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } 
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { IdleShown } from '../core/idle/ipcChannels'
+import type { AppViewShown } from '../core/app/ipcChannels'
 
 export type { BrowserPaneState, PaneRect }
 export type { LastPage }
@@ -40,6 +41,14 @@ export interface BingbongBrowserApi {
   /** The Last Page (CONTEXT.md): the page the pane last showed, kept across restarts; null before any. */
   getLastPage(): Promise<LastPage | null>
   onLastPage(listener: (page: LastPage | null) => void): () => void
+}
+
+/** The app's full-window views (#420): a Command shows one, and the dashboard says which shows. */
+export interface BingbongViewApi {
+  /** A Command asked for this view, Settings at this section. */
+  onShow(listener: (shown: AppViewShown) => void): () => void
+  /** Tell main the view showing now. */
+  reportShown(shown: AppViewShown): void
 }
 
 export interface BingbongIdleApi {
@@ -178,6 +187,7 @@ export interface BingbongApi {
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
   app: LaunchConfig
   browser: BingbongBrowserApi
+  view: BingbongViewApi
   idle: BingbongIdleApi
   timer: BingbongTimerApi
   weather: BingbongWeatherApi

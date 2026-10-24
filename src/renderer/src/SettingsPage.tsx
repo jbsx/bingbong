@@ -18,6 +18,7 @@ import { defaultWeightSettings, EMPTY_BODY, POPUP_LINGER_MS_MAX, POPUP_LINGER_MS
 import { reportRendererFault } from './diagnostics'
 import { WeatherCityPicker } from './WeatherCityPicker'
 import { markedSection } from './settingsIndexMark'
+import { SETTINGS_INDEX } from '../../core/settings/sections'
 import { useScaleStatus, useWeighIns } from './useWeight'
 
 /** Select value for "the saved mic is not plugged in right now". */
@@ -111,39 +112,16 @@ function rememberOpen(id: string, open: boolean): void {
   }
 }
 
-/** The index down the page's left (ADR 0078): every section under its group, numbered down the page. */
-const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string; title: string }[] }[] = [
-  {
-    group: 'General',
-    sections: [
-      { id: 'voice', title: 'Voice' },
-      { id: 'learned terms', title: 'Speech vocabulary' },
-      { id: 'appearance', title: 'Appearance' },
-      { id: 'browsing', title: 'Browsing' },
-    ],
-  },
-  {
-    group: 'Idle screen',
-    sections: [
-      { id: 'idle screen cards', title: 'Cards' },
-      { id: 'clock', title: 'Clock' },
-      { id: 'screen', title: 'Screen' },
-      { id: 'weather', title: 'Weather' },
-      { id: 'weight', title: 'Weight' },
-      { id: 'ai usage', title: 'AI usage' },
-    ],
-  },
-  {
-    group: 'System',
-    sections: [
-      { id: 'environment', title: 'Environment' },
-      { id: 'this computer', title: 'This computer' },
-    ],
-  },
-]
-
 function sectionElement(scroll: HTMLElement | null, id: string): HTMLElement | null {
   return scroll?.querySelector<HTMLElement>(`section[aria-label="${id}"]`) ?? null
+}
+
+/** A section opened under its heading and brought to the top: the index's click, and a Command that asks for it (#420). */
+function revealSection(scroll: HTMLElement | null, id: string): void {
+  const element = sectionElement(scroll, id)
+  const details = element?.querySelector('details')
+  if (details && !details.open) details.open = true
+  element?.scrollIntoView({ block: 'start' })
 }
 
 /** The keys that scroll the page by hand, ending a click's hold on the index. */
@@ -211,11 +189,8 @@ function SettingsIndex({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElemen
                 className="settings-index-link"
                 aria-current={current === id ? 'true' : undefined}
                 onClick={() => {
-                  const element = sectionElement(scrollRef.current, id)
-                  const details = element?.querySelector('details')
-                  if (details && !details.open) details.open = true
                   chosen.current = true
-                  element?.scrollIntoView({ block: 'start' })
+                  revealSection(scrollRef.current, id)
                   setCurrent(id)
                 }}
               >
@@ -779,10 +754,13 @@ export function SettingsPage({
   settings,
   onSave,
   onClose,
+  section,
 }: {
   settings: AppSettings
   onSave: (next: AppSettings) => Promise<void>
   onClose: () => void
+  /** The section a Command asked for (#420): opened and brought to the top, as the index's click does. */
+  section?: { id: string; at: number } | null
 }) {
   const [draft, setDraft] = useState<AppSettings>(settings)
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -790,6 +768,10 @@ export function SettingsPage({
   const voices = useTtsVoices()
   const lastSynced = useRef<AppSettings>(settings)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (section) revealSection(scrollRef.current, section.id)
+  }, [section])
 
   // Follow external changes (another window's save, or our own sanitized
   // result) — but never clobber an in-progress edit.

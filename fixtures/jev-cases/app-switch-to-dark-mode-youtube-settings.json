@@ -1,0 +1,117 @@
+{
+  "recordedAt": 1792691884470,
+  "transcript": "switch to dark mode",
+  "note": "#420: an acceptance line of #420, asked over the YouTube watch page of turn-mvjugmqn-1e, its recorded state with the words swapped — the settings ask, after the card's settings line; the ask rebuilt by the production card (ADR 0091 as measured)",
+  "expect": [
+    {
+      "question": "action",
+      "label": "set_appearance_dark"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"switch to dark mode\"\nPage: https://www.youtube.com/watch?v=ESABTN4VtrA — \"iPhone Duo Review: First Generation Fun! - YouTube\"\nText in view: \"iPhone Duo Review: First Generation Fun!\" · \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 . 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 m\" · \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9\" · \"What it's actually like to use the first folding iPhone - Duo Don’t miss Ridge’s friends and family sale at https://ridge.com/MKBHD …\"\nPlaying: \"iPhone Duo Review: First Generation Fun! - YouTube\" 0:06 / 29:04, loop off\nFull screen: off\nRefs (number, kind, label, address, states):\n[1] button \"Guide\"\n[2] button \"\"\n[3] link \"YouTube Home\" https://www.youtube.com/\n[4] input[text] \"Search\" value=\"NKBHD\" autocomplete=list hasPopup=listbox expanded=true\n[5] button \"Clear search query\"\n[6] button \"Search Search\"\n[7] button \"\"\n[8] button \"Settings\"\n[9] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den-GB%26next%3D%252Fwatch%253Fv%253DESABTN4VtrA%2526pp%253DygUFTktCSEQ%25253D&hl=en-GB&ec=65620\n[10] button \"\"\n[11] media \"iPhone Duo Review: First Generation Fun! - YouTube\" playing 0:06/29:04 volume 25% loop off [19] \"Subtitles/closed captions unavailable\" off, [26] \"like this video along with 157,210 other people 157k\" off, [27] \"Dislike this video\" off\n[12] button \"Channel watermark\"\n[13] button \"\"\n[14] button \"Pause (k)\" keyshortcuts=\"k\"\n[15] button \"Mute (m)\" keyshortcuts=\"m\"\n[16] button \"0 Minutes 2 Seconds of 29 Minutes 4 Seconds 0:02 / 29:04\"\n[17] button \"Intro\"\n[18] button \"Auto-play is off\"\n[19] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"\n[20] button \"Settings\" hasPopup=menu expanded=false\n[21] button \"Cinema mode (t)\" keyshortcuts=\"t\"\n[22] button \"Full screen (f)\" keyshortcuts=\"f\"\n[23] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd\n[24] link \"Marques Brownlee\" https://www.youtube.com/@mkbhd\n[25] button \"Subscribe to Marques Brownlee. Subscribe\"\n[26] button \"like this video along with 157,210 other people 157k\" pressed=false\n[27] button \"Dislike this video\" pressed=false\n[28] button \"\"\n[29] button \"Share\"\n[30] button \"Save to playlist\"\n[31] button \"More actions\"\n[32] link \"https://ridge.com/MKBHD\" https://www.youtube.com/redirect?event=video_description&redir_token=QUlxb01IYVp1R21ValBTUEUtV0RjcXo3czJTRXxBSTVJdTVzaEgtVl9CUFFETm1ncmFHS0kzeTNQUkdHb1pHS1ExeFRWanFlOV9nVkJsMGFiVkNQdk1SVDB5dlpPT3lMZmtZeDJxcmZTT1g3TVBNWTl5cVJqRlA5UDBOZURnVEI0&q=https%3A%2F%2Fridge.com%2FMKBHD&v=ESABTN4VtrA\n[33] button \"more\"\n[34] link \"20:31 New\" https://www.youtube.com/watch?v=Xrxy_W78SKk\n[35] link \"57:22 New\" https://www.youtube.com/watch?v=RVc3TJ-l2KY&pp=ugUHEgVlbi1HQg%3D%3D\nText further down the page, not on screen yet (number, text):\n[text-1] \"iPhone Duo is Messier Than You Think\"\n[text-2] \"I EXPOSED THE SHUT DOWN UK SUPERCAR DEALERSHIP\"\n[text-3] \"Recommendations not quite right?\"\n[text-4] \"When you turn on watch history, you'll get more personalised recommendations.\"\n[text-5] \"Apple Homeview Impressions: Not Convinced!\"\n[text-6] \"Stallone: Rocky Secrets, Rambo Stories & Schwarzenegger Rivalry | Stick to Football EP 154\"\n[text-7] \"Martin Lewis Talks Mortgages And How To Save!\"\n[text-8] \"The REAL reason China built so much\"\n[text-9] \"America Banned This Car for Being Too Chinese… So I Bought One for $2,000\"\n[text-10] \"Comments\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "The user's words change one of the app's settings. Which setting, set to what? Choose none when no setting here is what the words change.",
+        "options": {
+          "set_web_zoom_percent": "app setting: web page zoom, now 130% (75–200%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
+          "set_tts_voice_default": "app setting: voice (the voice the app speaks in), now the default voice — set it to the default voice",
+          "set_tts_voice_en_gb_alba_medium": "app setting: voice (the voice the app speaks in), now the default voice — set it to en_GB-alba-medium",
+          "set_stt_engine_parakeet": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Parakeet",
+          "set_stt_engine_medium": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Medium",
+          "set_stt_engine_small": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Small",
+          "set_stt_engine_base": "app setting: speech recognition model (used from the next start), now Parakeet — set it to Moonshine Base",
+          "set_adblock_enabled_on": "app setting: ad blocking, now on — turn it on",
+          "set_adblock_enabled_off": "app setting: ad blocking, now on — turn it off",
+          "set_appearance_system": "app setting: appearance (light or dark mode), now as this computer — set it to as this computer",
+          "set_appearance_light": "app setting: appearance (light or dark mode), now as this computer — set it to light mode",
+          "set_appearance_dark": "app setting: appearance (light or dark mode), now as this computer — set it to dark mode",
+          "set_time_format_system": "app setting: clock (12-hour or 24-hour), now as this computer — set it to as this computer",
+          "set_time_format_12": "app setting: clock (12-hour or 24-hour), now as this computer — set it to 12-hour",
+          "set_time_format_24": "app setting: clock (12-hour or 24-hour), now as this computer — set it to 24-hour",
+          "set_clock_seconds_on": "app setting: seconds on the clock, now off — turn it on",
+          "set_clock_seconds_off": "app setting: seconds on the clock, now off — turn it off",
+          "set_date_format_long": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Saturday 24 October",
+          "set_date_format_long_year": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Saturday, 24 October 2026",
+          "set_date_format_short": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to Sat 24 Oct",
+          "set_date_format_numeric": "app setting: date format (how the date under the clock is written), now Saturday 24 October — set it to 24/10/2026",
+          "set_week_start_system": "app setting: first day of the week, now as this computer — set it to as this computer",
+          "set_week_start_monday": "app setting: first day of the week, now as this computer — set it to Monday",
+          "set_week_start_sunday": "app setting: first day of the week, now as this computer — set it to Sunday",
+          "set_week_start_saturday": "app setting: first day of the week, now as this computer — set it to Saturday",
+          "set_idle_after_minutes_0": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to the launch default",
+          "set_idle_after_minutes_1": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 1 minute",
+          "set_idle_after_minutes_2": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 2 minutes",
+          "set_idle_after_minutes_5": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 5 minutes",
+          "set_idle_after_minutes_10": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 10 minutes",
+          "set_idle_after_minutes_15": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 15 minutes",
+          "set_idle_after_minutes_30": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 30 minutes",
+          "set_idle_after_minutes_60": "app setting: idle timeout (how long before the Idle Screen comes on), now the launch default — set it to 60 minutes",
+          "set_night_dim_enabled_on": "app setting: night dimming (the Idle Screen darkened at night), now off — turn it on",
+          "set_night_dim_enabled_off": "app setting: night dimming (the Idle Screen darkened at night), now off — turn it off",
+          "set_night_dim_from": "app setting: night dimming start, now 23:00 — set it to the time of day the words carry, the Slot carrying it",
+          "set_night_dim_to": "app setting: night dimming end, now 07:00 — set it to the time of day the words carry, the Slot carrying it",
+          "set_night_dim_brightness_percent": "app setting: night dimming brightness (how bright the Idle Screen stays while dimmed), now 40% (10–90%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
+          "set_weather_city": "app setting: weather city, now London — set it to the place the words name, the Slot carrying it",
+          "set_weather_units_metric": "app setting: weather units, now Celsius — set it to Celsius",
+          "set_weather_units_imperial": "app setting: weather units, now Celsius — set it to Fahrenheit",
+          "set_idle_cards_weather_on": "app setting: Idle Screen card \"weather\", now shown — show it",
+          "set_idle_cards_weather_off": "app setting: Idle Screen card \"weather\", now shown — hide it",
+          "set_idle_cards_calendar_on": "app setting: Idle Screen card \"calendar\", now shown — show it",
+          "set_idle_cards_calendar_off": "app setting: Idle Screen card \"calendar\", now shown — hide it",
+          "set_idle_cards_last_page_on": "app setting: Idle Screen card \"last page\", now shown — show it",
+          "set_idle_cards_last_page_off": "app setting: Idle Screen card \"last page\", now shown — hide it",
+          "set_idle_cards_weight_on": "app setting: Idle Screen card \"weight\", now shown — show it",
+          "set_idle_cards_weight_off": "app setting: Idle Screen card \"weight\", now shown — hide it",
+          "set_idle_cards_usage_on": "app setting: Idle Screen card \"AI usage\", now shown — show it",
+          "set_idle_cards_usage_off": "app setting: Idle Screen card \"AI usage\", now shown — hide it",
+          "set_idle_cards_news_on": "app setting: Idle Screen card \"news\", now shown — show it",
+          "set_idle_cards_news_off": "app setting: Idle Screen card \"news\", now shown — hide it",
+          "set_idle_cards_music_on": "app setting: Idle Screen card \"music\", now shown — show it",
+          "set_idle_cards_music_off": "app setting: Idle Screen card \"music\", now shown — hide it",
+          "none": "no setting here is what the words change"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "switch",
+          "s0-1": "switch to",
+          "s0-2": "switch to dark",
+          "s0-3": "switch to dark mode",
+          "s1-1": "to",
+          "s1-2": "to dark",
+          "s1-3": "to dark mode",
+          "s2-2": "dark",
+          "s2-3": "dark mode",
+          "s3-3": "mode"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      }
+    }
+  }
+}
