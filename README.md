@@ -138,6 +138,53 @@ Moonshine Small, the Piper voice — is baked into the image and seeded into
 downloads) lives in `./data`: delete it for a fresh start, copy it to
 migrate.
 
+## Monitor brightness (ddcutil, optional)
+
+Night Dim (Settings › Idle screen › Screen) works with nothing installed: it
+lays a black veil over the Idle Screen, so the pixels darken but the
+monitor's backlight stays at full. Turning the monitor's own brightness
+down at night, which is darker and saves power, goes over DDC/CI, the
+monitor's control channel on the video cable. It does not depend on X11 or
+Wayland. It needs:
+
+- **ddcutil** (2.x), the DDC/CI client: `sudo apt install ddcutil`
+  (Debian 13 ships 2.2).
+- **The `i2c-dev` kernel module**, which exposes the GPU's I²C buses as
+  `/dev/i2c-*`. Load it now and at every boot:
+  ```sh
+  sudo modprobe i2c-dev
+  echo i2c-dev | sudo tee /etc/modules-load.d/i2c-dev.conf
+  ```
+- **Access to `/dev/i2c-*` without root.** ddcutil 2.x installs a udev rule
+  (`60-ddcutil-i2c.rules`) that grants it to the user logged in at the
+  screen. Unplug and replug the monitor or reboot after installing. If
+  `ddcutil detect` still says permission denied, use a group instead:
+  ```sh
+  sudo groupadd --system i2c
+  sudo usermod -aG i2c "$USER"
+  echo 'KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"' | sudo tee /etc/udev/rules.d/45-i2c.rules
+  sudo udevadm control --reload && sudo udevadm trigger   # then log out and in
+  ```
+- **DDC/CI switched on in the monitor's own menu** (OSD). Most monitors
+  have it on; some call it "DDC/CI" under System or Setup.
+- **A GPU output that carries DDC.** A port on the graphics card (amdgpu,
+  i915 and nouveau all do) works. A DisplayLink or other USB dock output
+  does not, and neither do most KVM switches. NVIDIA's proprietary driver
+  may need `options nvidia NVreg_RegistryDwords=RMUseSwI2c=0x01;RMI2cSpeed=100`
+  in `/etc/modprobe.d/`.
+
+Check it end to end:
+
+```sh
+ddcutil detect                  # lists the monitor with its I2C bus, e.g. /dev/i2c-5
+ddcutil getvcp 10               # current brightness (VCP feature 0x10)
+ddcutil setvcp 10 40            # set 40 %; each call takes about 0.1–0.5 s
+```
+
+The kiosk container would also need `ddcutil` in its image and the
+monitor's `/dev/i2c-N` passed through (`devices:` in the compose file); the
+image does neither yet.
+
 ## Observability
 
 Every turn is perf-logged, zero config: one JSONL span per finished stage
