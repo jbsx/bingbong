@@ -7,7 +7,8 @@ import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../../core/idle/columns'
 import { asDateFormat, asTimeFormat, dateOptions, timeOfDay } from '../../core/idle/timeFormat'
-import { NIGHT_BRIGHTNESS_MAX, NIGHT_BRIGHTNESS_MIN } from '../../core/idle/nightDim'
+import { NIGHT_BRIGHTNESS_MAX, NIGHT_BRIGHTNESS_MIN, type NightDimMonitor } from '../../core/idle/nightDim'
+import type { MonitorList } from '../../core/idle/monitorDim'
 import { asWeekStart } from '../../core/calendar/month'
 import { DEFAULT_IDLE_TIMEOUT_MS } from '../../core/app/launchConfig'
 import { dateLabel } from './dateLabel'
@@ -741,6 +742,60 @@ function launchIdleMinutes(): number {
   return Math.round(ms / 60_000)
 }
 
+const monitorKey = (monitor: NightDimMonitor): string => `${monitor.model} · ${monitor.connector}`
+
+/**
+ * Which monitor Night Dim turns down over DDC/CI (#413), or the veil only:
+ * the monitors ddcutil finds, listed again each time Settings opens, by
+ * model and connector — never by bus, which renumbers.
+ */
+function NightDimMonitorField({ value, onChange }: { value: NightDimMonitor | null; onChange: (monitor: NightDimMonitor | null) => void }) {
+  const [found, setFound] = useState<MonitorList | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.bingbong.settings
+      .monitors()
+      .then((list) => {
+        if (!cancelled) setFound(list)
+      })
+      .catch((cause: unknown) => reportRendererFault('settings.monitors', cause))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const monitors = found?.monitors ?? []
+  const missing = value !== null && found !== null && !monitors.some((monitor) => monitorKey(monitor) === monitorKey(value))
+  const note = found === null ? 'Looking for monitors…' : missing ? `${monitorKey(value)} not found — the veil dims instead${found.note === '' ? '' : `. ${found.note}`}` : found.note
+  return (
+    <>
+      <Field label="Monitor">
+        <select
+          value={value === null ? '' : monitorKey(value)}
+          aria-label="Night Dim monitor"
+          onChange={(event) => {
+            const picked = [...monitors, ...(value === null ? [] : [value])].find((monitor) => monitorKey(monitor) === event.target.value)
+            onChange(picked === undefined ? null : { model: picked.model, connector: picked.connector })
+          }}
+        >
+          <option value="">Veil only</option>
+          {monitors.map((monitor) => (
+            <option key={monitorKey(monitor)} value={monitorKey(monitor)}>
+              {monitorKey(monitor)}
+            </option>
+          ))}
+          {missing ? <option value={monitorKey(value)}>{monitorKey(value)} (not found)</option> : null}
+        </select>
+      </Field>
+      <p className="settings-note night-dim-monitor-note">
+        {value === null ? 'A black veil darkens the picture; picking a monitor turns its own brightness down instead, which is darker and saves power.' : 'Its own brightness goes down at night and back up when you wake it; the veil only if it cannot.'}
+        {note === '' ? null : ` ${note}`}
+      </p>
+    </>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -1054,6 +1109,7 @@ export function SettingsPage({
                   onChange={(event) => setDraft({ ...draft, nightDim: { ...draft.nightDim, brightnessPercent: Number(event.target.value) } })}
                 />
               </Field>
+              <NightDimMonitorField value={draft.nightDim.monitor} onChange={(monitor) => setDraft({ ...draft, nightDim: { ...draft.nightDim, monitor } })} />
               <p className="settings-note">The idle screen only; the dashboard stays at full brightness while you use it.</p>
             </>
           ) : null}

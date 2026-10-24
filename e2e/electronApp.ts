@@ -97,6 +97,8 @@ export async function launchApp({
       // chooser (a pane download's "Save as"), and the portal draws it on the developer's real screen. A dead bus keeps the
       // dialog in-process, on Xvfb. The app's only D-Bus use is BlueZ on the system bus.
       DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(userDataDir, 'no-session-bus')}`,
+      // Every launch dims on a scripted monitor, never a real one over DDC/CI: no display unless a test scripts one.
+      BINGBONG_DDC_SCRIPT: JSON.stringify({ log: join(userDataDir, 'ddc-calls.log') }),
       ELECTRON_OZONE_PLATFORM_HINT: 'x11',
       WAYLAND_DISPLAY: undefined,
       XDG_SESSION_TYPE: 'x11',

@@ -11,4 +11,6 @@ export const SETTINGS_IPC = {
   envOpen: 'settings:envOpen',
   /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
   hostChecks: 'settings:hostChecks',
+  /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
+  monitors: 'settings:monitors',
 } as const

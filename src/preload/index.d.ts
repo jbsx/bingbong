@@ -17,6 +17,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } 
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { IdleShown } from '../core/idle/ipcChannels'
+import type { MonitorList } from '../core/idle/monitorDim'
 import type { AppViewShown } from '../core/app/ipcChannels'
 
 export type { BrowserPaneState, PaneRect }
@@ -58,6 +59,8 @@ export interface BingbongIdleApi {
   reportShown(shown: IdleShown): void
   /** A key typed on the Idle Screen: open the Idle Prompt with this text in it ('' for Space). */
   onTyped(listener: (text: string) => void): () => void
+  /** Whether the monitor's own brightness is down for Night Dim (#413); while it is, the Idle Screen draws no veil. */
+  onMonitorDimmed(listener: (dimmed: boolean) => void): () => void
 }
 
 export interface BingbongTimerApi {
@@ -112,6 +115,8 @@ export interface BingbongSettingsApi {
   openEnvFile(): Promise<string>
   /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
   hostChecks(): Promise<HostFinding[]>
+  /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
+  monitors(): Promise<MonitorList>
 }
 
 export interface BingbongTtsApi {

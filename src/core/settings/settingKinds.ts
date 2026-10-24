@@ -117,6 +117,7 @@ export const SETTING_KINDS: SettingKinds<AppSettings> = {
       enabled: { kind: 'switch', name: 'night dimming', hint: 'the Idle Screen darkened at night' },
       from: { kind: 'time', name: 'night dimming start' },
       to: { kind: 'time', name: 'night dimming end' },
+      monitor: { kind: 'kept', why: 'record' },
       brightnessPercent: { kind: 'amount', name: 'night dimming brightness', hint: 'how bright the Idle Screen stays while dimmed', min: NIGHT_BRIGHTNESS_MIN, max: NIGHT_BRIGHTNESS_MAX, step: 10, unit: '%' },
     },
   },

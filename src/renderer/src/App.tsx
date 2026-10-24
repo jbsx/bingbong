@@ -156,6 +156,9 @@ export function App() {
   const prompting = promptOpen && promptFocused
   useEffect(() => window.bingbong.idle.reportShown({ up: showIdle, open: promptOpen, prompting }), [showIdle, promptOpen, prompting])
   useEffect(() => window.bingbong.idle.onTyped(typeIntoPrompt), [typeIntoPrompt])
+  // Night Dim on the monitor itself (#413): while main has its brightness down, the Idle Screen draws no veil.
+  const [monitorDimmed, setMonitorDimmed] = useState(false)
+  useEffect(() => window.bingbong.idle.onMonitorDimmed(setMonitorDimmed), [])
   // The Prompt goes with the screen.
   useEffect(() => {
     if (!showIdle) setPromptDraft(null)
@@ -180,6 +183,7 @@ export function App() {
           dateFormat={settings?.dateFormat}
           weekStart={settings?.weekStart}
           nightDim={settings?.nightDim}
+          monitorDimmed={monitorDimmed}
           onOpenWeight={(person) => {
             setWeightPerson(person)
             setView('weight')

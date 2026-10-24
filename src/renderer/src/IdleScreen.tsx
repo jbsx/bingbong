@@ -469,6 +469,7 @@ export function IdleScreen({
   dateFormat = 'long',
   weekStart: weekStartSetting = 'system',
   nightDim = defaultNightDim(),
+  monitorDimmed = false,
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
   status,
@@ -499,6 +500,8 @@ export function IdleScreen({
   weekStart?: WeekStart
   /** The screen darkened between two times of day (settings' nightDim). */
   nightDim?: NightDim
+  /** The monitor's own brightness is down for Night Dim (#413): the veil stands down, the two never apply together. */
+  monitorDimmed?: boolean
   /** A Person's row on the Weight card was tapped: show the Weight page on them. */
   onOpenWeight?: (person: string) => void
   /** The settings button in the corner was tapped: show the settings page. */
@@ -668,8 +671,8 @@ export function IdleScreen({
           </div>
         ) : null}
       </div>
-      {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says. */}
-      {isNightDimmed(now, nightDim) ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
+      {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says — unless the monitor itself is down. */}
+      {isNightDimmed(now, nightDim) && !monitorDimmed ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
     </div>
   )
 }

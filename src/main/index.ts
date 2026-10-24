@@ -43,6 +43,7 @@ import { loadEnvFile, resolveEnvFilePath, type EnvFileHome } from './envFile'
 import { resolveAppDirs } from './appDirs'
 import { checkThisHost } from './hostChecks'
 import { registerHostChecksIpc } from './settings/attachHostChecks'
+import { attachNightDim, type NightDimGlue } from './nightDim/attachNightDim'
 import { attachUpdater, exitsAfterInstall, type Updater } from './update/attachUpdater'
 import { ensurePiper, fsPiperInstallDeps } from './tts/piperInstall'
 import { createRetriable } from './moonshine/retriable'
@@ -269,6 +270,8 @@ function currentEnv(): Record<string, string | undefined> {
 // What each window last said of its Idle Screen, which the updater installs under (#419, ADR 0090).
 const idleWindows = new Map<number, IdleShown>()
 let updater: Updater = { shownChanged: () => {} }
+// Night Dim on the monitor itself (#413), told whenever any window's Idle Screen comes up or goes down.
+let nightDim: NightDimGlue = { idleChanged: () => {} }
 
 let cliHarnessStarted = false
 
@@ -359,6 +362,7 @@ async function createWindow(): Promise<BrowserWindow> {
     idleShown = { up: report?.up === true, open: report?.open === true, prompting: report?.prompting === true }
     idleWindows.set(windowId, idleShown)
     updater.shownChanged()
+    nightDim.idleChanged()
   }
   const windowId = win.id
   idleWindows.set(windowId, idleShown)
@@ -655,6 +659,7 @@ app.whenReady().then(async () => {
     },
   })
   registerHostChecksIpc(hostFindings)
+  nightDim = attachNightDim({ settings: settingsStore, idleUp: () => [...idleWindows.values()].some((shown) => shown.up), userDataDir: app.getPath('userData'), env: process.env })
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The Log Bucket (#418): on a machine that names itself, the logs dir is

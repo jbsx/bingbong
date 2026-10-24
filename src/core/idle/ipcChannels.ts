@@ -12,4 +12,6 @@ export const IDLE_IPC = {
   shown: 'idle:shown',
   /** Main → dashboard: a key typed on the Idle Screen — open the Idle Prompt with this text in it ('' for Space). */
   typed: 'idle:typed',
+  /** Main → dashboard: whether the monitor's own brightness is down for Night Dim (#413); while it is, no veil is drawn. */
+  monitorDimmed: 'idle:monitorDimmed',
 } as const

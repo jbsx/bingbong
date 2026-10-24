@@ -248,6 +248,22 @@ ddcutil setvcp 10 40            # set 40 %; each call takes about 0.1–0.5 s
 On the kiosk this is host setup like any other; how the kiosk is installed
 is #419.
 
+Then pick the monitor: **Settings › Screen › Monitor** lists what
+`ddcutil detect` finds, by model and connector ("PHL 325E1 · HDMI-A-1").
+The choice is kept by model and connector, so it survives the I²C buses
+renumbering; the list is read again each time Settings opens. The default,
+*Veil only*, never calls ddcutil.
+
+With a monitor picked, the Idle Screen inside the night window turns that
+monitor's own brightness down to the slider's share of its day level (40 %
+of 40 is 16) and draws no veil. Waking the dashboard, the window ending and
+quitting the app put the day level back. Before lowering, the day level is
+written to `night-dim.json` in the app's data directory; if the app dies at
+night, the next start restores it from there. If ddcutil is missing, the
+monitor does not answer, or it is already at 0, the veil dims as before.
+The Monitor field says why, and a failed call is in `faults-*.jsonl`. Each
+call is bounded at 3 s.
+
 ## Observability
 
 Every turn is perf-logged, zero config: one JSONL span per finished stage

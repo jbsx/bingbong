@@ -23,6 +23,7 @@ import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
+import type { MonitorList } from '../core/idle/monitorDim'
 import { APP_VIEW_IPC, type AppViewShown } from '../core/app/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
 import { USAGE_IPC } from '../core/usage/ipcChannels'
@@ -82,6 +83,11 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, text: string): void => listener(text)
       ipcRenderer.on(IDLE_IPC.typed, wrapped)
       return () => ipcRenderer.removeListener(IDLE_IPC.typed, wrapped)
+    },
+    onMonitorDimmed: (listener: (dimmed: boolean) => void): (() => void) => {
+      const wrapped = (_event: unknown, dimmed: boolean): void => listener(dimmed === true)
+      ipcRenderer.on(IDLE_IPC.monitorDimmed, wrapped)
+      return () => ipcRenderer.removeListener(IDLE_IPC.monitorDimmed, wrapped)
     },
   },
   timer: {
@@ -161,6 +167,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     setEnv: (key: string, value: string | null): Promise<EnvFileView> => ipcRenderer.invoke(SETTINGS_IPC.envSet, key, value),
     openEnvFile: (): Promise<string> => ipcRenderer.invoke(SETTINGS_IPC.envOpen),
     hostChecks: (): Promise<HostFinding[]> => ipcRenderer.invoke(SETTINGS_IPC.hostChecks),
+    monitors: (): Promise<MonitorList> => ipcRenderer.invoke(SETTINGS_IPC.monitors),
   },
   feedPanel: {
     getState: (): Promise<FeedPanelState | null> => ipcRenderer.invoke(PANEL_IPC.get),
