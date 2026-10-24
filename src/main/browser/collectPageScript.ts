@@ -859,7 +859,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   window.__bingbongDialogFace = (whole) => {
     const root = currentDialogRoot() || (whole === true ? document.body : null)
     if (root === null) return null
+    // Shown controls only: w3schools' FastCMP writes its choice into a hidden field the moment Decline is pressed, its sheet still up.
     const states = Array.from(root.querySelectorAll('input, select, textarea, [aria-checked], [aria-expanded], [aria-pressed], [aria-selected]'))
+      .filter((el) => el.type !== 'hidden' && el.getClientRects().length > 0)
       .map((el) => [el.checked, el.value, el.getAttribute('aria-checked'), el.getAttribute('aria-expanded'), el.getAttribute('aria-pressed'), el.getAttribute('aria-selected')].join(':'))
     return root.innerText + '\\n' + states.join('|')
   }

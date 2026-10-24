@@ -9,9 +9,9 @@ import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChr
 // SHEET_LEFT_MS — so the next read, at once, as the runner's next hop is,
 // reads the page behind a sheet that left, and a control that keeps the
 // dialog open is not slowed. The pages are shaped like the walls the
-// claimed lines met: w3schools' FastCMP frame (its Decline collapses the
-// sheet 60 ms on; its Preferences redraws at once to its Decline alone, the
-// panel 430 ms on) and Sourcepoint's (the frame tells the page, which drops
+// claimed lines met: w3schools' FastCMP frame (its Decline writes the
+// choice into a hidden field at once and collapses the sheet 60 ms on; its
+// Preferences redraws at once to its Decline alone, the panel 430 ms on) and Sourcepoint's (the frame tells the page, which drops
 // the sheet — and the frame with it — here 1,200 ms on, past the 1,000 ms a
 // consent dismissal waits); and a sheet that fades 1,200 ms before it goes.
 //
@@ -21,11 +21,13 @@ import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChr
 const PAGE = `<main><h1>Recipes</h1><p>Our best soup.</p><a href="/one">One</a><button>Search</button></main>`
 const SHEET = (inner: string, style = '') => `<div role="dialog" id="sheet" style="position:fixed;inset:15%;background:#fff;z-index:9;${style}">${inner}</div>`
 
-const CMP_FRAME = `<body style="margin:0"><div id="face"><p>We value your privacy</p><button id="decline">Decline</button><button id="accept">Accept</button><button id="prefs">Preferences</button><label><input type="checkbox" checked> Analytics</label></div>
+const CMP_FRAME = `<body style="margin:0"><div id="face"><p>We value your privacy</p><button id="decline">Decline</button><button id="accept">Accept</button><button id="prefs">Preferences</button><label><input type="checkbox" checked> Analytics</label><input type="hidden" id="choice" value="save"></div>
 <script>
   const face = document.getElementById('face')
-  document.getElementById('decline').onclick = () => parent.postMessage('close', '*')
-  document.getElementById('accept').onclick = () => parent.postMessage('close', '*')
+  // FastCMP writes the choice into a hidden field the moment it is pressed, its sheet still up.
+  const choose = (choice) => { document.getElementById('choice').value = choice; parent.postMessage('close', '*') }
+  document.getElementById('decline').onclick = () => choose('none')
+  document.getElementById('accept').onclick = () => choose('all')
   document.getElementById('prefs').onclick = () => {
     face.innerHTML = '<button>Decline</button>'
     setTimeout(() => { face.innerHTML = '<button>Back</button><p>Cookies from our partners</p><button>Save</button>' }, 430)
