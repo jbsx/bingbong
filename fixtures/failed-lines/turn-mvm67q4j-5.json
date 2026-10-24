@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvm67q4j-5",
+  "transcript": "play at one point five times speed",
+  "at": 1792832557340,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'play at one point five times speed' typed on the YouTube watch page (ESABTN4VtrA playing, main d591f73d, Mammoth): Jev chose rate-10 0.98 with amount 'to' 0.96, right; rateInWords (mediaOp.ts) reads only numerals and normal/double/half, so 'one point five' gave no level, rateLevel returned null, mediaCommand fell to none and the Task ended terminal in 0.8 s with the speed unchanged. Same path sets 'one and a half times' to 0.5x (the half word) and reads nothing from 'three quarters speed'",
+  "meant": "Set the video's speed to 1.5x",
+  "log": "decision-1792832214837-1.jsonl"
+}

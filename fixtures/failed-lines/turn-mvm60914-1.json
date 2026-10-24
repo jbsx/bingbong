@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvm60914-1",
+  "transcript": "play the latest mkbhd video",
+  "at": 1792832208109,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Second run of 'play the latest mkbhd video' from the Idle Prompt (main d591f73d, Mammoth): play 0.99, the Player picked ESABTN4VtrA again (right) and it played as audio under the Idle Screen, ended terminal in 7.0 s; the owner had to type 'show it' (Jev show 0.89, worked in 1.9 s). Same class as turn-mvm5psy9-1",
+  "meant": "Play MKBHD's latest video and show it: the pane woken onto the watch page",
+  "log": "decision-1792832214837-1.jsonl"
+}
