@@ -29,7 +29,7 @@ import { createFaultLogSink } from './logs/faultLogSink'
 import { createLogBucketUploader } from './logs/logBucketUploader'
 import { createS3Client } from './logs/s3Client'
 import { logBucketStartup } from '../core/logs/logBucket'
-import { setFaultSink } from '../core/trace/fault'
+import { reportFault, setFaultSink } from '../core/trace/fault'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
@@ -38,7 +38,13 @@ import { registerSettingsIpc } from './settings/attachSettings'
 import { registerEnvFileIpc } from './settings/attachEnvFile'
 import { settingsToEnv } from '../core/settings/settings'
 import { layerEnv } from '../core/settings/dotEnv'
-import { loadEnvFile, resolveEnvFilePath } from './envFile'
+import { loadEnvFile, resolveEnvFilePath, type EnvFileHome } from './envFile'
+import { resolveAppDirs } from './appDirs'
+import { checkThisHost } from './hostChecks'
+import { registerHostChecksIpc } from './settings/attachHostChecks'
+import { attachUpdater, exitsAfterInstall, type Updater } from './update/attachUpdater'
+import { ensurePiper, fsPiperInstallDeps } from './tts/piperInstall'
+import { createRetriable } from './moonshine/retriable'
 import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
@@ -102,6 +108,10 @@ import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
 // knows is Jev, the Decision Model (`decisionModel()` below), asked one
 // Choice-triple per Command the Local Match cannot settle (#324, ADR 0076).
 
+// The updater runs a freshly installed AppImage once with this set and
+// waits for it to exit (#419): it is not a launch.
+if (exitsAfterInstall(process.env)) process.exit(0)
+
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
 const launchConfig = resolveLaunchConfig(process.argv, process.env)
@@ -148,14 +158,21 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 // the profile.
 const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
 
-// The `.env` next to the app (#76): read once at boot and layered under
-// process.env, completing the .env < process.env < settings precedence that
-// currentEnv() resolves. Boot-scoped launch flags (kiosk, idle timeout) stay
+// The `.env` (#76): next to the app in a checkout, in the profile in the
+// packaged app, whose own path is read-only (#419). Read once at boot and
+// layered under process.env, completing the .env < process.env < settings
+// precedence that currentEnv() resolves. Boot-scoped launch flags (kiosk, idle timeout) stay
 // argv/process-env — the renderer's preload reads its own process env and
 // must never disagree with main's.
 // The Settings page's Environment section rewrites the file and hands the
 // new values back here, so what currentEnv() reads live follows at once.
-let envFileValues = loadEnvFile(process.env, app.getAppPath())
+const envFileHome: EnvFileHome = { isPackaged: app.isPackaged, appPath: app.getAppPath(), userDataDir: app.getPath('userData') }
+let envFileValues = loadEnvFile(process.env, envFileHome)
+// What the boot-scoped engines read (#419): the `.env` under the process env,
+// so a Piper, voice or wake line in the file takes effect at the next start.
+const bootEnv = layerEnv(envFileValues, process.env)
+// The models and the sidecar script that ship with the app (ADR 0090).
+const appDirs = resolveAppDirs({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
 
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
@@ -200,17 +217,27 @@ const utteranceDumper = createUtteranceDumper({
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
-const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
+const piperConfig = resolvePiperConfig(bootEnv, app.getPath('userData'))
+// Piper and its voice download on first launch (#419): started now, so the
+// first reply finds them; a failure is retried by the next spoken line.
+const piperReady = createRetriable(() => ensurePiper(piperConfig.install, fsPiperInstallDeps))
+void piperReady().catch((error: unknown) => reportFault('tts.piperInstall', error))
+
+// The host checks (#419): what the machine must provide and the app cannot
+// ship, looked at once — each one missing is a line in the fault log and on
+// the Settings page.
+const hostFindings = checkThisHost(process.env, piperConfig.playerBin)
+for (const finding of hostFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 
 // Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
 // the models load once. Scripted doubles ride the same seam for e2e. The
 // STT tier is the settings snapshot at startup (#63).
-const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), settingsStore.get().sttEngine)
+const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('userData'), bundledModelsDir: appDirs.bundledModelsDir }, settingsStore.get().sttEngine)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
 // openWakeWord ONNX stack; the Python sidecar is the config-only fallback
 // (BINGBONG_WAKE_ENGINE=python, wake head only).
-const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
+const wakeConfig = resolveWakeConfig(bootEnv, appDirs)
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
@@ -233,6 +260,10 @@ export const decisionModel = createDecisionModelSource(currentEnv)
 function currentEnv(): Record<string, string | undefined> {
   return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
 }
+
+// What each window last said of its Idle Screen, which the updater installs under (#419, ADR 0090).
+const idleWindows = new Map<number, IdleShown>()
+let updater: Updater = { shownChanged: () => {} }
 
 let cliHarnessStarted = false
 
@@ -321,9 +352,16 @@ async function createWindow(): Promise<BrowserWindow> {
     if (event.sender !== win.webContents) return
     const report = shown as Partial<IdleShown> | null | undefined
     idleShown = { up: report?.up === true, open: report?.open === true, prompting: report?.prompting === true }
+    idleWindows.set(windowId, idleShown)
+    updater.shownChanged()
   }
+  const windowId = win.id
+  idleWindows.set(windowId, idleShown)
   ipcMain.on(IDLE_IPC.shown, onIdleShown)
-  win.on('closed', () => ipcMain.removeListener(IDLE_IPC.shown, onIdleShown))
+  win.on('closed', () => {
+    ipcMain.removeListener(IDLE_IPC.shown, onIdleShown)
+    idleWindows.delete(windowId)
+  })
   const typeFromIdle = (text: string): void => {
     // Each key goes over IPC until the dashboard says the Prompt's field is
     // focused; from then the keys reach the field directly and none is lost.
@@ -426,6 +464,7 @@ async function createWindow(): Promise<BrowserWindow> {
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
       prefetch: true,
+      ready: piperReady,
     }),
   )
   // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
@@ -581,12 +620,13 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerEnvFileIpc({
-    path: resolveEnvFilePath(process.env, app.getAppPath()),
+    path: resolveEnvFilePath(process.env, envFileHome),
     processEnv: process.env,
     onWritten: (values) => {
       envFileValues = values
     },
   })
+  registerHostChecksIpc(hostFindings)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The Log Bucket (#418): on a machine that names itself, the logs dir is
@@ -655,6 +695,8 @@ app.whenReady().then(async () => {
   identityHeaders.refresh()
 
   await createWindow()
+  // The packaged app follows the Releases, installing at the Idle Screen (#419, ADR 0090).
+  updater = attachUpdater({ windows: () => [...idleWindows.values()], env: process.env })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

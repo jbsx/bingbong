@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
 import { isEnvKey, isSecretKey, type EnvFileView } from '../../core/settings/envEntries'
+import type { HostFinding } from '../../core/settings/hostFindings'
 import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel, IDLE_AFTER_MINUTES } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
@@ -134,7 +135,10 @@ const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string;
   },
   {
     group: 'System',
-    sections: [{ id: 'environment', title: 'Environment' }],
+    sections: [
+      { id: 'environment', title: 'Environment' },
+      { id: 'this computer', title: 'This computer' },
+    ],
   },
 ]
 
@@ -473,6 +477,43 @@ const IDLE_CARD_HOMES: Record<IdleCardId, string> = {
   usage: 'middle, under the clock',
   news: 'bottom right',
   music: 'middle, over the AI usage',
+}
+
+/**
+ * What the app needs from the machine and cannot ship (#419): aplay, a
+ * microphone, a display — checked once at boot, each one missing a line
+ * here and in the fault log.
+ */
+function HostSection() {
+  const [findings, setFindings] = useState<readonly HostFinding[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.bingbong.settings
+      .hostChecks()
+      .then((found) => {
+        if (!cancelled) setFindings(found)
+      })
+      .catch((cause: unknown) => reportRendererFault('settings.hostChecks', cause))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const hint = findings === null ? 'Checking…' : findings.length === 0 ? 'Sound out, microphone and display all found' : `${findings.length} missing`
+  return (
+    <Section id="this computer" title="This computer" hint={hint}>
+      {findings !== null && findings.length === 0 ? (
+        <p className="settings-note">At start the app found aplay to speak through, a microphone and a display.</p>
+      ) : null}
+      {(findings ?? []).map((finding) => (
+        <p key={finding.check} className="settings-note settings-host-missing">
+          {finding.message}
+        </p>
+      ))}
+      <p className="settings-note">Checked once when the app starts; restart it after plugging something in.</p>
+    </Section>
+  )
 }
 
 /**
@@ -1094,6 +1135,7 @@ export function SettingsPage({
 
         <h2 className="settings-group">System</h2>
         <EnvironmentSection />
+        <HostSection />
       </div>
 
       <div className="settings-actions">

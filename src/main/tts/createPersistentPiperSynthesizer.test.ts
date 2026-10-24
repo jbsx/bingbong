@@ -93,7 +93,7 @@ describe('persistent piper synthesizer', () => {
     const first = synth.synthesize('Hello there.')
     await flush()
     expect(children).toHaveLength(1)
-    expect(args[0]).toEqual(['--model', '/voices/en_US-ryan-medium.onnx', '--config', '/voices/en_US-ryan-medium.onnx.json', '--output-dir', OUT])
+    expect(args[0]).toEqual(['--model', '/voices/en_US-ryan-medium.onnx', '--config', '/voices/en_US-ryan-medium.onnx.json', '-d', OUT])
     expect(children[0]!.lines).toEqual(['Hello there.'])
     answer(children[0]!, '1', new Uint8Array([1, 1]))
     expect(await first).toEqual(new Uint8Array([1, 1]))

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A scripted piper for the e2e suite (#327): every hermetic launch speaks
 // through it, so no e2e run loads a voice or reaches the sound card. It
-// speaks piper's two protocols — `--output-dir`, one WAV per stdin line and
+// speaks piper's two protocols — `-d <dir>`, one WAV per stdin line and
 // its path logged on stderr as the Python piper does (the persistent route),
 // and `--output-raw`, raw PCM for one text (the per-line fallback) — and
 // appends what it was given to BINGBONG_FAKE_TTS_LOG, when set.
@@ -36,7 +36,7 @@ function wav(pcm) {
   return Buffer.concat([header, pcm])
 }
 
-const dirAt = args.indexOf('--output-dir')
+const dirAt = args.indexOf('-d')
 note(`piper-start ${dirAt === -1 ? 'per-line' : 'persistent'}`)
 
 if (dirAt === -1) {

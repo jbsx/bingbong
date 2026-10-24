@@ -57,14 +57,14 @@ function onLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void):
 }
 
 /**
- * One piper per voice that stays up (#327, ADR 0076): `--output-dir` mode,
+ * One piper per voice that stays up (#327, ADR 0076): `-d <dir>` mode,
  * one WAV per stdin line, each path reported as piper finishes it — the
  * Python piper logs `Wrote <path>` on stderr, the C++ piper prints the path
  * on stdout; either is read as the line's delimiter. Lines are written one
  * at a time. A process that dies is restarted at the next line, and a line
  * it died under is retried once on the new one. A process that dies before
  * any piper here has answered a line could not start — no piper, or one
- * without `--output-dir` — and every line from then on goes to the per-line
+ * without an output dir — and every line from then on goes to the per-line
  * spawn, with no error surfaced. The process exits with the app: its stdin
  * closes.
  */
@@ -91,7 +91,8 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
 
   function start(voice: PiperVoice, dir: string): PiperProcess {
     spawns += 1
-    const child = spawnFn(deps.bin, ['--model', voice.modelPath, '--config', voice.configPath, '--output-dir', dir])
+    // `-d`, the one spelling of the output dir both pipers take: the C++ release ignores `--output-dir` (#419).
+    const child = spawnFn(deps.bin, ['--model', voice.modelPath, '--config', voice.configPath, '-d', dir])
     const proc: PiperProcess = { child, modelPath: voice.modelPath, alive: true, waiting: null, stderrTail: '' }
     const die = (error: Error): void => {
       proc.alive = false

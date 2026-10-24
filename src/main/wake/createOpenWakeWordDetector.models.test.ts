@@ -10,10 +10,11 @@ import { createOpenWakeWordDetector } from './createOpenWakeWordDetector'
 // ("bing bong" / "abort" / "hold on") and drives them end to end (input
 // names, shapes, streaming buffers) — the fake-runtime unit tests pin the
 // protocol, this one catches drift between the protocol and the real model
-// files. Skipped unless the models and a sample clip are present (see
-// README voice models).
+// files. Skipped unless the sample clip is in the profile's models dir
+// (~/.config/bingbong/models/sample-en.wav).
 
-const modelsDir = join(homedir(), '.config/bingbong/models')
+// The models the app ships (ADR 0090): the repo's models/, read in place.
+const modelsDir = join(__dirname, '../../../models')
 const modelPaths = {
   melspecModelPath: join(modelsDir, 'melspectrogram.onnx'),
   embeddingModelPath: join(modelsDir, 'embedding_model.onnx'),
@@ -23,7 +24,7 @@ const modelPaths = {
     holdOn: join(modelsDir, 'wake', 'hold_on.onnx'),
   },
 }
-const clipPath = join(modelsDir, 'sample-en.wav')
+const clipPath = join(homedir(), '.config/bingbong/models', 'sample-en.wav')
 const haveAssets = [modelPaths.melspecModelPath, modelPaths.embeddingModelPath, ...Object.values(modelPaths.headModelPaths), clipPath].every(
   existsSync,
 )

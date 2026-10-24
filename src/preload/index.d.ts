@@ -12,6 +12,7 @@ import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { EnvFileView } from '../core/settings/envEntries'
+import type { HostFinding } from '../core/settings/hostFindings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
@@ -25,7 +26,7 @@ export type { UsageSnapshot }
 export type { CalendarEvent, CalendarRange }
 export type { PipelineEvent }
 export type { AppSettings }
-export type { EnvFileView }
+export type { EnvFileView, HostFinding }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
 export type { LaunchConfig }
 
@@ -100,6 +101,8 @@ export interface BingbongSettingsApi {
   setEnv(key: string, value: string | null): Promise<EnvFileView>
   /** Open the `.env` in the system's editor, creating it if missing; answers an error message, empty on success. */
   openEnvFile(): Promise<string>
+  /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
+  hostChecks(): Promise<HostFinding[]>
 }
 
 export interface BingbongTtsApi {

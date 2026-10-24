@@ -9,4 +9,6 @@ export const SETTINGS_IPC = {
   envList: 'settings:envList',
   envSet: 'settings:envSet',
   envOpen: 'settings:envOpen',
+  /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
+  hostChecks: 'settings:hostChecks',
 } as const

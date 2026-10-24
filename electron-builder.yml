@@ -1,0 +1,47 @@
+# The kiosk build (#419, ADR 0090): an AppImage. `pnpm dist` builds it
+# locally; the Release workflow builds and publishes it on a push to
+# `production`. The same config takes the `.dmg` for the Mac build later.
+appId: dev.bingbong.app
+productName: Bing Bong
+executableName: bingbong
+directories:
+  output: dist
+# No native rebuild: onnxruntime-node is prebuilt N-API, and the one module a
+# rebuild compiles, dbus-next's optional usocket, stalls every fetch in the
+# main process under Electron 43 (#419). dbus-next runs without it.
+npmRebuild: false
+files:
+  - out/**
+  - package.json
+  - scripts/wake_sidecar.py
+  # onnxruntime-node ships every platform and the GPU providers; the kiosk
+  # runs the CPU build on Linux x64 (the CUDA provider alone is 240 MB).
+  - '!node_modules/onnxruntime-node/bin/napi-v*/darwin/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v*/win32/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v*/linux/arm64/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v*/linux/x64/libonnxruntime_providers_cuda.so'
+  - '!node_modules/onnxruntime-node/bin/napi-v*/linux/x64/libonnxruntime_providers_tensorrt.so'
+  - '!node_modules/usocket/**'
+# Native code and the Python sidecar cannot read inside the archive.
+asarUnpack:
+  - node_modules/onnxruntime-node/**
+  - scripts/wake_sidecar.py
+# The models no download source serves and small enough not to matter
+# (Silero VAD, the openWakeWord front end, the wake heads): read in place
+# from resources/models, never copied to the profile.
+extraResources:
+  - from: models
+    to: models
+    filter:
+      - '**/*.onnx'
+linux:
+  target: AppImage
+  category: Utility
+  artifactName: bingbong-${version}.AppImage
+# Releases are published from the `production` branch only, by CI; the
+# packaged app reads this to find them (electron-updater).
+publish:
+  provider: github
+  owner: jbsx
+  repo: bingbong
+  releaseType: release

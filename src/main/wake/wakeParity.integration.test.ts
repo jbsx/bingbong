@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { WAKE_CHUNK_SAMPLES } from '../../core/ports/wake'
@@ -12,7 +11,8 @@ import { createPythonWakeDetector } from './createPythonWakeDetector'
 // skipped unless BINGBONG_WAKE_PARITY_CLIP points at a 16 kHz s16le mono WAV
 // and the models + a python with openwakeword exist. See docs/wake-parity.md.
 
-const modelsDir = join(homedir(), '.config/bingbong/models')
+// The models the app ships (ADR 0090): the repo's models/, read in place.
+const modelsDir = join(__dirname, '../../../models')
 const modelPaths = {
   melspecModelPath: join(modelsDir, 'melspectrogram.onnx'),
   embeddingModelPath: join(modelsDir, 'embedding_model.onnx'),

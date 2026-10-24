@@ -1332,7 +1332,8 @@ Settings; Settings are keyboard-setup territory, everything else
 voice-reachable.
 
 **Env File**:
-The `.env` file next to the app, read once at boot. The bottom configuration
+The `.env` file, read once at boot: next to the app in a checkout, in the
+profile (`<userData>/.env`) in the installed app. The bottom configuration
 layer: Env File below process environment below Settings. Never persists,
 never overrides a value that is set anywhere above it.
 

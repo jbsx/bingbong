@@ -23,14 +23,20 @@ export interface VoiceConfig {
   turnScript?: string
 }
 
+/** The profile, where the fetched engines land, and the models shipped inside the package (ADR 0090). */
+export interface VoiceDirs {
+  userDataDir: string
+  bundledModelsDir: string
+}
+
 export function resolveVoiceConfig(
   env: Record<string, string | undefined>,
-  userDataDir: string,
+  dirs: VoiceDirs,
   sttEngine: SttModel = 'parakeet',
 ): VoiceConfig {
-  const modelsDir = join(userDataDir, 'models')
+  const modelsDir = join(dirs.userDataDir, 'models')
   return {
-    vadModel: env.BINGBONG_VAD_MODEL?.trim() || join(modelsDir, 'silero_vad.onnx'),
+    vadModel: env.BINGBONG_VAD_MODEL?.trim() || join(dirs.bundledModelsDir, 'silero_vad.onnx'),
     modelsDir,
     sttEngine,
     sttScript: env.BINGBONG_STT_SCRIPT?.trim() || undefined,

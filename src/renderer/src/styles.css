@@ -1887,6 +1887,11 @@ details[open] > .settings-summary::before {
   color: var(--fg3);
 }
 
+/* A host check that found something missing (#419). */
+.settings-note.settings-host-missing {
+  color: var(--warn);
+}
+
 .settings-field input:not([type='checkbox']):focus,
 .settings-field select:focus,
 .settings-page input[type='text']:focus {

@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { resolvePiperConfig } from './piperConfig'
+import { piperReleaseFor } from './piperInstall'
+
+const LINUX = { platform: 'linux', arch: 'x64' }
 
 describe('resolvePiperConfig', () => {
-  it('defaults to piper on PATH, voices under userData, en_GB-alba', () => {
-    expect(resolvePiperConfig({}, '/data')).toEqual({
-      bin: 'piper',
+  it('defaults to the piper the app installs under userData, voices beside it, en_GB-alba (#419)', () => {
+    expect(resolvePiperConfig({}, '/data', LINUX)).toEqual({
+      bin: join('/data', 'piper', 'piper', 'piper'),
       voicesDir: join('/data', 'voices'),
       voiceId: 'en_GB-alba',
       playerBin: 'aplay',
+      install: { piperDir: join('/data', 'piper'), voicesDir: join('/data', 'voices'), release: piperReleaseFor('linux', 'x64') },
     })
+  })
+
+  it('falls back to piper on PATH, and its own voices, where no release fits this machine', () => {
+    const config = resolvePiperConfig({}, '/data', { platform: 'darwin', arch: 'arm64' })
+    expect(config.bin).toBe('piper')
+    expect(config.install.release).toBeNull()
   })
 
   it('honours env overrides', () => {
@@ -22,8 +32,16 @@ describe('resolvePiperConfig', () => {
           BINGBONG_APLAY_BIN: '/opt/bin/fake-aplay',
         },
         '/data',
+        LINUX,
       ),
-    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay' })
+    ).toEqual({
+      bin: '/opt/piper/piper',
+      voicesDir: '/opt/piper/voices',
+      voiceId: 'en_GB-alan-low',
+      playerBin: '/opt/bin/fake-aplay',
+      // A binary of one's own is never replaced by a download.
+      install: { piperDir: join('/data', 'piper'), voicesDir: '/opt/piper/voices', release: null },
+    })
   })
 
   it('plays to the null device when the run is muted', () => {
@@ -32,6 +50,6 @@ describe('resolvePiperConfig', () => {
   })
 
   it('ignores blank env values', () => {
-    expect(resolvePiperConfig({ BINGBONG_PIPER_BIN: '  ' }, '/data').bin).toBe('piper')
+    expect(resolvePiperConfig({ BINGBONG_PIPER_BIN: '  ' }, '/data', LINUX).bin).toBe(join('/data', 'piper', 'piper', 'piper'))
   })
 })

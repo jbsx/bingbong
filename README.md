@@ -47,32 +47,34 @@ pnpm dev
 Open the feed panel (`Ctrl+Shift+F`) and type `navigate youtube.com`, then
 `read`, then `click <ref>` — or arm listening with `Ctrl/Cmd+Space` and say
 it. `pnpm cli` drives the same browser controller from a terminal REPL.
-Voice needs one manual model download (Silero VAD); everything else fetches
-itself.
+Nothing is installed by hand: the small models ship with the app and the
+rest fetch themselves on first launch.
 
 ## Voice models
 
-The first voice command needs the Silero VAD model in `<userData>/models`
-(`~/.config/bingbong/models` on Linux — set `BINGBONG_VAD_MODEL` to
-override):
+Shipped with the app and read in place (`models/` in the repo,
+`resources/models` in the AppImage, ADR 0090), about 7 MB:
 
-```sh
-mkdir -p ~/.config/bingbong/models
-curl -L -o ~/.config/bingbong/models/silero_vad.onnx \
-  https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx
-```
+- **Silero VAD** (`silero_vad.onnx`; `BINGBONG_VAD_MODEL` overrides).
+- **Wake models** — the openWakeWord front end (melspectrogram → speech
+  embedding, v0.5.1 release assets) and the three custom heads in
+  `models/wake/`, which have no other source. They run fully in Node via
+  onnxruntime-node, one classifier per head: "bing bong" wakes, "stop now"
+  aborts. Silero VAD gates the scores against music/noise false positives;
+  the settings-page threshold slider applies live. The parity write-up:
+  `docs/wake-parity.md`.
 
-Everything else is app-managed:
+Fetched into `<userData>` (`~/.config/bingbong` on Linux) on first launch,
+in the background, each to a `.part` file renamed when whole and retried on
+the next use if the network fails:
 
-- **Moonshine STT** (Small by default; Base and Medium selectable on the
-  settings page) — the int8 ONNX export (~230 MB) fetches in the background
-  on first launch; a fetch failure surfaces as an STT error on the first
-  spoken command, not a startup crash.
-- **Wake models** — custom heads run fully in Node via onnxruntime-node
-  (melspectrogram → speech embedding → one classifier per head): "bing
-  bong" wakes, "stop now" aborts. Silero VAD gates the scores against
-  music/noise false positives; the settings-page threshold slider applies
-  live. Download links and the parity write-up: `docs/wake-parity.md`.
+- **Parakeet STT**, the default (~660 MB; the Moonshine tiers, Small, Base
+  and Medium, are the lighter choice on the settings page) — a fetch
+  failure surfaces as an STT error on the first spoken command, not a
+  startup crash.
+- **Piper** — the binary from rhasspy/piper's Linux x86_64 release into
+  `piper/`, and the `en_GB-alba` voice into `voices/`. A
+  `BINGBONG_PIPER_BIN` of your own skips both: it brings its own voices.
 
 The wake engine has a Python fallback (`pip install openwakeword
 onnxruntime`) — a pure config swap; the seam (`WakeWordDetector`) and the
@@ -92,8 +94,11 @@ BINGBONG_DECISION_SCRIPT='[…]'     # scripted stand-in: a list of {"answers": 
                                    # {"unavailable": "<reason>"}, consumed in order
 ```
 
-Keys may also live in the `.env` file next to the app (read once at boot).
-Precedence is `.env` < process environment.
+Keys may also live in the `.env` file (read once at boot): next to the app
+in a checkout, `<userData>/.env` (`~/.config/bingbong/.env`) in the
+installed AppImage, whose own files are read-only. Settings › Environment
+edits it. Precedence is `.env` < process environment; the Piper, voice and
+wake lines in it apply at the next start.
 
 ### Environment variables
 
@@ -118,14 +123,43 @@ BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # wake scores (object form scripts each h
 
 ## Kiosk deployment
 
-There is no kiosk build yet: the app will be installed on the kiosk host
-directly, never in a container (#419). The custom wake heads, which have no
-download source, are kept in `models/wake/`; on a new machine, copy them to
-where the app reads them:
+The kiosk runs the app on the host as an AppImage (ADR 0090), never in a
+container. On the kiosk (Debian, i3), from a checkout or with the script
+alone:
 
 ```sh
-mkdir -p ~/.config/bingbong/models/wake && cp models/wake/*.onnx ~/.config/bingbong/models/wake/
+scripts/kiosk-install.sh            # the latest Release from GitHub
 ```
+
+It installs `libfuse2t64` if missing (the AppImage runtime needs FUSE 2,
+so it asks for sudo once), puts the AppImage at
+`~/.local/bin/bingbong.AppImage`, writes the user service
+`bingbong.service` (`--kiosk`, `Restart=on-failure`), and adds the line
+that starts it to `~/.config/i3/config`:
+
+```
+exec --no-startup-id "systemctl --user import-environment DISPLAY XAUTHORITY; systemctl --user start bingbong.service"
+```
+
+i3 starts no graphical-session target, so this line is what hands the
+service the display. Run inside the session, the script starts the service
+at once; otherwise it starts at the next i3 login. After that the only step
+by hand is the Jev key, `TYPESAFE_API_KEY`, in Settings › Environment. At
+boot the app checks for `aplay`, a microphone and a display; anything
+missing is a line in the fault log and under Settings › This computer.
+
+`journalctl --user -u bingbong` shows the service; `systemctl --user
+restart bingbong` restarts the app.
+
+**Releases.** `pnpm dist` builds the AppImage locally (`dist/`), and
+`scripts/kiosk-install.sh dist/bingbong-*.AppImage` installs that build. A
+Release is built only from the `production` branch, which only
+fast-forwards to commits already on `main`: `pnpm release [commit]`
+(default `origin/main`) pushes it, and the Release workflow runs the
+typecheck and the unit suite, then publishes the AppImage as `0.1.<run>`.
+The kiosk checks for a newer Release every hour, downloads it in the
+background, and installs it only while the Idle Screen is up; the service
+starts the new version.
 
 ## The Log Bucket (optional)
 
@@ -239,9 +273,11 @@ src/
     run/       the command seam: runner + IPC (the agent goes here)
     decision/  Jev — the Decision Model adapter and its scripted stand-in
     voice/     Silero VAD adapter, scripted doubles, voice IPC, learned terms
-    moonshine/ streaming Moonshine STT engine + model fetch
+    parakeet/  Parakeet STT, the default engine
+    moonshine/ streaming Moonshine STT engine + the model fetch every engine shares
     wake/      openWakeWord heads (Node) and the Python sidecar
-    tts/       piper → aplay, ducking the pane
+    tts/       piper → aplay, ducking the pane; Piper's first-launch install
+    update/    the updater: hourly check, install at the Idle Screen
     panel/     the feed panel's native overlay view
     cli/       the terminal REPL over the browser controller
   preload/     contextBridge preload

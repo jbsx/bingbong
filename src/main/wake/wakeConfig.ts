@@ -17,12 +17,19 @@ export interface WakeConfig {
   wakeScript?: string
 }
 
-export function resolveWakeConfig(env: Record<string, string | undefined>, userDataDir: string, appDir: string): WakeConfig {
+/** Where the shipped wake models and the sidecar script sit: inside the package, outside its archive (ADR 0090). */
+export interface WakeDirs {
+  bundledModelsDir: string
+  scriptsDir: string
+}
+
+export function resolveWakeConfig(env: Record<string, string | undefined>, dirs: WakeDirs): WakeConfig {
   const engineRaw = env.BINGBONG_WAKE_ENGINE?.trim() || 'node'
   if (engineRaw !== 'node' && engineRaw !== 'python' && engineRaw !== 'off') {
     throw new Error(`BINGBONG_WAKE_ENGINE must be node, python, or off — got '${engineRaw}'`)
   }
-  const modelsDir = join(userDataDir, 'models')
+  // The front end and the heads ship with the app and are read in place, never copied to the profile.
+  const modelsDir = dirs.bundledModelsDir
   return {
     engine: engineRaw,
     melspecModel: env.BINGBONG_WAKE_MELSPEC_MODEL?.trim() || join(modelsDir, 'melspectrogram.onnx'),
@@ -31,7 +38,7 @@ export function resolveWakeConfig(env: Record<string, string | undefined>, userD
     abortModel: env.BINGBONG_WAKE_ABORT_MODEL?.trim() || join(modelsDir, 'wake', 'stop_now.onnx'),
     holdOnModel: env.BINGBONG_WAKE_HOLD_ON_MODEL?.trim() || join(modelsDir, 'wake', 'hold_on.onnx'),
     pythonBin: env.BINGBONG_WAKE_PYTHON_BIN?.trim() || 'python3',
-    sidecarScript: env.BINGBONG_WAKE_SIDECAR_SCRIPT?.trim() || join(appDir, 'scripts', 'wake_sidecar.py'),
+    sidecarScript: env.BINGBONG_WAKE_SIDECAR_SCRIPT?.trim() || join(dirs.scriptsDir, 'wake_sidecar.py'),
     wakeScript: env.BINGBONG_WAKE_SCRIPT?.trim() || undefined,
   }
 }

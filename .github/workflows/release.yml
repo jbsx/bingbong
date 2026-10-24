@@ -1,0 +1,46 @@
+# A Release per push to `production` (#419, ADR 0090). `production` only
+# fast-forwards to commits already on `main` (`pnpm release`); the kiosk's
+# updater installs the newest Release at its Idle Screen. A red step stops
+# the job before anything is published.
+name: Release
+
+on:
+  push:
+    branches: [production]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          # onnxruntime-node's native build under gcc ≥ 14 (README Quickstart).
+          CFLAGS: -D_GNU_SOURCE
+          CXXFLAGS: -D_GNU_SOURCE
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      # The tag names the commit built here; left to the publisher it would
+      # be made on the default branch's head instead.
+      - name: Tag v0.1.${{ github.run_number }}
+        run: |
+          git tag "v0.1.${{ github.run_number }}" "$GITHUB_SHA"
+          git push origin "v0.1.${{ github.run_number }}"
+      - name: Build and publish the AppImage as 0.1.${{ github.run_number }}
+        run: pnpm exec electron-builder --linux AppImage --publish always -c.extraMetadata.version=0.1.${{ github.run_number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
