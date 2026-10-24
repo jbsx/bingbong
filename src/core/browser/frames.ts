@@ -58,7 +58,8 @@ function meetsViewport(rect: CollectedElement['rect'], viewport: CollectedPage['
  * each paired with its iframe by its slot in the parent's `window.frames`.
  * A frame's elements take its iframe's place and its layer — a frame in
  * the top's open dialog is the dialog's — and those of the page layer that
- * fall outside the top viewport are left out, as a top element would be.
+ * fall outside the top viewport, or that its frame took for the dialog
+ * layer alone (#414), are left out, as a top element would be.
  * An iframe whose frame did not answer stays its opaque ref — the
  * challenge detection's signal (ADR 0007) — and any frame 2×2 px or
  * smaller contributes nothing, as does a nested frame whose iframe falls
@@ -101,10 +102,11 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
       if (key === null) {
         elements.push({ ...element, previousIndex })
       } else {
+        const { dialogOnly, ...rest } = element
         const { x, y, width, height } = element.rect
         const rect = { x: x + offset.x, y: y + offset.y, width, height }
-        if (layer !== 'dialog' && !meetsViewport(rect, top.viewport)) return
-        elements.push({ ...element, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOf(page.origin !== undefined && page.origin !== 'null' ? page.origin : page.url) })
+        if (layer !== 'dialog' && (dialogOnly === true || !meetsViewport(rect, top.viewport))) return
+        elements.push({ ...rest, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOf(page.origin !== undefined && page.origin !== 'null' ? page.origin : page.url) })
       }
       addresses.push({ frame: key, index })
     })

@@ -120,13 +120,15 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const rect = el.getBoundingClientRect()
     return rect.width >= 1 && rect.height >= 1
   }
-  const rectVisible = (el) => {
+  const rendered = (el) => {
     const style = window.getComputedStyle(el)
-    if (style.display === 'none' || style.visibility === 'hidden') return false
-    if (!hasSize(el)) return false
+    return style.display !== 'none' && style.visibility !== 'hidden' && hasSize(el)
+  }
+  const inViewport = (el) => {
     const rect = el.getBoundingClientRect()
     return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
+  const rectVisible = (el) => rendered(el) && inViewport(el)
   // ADR 0062: nothing inside an inert subtree is focusable or clickable by
   // the platform's definition, so it is never a target — a closed drawer
   // styled open but marked inert lists nothing. That is the one thing the
@@ -347,7 +349,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // A strong cue makes a ref. A weak one — a button/btn class, and any span —
   // does only when no ref among the 6 after it in document order sits within
   // 3 levels under it. tabindex alone gives nothing, the cursor and click
-  // listeners are never read, and aria-disabled vetoes.
+  // listeners are never read, and aria-disabled vetoes — outside an open
+  // dialog's layer, where tabindex and a listener of the element's own are
+  // weak cues (#414).
   const NG_CLICK = []
   for (const prefix of ['', 'data-', 'x-']) for (const separator of ['-', ':', '_']) NG_CLICK.push(prefix + 'ng' + separator + 'click')
   const angular = document.getElementsByClassName('ng-scope').length > 0
@@ -367,11 +371,14 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   })
   // An unmarked element's cue: strong; weak; a label, strong while its
   // control is no ref; tabindex only, which stands in the weak cues'
-  // lookback, as in Vimium, but is never a ref; or none.
-  const cueOf = (el) => {
-    // Vimium's test is truthy: an empty aria-disabled vetoes nothing.
+  // lookback, as in Vimium, but is a ref only in a dialog's layer; or none.
+  // Vimium's test is truthy: an empty aria-disabled vetoes nothing.
+  const vetoed = (el) => {
     const ariaDisabled = el.getAttribute('aria-disabled')
-    if (ariaDisabled && ariaDisabled.toLowerCase() === 'true') return null
+    return Boolean(ariaDisabled) && ariaDisabled.toLowerCase() === 'true'
+  }
+  const cueOf = (el) => {
+    if (vetoed(el)) return null
     const tag = tagOf(el).toLowerCase()
     const strong = (angular && NG_CLICK.some((name) => el.hasAttribute(name))) ||
       el.hasAttribute('onclick') ||
@@ -483,19 +490,54 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   let unmarked = new WeakSet()
   // The collect's Scroll Regions: labelled and described as regions.
   let regions = new WeakSet()
+  // What a frame's collect took for the dialog layer alone (#414): the page merge keeps it only there.
+  let dialogOnly = new WeakSet()
   const labelFor = (el) => (regions.has(el) ? regionLabelOf(el) : labelOf(el))
   const MAX_COLLECTED = 400
+  // The open dialog's own click listeners (#414), as the last collect that
+  // could read them left them beside the root they were read under: null
+  // when none were read under this root.
+  const listenedUnder = (dialogRoot) => {
+    const read = window.__bingbongClickable
+    return dialogRoot !== null && read && read.root === dialogRoot ? read.elements : null
+  }
+  // The candidates, and each listened element no selector found, in document order.
+  const candidatesWith = (listened) => {
+    const all = candidatesIn(document, [])
+    if (listened === null) return all
+    const found = new Set(all)
+    for (const el of listened) {
+      if (found.has(el) || !el.isConnected) continue
+      const at = all.findIndex((candidate) => precedes(el, candidate))
+      all.splice(at < 0 ? all.length : at, 0, el)
+    }
+    return all
+  }
   const collectElements = (dialogRoot) => {
+    const listened = listenedUnder(dialogRoot)
+    // A frame with no dialog of its own may sit in the top's (#414, ADR
+    // 0081), which only the page merge knows: what that layer alone would
+    // take — a control below the frame's own fold, a tabindex-only one — is
+    // taken too, marked for the merge to keep there and nowhere else.
+    const layerUnknown = inFrame && dialogRoot === null
     const shown = []
-    for (const el of candidatesIn(document, [])) {
+    for (const el of candidatesWith(listened)) {
       if (tagOf(el) === 'INPUT' && el.type === 'hidden') continue
       const marked = el.matches(SELECTOR)
-      const cue = marked ? null : cueOf(el)
-      if (!marked && cue === null) continue
+      const own = marked ? null : cueOf(el)
+      const heard = !marked && listened !== null && listened.has(el) && !vetoed(el)
+      if (!marked && own === null && !heard) continue
       if (insideInertDeep(el)) continue
       const dialog = dialogRoot !== null && containsDeep(dialogRoot, el)
-      if (dialog ? !hasSize(el) : !rectVisible(el)) continue
-      shown.push({ el, marked, cue, dialog })
+      const beyond = !dialog && layerUnknown && rendered(el) && !inViewport(el)
+      if (dialog ? !hasSize(el) : !beyond && !rectVisible(el)) continue
+      // Not Vimium's (ADR 0083, #414): inside the open dialog's layer a
+      // tabindex of 0 or more, and a click listener of the element's own,
+      // are weak cues.
+      const layerCue = own === 'tabindex' || (own === null && heard)
+      const cue = (dialog || layerUnknown) && layerCue ? 'weak' : own
+      if (!marked && cue === null) continue
+      shown.push({ el, marked, cue, dialog, beyond, dialogOnly: beyond || (!dialog && layerUnknown && layerCue) })
     }
     // A label is strong while its control gives no hint; else it falls back as any element does.
     const hinted = new Set(shown.filter((entry) => entry.cue !== 'label').map((entry) => entry.el))
@@ -513,6 +555,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       // the Guardian 48 either way.
       if (entry.el.parentElement !== null && entry.el.parentElement.closest(WHOLE_CLICK_SELECTOR) !== null) return false
       for (let index = position + 1; index < hints.length && index <= position + 6; index++) {
+        // Below the fold is no hint Vimium would see: it cannot stand in the lookback of one in view.
+        if (hints[index].beyond && !entry.beyond) continue
         let node = hints[index].el
         for (let level = 0; level < 3; level++) {
           node = node && node.parentElement
@@ -530,23 +574,26 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       all.splice(at < 0 ? all.length : at, 0, { el, marked: false, cue: 'region', dialog: dialogRoot !== null && containsDeep(dialogRoot, el) })
     }
     // Dialog controls first, so they survive the cap; marked elements take
-    // the 400 places first, Unmarked Controls the room left, and Scroll
-    // Regions what room is left after them, each where it sits in document
+    // the 400 places first, Unmarked Controls the room left, Scroll Regions
+    // what room is left after them, and what a frame took for the dialog
+    // layer alone (#414) the room left last, each where it sits in document
     // order.
     const ordered = all.filter((entry) => entry.dialog).concat(all.filter((entry) => !entry.dialog))
-    let room = MAX_COLLECTED - ordered.filter((entry) => entry.marked).length
+    const classOf = (entry) => (entry.dialogOnly ? 'dialogOnly' : entry.marked ? 'marked' : entry.cue === 'region' ? 'region' : 'unmarked')
+    let room = MAX_COLLECTED - ordered.filter((entry) => classOf(entry) === 'marked').length
     const allowed = new Set()
-    for (const cue of ['unmarked', 'region']) {
+    for (const kind of ['unmarked', 'region', 'dialogOnly']) {
       for (const entry of ordered) {
-        if (room > 0 && !entry.marked && (entry.cue === 'region') === (cue === 'region')) {
+        if (room > 0 && classOf(entry) === kind) {
           allowed.add(entry)
           room--
         }
       }
     }
-    const taken = ordered.filter((entry) => entry.marked || allowed.has(entry)).slice(0, MAX_COLLECTED)
+    const taken = ordered.filter((entry) => classOf(entry) === 'marked' || allowed.has(entry)).slice(0, MAX_COLLECTED)
     unmarked = new WeakSet(taken.filter((entry) => !entry.marked && entry.cue !== 'region').map((entry) => entry.el))
     regions = new WeakSet(taken.filter((entry) => entry.cue === 'region').map((entry) => entry.el))
+    dialogOnly = new WeakSet(taken.filter((entry) => entry.dialogOnly).map((entry) => entry.el))
     return taken.map((entry) => entry.el)
   }
   const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
@@ -795,6 +842,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       // What a closed trigger opens (#388): its line's "menu holds".
       ...(held.length > 0 ? { holds: held } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
+      ...(dialogOnly.has(el) ? { dialogOnly: true } : {}),
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }
   }
@@ -914,6 +962,26 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const prior = window.__bingbongRefs || []
   for (let index = 0; index < prior.length; index++) {
     if (!priorIndex.has(prior[index])) priorIndex.set(prior[index], index)
+  }
+  // The open dialog's own click listeners (#414, ADR 0083): each element
+  // under its root, open shadow roots included, that has a click, mousedown
+  // or mouseup listener of its own, never one a listener further up
+  // handles — the fact DOMSnapshot.isClickable reports, read with DevTools'
+  // getEventListeners, which only the top's collect is given. They are left
+  // beside the root, so a read in place while it stays open takes them too.
+  const CLICK_EVENTS = ['click', 'mousedown', 'mouseup']
+  if (dialogRoot !== null && typeof getEventListeners === 'function') {
+    const own = new Set()
+    const listenIn = (root) => {
+      for (const el of root.querySelectorAll('*')) {
+        if (el.shadowRoot) listenIn(el.shadowRoot)
+        const listeners = getEventListeners(el)
+        if (CLICK_EVENTS.some((type) => Array.isArray(listeners[type]) && listeners[type].length > 0)) own.add(el)
+      }
+    }
+    if (dialogRoot.shadowRoot) listenIn(dialogRoot.shadowRoot)
+    listenIn(dialogRoot)
+    window.__bingbongClickable = { root: dialogRoot, elements: own }
   }
   // Dialog controls come first so they survive the collection cap; the order
   // here is exactly what the controller's element registry is keyed by.

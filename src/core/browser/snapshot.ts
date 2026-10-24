@@ -44,6 +44,8 @@ export interface CollectedElement {
   formHasSearch?: boolean
   /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
   layer?: 'dialog' | 'page'
+  /** A frame's element taken for the dialog layer alone (#414): below its own frame's fold, or by a cue that holds only there. The page merge keeps it only when its frame sits in the top's open dialog. */
+  dialogOnly?: true
   checked?: boolean | null
   selectedOption?: string | null
   value?: string | null
@@ -524,6 +526,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       searchField: optionalBoolean(el.searchField),
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
+      ...(el.dialogOnly === true ? { dialogOnly: true as const } : {}),
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
       ...holdsEntry(el.holds),

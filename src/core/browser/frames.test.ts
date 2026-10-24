@@ -110,6 +110,17 @@ describe('mergeFrames (#377, ADR 0081)', () => {
     expect(mergeFrames(page('https://a.example/', [walled], { dialogOpen: true }), [wall]).page.elements).toMatchObject([{ label: 'Reject all', layer: 'dialog' }])
   })
 
+  it("keeps a frame's element taken for the dialog layer alone — below its own frame's fold, or by a dialog-only cue — only when its iframe sits in the top's open dialog (#414)", () => {
+    const controls = [element('div', 'Accept all & continue', { x: 0, y: 20 }), element('button', 'Reject & pay', { x: 0, y: 306 }, { dialogOnly: true }), element('span', '×', { x: 380, y: 0 }, { dialogOnly: true })]
+    const walled = iframe(0, { x: 0, y: 0 }, { layer: 'dialog' })
+    expect(mergeFrames(page('https://a.example/', [walled], { dialogOpen: true }), [frame('w', null, 0, 'https://consent.example/', controls)]).page.elements.map((el) => [el.label, el.layer])).toEqual([
+      ['Accept all & continue', 'dialog'],
+      ['Reject & pay', 'dialog'],
+      ['×', 'dialog'],
+    ])
+    expect(mergeFrames(page('https://a.example/', [iframe(0, { x: 0, y: 0 })]), [frame('p', null, 0, 'https://embed.example/', controls)]).page.elements.map((el) => el.label)).toEqual(['Accept all & continue'])
+  })
+
   it('reads an element as already there by its own frame’s previous collect, at its previous place in the whole page', () => {
     const top = page('https://a.example/', [element('a', 'Home', { x: 0, y: 0 }, { previousIndex: 0 }), iframe(1, { x: 0, y: 100 })])
     const embed = frame('f', null, 1, 'https://embed.example/', [element('button', 'Old', { x: 0, y: 0 }, { previousIndex: 3 }), element('button', 'New', { x: 0, y: 30 }, { previousIndex: -1 })])

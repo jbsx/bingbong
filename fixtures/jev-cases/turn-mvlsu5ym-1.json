@@ -1,0 +1,142 @@
+{
+  "turnId": "turn-mvlsu5ym-1",
+  "transcript": "when is diwali this year",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792810088890,
+  "expect": [
+    {
+      "question": "dismiss",
+      "label": "ref-1|ref-3"
+    },
+    {
+      "question": "outcome",
+      "label": "in_the_way"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"when is diwali this year\"\nThis is step 2 of the task. Done so far: scroll until \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 \" is in view (the page changed)\nPages visited: https://publicholidays.co.uk/diwali/\nPage: https://publicholidays.co.uk/diwali/ — \"Diwali 2026, 2027 and 2028\"\nFull screen: off\nA dialog is open: \"Looks like your ad blocker is on. × We rely on ads to keep creating quality content for you to enjoy for free. Please support our site by disabling your ad blocker. DISABLE Continue without supporting us\"\nRefs (number, kind, label, address, states):\n[1] button \"×\"\n[2] button \"DISABLE\"\n[3] button \"Continue without supporting us\" role=paragraph\nLinks further down the page (name, address):\n[link-1] link \"\" https://publicholidays.co.uk/\n[link-2] link \"Chinese\" https://publicholidays.co.uk/zh/\n[link-3] link \"French\" https://publicholidays.co.uk/fr/\n[link-4] link \"German\" https://publicholidays.co.uk/de/\n[link-5] link \"Terms and Conditions\" https://publicholidays.co.uk/terms-conditions\n[link-6] link \"Privacy Policy\" https://publicholidays.co.uk/privacy-policy\n[link-7] link \"About Us\" https://publicholidays.co.uk/about/\n[link-8] link \"Contact Us\" https://publicholidays.co.uk/contact/\nText further down the page, not on screen yet (number, text):\n[text-1] heading \"Diwali 2026, 2027 and 2028\"\n[text-2] \"⌂\"\n[text-3] \"The Hindu religious holiday of Diwali, also called Deepavali or the “Festival of Lights”, is not an official public holiday in the United Kingdom. But it is has nonetheless grown in significance in the UK as the number of Indian immigrants has increased over the years. Today, there are private and p\"\n[text-4] \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 October in 2027.\"\n[text-5] table row \"Year | Date | Day | Holiday\"\n[text-6] table row \"2026 | 8 Nov | Sun | Diwali\"\n[text-7] table row \"2027 | 29 Oct | Fri | Diwali\"\n[text-8] table row \"2028 | 17 Oct | Tue | Diwali\"\n[text-9] table row \"Please scroll down to end of page for previous years' dates.\"\n[text-10] \"Diwali is always celebrated between mid-October and mid-November in the western calendar, depending upon the lunar cycle each year. During the Festival of Lights, many people of South Asian descent light traditional lanterns at night and attend special Hindu services.\"\n[text-11] \"The Festival of Lights is a colourful and happy celebration. Families prepare their homes and themselves for the special festivities that symbolise the victory of spiritual goodness and the lifting of spiritual darkness. Fireworks displays are set off to drive away evil, oil lamps are lit, flower ga\"\n[text-12] \"The centre of UK Diwali celebrations is London, which has a large Hindu population. Trafalgar Square sees tens of thousands of attendees each year. The streets are brightly lit for the Festival of Lights, and they are also lined with food stalls selling South Asian cuisine, craft stations, and henna\"\n[text-13] heading \"Previous Years\"\n[text-14] table row \"2025 | 21 Oct | Tue | Diwali\"\n[text-15] table row \"2024 | 1 Nov | Fri | Diwali\"\n[text-16] list item \"Other Languages\"\n[text-17] \"© 2026 Public Holidays Global Pty Ltd ABN 53 608 843 885 Terms and Conditions | Privacy Policy | About Us | Contact Us\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "options": {
+          "click-1": "click [1] button \"×\"",
+          "click-2": "click [2] button \"DISABLE\"",
+          "click-3": "click [3] button \"Continue without supporting us\" role=paragraph",
+          "open-1": "open result link \"\" https://publicholidays.co.uk/",
+          "open-2": "open result link \"Chinese\" https://publicholidays.co.uk/zh/",
+          "open-3": "open result link \"French\" https://publicholidays.co.uk/fr/",
+          "open-4": "open result link \"German\" https://publicholidays.co.uk/de/",
+          "open-5": "open result link \"Terms and Conditions\" https://publicholidays.co.uk/terms-conditions",
+          "open-6": "open result link \"Privacy Policy\" https://publicholidays.co.uk/privacy-policy",
+          "open-7": "open result link \"About Us\" https://publicholidays.co.uk/about/",
+          "open-8": "open result link \"Contact Us\" https://publicholidays.co.uk/contact/",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "show-1": "scroll until [text-1] heading \"Diwali 2026, 2027 and 2028\" is in view",
+          "show-2": "scroll until [text-2] \"⌂\" is in view",
+          "show-3": "scroll until [text-3] \"The Hindu religious holiday of Diwali, also called Deepavali or the “Festival of\" is in view",
+          "show-4": "scroll until [text-4] \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 \" is in view",
+          "show-5": "scroll until [text-5] table row \"Year | Date | Day | Holiday\" is in view",
+          "show-6": "scroll until [text-6] table row \"2026 | 8 Nov | Sun | Diwali\" is in view",
+          "show-7": "scroll until [text-7] table row \"2027 | 29 Oct | Fri | Diwali\" is in view",
+          "show-8": "scroll until [text-8] table row \"2028 | 17 Oct | Tue | Diwali\" is in view",
+          "show-9": "scroll until [text-9] table row \"Please scroll down to end of page for previous years' dates.\" is in view",
+          "show-10": "scroll until [text-10] \"Diwali is always celebrated between mid-October and mid-November in the western \" is in view",
+          "show-11": "scroll until [text-11] \"The Festival of Lights is a colourful and happy celebration. Families prepare th\" is in view",
+          "show-12": "scroll until [text-12] \"The centre of UK Diwali celebrations is London, which has a large Hindu populati\" is in view",
+          "show-13": "scroll until [text-13] heading \"Previous Years\" is in view",
+          "show-14": "scroll until [text-14] table row \"2025 | 21 Oct | Tue | Diwali\" is in view",
+          "show-15": "scroll until [text-15] table row \"2024 | 1 Nov | Fri | Diwali\" is in view",
+          "show-16": "scroll until [text-16] list item \"Other Languages\" is in view",
+          "show-17": "scroll until [text-17] \"© 2026 Public Holidays Global Pty Ltd ABN 53 608 843 885 Terms and Conditions | \" is in view",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 03:48, Saturday 24 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 8°C, overcast now; today high 16°C, low 8°C, rain 100%; coming hours 04:00 8°C, 05:00 8°C, 06:00 8°C, 07:00 8°C, 08:00 8°C, 09:00 8°C; coming days 2026-10-25 13°C/9°C light drizzle, rain 92%, 2026-10-26 17°C/9°C drizzle, rain 92%, 2026-10-27 16°C/11°C drizzle, rain 41%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "when",
+          "s0-1": "when is",
+          "s0-2": "when is diwali",
+          "s0-3": "when is diwali this",
+          "s0-4": "when is diwali this year",
+          "s1-1": "is",
+          "s1-2": "is diwali",
+          "s1-3": "is diwali this",
+          "s1-4": "is diwali this year",
+          "s2-2": "diwali",
+          "s2-3": "diwali this",
+          "s2-4": "diwali this year",
+          "s3-3": "this",
+          "s3-4": "this year",
+          "s4-4": "year"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on publicholidays.co.uk that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on publicholidays.co.uk but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "outcome": {
+        "type": "choice",
+        "instructions": "Is what the user asked for done? First: if a pop-up, sign-in prompt or challenge covers the page now, choose in_the_way; a cookie strip or other notice on the page that covers nothing is not in the way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see (for a question, when Text in view states its answer), or Done so far shows the action they asked for has happened; not_yet when more steps are needed.",
+        "options": {
+          "yes": "done: the page shows it or its answer, or the action they asked for has happened",
+          "in_the_way": "a pop-up or prompt covers the page now",
+          "not_yet": "not done: more to do, nothing covering the page"
+        }
+      },
+      "progress": {
+        "type": "noul",
+        "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
+      },
+      "dismiss": {
+        "type": "choice",
+        "instructions": "A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.",
+        "options": {
+          "escape": "no control closes it: press the Escape key",
+          "ref-1": "button \"×\"",
+          "ref-2": "button \"DISABLE\"",
+          "ref-3": "button \"Continue without supporting us\" role=paragraph"
+        }
+      }
+    }
+  }
+}

@@ -810,7 +810,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // The frames are read beside the top, never after it (ADR 0081), once a navigation under way has landed.
     await page.untilLanded?.()
     const frames = readFrames()
-    const top = parseCollectedPage(await evaluateInPage<unknown>(collectScript))
+    const top = await collectTop()
     const answered = await frames.answered()
     const merged = mergeFrames(top, answered, addresses)
     addresses = merged.addresses
@@ -824,18 +824,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /**
+   * The top document's collect. DevTools' command line API is in scope for
+   * it alone, so it can read an open dialog's own click listeners (#414).
+   */
+  async function collectTop(): Promise<CollectedPage> {
+    return parseCollectedPage(await evaluateInPage<unknown>(collectScript, { commandLineApi: true }))
+  }
+
+  /**
    * One evaluation in the page. A navigation under way is waited for first
    * (#330): sent now, the evaluation would be held until its commit and then
    * run on a document not yet parsed. `duringAction` is the readiness watch
    * an action itself started, which hears the navigation it caused and must
    * not wait on it.
    */
-  async function evaluateInPage<T>(expression: string, options?: { awaitPromise?: boolean; duringAction?: boolean }): Promise<T> {
+  async function evaluateInPage<T>(expression: string, options?: { awaitPromise?: boolean; duringAction?: boolean; commandLineApi?: boolean }): Promise<T> {
     if (options?.duringAction !== true) await page.untilLanded?.()
     const response = await cdp.send<EvaluateResponse>('Runtime.evaluate', {
       expression,
       returnByValue: true,
       ...(options?.awaitPromise ? { awaitPromise: true } : {}),
+      ...(options?.commandLineApi ? { includeCommandLineAPI: true } : {}),
     })
     if (response.exceptionDetails) {
       const { text, exception } = response.exceptionDetails

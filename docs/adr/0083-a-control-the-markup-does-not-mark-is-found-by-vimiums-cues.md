@@ -90,8 +90,8 @@ them, and a "scroll this region" op is a separate decision.
   listener and no Vimium cue stays invisible, as it does to Vimium. Inside
   the layer, a listener of the element's own makes it a ref (#414). A
   delegated one still does not, unless it carries a `tabindex`.
-- Measured on #414: the anti-adblock dialog gives N refs with the two cues
-  and M without. `browser-collect` with a dialog open adds X ms to the
+- Measured on #414: the anti-adblock dialog gives 3 refs with the two cues
+  and 1 without. `browser-collect` with a dialog open adds 0.6 ms to the
   median, against a ≤15 ms budget, and with no dialog open it adds
   nothing. The gate case from `turn-mvlq72ay-4` passes on every gate
   model, and no case that passed before is lost.
