@@ -42,6 +42,7 @@ import {
   linkHrefsOf,
   pageReadPartCount,
   parseCollectedPage,
+  parseDialogTexts,
   parsePageLinks,
   parseMediaFacts,
   parseRegionFacts,
@@ -52,7 +53,7 @@ import {
 } from '../../core/browser/snapshot'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } from '../../core/browser/scrollOp'
-import type { TextBelow } from '../../core/browser/pageText'
+import type { DialogText, TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
 import { MEDIA_FACTS_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
@@ -78,7 +79,7 @@ import {
   TAG_OF_FN,
 } from './collectPageScript'
 import { readRefStates } from './readRefStates'
-import { mergeFrames, type CollectedFrame, type FrameAddress } from '../../core/browser/frames'
+import { mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -815,12 +816,36 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const merged = mergeFrames(top, answered, addresses)
     addresses = merged.addresses
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
-    const snapshot = buildPageSnapshot(await withRefStates(merged.page))
+    const snapshot = buildPageSnapshot(await withRefStates(await withFramedDialogText(merged, answered)))
     // Every collect, timed (#377): what the frames' fan-out costs is read off these.
     if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
     visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot
+  }
+
+  /**
+   * The text of each frame in the top's open dialog that knows no dialog of
+   * its own (#416): asked of it only now the merge has placed it there — a
+   * Sourcepoint wall's frame — and never of every frame on every collect.
+   * A frame that cannot answer adds none.
+   */
+  async function withFramedDialogText(merged: MergedPage, answered: readonly CollectedFrame[]): Promise<CollectedPage> {
+    const asked = merged.dialogFrames.filter((key) => answered.find((frame) => frame.key === key)?.page.dialogTexts === undefined)
+    if (asked.length === 0) return merged.page
+    const read = await Promise.all(asked.map(async (key) => {
+      try {
+        const pieces = await evaluateInFrame<unknown>(key, `(() => {
+          /* DIALOG_TEXTS */
+          return typeof window.__bingbongDialogTexts === 'function' ? window.__bingbongDialogTexts() : []
+        })()`)
+        return parseDialogTexts(pieces).map((piece) => ({ ...piece, frame: key }))
+      } catch (error) {
+        reportFault('browser.createCdpBrowserController.framedDialogText', error)
+        return []
+      }
+    }))
+    return { ...merged.page, dialogTexts: [...(merged.page.dialogTexts ?? []), ...read.flat()] }
   }
 
   /**
@@ -2245,6 +2270,48 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  /**
+   * A click on a piece of the open dialog's own text (#416, ADR 0076): one
+   * evaluate in its own frame finds its node in the dialog text registry —
+   * the one the collect numbered, or, when the dialog has redrawn since,
+   * the one that carries its words — and reads its box's centre, brought
+   * into view if it left it; the mouse is pressed there, where a person's
+   * click lands, so a listener on an ancestor hears it as theirs. The
+   * outcome says whether a dialog is still open, and the settled page.
+   */
+  async function clickTextOn(piece: DialogText): Promise<string> {
+    const watch = page.watchArrival?.()
+    await armReadiness(piece.frame)
+    const before = await currentSnapshot()
+    const point = await evaluateInFrame<{ x: number; y: number } | null>(piece.frame, `((at) => {
+      /* CLICK_TEXT */
+      // By the element's own words as the collect took them, never an ancestor's containing them.
+      const fits = (entry) => !!entry && entry.el.isConnected === true && entry.text === at.text
+      const registry = window.__bingbongDialogText || []
+      const entry = fits(registry[at.node]) ? registry[at.node] : registry.find(fits)
+      if (!entry) return null
+      const el = entry.el
+      const inView = (rect) => rect.width >= 1 && rect.height >= 1 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
+      if (!inView(el.getBoundingClientRect())) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+      const rect = el.getBoundingClientRect()
+      return inView(rect) ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+    })(${JSON.stringify({ text: piece.text, node: piece.node })})`)
+    // A null comes back as undefined (\`evaluateInPage\`): either is no text to click.
+    if (point == null) throw new Error(`the text ${JSON.stringify(piece.text)} is no longer on the page`)
+    // A frame's text is clicked where it shows on the page (#377): every ancestor iframe's content-box origin added.
+    const offset = piece.frame === null ? { x: 0, y: 0 } : await frameOffset(piece.frame)
+    if (offset === null) throw new Error(`the text ${JSON.stringify(piece.text)} is no longer on the page: its frame is gone`)
+    await dispatchPointClick({ x: point.x + offset.x, y: point.y + offset.y })
+    const arrival = await settleArrival('click', watch, piece.frame)
+    // A click can navigate or mutate the page; never trust old refs.
+    lastSnapshot = undefined
+    const after = await recollection('post-action', () => collectSnapshot())
+    const urlChanged = before.url !== after.url || arrival !== 'none'
+    const location = urlChanged ? `; ${urlTitleSuffix(signatureOf(after))}` : ''
+    const line = `clicked the text ${JSON.stringify(piece.text.slice(0, 80))}: ${after.dialogOpen ? 'a dialog is still open' : 'the dialog closed'}${location}${reportsSuffix(drainedReports())}`
+    return withSettledState(line, after)
+  }
+
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
       const { target } = await resolveRef(ref, { carryPage: false })
@@ -2453,6 +2520,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     scroll,
     scrollRegion,
     showText: showTextOn,
+    clickText: (text: DialogText) => holdingWindowOpens(() => clickTextOn(text)),
     screenshot,
     markedScreenshot,
     back,

@@ -94,6 +94,7 @@ export function createAuthPopupDirector(
         scroll: (direction, extent) => target(base).scroll(direction, extent),
         scrollRegion: (ref, direction, extent) => target(base).scrollRegion(ref, direction, extent),
         showText: (block) => target(base).showText(block),
+        clickText: (text) => target(base).clickText(text),
         screenshot: (options) => target(base).screenshot(options),
         // The Mark Ask's capture (#382) is of the page its refs are numbered on; a page that makes none answers none.
         markedScreenshot: async (refs) => (await target(base).markedScreenshot?.(refs)) ?? null,

@@ -43,10 +43,31 @@ const LISTENERS = `<script>
 const SOURCEPOINT_FRAME = `<body style="margin:0">
   <span tabindex="0">Close the wall</span>
   <div style="height:310px"><h2>Accept cookies and read free content</h2><button>Manage options</button></div>
+  <p style="margin:0">Your choice applies to this site only.</p>
   <button>Reject &amp; Pay</button><button>Accept All &amp; Continue</button>
 </body>`
 
+// The class #414 does not reach (#416): the same dialog with its close
+// controls marked by nothing — no tabindex, no listener of their own — the
+// box's one listener deciding by the target, as a delegated handler does.
+const DELEGATED_DIALOG = `<div id="cover" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50">
+  <div id="box" style="position:relative;margin:10% auto;width:600px;background:#fff">
+    <span id="close" style="cursor:pointer;position:absolute;top:0;right:0;width:16px;height:56px">×</span>
+    <p>Looks like your ad blocker is on.</p>
+    <p style="display:none">A hidden note</p>
+    <button>Disable</button>
+    <div><p id="continue">Continue <b>without</b> supporting us</p></div>
+    <p id="terms">Read our <button>terms</button> first</p>
+  </div>
+</div>
+<script>
+  document.getElementById('box').addEventListener('click', (event) => {
+    if (event.target.closest('#close, #continue')) document.getElementById('cover').remove()
+  })
+</script>`
+
 const PAGES: Record<string, string> = {
+  '/delegated': `<body>${PAGE_BODY}${DELEGATED_DIALOG}</body>`,
   '/sp-frame': SOURCEPOINT_FRAME,
   '/sourcepoint': `<body>${PAGE_BODY}<div role="dialog" style="position:fixed;inset:10%;background:#fff"><iframe src="/sp-frame" style="width:600px;height:300px;border:0"></iframe></div></body>`,
   '/embed': `<body>${PAGE_BODY}<iframe src="/sp-frame" style="width:600px;height:300px;border:0"></iframe></body>`,
@@ -152,6 +173,63 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
       page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
       collectScript: COLLECT_PAGE_SCRIPT,
     }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
+
+  const texts = (snapshot: PageSnapshot) => (snapshot.dialogTexts ?? []).map((piece) => piece.text)
+
+  it("lists the dialog's own text in view that no ref holds (#416): each element with text of its own, a bold word inside its sentence, never a hidden one or a ref's", async () => {
+    const snapshot = await collect('/delegated')
+    expect(dialogRefs(snapshot)).toEqual([['button', 'Disable'], ['button', 'terms']])
+    // A control inside a sentence is the control's: the sentence reads its own words around it.
+    expect(texts(snapshot)).toEqual(['×', 'Looks like your ad blocker is on.', 'Continue without supporting us', 'Read our first'])
+    expect(snapshot.dialogTexts!.map((piece) => piece.frame)).toEqual([null, null, null, null])
+    // With no dialog open there is none, the page's own text included.
+    expect((await collect('/no-dialog')).dialogTexts ?? []).toEqual([])
+  })
+
+  it("asks a framed wall for its text once the merge puts it in the dialog, by its frame, and a page frame's never", async () => {
+    const framed = (path: string) =>
+      createCdpBrowserController({
+        cdp: { send: (method, params) => fixtures.chrome.cdp.send(method, params), on: (event, handler) => void fixtures.chrome.cdp.on(event, handler) },
+        page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
+        collectScript: COLLECT_PAGE_SCRIPT,
+        frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] },
+      }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
+    await fixtures.open('/sourcepoint')
+    const walled = await framed('/sourcepoint').collectPage()
+    // In view as the frame stands once its below-fold buttons are shown: the text above them has scrolled out.
+    expect(walled.dialogTexts).toContainEqual(expect.objectContaining({ text: 'Your choice applies to this site only.', frame: 'f' }))
+    // The frame's own collect carries none: its body is read only when asked.
+    expect((await inFrame()).page.dialogTexts).toBeUndefined()
+    await fixtures.open('/embed')
+    expect((await framed('/embed').collectPage()).dialogTexts ?? []).toEqual([])
+  })
+
+  it("clicks a piece of the dialog's text at its box's centre: the delegated close lands, and the outcome says the dialog closed", async () => {
+    await fixtures.open('/delegated')
+    const controller = controllerAt('/delegated')
+    const close = (await controller.collectPage()).dialogTexts!.find((piece) => piece.text === '×')!
+    const line = await controller.clickText(close)
+    expect(line).toMatch(/^clicked the text "×": /)
+    expect(line).toContain('the dialog closed')
+    expect((await controller.collectPage()).dialogOpen).toBe(false)
+  })
+
+  it('finds a piece by the words it was taken by, a control inside it left out of them, and says the dialog stayed when the click closed nothing', async () => {
+    await fixtures.open('/delegated')
+    const controller = controllerAt('/delegated')
+    const terms = (await controller.collectPage()).dialogTexts!.find((piece) => piece.text === 'Read our first')!
+    // A node the dialog redrew is found again by its words, never by an ancestor's, which hold every child's.
+    await fixtures.chrome.evaluate("document.getElementById('terms').replaceWith(document.getElementById('terms').cloneNode(true)); window.__bingbongDialogText = window.__bingbongDialogText.map((entry) => entry.text === 'Read our first' ? { ...entry, el: document.getElementById('terms') } : entry); true")
+    const line = await controller.clickText({ ...terms, node: 0 })
+    expect(line).toMatch(/^clicked the text "Read our first": a dialog is still open/)
+  })
+
+  it('refuses a piece of text no longer on the page', async () => {
+    await fixtures.open('/delegated')
+    const controller = controllerAt('/delegated')
+    await controller.collectPage()
+    await expect(controller.clickText({ text: 'Not on this page at all', frame: null, node: 99 })).rejects.toThrow(/no longer on the page/)
+  })
 
   it("puts the dialog's own listeners on the very collect that first finds it open, every ref still new to it, and on each collect after", async () => {
     await fixtures.open('/adblock')

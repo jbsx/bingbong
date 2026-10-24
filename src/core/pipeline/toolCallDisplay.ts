@@ -6,7 +6,7 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
     case 'navigate':
       return `→ ${String(args.url ?? '')}`
     case 'click':
-      return `click [${String(args.ref ?? '?')}]`
+      return typeof args.text === 'string' ? `click the text ${JSON.stringify(args.text)}` : `click [${String(args.ref ?? '?')}]`
     case 'type':
       return `type "${String(args.text ?? '')}" into [${String(args.ref ?? '?')}]`
     case 'scroll':

@@ -2,7 +2,7 @@ import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
 import type { ScrollExtent } from '../browser/scrollOp'
-import type { TextBelow } from '../browser/pageText'
+import type { DialogText, TextBelow } from '../browser/pageText'
 import type { Mark } from '../browser/marks'
 
 /**
@@ -171,6 +171,14 @@ export interface BrowserController {
    * for a block no longer on the page.
    */
   showText(block: TextBelow): Promise<string>
+  /**
+   * A click on a piece of the open dialog's own text (#416, ADR 0076): its
+   * node found in its frame's dialog text registry — by its words when the
+   * page has redrawn — and pressed at its box's centre, as a person's
+   * click lands. The outcome opens `clicked the text "…"` and says whether
+   * a dialog is still open. Rejects for a text no longer on the page.
+   */
+  clickText(text: DialogText): Promise<string>
   /** The visible viewport as a JPEG; with options, one magnified region of it. */
   screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
   back(): Promise<string>

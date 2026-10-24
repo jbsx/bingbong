@@ -927,7 +927,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(Object.keys(questions)).toEqual(['action', 'slot', 'extent', 'where', 'outcome', 'progress', 'dismiss'])
     expect(Object.keys(questions.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
     expect(questions.dismiss!.instructions).toContain('Which control closes it and leaves the page behind as it was')
-    expect(questions.dismiss!.instructions).toContain('Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install')
+    expect(questions.dismiss!.instructions).toContain('Never one that does what the pop-up asks of you, such as sign in, sign up, subscribe, accept, agree, allow or install. Only one that leaves without doing it.')
     expect(hopQuestions('open elon musks latest tweet', PROFILE, hop).dismiss).toBeUndefined()
     // Only a way through, or links: nothing to offer beside Escape, so nothing is asked.
     expect(hopQuestions('open elon musks latest tweet', { ...covered, dialog: { text: 'Join', refs: [7, 8] } }, hop).dismiss).toBeUndefined()
@@ -935,6 +935,45 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', probability: 0.6 })
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
     expect(readDismissChoice({ ...reading, outcome: answer('in_the_way') }, covered)).toBeNull()
+  })
+
+  it("offers the pop-up's own text beside its controls (#416): each piece no control holds, after the refs, a way through by its words left out", () => {
+    const covered: CommandPage = {
+      ...PROFILE,
+      refs: [...PROFILE.refs, { ref: 9, kind: 'button', label: 'DISABLE', href: null, inputType: null }],
+      dialog: {
+        text: 'Looks like your ad blocker is on. × Sign up for ad-free reading DISABLE Continue without supporting us',
+        refs: [9],
+        texts: [
+          { text: 'Looks like your ad blocker is on.', frame: null, node: 0 },
+          { text: '×', frame: null, node: 1 },
+          { text: 'Sign up for ad-free reading', frame: null, node: 2 },
+          { text: 'Continue without supporting us', frame: 'consent', node: 3 },
+        ],
+      },
+    }
+    const dismiss = hopQuestions('when is diwali this year', covered, hop).dismiss!
+    expect(dismiss.options).toEqual({
+      escape: 'no control closes it: press the Escape key',
+      'ref-9': 'button "DISABLE"',
+      'text-1': 'the text "Looks like your ad blocker is on." in the pop-up, not listed as a control: a click lands on it',
+      'text-2': 'the text "×" in the pop-up, not listed as a control: a click lands on it',
+      'text-3': 'the text "Continue without supporting us" in the pop-up, not listed as a control: a click lands on it',
+    })
+    expect(dismiss.instructions).toContain("Some of the pop-up's text is offered too, where a control may not have been listed as one.")
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('text-3', 0.7) }, covered)).toEqual({ choice: { text: { text: 'Continue without supporting us', frame: 'consent', node: 3 } }, probability: 0.7 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('text-4', 0.9) }, covered)).toBeNull()
+    // A pop-up with no control to click but text to land on is asked about: the class #414 does not reach.
+    expect(dismissPhraseQuestions('close', { ...covered, dialog: { ...covered.dialog!, refs: [] } })!.dismiss.options).toHaveProperty('text-2')
+  })
+
+  it("keeps the dismiss Choice to 255 options: the pop-up's text yields to its controls", () => {
+    const refs = Array.from({ length: 250 }, (_, i) => ({ ref: i + 1, kind: 'button' as const, label: `Option ${i + 1}`, href: null, inputType: null }))
+    const texts = Array.from({ length: 10 }, (_, i) => ({ text: `Line ${i + 1}`, frame: null, node: i }))
+    const page: CommandPage = { url: 'https://example.com/', title: 'Example', refs, dialog: { text: 'Pick one', refs: refs.map((ref) => ref.ref), texts } }
+    const options = Object.keys(dismissPhraseQuestions('close', page)!.dismiss.options)
+    expect(options).toHaveLength(255)
+    expect(options.filter((label) => label.startsWith('text-'))).toEqual(['text-1', 'text-2', 'text-3', 'text-4'])
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {
@@ -1787,6 +1826,41 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     expect(shows).toEqual(shows.map((_, index) => `show-${index + 1}`))
     expect(labels(fitted.questions, 'open')).toEqual([])
     expect(fitted.state).not.toContain('Links further down')
+  })
+
+  it("keeps the most of the pop-up's text its own prompt fits, in document order, its controls whole (#416)", () => {
+    // The dismiss Choice is the largest prompt here: thirty long pieces of the pop-up's text on a page with nothing further down.
+    const covered: CommandPage = {
+      ...PAGE,
+      refs: [...PAGE.refs, { ref: 40, kind: 'button', label: 'DISABLE', href: null, inputType: null }],
+      dialog: { text: 'Looks like your ad blocker is on.', refs: [40], texts: Array.from({ length: 30 }, (_, index) => ({ text: `Piece ${index + 1} `.padEnd(150, 'p'), frame: null, node: index })) },
+    }
+    const bareHop: HopContext = { ...hop, links: [] }
+    const coveredBuild = (further: number) => hopQuestions('how do i install it', covered, bareHop, { further })
+    const coveredState = (questions: ReturnType<typeof build>) => commandState('how do i install it', covered, bareHop, undefined, undefined, questions)
+    const whole = fitCard(undefined, coveredBuild, coveredState)
+    const budget = sizeOf(whole) - 1000
+    const cut = fitCard(budget, coveredBuild, coveredState)
+    expect(sizeOf(cut)).toBeLessThanOrEqual(budget)
+    const options = Object.keys(cut.questions.dismiss!.options)
+    expect(options.slice(0, 2)).toEqual(['escape', 'ref-40'])
+    const texts = options.slice(2)
+    expect(texts.length).toBeGreaterThan(10)
+    expect(texts.length).toBeLessThan(30)
+    expect(texts).toEqual(texts.map((_, index) => `text-${index + 1}`))
+    expect(cut.questions.dismiss!.instructions).toContain("Some of the pop-up's text")
+    // What is further down is not cut for the dismiss Choice's prompt: with a hundred links, every open stays and only the text yields.
+    const long: CommandPage = { ...covered, dialog: { ...covered.dialog!, texts: covered.dialog!.texts!.map((piece) => ({ ...piece, text: piece.text.padEnd(400, 'p') })) } }
+    const linkedBuild = (further: number) => hopQuestions('how do i install it', long, hop, { further })
+    const linkedState = (questions: ReturnType<typeof build>) => commandState('how do i install it', long, hop, undefined, undefined, questions)
+    const linked = fitCard(undefined, linkedBuild, linkedState)
+    const { dismiss: _dismiss, ...rest } = linked.questions
+    const linkedCut = fitCard(promptChars(linked.state, rest), linkedBuild, linkedState)
+    expect(labels(linkedCut.questions, 'open')).toHaveLength(100)
+    expect(Object.keys(linkedCut.questions.dismiss?.options ?? {}).filter((label) => label.startsWith('text-')).length).toBeLessThan(30)
+    // With no room for any, the instructions no longer say it is offered.
+    const none = fitCard(promptChars(cut.state, { dismiss: { ...cut.questions.dismiss!, options: { escape: '', 'ref-40': 'button "DISABLE"' } } }) - 100, coveredBuild, coveredState)
+    expect(none.questions.dismiss?.instructions ?? '').not.toContain("Some of the pop-up's text")
   })
 })
 

@@ -1,9 +1,9 @@
 import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageLink, PageMedia, RegionFacts } from '../browser/snapshot'
-import type { TextBelow } from '../browser/pageText'
+import type { DialogText, TextBelow } from '../browser/pageText'
 import { isRealPage } from '../browser/lastPage'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
-import { dialogControls, type DismissChoice } from './dismissDialog'
+import { dialogControls, dialogTexts, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import type { NameHearing } from './nameMatch'
@@ -1301,20 +1301,42 @@ export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandP
  * is a way through instead. Asked beside the Verdict in the same call, so
  * a Step Aside costs no second ask; the runner's Dismissal Ladder puts the
  * answer after the consent policy and before the label rung.
+ *
+ * Beside the controls, every piece of the pop-up's own text that no
+ * control holds (#416, ADR 0076): a close no cue made a control — a ×
+ * whose listener sits on an ancestor — is still a place a click lands.
+ * Measured on Mammoth and Elephant: the text alone left Elephant on a way
+ * through, the "never" sentence said by class alone left every target on
+ * Escape; both together closed every target and lured no control card.
+ * The controls come first, and the text yields to the 255-option cap.
  */
 function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
   if (page.dialog === undefined) return null
   const controls = dialogControls(page)
-  if (controls.length === 0) return null
+  const texts = offeredDialogTexts(page)
+  if (controls.length === 0 && texts.length === 0) return null
   return {
     type: 'choice',
     instructions:
-      'A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.',
+      `A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. ${DISMISS_NEVER} Choose escape when no control closes it and the Escape key should be tried.` +
+      (texts.length > 0 ? ` ${DISMISS_TEXT_OFFERED}` : ''),
     options: {
       escape: 'no control closes it: press the Escape key',
       ...Object.fromEntries(controls.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
+      ...Object.fromEntries(texts.map((piece, index) => [`text-${index + 1}`, `the text ${JSON.stringify(piece.text)} in the pop-up, not listed as a control: a click lands on it`])),
     },
   }
+}
+
+/** What a dismissal never is, said by class (#416): the words name kinds, and "only one that leaves" holds for a way through no word names. */
+const DISMISS_NEVER = 'Never one that does what the pop-up asks of you, such as sign in, sign up, subscribe, accept, agree, allow or install. Only one that leaves without doing it.'
+
+/** The dismiss instructions' word on the text options (#416), said only when some are offered. */
+const DISMISS_TEXT_OFFERED = "Some of the pop-up's text is offered too, where a control may not have been listed as one."
+
+/** The pop-up's text the dismiss Choice offers, numbered from 1 as its options are: what is left of the 255-option cap after `escape` and the controls. */
+function offeredDialogTexts(page: CommandPage): DialogText[] {
+  return dialogTexts(page).slice(0, Math.max(0, MAX_SPANS - dialogControls(page).length))
 }
 
 /**
@@ -1365,12 +1387,17 @@ export function readProgress(answers: CommandAnswers | HopAnswers): number | nul
   return 'progress' in answers && answers.progress !== undefined ? answers.progress.noul : null
 }
 
-/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its probability. Null when it was not asked, or names nothing offered. */
+/** How Jev answered the dismiss Choice: a dialog control by ref, a piece of its text (#416), or Escape, with its probability. Null when it was not asked, or names nothing offered. */
 export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
   if (!('dismiss' in answers) || answers.dismiss === undefined) return null
   const { choice } = answers.dismiss
   const probability = choiceProbability(answers.dismiss)
   if (choice === 'escape') return { choice: 'escape', probability }
+  const text = /^text-(\d+)$/.exec(choice)
+  if (text !== null) {
+    const piece = offeredDialogTexts(page)[Number(text[1]) - 1]
+    return piece === undefined ? null : { choice: { text: piece }, probability }
+  }
   const match = /^ref-(\d+)$/.exec(choice)
   const ref = match === null ? NaN : Number(match[1])
   return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, probability } : null
@@ -1415,18 +1442,51 @@ export function fitCard<Q extends CommandQuestions>(budget: number | undefined, 
   const whole = ask(Infinity)
   const fits = ({ questions, state }: { questions: Q; state: string }): boolean => budget === undefined || promptChars(state, questions) <= budget
   if (fits(whole)) return whole
+  // The dismiss Choice is its own prompt, and what is further down never shrinks it (#416): only the others decide how much of that is kept.
+  const fitsRest = ({ questions, state }: { questions: Q; state: string }): boolean => fits({ questions: withoutDismiss(questions), state })
+  if (fitsRest(whole)) return fitDialogText(budget, whole, stateOf)
   // The size grows with each item kept: the most that fits is found by halving.
   let [low, high] = [0, Object.keys(whole.questions.action.options).filter(isFurther).length - 1]
   let best = ask(0)
   while (low <= high) {
     const middle = Math.floor((low + high) / 2)
     const tried = ask(middle)
-    if (fits(tried)) {
+    if (fitsRest(tried)) {
       best = tried
       low = middle + 1
     } else high = middle - 1
   }
-  return best
+  return fitDialogText(budget, best, stateOf)
+}
+
+/**
+ * The pop-up's own text kept to the Card Budget (#416): the dismiss
+ * Choice's prompt — the state with that one question — keeps the most of
+ * it that fits beside the state the other questions settled, in document
+ * order, its controls and `escape` whole. What is further down is cut for
+ * the action card's own prompt alone, never for this one.
+ */
+function fitDialogText<Q extends CommandQuestions>(budget: number | undefined, fitted: { questions: Q; state: string }, stateOf: (questions: Q) => string): { questions: Q; state: string } {
+  const dismiss = (fitted.questions as { readonly dismiss?: DecisionChoiceQuestion }).dismiss
+  if (budget === undefined || dismiss === undefined) return fitted
+  const texts = Object.keys(dismiss.options).filter((label) => /^text-\d+$/.test(label))
+  const keeping = (kept: number): DecisionChoiceQuestion => {
+    const options = Object.fromEntries(Object.entries(dismiss.options).filter(([label]) => !texts.slice(kept).includes(label)))
+    return kept > 0 ? { ...dismiss, options } : { ...dismiss, instructions: dismiss.instructions.replace(` ${DISMISS_TEXT_OFFERED}`, ''), options }
+  }
+  let kept = texts.length
+  while (kept > 0 && promptChars(fitted.state, { dismiss: keeping(kept) }) > budget) kept -= 1
+  if (kept === texts.length) return fitted
+  const cut = keeping(kept)
+  // `escape` alone is nothing to choose: the Choice goes, as it is never asked with nothing else to offer.
+  const questions = Object.keys(cut.options).length > 1 ? { ...fitted.questions, dismiss: cut } : withoutDismiss(fitted.questions)
+  return { questions, state: stateOf(questions) }
+}
+
+/** The questions with no dismiss Choice among them. */
+function withoutDismiss<Q extends CommandQuestions>(questions: Q): Q {
+  const { dismiss: _dismiss, ...rest } = questions as Q & { readonly dismiss?: DecisionChoiceQuestion }
+  return rest as Q
 }
 
 type ActionAnswers = {

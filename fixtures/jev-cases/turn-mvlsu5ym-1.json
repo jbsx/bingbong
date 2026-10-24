@@ -129,12 +129,15 @@
       },
       "dismiss": {
         "type": "choice",
-        "instructions": "A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.",
+        "instructions": "A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that does what the pop-up asks of you, such as sign in, sign up, subscribe, accept, agree, allow or install. Only one that leaves without doing it. Choose escape when no control closes it and the Escape key should be tried. Some of the pop-up's text is offered too, where a control may not have been listed as one.",
         "options": {
           "escape": "no control closes it: press the Escape key",
           "ref-1": "button \"×\"",
           "ref-2": "button \"DISABLE\"",
-          "ref-3": "button \"Continue without supporting us\" role=paragraph"
+          "ref-3": "button \"Continue without supporting us\" role=paragraph",
+          "text-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
+          "text-2": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
+          "text-3": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it"
         }
       }
     }

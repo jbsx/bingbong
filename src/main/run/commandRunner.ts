@@ -407,7 +407,7 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
     case 'search':
       return { name: 'navigate', args: { url: searchAddress(command.slot ?? '', command.site) } }
     case 'click':
-      return { name: 'click', args: { ref: command.target } }
+      return { name: 'click', args: command.text !== undefined ? { text: command.text.text } : { ref: command.target } }
     case 'type':
       return { name: 'type', args: { ref: command.target, text: command.slot ?? '', ...(command.submit === true ? { submit: true } : {}) } }
     case 'menu':
@@ -956,6 +956,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'search':
         return browser.navigate(searchAddress(command.slot ?? '', command.site))
       case 'click': {
+        // A dismissal's click on the pop-up's own text (#416): no ref, so nothing lights.
+        if (command.text !== undefined) return browser.clickText(command.text)
         const result = await browser.click(command.target ?? 0)
         flash(command.target ?? 0)
         return result
@@ -1387,10 +1389,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** Whether the Verdict is sure: its outcome's probability clears the Choice bar (#403). */
   const sure = (verdict: Verdict | null): verdict is Verdict => verdict !== null && verdict.probability >= DEFAULT_DECISION_THRESHOLDS.choice
 
-  /** Whether the Command acts on the pop-up itself: a ref in the dialog's layer, or Escape. */
+  /** Whether the Command acts on the pop-up itself: a ref in the dialog's layer, a piece of its own text (#416), or Escape. */
   function actsOnDialog(command: Command, page: CommandPage): boolean {
     if (page.dialog === undefined) return false
     if (command.verb === 'press' && command.key === PRESS_KEYS.escape) return true
+    if (command.text !== undefined) return true
     return command.target !== null && page.dialog.refs.includes(command.target)
   }
 

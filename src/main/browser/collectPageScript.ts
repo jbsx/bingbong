@@ -1029,6 +1029,64 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       }
     })
   }
+  // The open dialog's own text (#416, ADR 0076): each element of its layer
+  // in view with text of its own and inside no ref — where a click lands
+  // when no cue made the close a control, a × whose listener sits on an
+  // ancestor. No length floor, as the page's prose runs have: the × is one
+  // character. A formatting element's words are its parent's, so a
+  // sentence with a bold word in it reads whole. A frame with no dialog of
+  // its own may sit in the top's (#414): it leaves the same read over its
+  // body to be asked for once the page merge finds it there, since walking
+  // every frame's body on every collect cost a long one 27 ms. The registry
+  // is where a click on one finds its node, with the words it was taken
+  // by, replaced by every read as the ref registry is by every collect.
+  // The most a Choice could offer beside Escape: the Card Budget, not a count, is their bound.
+  const MAX_DIALOG_TEXTS = 254
+  const FOLDED = new Set(['ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE', 'DATA', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR'])
+  const NEVER_TEXT = 'svg, math, script, style, noscript, template, textarea, select'
+  const ownText = (el) =>
+    Array.from(el.childNodes)
+      .map((node) => {
+        if (node.nodeType === Node.TEXT_NODE) return node.data
+        if (node.nodeType !== Node.ELEMENT_NODE) return ''
+        const tag = tagOf(node).toUpperCase()
+        return tag === 'BR' ? ' ' : FOLDED.has(tag) ? renderedText(node) : ' '
+      })
+      .join('')
+      .replace(/\\s+/g, ' ')
+      .trim()
+  const refSet = new Set(collected)
+  const dialogTextsIn = (textLayer) => {
+    const dialogTextNodes = []
+    window.__bingbongDialogText = dialogTextNodes
+    const dialogTexts = []
+    const insideRef = (el) => {
+      for (let node = el; node !== null; node = parentDeep(node)) if (refSet.has(node)) return true
+      return false
+    }
+    const consider = (el) => {
+      if (FOLDED.has(tagOf(el).toUpperCase()) || el.closest(NEVER_TEXT) !== null) return
+      const text = ownText(el)
+      if (text === '' || !rectInView(el.getBoundingClientRect()) || isHidden(el) || insideRef(el)) return
+      dialogTexts.push({ text, node: dialogTextNodes.length })
+      // Its own text beside it: a click finds it by those words, never by an ancestor's, which holds every child's.
+      dialogTextNodes.push({ el, text })
+    }
+    const visit = (root) => {
+      for (const el of root.querySelectorAll('*')) {
+        if (dialogTexts.length >= MAX_DIALOG_TEXTS) return
+        consider(el)
+        if (el.shadowRoot) visit(el.shadowRoot)
+      }
+    }
+    consider(textLayer)
+    if (textLayer.shadowRoot) visit(textLayer.shadowRoot)
+    visit(textLayer)
+    return dialogTexts
+  }
+  window.__bingbongDialogText = []
+  const dialogTexts = dialogRoot !== null ? dialogTextsIn(dialogRoot) : []
+  window.__bingbongDialogTexts = inFrame && dialogRoot === null && document.body ? () => dialogTextsIn(document.body) : undefined
   const elements = collected.map((el) => {
     const described = describeElement(el, dialogRoot)
     described.previousIndex = priorIndex.has(el) ? priorIndex.get(el) : -1
@@ -1050,6 +1108,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     },
     dialogOpen: dialogRoot !== null,
     dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
+    ...(dialogTexts.length > 0 ? { dialogTexts } : {}),
     textBlocks,
     textCut,
     elements,

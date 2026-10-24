@@ -26,6 +26,8 @@ export interface CollectedFrame {
 export interface MergedPage {
   readonly page: CollectedPage
   readonly addresses: readonly FrameAddress[]
+  /** The frames whose iframe sits in the top's open dialog, in document order (#416): a frame that knows no dialog of its own is asked for its text there. */
+  readonly dialogFrames: readonly string[]
 }
 
 /** How many elements the merged page carries at most: the collector's own bound on one document. */
@@ -134,7 +136,13 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
     const read = frames.find((candidate) => candidate.key === key)
     return read === undefined ? [] : renderPageText(textOf(read.page, key)).blocks
   })
-  const dialog = framed.length === 0 ? {} : { dialogText: [top.dialogText ?? '', ...framed].filter((part) => part !== '').join(' ').slice(0, MAX_COLLECTED_DIALOG_TEXT) }
+  const dialogText = framed.length === 0 ? {} : { dialogText: [top.dialogText ?? '', ...framed].filter((part) => part !== '').join(' ').slice(0, MAX_COLLECTED_DIALOG_TEXT) }
+  // The dialog's own text (#416): the top's, then each frame's in its open dialog that sent its own, by the frame it was read in; one that knows no dialog is asked for it after (`dialogFrames`).
+  const pieces = [
+    ...(top.dialogTexts ?? []),
+    ...inDialog.flatMap((key) => (frames.find((candidate) => candidate.key === key)?.page.dialogTexts ?? []).map((piece) => ({ ...piece, frame: key }))),
+  ]
+  const dialog = { ...dialogText, dialogTexts: pieces }
 
   // A Player Switch names its element by its own document's index (#389): it becomes the element's place in the whole page, or goes with it.
   const kept = elements.slice(0, MAX_MERGED_ELEMENTS)
@@ -148,5 +156,5 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
     return { ...element, switches }
   })
 
-  return { page: { ...top, ...text, ...dialog, elements: merged }, addresses: placed }
+  return { page: { ...top, ...text, ...dialog, elements: merged }, addresses: placed, dialogFrames: inDialog }
 }

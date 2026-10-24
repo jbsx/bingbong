@@ -58,6 +58,7 @@ export function withAgentActivity(
     scroll: (direction, extent) => controller.scroll(direction, extent),
     scrollRegion: (ref, direction, extent) => controller.scrollRegion(ref, direction, extent),
     showText: (block) => controller.showText(block),
+    clickText: (text) => run(() => controller.clickText(text)),
     screenshot: (options) => controller.screenshot(options),
     ...(controller.markedScreenshot !== undefined ? { markedScreenshot: (refs: readonly number[]) => controller.markedScreenshot!(refs) } : {}),
     back: () => controller.back(),

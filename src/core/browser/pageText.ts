@@ -66,6 +66,18 @@ function kindOf(block: CollectedTextBlock): TextBlockKind | undefined {
 }
 
 /**
+ * A piece of an open dialog's own text (#416, ADR 0076): an element of its
+ * layer, in view, with text of its own and inside no ref — where a click
+ * may land when no cue made the close a control. Its node is its index in
+ * its frame's dialog text registry, as a block's is in the text registry.
+ */
+export interface DialogText {
+  readonly text: string
+  readonly frame: string | null
+  readonly node: number
+}
+
+/**
  * A block of Text Further Down (#393, ADR 0086, CONTEXT.md): its text as
  * the card quotes it, held to 300 characters, and where its Show Op finds
  * it — the frame it was read in (null for the top document) and its index

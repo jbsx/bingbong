@@ -142,6 +142,22 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
     expect(dismissalLadder(BANNER, { choice: { ref: 1 }, probability: 0.4 })).toEqual([click(11), click(1), ESCAPE])
   })
 
+  it("Jev's choice of the pop-up's own text is a rung where its choice of a control would be (#416), and one that goes through by its words is none", () => {
+    const close = { text: '×', frame: null, node: 1 }
+    const through = { text: 'Sign up for ad-free reading', frame: null, node: 2 }
+    const adblock: CommandPage = {
+      url: 'https://publicholidays.co.uk/diwali/',
+      title: 'Diwali',
+      refs: [{ ref: 1, kind: 'button', label: 'DISABLE', href: null, inputType: null }],
+      dialog: { text: 'Looks like your ad blocker is on. ×', refs: [1], texts: [{ text: 'Looks like your ad blocker is on.', frame: null, node: 0 }, close, through] },
+    }
+    const clickText = (text: typeof close) => ({ verb: 'click', target: null, slot: null, text, dismiss: true })
+    expect(dismissalLadder(adblock, { choice: { text: close }, probability: 0.9 })).toEqual([clickText(close), ESCAPE])
+    expect(dismissalLadder(adblock, { choice: { text: close }, probability: 0.4 })).toEqual([clickText(close), ESCAPE])
+    expect(dismissalLadder({ ...adblock, refs: [{ ...adblock.refs[0]!, label: 'Close' }] }, { choice: { text: close }, probability: 0.4 })).toEqual([click(1), clickText(close), ESCAPE])
+    expect(dismissalLadder(adblock, { choice: { text: through }, probability: 0.9 })).toEqual([ESCAPE])
+  })
+
   it('a consent-or-pay wall: the reject that pays or subscribes is a way through, never clicked by the rule (ADR 0089)', () => {
     const wall: CommandPage = {
       ...BANNER,

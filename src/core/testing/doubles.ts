@@ -19,7 +19,7 @@ import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from 
 import { blockedActionHead, clickFlagsHead, mediaOpHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, scrollOpHead, type BlockedAction } from '../browser/actionOutcome'
 import { SCROLL_END_OF_REGION, type ScrollExtent } from '../browser/scrollOp'
 import type { MediaOpAction } from '../browser/mediaOp'
-import type { TextBelow } from '../browser/pageText'
+import type { DialogText, TextBelow } from '../browser/pageText'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -259,6 +259,14 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async showText(block: TextBelow): Promise<string> {
     this.shownTexts.push(block)
     return 'scrolled down: x=0 y=0'
+  }
+
+  /** Every click on a dialog's own text (#416), in order. */
+  readonly clickedTexts: DialogText[] = []
+
+  async clickText(text: DialogText): Promise<string> {
+    this.clickedTexts.push(text)
+    return `clicked the text ${JSON.stringify(text.text)}: no observable change`
   }
 
   async pressKey(press: KeyPress, times = 1): Promise<void> {

@@ -3735,6 +3735,29 @@ describe('a pop-up covering the page (#336)', () => {
     expect(records).toEqual([expect.objectContaining({ verb: 'click', target: 10, jev: expect.objectContaining({ confidence: expect.objectContaining({ dismiss: 0.9 }) }) })])
   })
 
+  it("a dismiss phrase clicks the pop-up's own text Jev chose (#416): a × no cue made a control, the dialog checked closed as after any rung", async () => {
+    const refs = [SHEET_REFS[0]!, SHEET_REFS[2]!]
+    const { browser, events, decision, records, runner } = sheetHarness(refs, false, [])
+    const close = { text: '×', frame: null, node: 3 }
+    browser.snapshot = { ...browser.snapshot, dialogTexts: [{ text: 'Don’t miss what’s happening', frame: null, node: 0 }, { text: 'Sign in to X', frame: null, node: 1 }, close] }
+    const clickText = browser.clickText.bind(browser)
+    browser.clickText = async (piece) => {
+      const line = await clickText(piece)
+      browser.snapshot = { ...browser.snapshot, refs: [SHEET_REFS[0]!], dialogOpen: false, dialogText: '', dialogTexts: [] }
+      return line
+    }
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('text-2') } })
+    await runner.run('close this', { source: 'spoken' })
+    const asked = decision.requests[0]!.questions as { dismiss?: DecisionChoiceQuestion }
+    // "Sign in" is a way through, as a control and as text: neither is offered.
+    expect(Object.keys(asked.dismiss!.options)).toEqual(['escape', 'text-1', 'text-2'])
+    expect(asked.dismiss!.options['text-2']).toBe('the text "×" in the pop-up, not listed as a control: a click lands on it')
+    expect(browser.clickedTexts).toEqual([close])
+    expect(browser.clicks).toEqual([])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+    expect(records).toEqual([expect.objectContaining({ verb: 'click', target: null })])
+  })
+
   it('a dismiss phrase walks the whole Dismissal Ladder while the pop-up stays: Jev\'s choice, the close label, then Escape — the failure said once, at the end', async () => {
     const refs = [...SHEET_REFS, ref(10, 'button', 'Maybe', { layer: 'dialog' })]
     const { browser, events, decision, records, runner } = sheetHarness(refs, false, [], true)

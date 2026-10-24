@@ -1383,5 +1383,11 @@ listener is delegated still is not one.
   Elephant on DISABLE (0.50), and the rewording alone left every target
   on Escape. Both together picked × or Continue on both models, and every
   text option on 10 control cards scored ≤ 0.00. A "not offered" answer
-  passed too, but costs a second call when chosen. Gate: N cases through,
-  none lost.
+  passed too, but costs a second call when chosen. Gate (Mammoth ∩
+  Elephant, built): the 3 target cases through, none lost (153 of 176
+  through, 150 of 173 before); the 12 control cards 10 through before and
+  after, the other 2 refused by the host as over its length either way.
+- **A frame's text is read only in the dialog.** A frame that knows no
+  dialog of its own is asked for its text only once the page merge puts
+  its iframe in the top's open dialog: walking every frame's body on every
+  collect cost a 3,000-paragraph frame 27 ms.

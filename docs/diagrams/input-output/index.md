@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-23, base `469d7662` + #408](versions/2026-10-23-469d7662-one-reading/chart.html), in which an exact line is local only with one reading on the page, and a landing ends the Task unasked only on a fact (#408). [Overview](versions/2026-10-23-469d7662-one-reading/overview.png) · [changes](versions/2026-10-23-469d7662-one-reading/changes.md)
+**Latest:** [2026-10-24, base `4d7b48a6` + #416](versions/2026-10-24-4d7b48a6-dialog-text/chart.html), in which the dismiss Choice offers the pop-up's own text beside its controls, and a dismissal never does what the pop-up asks (#416). [Overview](versions/2026-10-24-4d7b48a6-dialog-text/overview.png) · [changes](versions/2026-10-24-4d7b48a6-dialog-text/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-24 | `4d7b48a6` + #416 | [chart](versions/2026-10-24-4d7b48a6-dialog-text/chart.html) | Over a pop-up Jev may pick a piece of its own text no control holds, clicked where it shows; the "never" sentence is said by class. [changes](versions/2026-10-24-4d7b48a6-dialog-text/changes.md) |
 | 2026-10-23 | `469d7662` + #408 | [chart](versions/2026-10-23-469d7662-one-reading/chart.html) | Every line but `stop` reads the page; a line a control bears, an intent line, "the first result" and an unknown `open <word>` are Jev's; a title-only wall goes to the Verdict; Jev's sure pick leads a cookie wall. [changes](versions/2026-10-23-469d7662-one-reading/changes.md) |
 | 2026-10-23 | `c74404d7` + #407 | [chart](versions/2026-10-23-c74404d7-shows-last/chart.html) | What is further down yields right-clicks first, then links, then shows; every block below is listed; 2.38 characters a token. [changes](versions/2026-10-23-c74404d7-shows-last/changes.md) |
 | 2026-10-23 | `21b5925a` + #406 | [chart](versions/2026-10-23-21b5925a-card-budget/chart.html) | Every Jev ask fits the Card Budget: on a long page what is further down yields, the farthest first; a refusal keeps its status. [changes](versions/2026-10-23-21b5925a-card-budget/changes.md) |

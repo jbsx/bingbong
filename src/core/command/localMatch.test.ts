@@ -151,6 +151,8 @@ describe('the Local Match: the Player (#343)', () => {
     // A line with free words is Jev's (ADR 0079): the Local Match settles none.
     expect(localMatch('play bohemian rhapsody', [])).toBeNull()
     expect(describeCommand(localMatch('next song', [])!)).toBe('skip')
+    // A click on the pop-up's own text (#416) names the words it landed on.
+    expect(describeCommand({ verb: 'click', target: null, slot: null, text: { text: '×', frame: null, node: 1 }, dismiss: true })).toBe('click the text "×" in the pop-up')
     expect(describeCommand(localMatch('play', [])!)).toBe('play')
     expect(describeCommand(localMatch('volume 40', [])!)).toBe('volume 40')
     expect(describeCommand(localMatch('repeat this song', [])!)).toBe('loop')

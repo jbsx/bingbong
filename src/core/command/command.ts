@@ -1,6 +1,6 @@
 import type { KeyPress } from '../ports/browser'
 import type { MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
-import type { TextBelow } from '../browser/pageText'
+import type { DialogText, TextBelow } from '../browser/pageText'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
@@ -107,6 +107,8 @@ export interface Command {
   readonly extent?: ScrollExtent
   /** For `scroll_down`, a Show Op (#393, ADR 0086): the block of Text Further Down it brings into view, in place of an Extent. */
   readonly show?: TextBelow
+  /** For `click`, a dismissal's (#416): the piece of the open dialog's own text it clicks at its box's centre, in place of a ref; the target is then null. */
+  readonly text?: DialogText
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
   /** The Mark Ask chose the target (#382, ADR 0084): the control the words named on the image of the page, which "Done so far" says. */
@@ -172,6 +174,8 @@ export interface PageDialog {
   readonly text: string
   /** The refs of the dialog's layer, by number. */
   readonly refs: readonly number[]
+  /** The layer's own text in view that no ref holds (#416), in document order: what the dismiss Choice offers beside the controls; absent for a page read without it. */
+  readonly texts?: readonly DialogText[]
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
@@ -196,7 +200,9 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     ...(snapshot.textBelow !== undefined ? { textBelow: snapshot.textBelow } : {}),
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
-    ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
+    ...(snapshot.dialogOpen
+      ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref), ...(snapshot.dialogTexts !== undefined ? { texts: snapshot.dialogTexts } : {}) } }
+      : {}),
   }
 }
 
@@ -317,6 +323,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     case 'search':
       return `search ${command.slot ?? ''}${command.site !== undefined ? ` on ${command.site}` : ''}`.trim()
     case 'click':
+      if (command.text !== undefined) return `click the text ${JSON.stringify(command.text.text.slice(0, 80))} in the pop-up`
       return `click${label(command.target)}`
     case 'type':
       // A Search Op (#398) is told as the search it is.

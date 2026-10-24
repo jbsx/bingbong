@@ -8,6 +8,7 @@ import {
   renderPageText,
   splitPageRead,
   type CollectedTextBlock,
+  type DialogText,
   type TextBelow,
 } from './pageText'
 
@@ -177,6 +178,8 @@ export interface CollectedPage {
   dialogOpen?: boolean
   /** Text of the topmost open dialog (Tier 2 facts for the model). */
   dialogText?: string
+  /** The open dialog's own text in view that no ref holds (#416), each by its node in its document's dialog text registry; a frame's carries its key once the page merge kept it. A frame that knows no dialog sends its own, for the merge to keep only in the top's. */
+  dialogTexts?: { text: string; node: number; frame?: string }[]
   /**
    * The page's text blocks in document order, raw (#235, ADR 0047): the
    * whole page's text, rendered and cut here. Absent in older payloads,
@@ -264,6 +267,8 @@ export interface PageSnapshot {
   dialogOpen: boolean
   /** Text of the topmost open dialog, capped; '' when no dialog is open. */
   dialogText: string
+  /** The open dialog's own text in view that no ref holds (#416), each by its node; absent when none is open, or for a page read without it. */
+  dialogTexts?: DialogText[]
   /**
    * The Page Preview (ADR 0047): the page's text from the top, capped at
    * MAX_SNAPSHOT_TEXT. What an Action Outcome carries, what the Blocker
@@ -363,6 +368,18 @@ function optionalBoolean(value: unknown): boolean {
 
 function nullableBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
+}
+
+/** One piece of a dialog's own text (#416), or null for an entry of no known shape — dropped, not fatal. */
+function parseDialogText(entry: unknown): { text: string; node: number } | null {
+  if (typeof entry !== 'object' || entry === null) return null
+  const { text, node } = entry as Record<string, unknown>
+  return typeof text === 'string' && text !== '' && Number.isInteger(node) && (node as number) >= 0 ? { text, node: node as number } : null
+}
+
+/** A read of a dialog's own text (#416): each piece of a known shape, the rest dropped; none for anything but a list. */
+export function parseDialogTexts(raw: unknown): { text: string; node: number }[] {
+  return Array.isArray(raw) ? raw.flatMap((entry) => parseDialogText(entry) ?? []) : []
 }
 
 /** One collected text block, or null for an entry of no known shape — dropped, not fatal. */
@@ -556,6 +573,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
     },
     dialogOpen: candidate.dialogOpen === true,
     dialogText: typeof candidate.dialogText === 'string' ? candidate.dialogText : '',
+    ...(Array.isArray(candidate.dialogTexts) ? { dialogTexts: parseDialogTexts(candidate.dialogTexts) } : {}),
     ...(Array.isArray(candidate.textBlocks)
       ? { textBlocks: candidate.textBlocks.flatMap((entry) => parseTextBlock(entry) ?? []), textCut: candidate.textCut === true }
       : {}),
@@ -676,6 +694,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     viewport: page.viewport,
     dialogOpen: page.dialogOpen ?? false,
     dialogText: page.dialogText ?? '',
+    ...(page.dialogOpen === true && page.dialogTexts !== undefined ? { dialogTexts: page.dialogTexts.map(({ text, node, frame }) => ({ text, frame: frame ?? null, node })) } : {}),
     media: page.media ?? null,
     ...(page.fullScreen !== undefined ? { fullScreen: page.fullScreen } : {}),
     ...pageTextOf(page),

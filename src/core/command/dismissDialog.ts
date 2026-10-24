@@ -1,4 +1,5 @@
 import { consentAcceptOf, consentRejectOf, isConsentDialog, isWayThrough } from '../browser/dialogPolicy'
+import type { DialogText } from '../browser/pageText'
 import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type CommandRef } from './command'
 
 // The dismiss rule (#336, ADR 0076): a pop-up covering the page is closed
@@ -31,9 +32,9 @@ const CLOSE_LABEL_RE =
 /** The close glyphs a control may carry as its whole label, which normalized words lose. */
 const CLOSE_GLYPHS: ReadonlySet<string> = new Set(['×', '✕', 'x', 'X', '✖', '⨯'])
 
-/** How Jev answered the dismiss Choice (the `dismiss` question): a dialog control by ref, or Escape, with how sure it was. */
+/** How Jev answered the dismiss Choice (the `dismiss` question): a dialog control by ref, a piece of its text (#416), or Escape, with how sure it was. */
 export interface DismissChoice {
-  readonly choice: { readonly ref: number } | 'escape'
+  readonly choice: { readonly ref: number } | { readonly text: DialogText } | 'escape'
   /** The chosen label's probability, the number the Choice bar reads (#403). */
   readonly probability: number
 }
@@ -72,7 +73,7 @@ export function dismissalLadder(page: CommandPage, chosen: DismissChoice | null 
   const controls = dialogControls(page)
   const rungs: (Command | null)[] = []
   // 1. Jev's sure choice (ADR 0089).
-  const jev = chosen === null ? null : chosenCommand(chosen, controls)
+  const jev = chosen === null ? null : chosenCommand(chosen, controls, dialogTexts(page))
   if (jev !== null && chosen!.probability >= sureAbove) rungs.push(jev)
   // 2. The consent policy's reject, else its accept — judged over every clickable control of the layer, Accept All included, since that is what names a consent wall.
   const rule = ruledConsent(page)
@@ -104,6 +105,11 @@ export function dialogControls(page: CommandPage): CommandRef[] {
   return clickableControls(page).filter((ref) => !isWayThrough(ref.label))
 }
 
+/** The dialog layer's own text a dismissal may click (#416): each piece no ref holds, a way through by its words left out, as a control is by its label. */
+export function dialogTexts(page: CommandPage): DialogText[] {
+  return (page.dialog?.texts ?? []).filter((piece) => !isWayThrough(piece.text))
+}
+
 /** The dialog layer's clickable controls: no link, no field — the ways through still among them, for the consent policy to judge. */
 function clickableControls(page: CommandPage): CommandRef[] {
   if (page.dialog === undefined) return []
@@ -111,8 +117,13 @@ function clickableControls(page: CommandPage): CommandRef[] {
   return page.refs.filter((ref) => inDialog.has(ref.ref) && ref.href === null && ref.kind !== 'input')
 }
 
-function chosenCommand(chosen: DismissChoice, controls: readonly CommandRef[]): Command | null {
+function chosenCommand(chosen: DismissChoice, controls: readonly CommandRef[], texts: readonly DialogText[]): Command | null {
   if (chosen.choice === 'escape') return ESCAPE
+  if ('text' in chosen.choice) {
+    const { frame, node } = chosen.choice.text
+    const piece = texts.find((one) => one.frame === frame && one.node === node)
+    return piece === undefined ? null : { verb: 'click', target: null, slot: null, text: piece, dismiss: true }
+  }
   const ref = chosen.choice.ref
   const control = controls.find((one) => one.ref === ref)
   return control === undefined ? null : click(control)
@@ -127,7 +138,7 @@ function click(control: CommandRef): Command {
 function dedupe(commands: readonly Command[]): Command[] {
   const seen = new Set<string>()
   return commands.filter((command) => {
-    const key = `${command.verb}:${command.target ?? ''}:${command.key?.key ?? ''}`
+    const key = `${command.verb}:${command.target ?? ''}:${command.key?.key ?? ''}:${command.text !== undefined ? `${command.text.frame ?? ''}/${command.text.node}` : ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
