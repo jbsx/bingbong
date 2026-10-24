@@ -59,6 +59,8 @@ export interface CollectedElement {
   media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085): the collect sends them only for an element its scroll cue took. */
   region?: RegionFacts
+  /** A file input's own facts (#424); absent for every other element, and in older payloads. */
+  fileField?: FileFieldFacts
   /** The names of the controls a closed trigger opens (#388), read while its panel is hidden; absent for every other element. */
   holds?: readonly string[]
   /** A media element's Player Switches (#389): each one's index in the collect and whether it is on; absent for every other element, and for a player with none. */
@@ -207,6 +209,12 @@ export interface CollectedPage {
   origin?: string
 }
 
+/** A file input's own facts (#424): its `accept` as the page wrote it ('' for none), and whether it takes several files. */
+export interface FileFieldFacts {
+  readonly accept: string
+  readonly multiple: boolean
+}
+
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region'
 
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
@@ -246,6 +254,8 @@ export interface SnapshotRef {
   media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085); absent for every other kind. */
   region?: RegionFacts
+  /** A file field's own facts (#424): its `accept` and `multiple`; absent for every other ref. */
+  fileField?: FileFieldFacts
   /** What a closed trigger opens (#388): the names of its hidden panel's controls, label-cut; absent for every other ref. */
   holds?: readonly string[]
   /** A media ref's Player Switches (#389, ADR 0080), in ref order; absent for every other ref, and for a player with none among the refs. */
@@ -474,6 +484,13 @@ function regionFactsEntry(raw: unknown): { region: RegionFacts } | Record<string
   return region !== undefined ? { region } : {}
 }
 
+/** The `fileField` entry of a collected file input (#424): its facts when they read, nothing otherwise. */
+function fileFieldEntry(raw: unknown): { fileField: FileFieldFacts } | Record<string, never> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const { accept, multiple } = raw as Record<string, unknown>
+  return typeof accept === 'string' ? { fileField: { accept, multiple: multiple === true } } : {}
+}
+
 /** The `holds` entry of a collected element (#388): the names it sent, nothing for none. */
 function holdsEntry(raw: unknown): { holds: string[] } | Record<string, never> {
   const holds = Array.isArray(raw) ? raw.filter((name): name is string => typeof name === 'string' && name !== '') : []
@@ -546,6 +563,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       ...(el.dialogOnly === true ? { dialogOnly: true as const } : {}),
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
+      ...fileFieldEntry(el.fileField),
       ...holdsEntry(el.holds),
       ...switchesEntry(el.switches),
       checked: nullableBoolean(el.checked),
@@ -724,6 +742,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ...(element.named === true ? { named: true as const } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.region !== undefined ? { region: element.region } : {}),
+      ...(element.fileField !== undefined ? { fileField: element.fileField } : {}),
       ...(element.holds !== undefined ? { holds: [...new Set(element.holds.map(truncateLabel))] } : {}),
       ...playerSwitchesEntry(element),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),

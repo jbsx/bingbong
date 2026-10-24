@@ -98,6 +98,9 @@ export function createPaneBrowserController(
         // always observable.
         pageEventsEnabled = true
         void wc.debugger.sendCommand('Page.enable').catch(() => {})
+        // Every file chooser is intercepted (#424): Chromium fires Page.fileChooserOpened in place of the OS dialog, which the
+        // voice cannot reach. Sent again on every attach, since a detach drops it.
+        void wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {})
       }
       return wc.debugger.sendCommand(method, params ?? undefined)
     },
@@ -107,6 +110,10 @@ export function createPaneBrowserController(
       })
     },
   }
+
+  // The chooser is intercepted from the start (#424), not from the first Command: a click the user makes before any
+  // must not open the OS dialog either. The same lazy attach the first tool call would take, just earlier.
+  void cdp.send('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {})
 
   // Auth-identity injection (ADR 0018): registered now, at construction —
   // before any navigation — so it runs ahead of page scripts on every load

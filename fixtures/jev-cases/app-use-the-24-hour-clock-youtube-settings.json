@@ -1,7 +1,7 @@
 {
   "recordedAt": 1792691884470,
   "transcript": "use the 24-hour clock",
-  "note": "#420: an acceptance line of #420, asked over the YouTube watch page of turn-mvjugmqn-1e, its recorded state with the words swapped — the settings ask, after the card's settings line; the ask rebuilt by the production card (ADR 0091 as measured)",
+  "note": "#420: an acceptance line of #420, asked over the YouTube watch page of turn-mvjugmqn-1e, its recorded state with the words swapped — the settings ask, after the card's settings line; the ask rebuilt by the production card (ADR 0091 as measured); #424: the settings line names the upload folder, and the settings ask offers its ops (measured)",
   "expect": [
     {
       "question": "action",
@@ -20,6 +20,8 @@
           "set_tts_voice_en_gb_alba_medium": "app setting: voice (the voice the app speaks in), now the default voice — set it to en_GB-alba-medium",
           "set_adblock_enabled_on": "app setting: ad blocking, now on — turn it on",
           "set_adblock_enabled_off": "app setting: ad blocking, now on — turn it off",
+          "set_shelf_folder": "app setting: upload folder (the folder an upload may take a file from, beside the downloads), now none — set it to the folder the words name, the Slot carrying it",
+          "set_shelf_folder_none": "app setting: upload folder (the folder an upload may take a file from, beside the downloads), now none — clear it, so an upload takes files from the downloads alone",
           "set_appearance_system": "app setting: appearance (light or dark mode), now as this computer — set it to as this computer",
           "set_appearance_light": "app setting: appearance (light or dark mode), now as this computer — set it to light mode",
           "set_appearance_dark": "app setting: appearance (light or dark mode), now as this computer — set it to dark mode",
@@ -48,7 +50,7 @@
           "set_night_dim_enabled_off": "app setting: night dimming (the Idle Screen darkened at night), now off — turn it off",
           "set_night_dim_from": "app setting: night dimming start, now 23:00 — set it to the time of day the words carry, the Slot carrying it",
           "set_night_dim_to": "app setting: night dimming end, now 07:00 — set it to the time of day the words carry, the Slot carrying it",
-          "set_night_dim_brightness_percent": "app setting: night dimming brightness (how bright the Idle Screen stays while dimmed), now 40% (10–90%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
+          "set_night_dim_brightness_percent": "app setting: night dimming brightness (how bright the Idle Screen stays while dimmed), now 40% (0–100%) — change it: up, down or to the number the words carry, the amount Choice saying which and how far",
           "set_weather_city": "app setting: weather city, now London — set it to the place the words name, the Slot carrying it",
           "set_weather_units_metric": "app setting: weather units, now Celsius — set it to Celsius",
           "set_weather_units_imperial": "app setting: weather units, now Celsius — set it to Fahrenheit",

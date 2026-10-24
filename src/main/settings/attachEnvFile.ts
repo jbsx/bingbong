@@ -1,9 +1,19 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { parseDotEnv } from '../../core/settings/dotEnv'
 import { envEntries, isEnvKey, setEnvValue, type EnvFileView } from '../../core/settings/envEntries'
 import { SETTINGS_IPC } from '../../core/settings/ipcChannels'
 import { reportFault } from '../../core/trace/fault'
+
+/** The Settings page's folder picker (#424): the app's own dialog over its window, answering the folder picked or ''. */
+export function registerFolderPickerIpc(): void {
+  ipcMain.handle(SETTINGS_IPC.pickFolder, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = { title: 'Upload folder', properties: ['openDirectory'] }
+    const picked = win === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(win, options)
+    return picked.canceled ? '' : (picked.filePaths[0] ?? '')
+  })
+}
 
 // Glue between the Settings page's Environment section and the `.env` (#76).
 // The edit itself is core/settings/envEntries (unit-tested); this file reads,

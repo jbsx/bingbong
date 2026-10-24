@@ -3,7 +3,7 @@
   "recordedAt": 1792691884470,
   "model": "decision-models/baseten-mammoth-27b-latest",
   "transcript": "Hide the Activity Panel.",
-  "note": "#420: a ledger line #420 claims, asked over the YouTube watch page it was said on; the ask rebuilt by the production card (ADR 0091 as measured)",
+  "note": "#420: a ledger line #420 claims, asked over the YouTube watch page it was said on; the ask rebuilt by the production card (ADR 0091 as measured); #424: the settings line names the upload folder, and the settings ask offers its ops (measured)",
   "expect": [
     {
       "question": "action",
@@ -144,7 +144,7 @@
           "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
           "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards"
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
         }
       },
       "slot": {

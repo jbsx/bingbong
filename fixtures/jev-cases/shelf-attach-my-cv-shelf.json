@@ -1,0 +1,26 @@
+{
+  "recordedAt": 1792900000000,
+  "transcript": "attach my CV",
+  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the Shelf ask — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured)",
+  "expect": [
+    {
+      "question": "file",
+      "label": "none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"attach my CV\"\nPage: https://careers.example.com/jobs/4410/apply — \"Apply: Senior Data Analyst — Example Careers\"\nThe page opened its file chooser for its file field \"CV / résumé\" accepts \".pdf,.doc,.docx\": the file chosen is set on the field, and nothing is sent.",
+    "questions": {
+      "file": {
+        "type": "choice",
+        "instructions": "Which file on the shelf do the user's words mean to upload? Choose none when no file here is what the words mean.",
+        "options": {
+          "file-1": "upload \"holiday-beach.jpg\", an hour old, 2.1 MB",
+          "file-2": "upload \"invoice-ACME-0423.pdf\", 3 hours old, 84 KB",
+          "file-3": "upload \"screenshot-2.png\", 5 hours old, 391 KB",
+          "none": "no file on the shelf is what the words mean"
+        }
+      }
+    }
+  }
+}

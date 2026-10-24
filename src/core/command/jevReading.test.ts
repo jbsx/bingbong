@@ -1672,6 +1672,33 @@ describe('the Hearing on the card (#396, ADR 0077 as amended)', () => {
   })
 })
 
+describe('a file field (#424): its kind, accept and multiple on its line, by kind on every site', () => {
+  const UPLOAD_PAGE: CommandPage = {
+    url: 'https://jobs.example/apply',
+    title: 'Apply',
+    refs: [
+      { ref: 1, kind: 'input', label: 'Your CV', href: null, inputType: 'file', fileField: { accept: '.pdf,.docx', multiple: false } },
+      { ref: 2, kind: 'input', label: 'Photos', href: null, inputType: 'file', fileField: { accept: '', multiple: true } },
+      { ref: 3, kind: 'button', label: 'Send application', href: null, inputType: null },
+    ],
+  }
+
+  it('names a file input a file field, with what it accepts and whether it takes several', () => {
+    expect(commandState('upload my cv', UPLOAD_PAGE).split('\n').filter((line) => line.startsWith('['))).toEqual([
+      '[1] file field "Your CV" accepts ".pdf,.docx"',
+      '[2] file field "Photos" takes several files',
+      '[3] button "Send application"',
+    ])
+  })
+
+  it('offers a file field its click, never a type', () => {
+    const { options } = commandQuestions('upload my cv', UPLOAD_PAGE).action
+    expect(options['click-1']).toContain('[1] file field "Your CV"')
+    expect(options).not.toHaveProperty('type-1')
+    expect(options).not.toHaveProperty('type-2')
+  })
+})
+
 describe('a search box (#398): its kind on its line, and searching it one op on the card, beside type', () => {
   const SEARCH_PAGE: CommandPage = {
     url: 'https://www.youtube.com/watch?v=abc',

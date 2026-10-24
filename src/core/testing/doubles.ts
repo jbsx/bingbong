@@ -6,6 +6,7 @@ import type {
   MarkedScreenshot,
   BrowserController,
   BrowserState,
+  FileChooser,
   KeyPress,
   MediaState,
   ScreenshotOptions,
@@ -203,8 +204,26 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return null
   }
 
+  /** The file chooser a click on each ref opens (#424): a file field's own, or a site button's hidden one. */
+  readonly choosers = new Map<number, FileChooser>()
+  /** The chooser open now, until a take. */
+  private openChooser: FileChooser | null = null
+  /** Every file set on a chooser's field (#424), in order. */
+  readonly attached: { chooser: FileChooser; paths: readonly string[] }[] = []
+
+  async takeFileChooser(): Promise<FileChooser | null> {
+    const taken = this.openChooser
+    this.openChooser = null
+    return taken
+  }
+
+  async attachFiles(chooser: FileChooser, paths: readonly string[]): Promise<void> {
+    this.attached.push({ chooser, paths })
+  }
+
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
+    this.openChooser = this.choosers.get(ref) ?? this.openChooser
     const blocked = this.blockedAt(ref)
     if (blocked !== null) return blockedActionHead('click', ref, blocked)
     return `${clickFlagsHead(ref, false, false)}${NO_OBSERVABLE_CHANGE}`

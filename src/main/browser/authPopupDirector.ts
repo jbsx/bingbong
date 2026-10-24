@@ -114,6 +114,13 @@ export function createAuthPopupDirector(
         groundingSnapshot: () => target(base).groundingSnapshot(),
         refAtPoint: (point) => target(base).refAtPoint(point),
         showRef: (ref) => target(base).showRef(ref),
+        // A sign-in popup's chooser is its own (#424): taken from the page the action went to.
+        takeFileChooser: async () => (await target(base).takeFileChooser?.()) ?? null,
+        attachFiles: async (chooser, paths) => {
+          const controller = target(base)
+          if (controller.attachFiles === undefined) throw new Error('no file chooser on this page')
+          await controller.attachFiles(chooser, paths)
+        },
       }
     },
   }

@@ -1,5 +1,5 @@
 import type { KeyPress, PageLanding } from '../ports/browser'
-import type { DecisionUnavailableReason } from '../ports/decisionModel'
+import type { DecisionChoiceAnswer, DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
 import type { MusicAction } from '../music/musicWords'
 import type { MediaOpAction } from './mediaOp'
@@ -122,6 +122,13 @@ export interface DecisionRecord {
   readonly whereAsk?: true
   /** The Mark Ask's reading (#382, ADR 0084): the Where Ask read `none` over a Textless Ref, and this is the card asked again with the marked page, its own record beside the other two. */
   readonly markAsk?: true
+  /**
+   * The action opened the page's file chooser (#424, ADR 0092): the file the
+   * Shelf ask set on it, null for none; how many files that ask offered; and
+   * its ask id and Jev's answer, absent when the Shelf was empty or no
+   * model was configured. The Task ends here: nothing is sent.
+   */
+  readonly upload?: UploadDetail
   /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
   readonly error?: string
   /**
@@ -132,6 +139,28 @@ export interface DecisionRecord {
    * reading.
    */
   readonly split?: { readonly ask: string; readonly jev: JevDetail; readonly steps: readonly string[]; readonly line?: string }
+}
+
+/** An upload as the record keeps it (#424). */
+export interface UploadDetail {
+  readonly file: string | null
+  readonly shelf: number
+  readonly ask?: string
+  readonly jev?: ShelfJevDetail | JevUnavailable
+}
+
+/** Jev's answer to the Shelf ask (#424): its confidence and the file options' top probabilities. */
+export interface ShelfJevDetail {
+  readonly model: string
+  readonly latencyMs: number
+  readonly inputTokens?: number
+  readonly confidence: number
+  readonly probabilities: Readonly<Record<string, number>>
+}
+
+/** The Shelf ask's answer as the record keeps it (#424). */
+export function shelfJevDetailOf(answer: DecisionChoiceAnswer, latencyMs: number, model: string, inputTokens?: number): ShelfJevDetail {
+  return { model, latencyMs, ...(inputTokens !== undefined ? { inputTokens } : {}), confidence: answer.confidence, probabilities: topProbabilities(answer.probabilities, KEPT_PROBABILITIES) }
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */

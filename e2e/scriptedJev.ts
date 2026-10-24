@@ -17,6 +17,8 @@ interface Reading {
   readonly outcome?: 'yes' | 'in_the_way' | 'not_yet'
   /** A hop past the first: the Progress Noul (#373), the probability the last action brought the page closer. */
   readonly progress?: number
+  /** The Shelf ask's pick (#424): `file-N`, or `none`. */
+  readonly file?: string
 }
 
 /** What a hop's reading adds to the Command's: the Verdict and the Progress Noul. */
@@ -25,7 +27,7 @@ type HopReading = Pick<Reading, 'outcome' | 'progress'>
 const choice = (label: string) => ({ type: 'choice', choice: label, confidence: 0.9 })
 
 /** A line's reading: `play <words>` and `queue <words>` the Appliance Verb with the words past the first as the Slot. */
-export function readingOf(line: string, action?: string, more: { readonly amount?: string } & HopReading = {}): Reading {
+export function readingOf(line: string, action?: string, more: { readonly amount?: string; readonly file?: string } & HopReading = {}): Reading {
   const words = line.trim().split(/\s+/)
   const head = words[0]!.toLowerCase()
   if (action === undefined && (head === 'play' || head === 'queue')) return { line, action: head, slot: `s1-${words.length - 1}`, ...more }
@@ -72,6 +74,7 @@ export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRI
       steps: choice('none'),
       ...(reading.outcome !== undefined ? { outcome: choice(reading.outcome) } : {}),
       ...(reading.progress !== undefined ? { progress: { type: 'noul', noul: reading.progress } } : {}),
+      ...(reading.file !== undefined ? { file: choice(reading.file) } : {}),
     },
   }))
   return { BINGBONG_DECISION_SCRIPT: JSON.stringify(entries) }

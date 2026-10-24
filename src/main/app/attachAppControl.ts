@@ -6,6 +6,7 @@ import type { FeedPanelState } from '../../core/panel/feedPanelState'
 import { voiceIdsFromFiles } from '../../core/tts/piperVoices'
 import { searchPlaces } from '../../core/weather/weather'
 import { reportFault } from '../../core/trace/fault'
+import { findFolder } from '../shelf/readShelf'
 import type { AppControl } from '../run/commandRunner'
 import type { FeedPanelOverlay } from '../panel/createFeedPanelOverlay'
 import type { SettingsStore } from '../settings/settingsStore'
@@ -69,6 +70,7 @@ export function attachAppControl(win: BrowserWindow, deps: AppControlDeps): { co
     async findPlace(words: string): Promise<PickedPlace | null> {
       return (await searchPlaces(fetchJson, words))[0] ?? null
     },
+    findFolder: (words: string) => findFolder(words),
   }
   return { control, detach: () => ipcMain.removeListener(APP_VIEW_IPC.shown, onShown) }
 }

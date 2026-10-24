@@ -1,5 +1,5 @@
 import type { KeyPress } from '../ports/browser'
-import type { MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
+import type { FileFieldFacts, MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
@@ -137,6 +137,8 @@ export interface CommandRef {
   readonly media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085): its line's position and length, and what a Scroll Op moved; absent for every other kind. */
   readonly region?: RegionFacts
+  /** A file field's own facts (#424): its line's `accepts` and `takes several files`; absent for every other ref. */
+  readonly fileField?: FileFieldFacts
   /** What a closed trigger opens (#388): the names of its hidden panel's controls, its line's "menu holds"; absent for every other ref. */
   readonly holds?: readonly string[]
   /** A media ref's Player Switches (#389, ADR 0080): each by its ref, label and on or off; absent for every other ref. */
@@ -185,7 +187,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}), ...searchFactsOf(ref) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.fileField !== undefined ? { fileField: ref.fileField } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}), ...searchFactsOf(ref) }
 }
 
 /** A search box's facts and a search form's submit (#398), off the collect's own: the box's kind and what it holds, the submit's kind. */

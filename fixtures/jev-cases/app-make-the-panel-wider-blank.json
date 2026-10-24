@@ -1,7 +1,7 @@
 {
   "recordedAt": 1792771645931,
   "transcript": "make the panel wider",
-  "note": "#420: an acceptance line of #420, asked over a blank pane; the ask rebuilt by the production card (ADR 0091 as measured)",
+  "note": "#420: an acceptance line of #420, asked over a blank pane; the ask rebuilt by the production card (ADR 0091 as measured); #424: the settings line names the upload folder, and the settings ask offers its ops (measured)",
   "expect": [
     {
       "question": "action",
@@ -39,7 +39,7 @@
           "say_playing": "appliance: say the song playing — nothing playing",
           "say_timer": "appliance: say how long is left on the timer — no timer set",
           "resume": "reopen the last page the screen showed: \"BBC News - Home\"",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards",
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
           "panel_open": "app: open the activity panel, the feed of what was said and done — now open, overlay, 536 px wide",
           "panel_close": "app: close the activity panel, hiding it — now open, overlay, 536 px wide",
           "panel_overlay": "app: float the activity panel over the page — now open, overlay, 536 px wide",

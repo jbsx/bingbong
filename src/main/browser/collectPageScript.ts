@@ -840,6 +840,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
       // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
       ...(tag === 'VIDEO' || tag === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
+      // A file field's own facts (#424): what its line says it accepts, and whether it takes several.
+      ...(tag === 'INPUT' && el.type === 'file' ? { fileField: { accept: (el.getAttribute('accept') || '').slice(0, 160), multiple: el.multiple === true } } : {}),
       // What a closed trigger opens (#388): its line's "menu holds".
       ...(held.length > 0 ? { holds: held } : {}),
       // Taken by a frame for the dialog layer alone (#414): the page merge keeps it only there.

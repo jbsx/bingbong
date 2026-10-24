@@ -1,0 +1,28 @@
+{
+  "recordedAt": 1792900000000,
+  "transcript": "upload the invoice I downloaded",
+  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the Shelf ask — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured)",
+  "expect": [
+    {
+      "question": "file",
+      "label": "file-2"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"upload the invoice I downloaded\"\nPage: https://expenses.example.com/claims/new — \"New expense claim — Expenses\"\nThe page opened its file chooser for its file field \"Receipt\" accepts \".pdf,.jpg,.jpeg,.png\": the file chosen is set on the field, and nothing is sent.",
+    "questions": {
+      "file": {
+        "type": "choice",
+        "instructions": "Which file on the shelf do the user's words mean to upload? Choose none when no file here is what the words mean.",
+        "options": {
+          "file-1": "upload \"screenshot-2026-10-24-09-12.png\", 18 minutes old, 402 KB",
+          "file-2": "upload \"invoice-ACME-0423.pdf\", 2 hours old, 84 KB",
+          "file-3": "upload \"bank-statement-september.pdf\", a day old, 234 KB",
+          "file-4": "upload \"lecture-notes.txt\", 2 days old, 9 KB",
+          "file-5": "upload \"song.mp3\", 3 days old, 3.9 MB",
+          "none": "no file on the shelf is what the words mean"
+        }
+      }
+    }
+  }
+}

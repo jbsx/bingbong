@@ -1013,6 +1013,31 @@ export function SettingsPage({
           <p className="settings-note">
             How large webpages render in the browser pane — applied on every page load. Manual zoom resets on the next navigation.
           </p>
+          <Field label="Upload folder">
+            <input
+              type="text"
+              value={draft.shelfFolder}
+              placeholder="None — the downloads alone"
+              aria-label="Upload folder"
+              onChange={(event) => setDraft({ ...draft, shelfFolder: event.target.value })}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void window.bingbong.settings
+                  .pickFolder()
+                  .then((folder) => {
+                    if (folder !== '') setDraft({ ...draft, shelfFolder: folder })
+                  })
+                  .catch(() => {})
+              }}
+            >
+              Choose…
+            </button>
+          </Field>
+          <p className="settings-note">
+            An upload by voice offers the files in bingbong_downloads and in this folder, never its folders below. Their names go to the decision model.
+          </p>
         </Section>
 
         <h2 className="settings-group">Idle screen</h2>

@@ -141,6 +141,8 @@ class FakeCdp implements CdpDebugger {
   /** What Page.getLayoutMetrics reports as the visual viewport (a region screenshot's frame, #195). */
   layoutMetrics = { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 }
   private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
+  /** The file field a chooser names (#424), as the field-facts read answers it; null for a node gone. */
+  fileField: { multiple: boolean; accept: string; label: string } | null = { multiple: false, accept: '', label: '' }
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
 
@@ -183,6 +185,12 @@ class FakeCdp implements CdpDebugger {
   async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
     if (method === 'Page.handleJavaScriptDialog') return {} as T
+    if (method === 'DOM.setFileInputFiles') return {} as T
+    if (method === 'DOM.resolveNode') {
+      if (this.fileField === null) throw new Error('No node with given id found')
+      return { object: { type: 'object', objectId: 'file-field' } } as T
+    }
+    if (method === 'Runtime.callFunctionOn' && params?.objectId === 'file-field') return { result: { value: this.fileField } } as T
     if (method === 'Runtime.getProperties') {
       return { result: this.collectedElements.map((_, index) => ({ name: String(index), value: { type: 'object', objectId: `ref:${index}` } })) } as T
     }
@@ -2247,6 +2255,40 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
     expect(outcome).toBe('clicked [3]: not clicked — covered by an unlabelled <div>')
     expect(cdp.collectCalls()).toHaveLength(collects)
     expect(domClicks(cdp)).toHaveLength(0)
+  })
+})
+
+describe('createCdpBrowserController file choosers (#424)', () => {
+  it('holds the chooser the page opened, its field read, until one take forgets it', async () => {
+    const cdp = new FakeCdp()
+    cdp.fileField = { multiple: true, accept: 'image/*', label: 'Photos' }
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.takeFileChooser!()).toBeNull()
+    cdp.emit('Page.fileChooserOpened', { backendNodeId: 42, frameId: 'top', mode: 'selectMultiple' })
+
+    expect(await controller.takeFileChooser!()).toEqual({ node: 42, multiple: true, accept: 'image/*', label: 'Photos' })
+    expect(cdp.calls).toContainEqual({ method: 'DOM.resolveNode', params: { backendNodeId: 42 } })
+    expect(await controller.takeFileChooser!()).toBeNull()
+  })
+
+  it('reads the chooser\'s mode alone when its field is gone', async () => {
+    const cdp = new FakeCdp()
+    cdp.fileField = null
+    const { controller } = makeController({ cdp })
+    cdp.emit('Page.fileChooserOpened', { backendNodeId: 7, frameId: 'top', mode: 'selectSingle' })
+
+    expect(await controller.takeFileChooser!()).toEqual({ node: 7, multiple: false, accept: '', label: '' })
+  })
+
+  it('sets the files on the field by its node, and nothing else is sent', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+    const before = cdp.calls.length
+
+    await controller.attachFiles!({ node: 42, multiple: false, accept: '', label: '' }, ['/shelf/invoice.pdf'])
+
+    expect(cdp.calls.slice(before)).toEqual([{ method: 'DOM.setFileInputFiles', params: { files: ['/shelf/invoice.pdf'], backendNodeId: 42 } }])
   })
 })
 

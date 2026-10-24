@@ -1,6 +1,7 @@
 import type {
   BrowserController,
   BrowserState,
+  FileChooser,
   KeyPress,
   MarkedScreenshot,
   MediaState,
@@ -305,6 +306,14 @@ export interface CdpBrowserControllerDeps {
    */
   drawMarks?: (png: Uint8Array, marks: readonly Mark[], cell: number) => Uint8Array | null
 }
+
+/** A file input's facts, called on its node (#424): whether it takes several files, its `accept`, and its name as the page gives it. */
+const FILE_FIELD_FACTS = `function () {
+  /* FILE_FIELD */
+  const labels = this.labels ? Array.from(this.labels).map((label) => label.textContent || '') : []
+  const name = [...labels, this.getAttribute('aria-label') || '', this.title || '', this.name || ''].map((part) => part.replace(/\\s+/g, ' ').trim()).find((part) => part !== '') || ''
+  return { multiple: this.multiple === true, accept: this.getAttribute('accept') || '', label: name.slice(0, 80) }
+}`
 
 interface EvaluateResponse {
   result?: { value?: unknown }
@@ -709,6 +718,38 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     void handleDialog(false)
   })
   cdp.on?.('Page.javascriptDialogClosed', () => deps.siteQuestions?.closed())
+
+  // File choosers (#424): the pane intercepts every one, so the OS dialog
+  // never opens; the last the page opened waits here for the runner's take.
+  let openedChooser: { node: number; multiple: boolean } | null = null
+  cdp.on?.('Page.fileChooserOpened', (params) => {
+    const { backendNodeId, mode } = (params ?? {}) as { backendNodeId?: unknown; mode?: unknown }
+    if (typeof backendNodeId === 'number') openedChooser = { node: backendNodeId, multiple: mode === 'selectMultiple' }
+  })
+
+  async function takeFileChooser(): Promise<FileChooser | null> {
+    const opened = openedChooser
+    openedChooser = null
+    if (opened === null) return null
+    const facts = await fileFieldFacts(opened.node).catch(() => null)
+    return { node: opened.node, multiple: facts?.multiple ?? opened.multiple, accept: facts?.accept ?? '', label: facts?.label ?? '' }
+  }
+
+  /** The file field's own facts, read on its node: null for a node gone. */
+  async function fileFieldFacts(node: number): Promise<{ multiple: boolean; accept: string; label: string } | null> {
+    const resolved = await cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', { backendNodeId: node })
+    const objectId = resolved.object?.objectId
+    if (objectId === undefined) return null
+    const read = await cdp.send<EvaluateResponse>('Runtime.callFunctionOn', { objectId, functionDeclaration: FILE_FIELD_FACTS, returnByValue: true })
+    void cdp.send('Runtime.releaseObject', { objectId }).catch(() => {})
+    const value = read.result?.value as { multiple?: unknown; accept?: unknown; label?: unknown } | null | undefined
+    if (value === null || value === undefined) return null
+    return { multiple: value.multiple === true, accept: typeof value.accept === 'string' ? value.accept : '', label: typeof value.label === 'string' ? value.label : '' }
+  }
+
+  async function attachFiles(chooser: FileChooser, paths: readonly string[]): Promise<void> {
+    await cdp.send('DOM.setFileInputFiles', { files: [...paths], backendNodeId: chooser.node })
+  }
 
   // The opens a click judged and denied (#299), waiting for the outcome
   // line that reports them.
@@ -2641,5 +2682,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     groundingSnapshot,
     refAtPoint,
     showRef,
+    takeFileChooser,
+    attachFiles,
   }
 }

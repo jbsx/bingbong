@@ -218,7 +218,9 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
   // What a search box holds rides its line (#398): stale words in the box are what a type used to append to.
   const words = ref.searchBox !== undefined && ref.searchBox.holds !== '' ? ` holds ${JSON.stringify(ref.searchBox.holds)}` : ''
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${states}${holds}${media}${switches}${region}`
+  // A file field's accept and multiple ride its line (#424): facts of the field, as a media ref's state is (ADR 0080).
+  const file = ref.fileField !== undefined ? `${ref.fileField.accept !== '' ? ` accepts ${JSON.stringify(ref.fileField.accept)}` : ''}${ref.fileField.multiple ? ' takes several files' : ''}` : ''
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${file}${states}${holds}${media}${switches}${region}`
 }
 
 /**
@@ -229,6 +231,7 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
  */
 function kindOf(ref: CommandRef): string {
   if (ref.searchBox !== undefined) return 'searchbox'
+  if (ref.fileField !== undefined) return 'file field'
   if (ref.submitsSearch === true) return 'button[submit]'
   return ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
 }

@@ -1,4 +1,6 @@
-import type { BrowserController, PageLanding, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
+import type { ShelfFile } from '../../core/shelf/shelf'
+import { fitShelfAsk, readShelfAnswer } from '../../core/command/shelfAsk'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import { askImageFile, type AskKind } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
@@ -58,6 +60,8 @@ import {
   MISFIRE_WINDOW_MS,
   jevDetailOf,
   jevUnavailableOf,
+  shelfJevDetailOf,
+  type UploadDetail,
   misfireSignal,
   type CommandLogRecord,
   type CommandReading,
@@ -77,7 +81,7 @@ import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
-import { appAnswer, appChangeOf, appWords, placeName, placeSettings, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
+import { appAnswer, appChangeOf, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
 import { SITE_ANSWERS, alertLine, exactSiteAnswer, readSiteAnswer, siteQuestionAsk, siteQuestionLine, type SiteAnswer, type SiteQuestion } from '../../core/command/siteQuestion'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
@@ -214,9 +218,11 @@ export interface CommandTerms {
 export interface AppControl {
   state(): AppState
   /** Makes the change — the panel's, the view's, the settings' — and resolves the app as it is after it. */
-  apply(change: Exclude<AppChange, { kind: 'place' }>): Promise<AppState>
+  apply(change: Exclude<AppChange, { kind: 'place' | 'folder' }>): Promise<AppState>
   /** The geocoder's first match for spoken words (ADR 0091's guess); null for none. */
   findPlace(words: string): Promise<PickedPlace | null>
+  /** The folder spoken words name (#424), among the home folder's own, or a path as written; null for none. */
+  findFolder(words: string): Promise<string | null>
 }
 
 export interface CommandRunnerDeps {
@@ -263,6 +269,8 @@ export interface CommandRunnerDeps {
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
   app?: AppControl
+  /** The Shelf (#424, ADR 0092): the files an upload may be offered, newest first; absent, a chooser the page opens sets nothing. */
+  shelf?: { files(): Promise<readonly ShelfFile[]> }
   /** The Flag keeper (#421); absent, a flag is logged and nothing is copied. */
   flags?: FlagKeeper
   /** Where the page's own question waits (#423): said when it opens, answered by the next line; absent, no line is read as an answer. */
@@ -321,6 +329,9 @@ const PREPARED_MAX_AGE_MS = 30_000
  */
 const RETRY_CHAIN_WINDOW_MS = 60_000
 
+/** The verbs whose action can open the page's file chooser (#424): a click on a field or a site's button, a key on a focused field. */
+const OPENS_CHOOSER: ReadonlySet<Command['verb']> = new Set(['click', 'press'])
+
 /** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
 const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'menu', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
 
@@ -365,6 +376,8 @@ interface FireResult {
   readonly pick?: PickSource
   /** The action threw: its message, for the record (post mortem 2026-10-19). */
   readonly error?: string
+  /** The action opened the page's file chooser (#424): what the Shelf ask set on it. The Task ends on it. */
+  readonly upload?: UploadDetail
   /**
    * The landing's title or body reads as a wall or a dead end (ADR 0089):
    * only suspected, so the Task goes on to the Verdict, and this class's
@@ -1090,6 +1103,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const before = deps.app.state()
         const change = appChangeOf(command.app, before)
         if (change === null) throw new Error('the words carry no value for it')
+        if (change.kind === 'folder') {
+          const folder = await deps.app.findFolder(change.words)
+          if (folder === null) throw new Error(`no folder found for ${JSON.stringify(change.words)}`)
+          return appAnswer(command.app, before, await deps.app.apply({ kind: 'settings', settings: withSetting(before.settings, change.path, folder) }))
+        }
         if (change.kind !== 'place') return appAnswer(command.app, before, await deps.app.apply(change))
         const place = await deps.app.findPlace(change.words)
         if (place === null) throw new Error(`no place found for ${JSON.stringify(change.words)}`)
@@ -1273,9 +1291,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let unchanged = false
     /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
     let played: PlayerOutcome | null = null
+    /** What the Shelf ask set on the chooser the action opened (#424). */
+    let uploaded: UploadDetail | null = null
     let suspect: FireResult['suspect'] | null = null
     const ended = (outcome: FireOutcome): FireResult => ({
       outcome,
+      ...(uploaded !== null ? { upload: uploaded } : {}),
       ...(suspect !== null ? { suspect } : {}),
       ...(landing !== undefined ? { landing } : {}),
       ...(unchanged && landing === undefined ? { unchanged: true } : {}),
@@ -1285,7 +1306,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // An action on the pop-up itself (#417): whether it is still open is read from the page after it, whatever its own outcome.
     const onPopup = command.dismiss === true || actsOnDialog(command, page)
     try {
+      // A chooser the page opened before this action is not its own (#424): dropped, never answered by this line.
+      if (OPENS_CHOOSER.has(command.verb)) await browser.takeFileChooser?.()
       const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
+      if (!current()) return ended('superseded')
+      const chooser = OPENS_CHOOSER.has(command.verb) ? ((await browser.takeFileChooser?.()) ?? null) : null
+      if (chooser !== null) uploaded = await upload(turnId, text, chooser)
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
@@ -1306,6 +1332,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice.
         answer(turnId, result)
         if (deps.speech !== undefined) void say(deps.speech, turnId, result)
+      } else if (uploaded !== null) {
+        // An upload's Answer (#424): the file set, said; or that none was, a failure. Nothing is sent.
+        if (uploaded.file === null) {
+          answerFailure(turnId, SPOKEN_FAILURES.noShelfFile)
+          outcome = 'wall'
+        } else {
+          const said = `Attached ${uploaded.file}.`
+          answer(turnId, said)
+          if (deps.speech !== undefined) void say(deps.speech, turnId, said)
+        }
       } else if (played !== null) {
         // The Player's own Answer (#343): what it played, queued or did to the element — or, marked a failure, why it could not.
         const outcomeOfPlay: PlayerOutcome = played
@@ -1381,6 +1417,37 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       releaseLanding?.()
       reacting.settled()
     }
+  }
+
+  /**
+   * The Shelf ask (#424, ADR 0092): the action opened the page's file
+   * chooser, intercepted, and Jev is asked which file on the Shelf the
+   * words mean — the Shelf cut to the Card Budget, the oldest first. Its
+   * pick is set on the field, and nothing is sent; an empty Shelf, no
+   * model, no answer or `none` sets nothing.
+   */
+  async function upload(turnId: string, text: string, chooser: FileChooser): Promise<UploadDetail> {
+    const files = await (deps.shelf?.files() ?? Promise.resolve([])).catch((error: unknown) => {
+      reportFault('run.commandRunner.shelf', error, { turnId })
+      return []
+    })
+    const model = deps.decisionModel()
+    if (files.length === 0 || model === null) return { file: null, shelf: files.length }
+    const state = browser.state()
+    const ask = fitShelfAsk(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS), text, { url: state.url ?? '', title: state.title ?? '' }, chooser, files, at())
+    const result = await askJev(model, 'shelf', turnId, ask.state, ask.questions, `${turnId}-shelf`)
+    if (result.status !== 'answered') return { file: null, shelf: ask.files.length, ask: result.askId, jev: jevUnavailableOf(result) }
+    const file = readShelfAnswer(result.answers.file, ask.files)
+    const asked = { shelf: ask.files.length, ask: result.askId, jev: shelfJevDetailOf(result.answers.file, result.latencyMs, result.model, result.inputTokens) }
+    if (file === null) return { file: null, ...asked }
+    try {
+      if (browser.attachFiles === undefined) throw new Error('no file chooser on this surface')
+      await browser.attachFiles(chooser, [file.path])
+    } catch (error) {
+      reportFault('run.commandRunner.attachFiles', error, { turnId })
+      return { file: null, ...asked }
+    }
+    return { file: file.name, ...asked }
   }
 
   /**
@@ -1654,8 +1721,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * `stepAside`: a Step Aside's dismissal (#354), which the next hop's
    * Progress Noul does not judge (#373).
    */
-  function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult, stepAside = false): TaskEnded | null {
+  function settleHop(task: Task, record: DecisionRecord, readEnding: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult, stepAside = false): TaskEnded | null {
+    // An upload ends its Task (#424, ADR 0092): the file is set, and the form is never the Task's to send.
+    const ending = readEnding ?? (fired.upload !== undefined ? 'terminal' : null)
     const landed = {
+      ...(fired.upload !== undefined ? { upload: fired.upload } : {}),
       ...(fired.landing !== undefined ? { landing: fired.landing } : {}),
       ...(fired.video !== undefined ? { video: fired.video } : {}),
       ...(fired.pick !== undefined ? { pick: fired.pick } : {}),

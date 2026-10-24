@@ -1486,6 +1486,31 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(interactivePage())
       return
     }
+    // An upload form (#424): a labelled PDF field, a photo field hidden behind the site's own button, and a submit
+    // that records itself. Each field echoes what the page's `change` gave it, so a test reads what the site saw.
+    if (req.url === '/upload') {
+      res.end(
+        page(`<main style="color:#fff">
+  <form id="form" onsubmit="window.__submitted = true; return false">
+    <label>Attach a document <input type="file" id="doc" accept=".pdf"></label>
+    <input type="file" id="photo" accept="image/*" style="display:none">
+    <button type="button" id="add-photo" onclick="document.getElementById('photo').click()">Add a photo</button>
+    <button type="submit">Send</button>
+  </form>
+  <p id="echo"></p>
+  <script>
+    window.__submitted = false
+    window.__changes = []
+    for (const id of ['doc', 'photo']) document.getElementById(id).addEventListener('change', (event) => {
+      const names = Array.from(event.target.files).map((file) => file.name)
+      window.__changes.push({ id, names })
+      document.getElementById('echo').textContent = id + ': ' + names.join(', ')
+    })
+  </script>
+</main>`),
+      )
+      return
+    }
     if (req.url === '/native-video') {
       res.end(nativeVideoPage([{ id: 'one', title: MEDIA_FIXTURE_TITLES.one, track: true }]))
       return

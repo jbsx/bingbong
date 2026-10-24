@@ -13,4 +13,6 @@ export const SETTINGS_IPC = {
   hostChecks: 'settings:hostChecks',
   /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
   monitors: 'settings:monitors',
+  /** The Shelf folder's picker (#424): the app's own folder dialog, a mouse control — never the pane's chooser. */
+  pickFolder: 'settings:pickFolder',
 } as const

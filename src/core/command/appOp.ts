@@ -145,6 +145,8 @@ function valueNow(leaf: Leaf): string {
       return `${String(value)}${kind.unit} (${kind.min}–${kind.max}${kind.unit})`
     case 'place':
       return value === '' ? 'found from the network' : String(value)
+    case 'folder':
+      return value === '' ? 'none' : String(value)
     case 'members':
       return ''
     default:
@@ -173,6 +175,11 @@ function opsOfSetting(leaf: Leaf, voices: readonly string[]): AppOption[] {
       return [{ label: base, line: `${head} — set it to the place the words name, the Slot carrying it`, op: { kind: 'words', path } }]
     case 'time':
       return [{ label: base, line: `${head} — set it to the time of day the words carry, the Slot carrying it`, op: { kind: 'words', path } }]
+    case 'folder':
+      return [
+        { label: base, line: `${head} — set it to the folder the words name, the Slot carrying it`, op: { kind: 'words', path } },
+        { label: `${base}_none`, line: `${head} — clear it, so an upload takes files from the downloads alone`, op: { kind: 'set', path, value: '' } },
+      ]
     case 'members': {
       const shown = Array.isArray(leaf.value) ? leaf.value : []
       return kind.members.flatMap(({ value, named }) => {
@@ -213,12 +220,17 @@ export const SETTINGS_LABEL = 'settings'
  * The settings' one line on the action card, worded as it was measured
  * (gate 2026-10-24, Mammoth ∩ Elephant): the same line generated from every
  * setting's name — with its hint, or the name alone — lost two cases that
- * passed before on Elephant and read a setting line as none. A setting
+ * passed before on Elephant and read a setting line as none.
+ * The upload folder (#424) is named on it, as measured (gate 2026-10-24,
+ * Mammoth ∩ Elephant): left off, "set the upload folder to documents"
+ * read none on both models over YouTube and on Elephant over a blank
+ * pane; named, both read the settings line, and none of the 29 cases that
+ * carry it was lost. A setting
  * added to `AppSettings` needs no word here: its ops are on the settings
  * ask's card, generated, and it is "one of the app's settings".
  */
 const SETTINGS_LINE =
-  "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards"
+  "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
 
 /**
  * The app's options on the action card (#420, ADR 0091): the panel's, the
@@ -261,6 +273,8 @@ export type AppChange =
   | { readonly kind: 'view'; readonly view: AppView; readonly section?: string }
   | { readonly kind: 'settings'; readonly settings: AppSettings }
   | { readonly kind: 'place'; readonly path: SettingPath; readonly words: string }
+  /** A folder to look up (#424) among the home folder's own. */
+  | { readonly kind: 'folder'; readonly path: SettingPath; readonly words: string }
 
 /** The panel's width with no bound of its own here: main clamps it to its share of the window, as every width writer does. */
 const PANEL_WIDTH_UNBOUNDED = Number.MAX_SAFE_INTEGER
@@ -316,6 +330,51 @@ export function placeSettings(state: AppState, path: SettingPath, place: PickedP
   return group.length === 0 ? (next as unknown as AppSettings) : withSetting(state.settings, group, next)
 }
 
+/** The words a spoken folder is said with that name no folder: "my documents folder" is Documents. */
+const FOLDER_FILLER: ReadonlySet<string> = new Set(['my', 'the', 'a', 'folder', 'directory', 'in', 'inside', 'under', 'of', 'from'])
+
+/** A name's words, lower case, the filler aside. */
+const folderWords = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '' && !FOLDER_FILLER.has(word))
+
+/**
+ * The folder spoken words name (#424), among the home folder's own: one
+ * whose path below home is a run of those words, else one whose own name
+ * is — the longest run first, so a Slot that holds the setting's own words
+ * too ("upload folder to documents", as Elephant read it on the gate) still
+ * finds Documents; at each, the shallowest folder, and only when no other
+ * at its depth is too. Null for none, or a name two share; a lookup by
+ * name, as the weather city's is by the geocoder, never a guess.
+ */
+export function folderOfWords(words: string, home: string, folders: readonly string[]): string | null {
+  const said = folderWords(words)
+  for (let length = said.length; length > 0; length--) {
+    for (let start = 0; start + length <= said.length; start++) {
+      const found = folderOfRun(said.slice(start, start + length), home, folders)
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
+/** The one folder these words name: by its path below home, else by its own name. */
+function folderOfRun(said: readonly string[], home: string, folders: readonly string[]): string | null {
+  const same = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ')
+  const below = (folder: string): string[] => folder.slice(home.length).split('/').filter((part) => part !== '')
+  const pick = (matches: (folder: string) => boolean): string | null => {
+    const found = folders.filter(matches)
+    const depth = Math.min(...found.map((folder) => below(folder).length))
+    const shallowest = found.filter((folder) => below(folder).length === depth)
+    return shallowest.length === 1 ? shallowest[0]! : null
+  }
+  const inHome = folders.filter((folder) => folder.startsWith(`${home}/`))
+  const byPath = pick((folder) => inHome.includes(folder) && same(below(folder).flatMap(folderWords), said))
+  return byPath ?? pick((folder) => inHome.includes(folder) && same(folderWords(below(folder).at(-1) ?? ''), said))
+}
+
 /** A picked place as its Answer names it: `Paris, Île-de-France, France`. */
 export const placeName = (place: PickedPlace): string => (place.where === '' ? place.name : `${place.name}, ${place.where}`)
 
@@ -351,6 +410,7 @@ export function appChangeOf(action: AppOpAction, state: AppState, kinds: Setting
     case 'words': {
       const kind = kindAt(action.path, state.settings, kinds)
       if (kind?.kind === 'place') return words.trim() === '' ? null : { kind: 'place', path: action.path, words: words.trim() }
+      if (kind?.kind === 'folder') return words.trim() === '' ? null : { kind: 'folder', path: action.path, words: words.trim() }
       const time = kind?.kind === 'time' ? timeOfDayIn(words) : null
       return time === null ? null : { kind: 'settings', settings: withSetting(state.settings, action.path, time) }
     }
@@ -394,7 +454,14 @@ export function appAnswer(action: AppOpAction, before: AppState, after: AppState
       // A spoken place names the one the geocoder picked, region and country too (ADR 0091's guess: its first match).
       if (kind.kind === 'place' && placed !== undefined) return `${capital(kind.name)} set to ${placed}.`
       if (kind.kind === 'switch') return `${capital(kind.name)} turned ${now === true ? 'on' : 'off'}.${already(same)}`
-      const value = kind.kind === 'amount' ? `${String(now)}${kind.unit === '%' ? ' percent' : ` ${kind.unit}`}` : kind.kind === 'place' && now === '' ? 'the network\'s own place' : namedValue(kind, now)
+      const value =
+        kind.kind === 'amount'
+          ? `${String(now)}${kind.unit === '%' ? ' percent' : ` ${kind.unit}`}`
+          : kind.kind === 'place' && now === ''
+            ? 'the network\'s own place'
+            : kind.kind === 'folder' && now === ''
+              ? 'none'
+              : namedValue(kind, now)
       return `${capital(kind.name)} set to ${value}.${already(same)}`
     }
   }

@@ -72,6 +72,8 @@ export interface AppSettings {
   sttEngine: SttModel
   /** Kill switch for the embedder-level adblocker (issue #21). */
   adblockEnabled: boolean
+  /** The Shelf's second folder (#424): an upload may take a file from it, beside bingbong_downloads; '' for none. Read flat. */
+  shelfFolder: string
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
   /** The clock every time of day on the Idle Screen and the Weight page is written on (core/idle/timeFormat): the locale's, 12-hour or 24-hour. */
@@ -125,6 +127,7 @@ export function defaultSettings(): AppSettings {
     ttsVoice: '',
     sttEngine: 'parakeet',
     adblockEnabled: true,
+    shelfFolder: '',
     appearance: 'system',
     timeFormat: 'system',
     clockSeconds: false,
@@ -271,6 +274,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     sttEngine: savedSttEngine(record),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
+    shelfFolder: asString(record.shelfFolder, defaults.shelfFolder).trim(),
     appearance: asAppearance(record.appearance),
     timeFormat: asTimeFormat(record.timeFormat),
     clockSeconds: record.clockSeconds === true,

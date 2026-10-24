@@ -1,0 +1,26 @@
+{
+  "recordedAt": 1792900000000,
+  "transcript": "attach the screenshot",
+  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the Shelf ask — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured)",
+  "expect": [
+    {
+      "question": "file",
+      "label": "file-2"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"attach the screenshot\"\nPage: https://forum.example.org/account/profile — \"Edit profile | Example Forum\"\nThe page opened its file chooser for its file field \"Profile picture\" accepts \"image/*\": the file chosen is set on the field, and nothing is sent.",
+    "questions": {
+      "file": {
+        "type": "choice",
+        "instructions": "Which file on the shelf do the user's words mean to upload? Choose none when no file here is what the words mean.",
+        "options": {
+          "file-1": "upload \"quarterly-report.pdf\", 12 minutes old, 1.2 MB",
+          "file-2": "upload \"screenshot-3.jpg\", an hour old, 371 KB",
+          "file-3": "upload \"invoice-ACME-0423.pdf\", a day old, 84 KB",
+          "none": "no file on the shelf is what the words mean"
+        }
+      }
+    }
+  }
+}

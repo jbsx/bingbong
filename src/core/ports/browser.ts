@@ -257,6 +257,28 @@ export interface BrowserController {
    * makes no Mark Ask.
    */
   markedScreenshot?(refs: readonly number[]): Promise<MarkedScreenshot | null>
+  /**
+   * The file chooser the page opened since the last take (#424), its file
+   * field's facts read, and forgotten here; null when none opened. Every
+   * chooser is intercepted — the OS dialog never opens — so one the page
+   * opens outside a Command waits here, unanswered, until the next take
+   * drops it. Optional: a controller that intercepts none answers none.
+   */
+  takeFileChooser?(): Promise<FileChooser | null>
+  /** Sets these files on the chooser's file field (#424): the page's own `input` and `change` fire, and nothing is submitted. */
+  attachFiles?(chooser: FileChooser, paths: readonly string[]): Promise<void>
+}
+
+/** A file chooser the page opened (#424), as the OS dialog would have shown it: its field's facts. */
+export interface FileChooser {
+  /** The file input's DOM node, by the backend id the chooser named. */
+  readonly node: number
+  /** The field takes several files (`multiple`). */
+  readonly multiple: boolean
+  /** The field's `accept`, as the page wrote it; '' when it has none. */
+  readonly accept: string
+  /** The field's name as the page gives it: its label, `aria-label`, `title` or `name`; '' when it has none. */
+  readonly label: string
 }
 
 /** Extra browser capability required only by visual grounding. */

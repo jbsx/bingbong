@@ -117,6 +117,8 @@ export interface BingbongSettingsApi {
   hostChecks(): Promise<HostFinding[]>
   /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
   monitors(): Promise<MonitorList>
+  /** The app's own folder dialog (#424), for the upload folder; answers the folder picked, '' for none. */
+  pickFolder(): Promise<string>
 }
 
 export interface BingbongTtsApi {

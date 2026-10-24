@@ -36,8 +36,10 @@ import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
 import { createSettingsStore } from './settings/settingsStore'
+import { readShelf } from './shelf/readShelf'
+import { shelfFolders } from '../core/shelf/shelf'
 import { registerSettingsIpc } from './settings/attachSettings'
-import { registerEnvFileIpc } from './settings/attachEnvFile'
+import { registerEnvFileIpc, registerFolderPickerIpc } from './settings/attachEnvFile'
 import { settingsToEnv } from '../core/settings/settings'
 import { layerEnv } from '../core/settings/dotEnv'
 import { loadEnvFile, resolveEnvFilePath, type EnvFileHome } from './envFile'
@@ -552,6 +554,8 @@ async function createWindow(): Promise<BrowserWindow> {
     }),
     // The app's panel, views and settings (#420): each op an option on the card, a change one hop.
     app: appControl.control,
+    // The Shelf (#424, ADR 0092): the downloads and the Settings folder, read flat on each upload.
+    shelf: { files: () => readShelf(shelfFolders(downloadsDir, settingsStore.get().shelfFolder)) },
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.
@@ -671,6 +675,7 @@ app.whenReady().then(async () => {
   registerCalendarIpc(calendarFixture ? [createStandInCalendarSource(calendarFixture)] : [])
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
+  registerFolderPickerIpc()
   registerEnvFileIpc({
     path: resolveEnvFilePath(process.env, envFileHome),
     processEnv: process.env,

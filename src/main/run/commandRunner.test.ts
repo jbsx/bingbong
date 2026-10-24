@@ -142,7 +142,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -192,6 +192,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.timer ? { timer: options.timer } : {}),
     ...(options?.facts ? { facts: options.facts } : {}),
     ...(options?.app ? { app: options.app } : {}),
+    ...(options?.shelf ? { shelf: options.shelf } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
@@ -260,6 +261,80 @@ describe('what the appliance knows (#402)', () => {
   })
 })
 
+describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf ask', () => {
+  const HOUR = 3_600_000
+  const shelfFiles = (now: number) => [
+    { name: 'screenshot-2.jpg', path: '/dl/screenshot-2.jpg', modifiedMs: now - HOUR / 2, size: 40_000 },
+    { name: 'invoice.pdf', path: '/dl/invoice.pdf', modifiedMs: now - 2 * HOUR, size: 86_000 },
+  ]
+  const FIELD = { node: 31, multiple: false, accept: '.pdf', label: 'Attach a document' }
+  function uploadPage(browser: FakeBrowser): void {
+    browser.snapshot = { ...browser.snapshot, refs: [...PAGE_REFS, ref(4, 'input', 'Attach a document', { inputType: 'file', fileField: { accept: '.pdf', multiple: false } }), ref(5, 'button', 'Send')] }
+    browser.choosers.set(4, FIELD)
+  }
+
+  it('"upload the invoice I downloaded": the field\'s click opens its chooser, the Shelf ask picks the file, which is set and said — and nothing is sent', async () => {
+    const speech = new FakeSpeech()
+    let shelfReads = 0
+    const { browser, decision, events, records, asks, runner } = harness({ speech, shelf: { files: async () => (shelfReads++, shelfFiles(1_700_000_000_000)) } })
+    uploadPage(browser)
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, { answers: { file: choice('file-2') } })
+    await runner.run('upload the invoice I downloaded', { source: 'spoken' })
+
+    expect(browser.clicks).toEqual([4])
+    expect(browser.attached).toEqual([{ chooser: FIELD, paths: ['/dl/invoice.pdf'] }])
+    expect(shelfReads).toBe(1)
+    // One more ask, the Shelf's, and no hop after it: the form is never sent.
+    expect(decision.requests).toHaveLength(2)
+    const shelfAsk = decision.requests[1]!
+    expect(shelfAsk.state).toContain('The page opened its file chooser for its file field "Attach a document" accepts ".pdf"')
+    expect(Object.values((shelfAsk.questions.file as DecisionChoiceQuestion).options)).toEqual([expect.stringContaining('"screenshot-2.jpg"'), expect.stringContaining('"invoice.pdf", 2 hours old, 84 KB'), expect.any(String)])
+    expect(asks.map((ask) => ask.kind)).toEqual(['command', 'shelf'])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Attached invoice.pdf.'])
+    expect(speech.spoken.map((each) => each.text)).toContain('Attached invoice.pdf.')
+    const decisions = records.filter((record) => record.type === 'decision')
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]).toMatchObject({ verb: 'click', target: 4, ended: 'terminal', upload: { file: 'invoice.pdf', shelf: 2, ask: asks[1]!.id } })
+  })
+
+  it('an empty Shelf sets nothing, asks nothing more, and says so', async () => {
+    const { browser, decision, events, records, runner } = harness({ shelf: { files: async () => [] } })
+    uploadPage(browser)
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } })
+    await runner.run('attach my cv', { source: 'typed' })
+
+    expect(browser.attached).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+    const display = events.filter((event) => event.type === 'display')
+    expect(display.map((event) => event.type === 'display' && event.text)).toEqual([SPOKEN_FAILURES.noShelfFile])
+    expect(display[0]).toMatchObject({ failure: true })
+    expect(records.find((record) => record.type === 'decision')).toMatchObject({ ended: 'terminal', upload: { file: null, shelf: 0 } })
+  })
+
+  it('a Shelf ask that reads none sets nothing, and says no file fits', async () => {
+    const { browser, decision, events, runner } = harness({ shelf: { files: async () => shelfFiles(Date.now()) } })
+    uploadPage(browser)
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, { answers: { file: choice('none') } })
+    await runner.run('attach my cv', { source: 'typed' })
+
+    expect(browser.attached).toEqual([])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual([SPOKEN_FAILURES.noShelfFile])
+  })
+
+  it('a chooser the page opened outside a Command is dropped, never answered by the next line', async () => {
+    const { browser, decision, events, asks, runner } = harness({ shelf: { files: async () => shelfFiles(Date.now()) } })
+    uploadPage(browser)
+    // The user's own click on the field, with no Command: intercepted, so no dialog, and left waiting.
+    await browser.click(4)
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+    await runner.run('sign in', { source: 'typed' })
+
+    expect(asks.map((ask) => ask.kind)).not.toContain('shelf')
+    expect(browser.attached).toEqual([])
+    expect(events.some((event) => event.type === 'display' && event.text === SPOKEN_FAILURES.noShelfFile)).toBe(false)
+  })
+})
+
 describe('the app itself on the card (#420, ADR 0091)', () => {
   /** An app whose changes land at once: the panel's and the settings' as asked, the view as shown. */
   function fakeApp(start: Partial<AppState> = {}) {
@@ -275,6 +350,7 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
         return state
       },
       findPlace: async (words) => (words === 'Paris' ? { name: 'Paris', where: 'Île-de-France, France', latitude: 48.85, longitude: 2.35 } : null),
+      findFolder: async (words) => (words === 'documents' ? '/home/u/Documents' : null),
     }
     return { app, changes }
   }
@@ -338,6 +414,15 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
     await runner.run('set the weather city to Paris', { source: 'typed' })
     expect(changes).toEqual([{ kind: 'settings', settings: { ...defaultSettings(), weather: { city: 'Paris', units: 'metric', latitude: 48.85, longitude: 2.35 } } }])
     expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Weather city set to Paris, Île-de-France, France.'])
+  })
+
+  it('sets the upload folder (#424) to the folder the spoken words name, the Answer naming it', async () => {
+    const { app, changes } = fakeApp()
+    const { decision, events, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('settings'), slot: choice('s5-5') } }, { answers: { action: choice('set_shelf_folder'), slot: choice('s5-5'), amount: choice('to') } })
+    await runner.run('set the upload folder to documents', { source: 'typed' })
+    expect(changes).toEqual([{ kind: 'settings', settings: { ...defaultSettings(), shelfFolder: '/home/u/Documents' } }])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Upload folder set to /home/u/Documents.'])
   })
 
   it('a settings ask that reads none is no Command, and nothing changes', async () => {

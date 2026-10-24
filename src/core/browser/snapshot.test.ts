@@ -349,6 +349,22 @@ describe("a media element's own facts (#372, ADR 0080)", () => {
   })
 })
 
+describe('a file field (#424)', () => {
+  it('carries its accept and multiple onto its ref, and a payload without them leaves none', () => {
+    const parsed = parseCollectedPage(
+      page({
+        elements: [
+          element({ tag: 'input', inputType: 'file', label: 'CV', fileField: { accept: '.pdf', multiple: false } }),
+          element({ tag: 'input', inputType: 'file', label: 'Old', fileField: 'yes' as unknown as CollectedElement['fileField'] }),
+        ],
+      }),
+    )
+    const refs = buildPageSnapshot(parsed).refs
+    expect(refs[0]).toMatchObject({ kind: 'input', inputType: 'file', fileField: { accept: '.pdf', multiple: false } })
+    expect(refs[1]).not.toHaveProperty('fileField')
+  })
+})
+
 describe("what a closed trigger opens (#388)", () => {
   it('carries the names onto its ref label-cut, once each after the cut, and drops names that are not words', () => {
     const long = 'x'.repeat(100)

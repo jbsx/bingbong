@@ -36,6 +36,8 @@ export type SettingKind =
   | ({ readonly kind: 'amount'; readonly min: number; readonly max: number; readonly step: number; readonly unit: string } & Named)
   /** A place the words name, looked up by the geocoder. */
   | ({ readonly kind: 'place' } & Named)
+  /** A folder the words name (#424), looked up among the home folder's own; `''` none. */
+  | ({ readonly kind: 'folder' } & Named)
   /** A time of day the words name, `HH:MM`. */
   | ({ readonly kind: 'time' } & Named)
   /** A set of members, each shown or not. */
@@ -79,6 +81,7 @@ export const SETTING_KINDS: SettingKinds<AppSettings> = {
   webZoomPercent: { kind: 'amount', name: 'web page zoom', min: WEB_ZOOM_PERCENT_MIN, max: WEB_ZOOM_PERCENT_MAX, step: 10, unit: '%' },
   ttsVoice: { kind: 'voices', name: 'voice', hint: 'the voice the app speaks in' },
   adblockEnabled: { kind: 'switch', name: 'ad blocking' },
+  shelfFolder: { kind: 'folder', name: 'upload folder', hint: 'the folder an upload may take a file from, beside the downloads' },
   appearance: choice({ name: 'appearance', hint: 'light or dark mode' }, [
     ['system', 'as this computer'],
     ['light', 'light mode'],

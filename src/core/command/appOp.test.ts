@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultSettings, type AppSettings } from '../settings/settings'
 import { SETTING_KINDS, type SettingKinds } from '../settings/settingKinds'
-import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOptions, settingOptions, timeOfDayIn, type AppOpAction, type AppState } from './appOp'
+import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOptions, folderOfWords, settingOptions, timeOfDayIn, type AppOpAction, type AppState } from './appOp'
 
 function stateWith(settings: Partial<AppSettings> = {}, rest: Partial<AppState> = {}): AppState {
   return {
@@ -162,5 +162,50 @@ describe('timeOfDayIn', () => {
     ['soon', null],
   ])('%s → %s', (words, time) => {
     expect(timeOfDayIn(words)).toBe(time)
+  })
+})
+
+describe('the upload folder (#424): the Shelf\'s second folder, set by voice', () => {
+  it('offers it set to the folder the words name, and cleared, its line carrying the folder now', () => {
+    const offered = lines(stateWith({ shelfFolder: '' }))
+    expect(offered.set_shelf_folder).toContain('upload folder')
+    expect(offered.set_shelf_folder).toContain('now none — set it to the folder the words name')
+    expect(offered.set_shelf_folder_none).toContain('clear it')
+    expect(lines(stateWith({ shelfFolder: '/home/u/Documents' })).set_shelf_folder).toContain('now /home/u/Documents')
+  })
+
+  it('reads the words as a folder to look up, sets the one found, and clears it', () => {
+    const state = stateWith({ shelfFolder: '' })
+    const op = appOpOf('set_shelf_folder', state)!
+    expect(appChangeOf({ ...op, words: ' my documents folder ' } as AppOpAction, state)).toEqual({ kind: 'folder', path: ['shelfFolder'], words: 'my documents folder' })
+    const set = { ...state, settings: { ...state.settings, shelfFolder: '/home/u/Documents' } }
+    expect(appAnswer({ ...op, words: 'documents' } as AppOpAction, state, set)).toBe('Upload folder set to /home/u/Documents.')
+    const clear = appOpOf('set_shelf_folder_none', set)!
+    const cleared = appChangeOf(clear as AppOpAction, set)
+    expect(cleared).toEqual({ kind: 'settings', settings: { ...set.settings, shelfFolder: '' } })
+    expect(appAnswer(clear as AppOpAction, set, state)).toBe('Upload folder set to none.')
+  })
+})
+
+describe('folderOfWords (#424): a spoken folder among the home folder\'s own', () => {
+  const home = '/home/u'
+  const folders = ['/home/u/Documents', '/home/u/Pictures', '/home/u/Documents/Invoices', '/home/u/Work/Invoices', '/home/u/Pictures/Screenshots']
+  it('finds a folder by its name, the words around it aside, the shallowest first', () => {
+    expect(folderOfWords('my documents folder', home, folders)).toBe('/home/u/Documents')
+    expect(folderOfWords('Screenshots', home, folders)).toBe('/home/u/Pictures/Screenshots')
+    expect(folderOfWords('the invoices in documents', home, folders)).toBe('/home/u/Documents/Invoices')
+    expect(folderOfWords('documents invoices', home, folders)).toBe('/home/u/Documents/Invoices')
+  })
+
+  it('finds the folder named inside a longer Slot, the setting\'s own words and all (gate 2026-10-24: Elephant\'s Slot held the whole line)', () => {
+    expect(folderOfWords('upload folder to documents', home, folders)).toBe('/home/u/Documents')
+    expect(folderOfWords('set the upload folder to documents', home, folders)).toBe('/home/u/Documents')
+    expect(folderOfWords('set the upload folder to the invoices in documents', home, folders)).toBe('/home/u/Documents/Invoices')
+  })
+
+  it('finds none for a name two folders share, or none has', () => {
+    expect(folderOfWords('invoices', home, folders)).toBeNull()
+    expect(folderOfWords('music', home, folders)).toBeNull()
+    expect(folderOfWords('', home, folders)).toBeNull()
   })
 })

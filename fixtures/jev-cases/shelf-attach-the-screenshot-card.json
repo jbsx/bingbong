@@ -1,0 +1,78 @@
+{
+  "recordedAt": 1792900000000,
+  "transcript": "attach the screenshot",
+  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the action card — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured)",
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-3"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"attach the screenshot\"\nPage: https://forum.example.org/account/profile — \"Edit profile | Example Forum\"\nText in view: \"Edit profile\" · \"PNG, JPG or GIF, up to 2 MB.\"\nRefs (number, kind, label, address, states):\n[1] link \"Forum\" https://forum.example.org/\n[2] link \"Messages\" https://forum.example.org/messages\n[3] file field \"Profile picture\" accepts \"image/*\"\n[4] input[text] \"Display name\"\n[5] button \"Save changes\"",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"Forum\" https://forum.example.org/",
+          "click-2": "click [2] link \"Messages\" https://forum.example.org/messages",
+          "click-3": "click [3] file field \"Profile picture\" accepts \"image/*\"",
+          "type-4": "type the words into [4] input[text] \"Display name\"",
+          "click-4": "click [4] input[text] \"Display name\"",
+          "click-5": "click [5] button \"Save changes\"",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "attach",
+          "s0-1": "attach the",
+          "s0-2": "attach the screenshot",
+          "s1-1": "the",
+          "s1-2": "the screenshot",
+          "s2-2": "screenshot"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on forum.example.org that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on forum.example.org but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

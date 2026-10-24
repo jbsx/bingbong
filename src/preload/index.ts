@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     openEnvFile: (): Promise<string> => ipcRenderer.invoke(SETTINGS_IPC.envOpen),
     hostChecks: (): Promise<HostFinding[]> => ipcRenderer.invoke(SETTINGS_IPC.hostChecks),
     monitors: (): Promise<MonitorList> => ipcRenderer.invoke(SETTINGS_IPC.monitors),
+    pickFolder: (): Promise<string> => ipcRenderer.invoke(SETTINGS_IPC.pickFolder),
   },
   feedPanel: {
     getState: (): Promise<FeedPanelState | null> => ipcRenderer.invoke(PANEL_IPC.get),
