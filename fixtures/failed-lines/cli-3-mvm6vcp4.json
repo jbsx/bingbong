@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvm6vcp4",
+  "transcript": "accept cookies",
+  "at": 1792833661375,
+  "source": "typed",
+  "stage": "page",
+  "happened": "'accept cookies' on bbcgoodfood.com (#417 rerun, main 1397166c + #417, Mammoth): the landing's consent rule and hop 0 both clicked [5] 'Accept cookies and read free content with personalised ads' in the Sourcepoint frame, and the sheet neither left nor changed: the click's sheet wait paid its whole 2 s bound (browser-dialog-wait outcome bound). Hop 1 clicked 'Accept All & Continue', gone in 7 ms, done. The Guardian's cli-9-mvm5xdjh on a second site: after #414 the frame lists an element carrying the button's words, not the button",
+  "meant": "The click on the wall's accept lands on its button and the sheet leaves at once; the Task ends done in one action",
+  "log": "decision-1792833646821-1.jsonl"
+}

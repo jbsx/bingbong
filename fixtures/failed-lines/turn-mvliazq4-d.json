@@ -7,5 +7,7 @@
   "happened": "'decline the cookies' on w3schools' tryit (yield rerun 2026-10-23, main 76e1516f, Mammoth): hop 0 clicked the framed wall's Decline [1] (0.99) and the outcome read dialogOpen=true with no consent dismissal, so nothing waited for the sheet; hop 1 read the page while it was still closing, in_the_way 0.76, and the hop clicked [8] 'Preferences': ended wall. turn-mvihv054-1's class again",
   "meant": "The Task ends done once Decline has closed the wall; a hop after a click on a dialog control reads the page once the sheet has left",
   "log": "decision-1792792078119-1.jsonl",
-  "claimedBy": "#417"
+  "claimedBy": "#417",
+  "fixedBy": "ab68f3fc",
+  "case": "e2e/sheetLeaves.chrome.test.ts (a framed wall that collapses 60 ms on, its choice in a hidden field at once); live rerun 2026-10-24 x2: Decline waits 53 ms, gone, hop 1 done"
 }
