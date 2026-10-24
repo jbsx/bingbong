@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvm6468f-m",
+  "transcript": "how do i install it",
+  "at": 1792832393092,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'how do i install it' typed on github.com/microsoft/playwright (yield rerun 2026-10-24, main 20f843b5, Mammoth): show-39 at 0.60 scrolled to the install section, then the Verdict hop also clicked [9] 'Copy code to clipboard' at 0.67 beside yes 0.97; the passage view-4 0.81 was said. Done in 2 calls, but an action nobody asked for fired; same as turn-mvle1uz1-1 on 552774da, never written to the ledger",
+  "meant": "Show the install section and say the passage; the hop that reads done takes no further action",
+  "log": "decision-1792831931914-1.jsonl"
+}

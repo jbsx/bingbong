@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-5-mvm5vjrc",
+  "transcript": "open voicestudio",
+  "at": 1792831988799,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'open voicestudio' typed on about:blank (yield rerun 2026-10-24, main 20f843b5, Mammoth): navigate at 0.58 to voicestudio.com, an empty page; two Verdict calls read yes 0.75 and 0.76 and the Task ended done on it. Same as cli-10-mvli6c3h on 76e1516f, which was never written to the ledger",
+  "meant": "Open the Voice Studio the owner means (the GitHub repo debpalash/VoiceStudio, which 'open voice studio github' reaches by search), or search for it, never a guessed .com domain that answers with an empty page; and the Verdict reads an empty page as not done",
+  "log": "decision-1792831931914-1.jsonl"
+}

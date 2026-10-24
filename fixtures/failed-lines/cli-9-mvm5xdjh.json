@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-9-mvm5xdjh",
+  "transcript": "open the first headline",
+  "at": 1792832077219,
+  "source": "typed",
+  "stage": "page",
+  "happened": "'open the first headline' typed on theguardian.com/uk (yield rerun 2026-10-24, main 20f843b5, Mammoth): on landing the consent rule reported 'dismissed consent dialog: clicked [5] \"Accept personalised advertising and all cookies\"' but the Sourcepoint sheet stayed open; Mammoth clicked headline [45] at 0.94, 'not clicked — covered by iframe \"SP Consent Message\"', ended wall. 3 of 3 the same. Bisected: 523ca16b (before #414) clears the wall and opens the headline; 6486d6e1 (#414) ends wall. After #414 the frame's controls list text pieces as buttons ('- it\\'s your choice', 'Independent, quality original journalis…'), so [5] is likely an element carrying the button's words, not the button",
+  "meant": "The consent-or-pay sheet cleared on landing by its free Accept, as on main 76e1516f (cli-18-mvli9a78), and the first headline opened in one click",
+  "log": "decision-1792831931914-1.jsonl"
+}
