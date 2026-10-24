@@ -120,15 +120,15 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const rect = el.getBoundingClientRect()
     return rect.width >= 1 && rect.height >= 1
   }
-  const rendered = (el) => {
-    const style = window.getComputedStyle(el)
-    return style.display !== 'none' && style.visibility !== 'hidden' && hasSize(el)
-  }
   const inViewport = (el) => {
     const rect = el.getBoundingClientRect()
     return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
-  const rectVisible = (el) => rendered(el) && inViewport(el)
+  const rectVisible = (el) => {
+    const style = window.getComputedStyle(el)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+    return hasSize(el) && inViewport(el)
+  }
   // ADR 0062: nothing inside an inert subtree is focusable or clickable by
   // the platform's definition, so it is never a target — a closed drawer
   // styled open but marked inert lists nothing. That is the one thing the
@@ -499,7 +499,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // when none were read under this root.
   const listenedUnder = (dialogRoot) => {
     const read = window.__bingbongClickable
-    return dialogRoot !== null && read && read.root === dialogRoot ? read.elements : null
+    return dialogRoot !== null && read && read.root === dialogRoot && read.elements instanceof Set ? read.elements : null
   }
   // The candidates, and each listened element no selector found, in document order.
   const candidatesWith = (listened) => {
@@ -529,15 +529,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       if (!marked && own === null && !heard) continue
       if (insideInertDeep(el)) continue
       const dialog = dialogRoot !== null && containsDeep(dialogRoot, el)
-      const beyond = !dialog && layerUnknown && rendered(el) && !inViewport(el)
-      if (dialog ? !hasSize(el) : !beyond && !rectVisible(el)) continue
+      // The dialog's size rule (ADR 0081): what has size counts, wherever the frame's own viewport is.
+      const belowFold = !dialog && layerUnknown && hasSize(el) && !inViewport(el)
+      if (dialog ? !hasSize(el) : !belowFold && !rectVisible(el)) continue
       // Not Vimium's (ADR 0083, #414): inside the open dialog's layer a
       // tabindex of 0 or more, and a click listener of the element's own,
       // are weak cues.
       const layerCue = own === 'tabindex' || (own === null && heard)
       const cue = (dialog || layerUnknown) && layerCue ? 'weak' : own
       if (!marked && cue === null) continue
-      shown.push({ el, marked, cue, dialog, beyond, dialogOnly: beyond || (!dialog && layerUnknown && layerCue) })
+      shown.push({ el, marked, cue, dialog, belowFold, dialogOnly: belowFold || (!dialog && layerUnknown && layerCue) })
     }
     // A label is strong while its control gives no hint; else it falls back as any element does.
     const hinted = new Set(shown.filter((entry) => entry.cue !== 'label').map((entry) => entry.el))
@@ -556,7 +557,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       if (entry.el.parentElement !== null && entry.el.parentElement.closest(WHOLE_CLICK_SELECTOR) !== null) return false
       for (let index = position + 1; index < hints.length && index <= position + 6; index++) {
         // Below the fold is no hint Vimium would see: it cannot stand in the lookback of one in view.
-        if (hints[index].beyond && !entry.beyond) continue
+        if (hints[index].belowFold && !entry.belowFold) continue
         let node = hints[index].el
         for (let level = 0; level < 3; level++) {
           node = node && node.parentElement
@@ -841,8 +842,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       ...(tag === 'VIDEO' || tag === 'AUDIO' ? { media: mediaFactsOf(el) } : {}),
       // What a closed trigger opens (#388): its line's "menu holds".
       ...(held.length > 0 ? { holds: held } : {}),
-      // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
+      // Taken by a frame for the dialog layer alone (#414): the page merge keeps it only there.
       ...(dialogOnly.has(el) ? { dialogOnly: true } : {}),
+      // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
     }
   }
@@ -964,24 +966,24 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (!priorIndex.has(prior[index])) priorIndex.set(prior[index], index)
   }
   // The open dialog's own click listeners (#414, ADR 0083): each element
-  // under its root, open shadow roots included, that has a click, mousedown
-  // or mouseup listener of its own, never one a listener further up
+  // under its root, open shadow roots included, that has a click, mousedown,
+  // mouseup or DOMActivate listener of its own, never one a listener further up
   // handles — the fact DOMSnapshot.isClickable reports, read with DevTools'
   // getEventListeners, which only the top's collect is given. They are left
   // beside the root, so a read in place while it stays open takes them too.
-  const CLICK_EVENTS = ['click', 'mousedown', 'mouseup']
+  const CLICK_EVENTS = ['click', 'mousedown', 'mouseup', 'DOMActivate']
   if (dialogRoot !== null && typeof getEventListeners === 'function') {
-    const own = new Set()
+    const listening = new Set()
     const listenIn = (root) => {
       for (const el of root.querySelectorAll('*')) {
         if (el.shadowRoot) listenIn(el.shadowRoot)
         const listeners = getEventListeners(el)
-        if (CLICK_EVENTS.some((type) => Array.isArray(listeners[type]) && listeners[type].length > 0)) own.add(el)
+        if (CLICK_EVENTS.some((type) => Array.isArray(listeners[type]) && listeners[type].length > 0)) listening.add(el)
       }
     }
     if (dialogRoot.shadowRoot) listenIn(dialogRoot.shadowRoot)
     listenIn(dialogRoot)
-    window.__bingbongClickable = { root: dialogRoot, elements: own }
+    window.__bingbongClickable = { root: dialogRoot, elements: listening }
   }
   // Dialog controls come first so they survive the collection cap; the order
   // here is exactly what the controller's element registry is keyed by.

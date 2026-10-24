@@ -7,5 +7,7 @@
   "happened": "'close the pop up' typed over the same publicholidays.co.uk anti-adblock dialog: Local Match press (the Dismiss Phrase's first rung); the dismiss Choice again offered only escape 0.80 and [1] 'DISABLE' 0.20, since '×' and 'Continue without supporting us' are not refs; Escape left the dialog open",
   "meant": "Click 'Continue without supporting us' or × and the dialog closes",
   "log": "decision-1792805649581-1.jsonl",
-  "claimedBy": "#414"
+  "claimedBy": "#414",
+  "fixedBy": "6486d6e1",
+  "case": "turn-mvlsu5ym-1"
 }
