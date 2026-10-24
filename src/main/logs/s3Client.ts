@@ -27,6 +27,15 @@ function uriEncode(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
+/** Sorted by name, then value, each RFC 3986-encoded: what is signed and what is sent. */
+function canonicalQuery(params: readonly (readonly [string, string])[]): string {
+  return [...params]
+    .map(([key, value]) => [uriEncode(key), uriEncode(value)] as const)
+    .sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&')
+}
+
 /** The `Authorization` header for a request (host is taken from the URL). */
 export function signRequest(credentials: S3Credentials, request: SignableRequest): string {
   const amzDate = request.headers['x-amz-date']
@@ -38,10 +47,7 @@ export function signRequest(credentials: S3Credentials, request: SignableRequest
     .split('/')
     .map((segment) => uriEncode(decodeURIComponent(segment)))
     .join('/')
-  const query = [...request.url.searchParams]
-    .map(([key, value]) => `${uriEncode(key)}=${uriEncode(value)}`)
-    .sort()
-    .join('&')
+  const query = canonicalQuery([...request.url.searchParams])
   const canonical = [
     request.method,
     path,
@@ -64,11 +70,11 @@ export interface S3ClientOptions {
   readonly bucket: string
   readonly accessKeyId: string
   readonly secretAccessKey: string
-  readonly region?: string
   readonly fetch?: typeof fetch
-  /** Each request's bound. */
-  readonly timeoutMs?: number
 }
+
+/** Each request's bound: a 5 MB log over a slow uplink still fits. */
+const REQUEST_TIMEOUT_MS = 60_000
 
 export interface S3Object {
   readonly key: string
@@ -87,8 +93,15 @@ export interface S3Client {
   list(prefix: string): Promise<S3Object[]>
 }
 
+const NAMED: Record<string, string> = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
 const unescapeXml = (text: string): string =>
-  text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+  text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|lt|gt|quot|apos|amp);/g, (_, ref: string) =>
+    ref.startsWith('#x')
+      ? String.fromCodePoint(parseInt(ref.slice(2), 16))
+      : ref.startsWith('#')
+        ? String.fromCodePoint(Number(ref.slice(1)))
+        : NAMED[ref],
+  )
 
 const tag = (xml: string, name: string): string | undefined => xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]
 
@@ -97,14 +110,14 @@ export function createS3Client(options: S3ClientOptions): S3Client {
   const credentials: S3Credentials = {
     accessKeyId: options.accessKeyId,
     secretAccessKey: options.secretAccessKey,
-    region: options.region ?? 'auto',
+    region: 'auto', // R2's region
   }
   const base = options.endpoint.replace(/\/+$/, '')
 
   async function send(method: string, key: string, query: Record<string, string> = {}, body?: Uint8Array): Promise<Response> {
     const path = key === '' ? '' : `/${key.split('/').map(uriEncode).join('/')}`
-    const url = new URL(`${base}/${uriEncode(options.bucket)}${path}`)
-    for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value)
+    const search = canonicalQuery(Object.entries(query))
+    const url = new URL(`${base}/${uriEncode(options.bucket)}${path}${search ? `?${search}` : ''}`)
     const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
     const headers: Record<string, string> = {
       'x-amz-content-sha256': sha256(body ?? ''),
@@ -115,13 +128,13 @@ export function createS3Client(options: S3ClientOptions): S3Client {
       method,
       headers: { ...headers, authorization },
       body,
-      signal: AbortSignal.timeout(options.timeoutMs ?? 60_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   }
 
   async function ok(response: Response, what: string): Promise<Response> {
     if (response.ok) return response
-    const detail = (await response.text().catch(() => '')).slice(0, 200)
+    const detail = (await response.text().catch((error: unknown) => `(body unreadable: ${String(error)})`)).slice(0, 200)
     throw new Error(`log bucket: ${what} → ${response.status} ${detail}`.trim())
   }
 
@@ -150,11 +163,13 @@ export function createS3Client(options: S3ClientOptions): S3Client {
         if (token !== undefined) query['continuation-token'] = token
         const xml = await (await ok(await send('GET', '', query), `LIST ${prefix}`)).text()
         for (const [, entry] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
-          objects.push({
-            key: unescapeXml(tag(entry, 'Key') ?? ''),
-            size: Number(tag(entry, 'Size') ?? 0),
-            lastModified: new Date(tag(entry, 'LastModified') ?? 0),
-          })
+          const key = tag(entry, 'Key')
+          const size = Number(tag(entry, 'Size'))
+          const lastModified = new Date(tag(entry, 'LastModified') ?? NaN)
+          // An entry the store did not describe whole is left out, never
+          // read as empty or as 1970 (which the space check deletes first).
+          if (key === undefined || !Number.isFinite(size) || Number.isNaN(lastModified.getTime())) continue
+          objects.push({ key: unescapeXml(key), size, lastModified })
         }
         token = tag(xml, 'IsTruncated') === 'true' ? unescapeXml(tag(xml, 'NextContinuationToken') ?? '') : undefined
       } while (token)

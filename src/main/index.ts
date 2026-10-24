@@ -596,10 +596,8 @@ app.whenReady().then(async () => {
   if (logBucket.line) console.log(logBucket.line)
   if (logBucket.start) {
     const stopLogBucket = createLogBucketUploader({
+      ...logBucket.start,
       logsDir,
-      machine: logBucket.start.machine,
-      highBytes: logBucket.start.highBytes,
-      lowBytes: logBucket.start.lowBytes,
       client: createS3Client(logBucket.start),
     }).start()
     app.on('will-quit', stopLogBucket)

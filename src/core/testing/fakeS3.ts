@@ -63,7 +63,7 @@ export function createFakeS3(options: { bucket: string; pageSize?: number; now?:
     if (!object) return new Response(method === 'HEAD' ? null : 'NoSuchKey', { status: 404 })
     const meta = { 'content-length': String(object.body.length), 'last-modified': object.lastModified.toUTCString() }
     if (method === 'HEAD') return new Response(null, { status: 200, headers: meta })
-    if (method === 'GET') return new Response(object.body, { status: 200, headers: meta })
+    if (method === 'GET') return new Response(new Uint8Array(object.body), { status: 200, headers: meta })
     return new Response('MethodNotAllowed', { status: 405 })
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFakeS3 } from './fakeS3'
+import { createFakeS3 } from '../../core/testing/fakeS3'
 import { createS3Client, signRequest } from './s3Client'
 
 // AWS's published Signature Version 4 examples for S3 (header-based auth,
@@ -74,6 +74,12 @@ describe('createS3Client', () => {
     expect(kiosk.map((o) => o.key)).toEqual(['kiosk/a.jsonl', 'kiosk/b.jsonl', 'kiosk/c.jsonl', 'kiosk/d.jsonl', 'kiosk/e.jsonl'])
     expect(kiosk[0]).toEqual({ key: 'kiosk/a.jsonl', size: 1, lastModified: new Date(Date.UTC(2026, 9, 1)) })
     expect((await bucket.list('')).length).toBe(6)
+  })
+
+  it('sends the query RFC 3986-encoded and sorted, as it is signed', async () => {
+    const { s3, bucket } = client()
+    await bucket.list('dev test/')
+    expect(s3.requests).toEqual(['GET ?list-type=2&prefix=dev%20test%2F'])
   })
 
   it('throws with the status when the store refuses', async () => {

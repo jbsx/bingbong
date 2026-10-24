@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createFakeS3, type FakeS3 } from './fakeS3'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
+import { createFakeS3, type FakeS3 } from '../../core/testing/fakeS3'
 import { createLogBucketUploader } from './logBucketUploader'
 import { createS3Client } from './s3Client'
 
@@ -17,7 +18,20 @@ beforeEach(() => {
   clock = Date.UTC(2026, 9, 24, 12)
   s3 = createFakeS3({ bucket: 'kachow', now: () => new Date(clock) })
 })
-afterEach(() => rmSync(logsDir, { recursive: true, force: true }))
+afterEach(() => {
+  setFaultSink(null)
+  rmSync(logsDir, { recursive: true, force: true })
+})
+
+function faults(): FaultReport[] {
+  const reports: FaultReport[] = []
+  setFaultSink((report) => reports.push(report))
+  return reports
+}
+
+function clientWith(fetchFn: typeof fetch) {
+  return createS3Client({ endpoint: 'https://r2.test', bucket: 'kachow', accessKeyId: 'id', secretAccessKey: 's', fetch: fetchFn })
+}
 
 function write(relative: string, text: string): void {
   const path = join(logsDir, relative)
@@ -96,6 +110,32 @@ describe('the Log Bucket uploader', () => {
     expect([...failing.objects.keys()]).toEqual(['kiosk/b.jsonl'])
   })
 
+  it('reports one fault for a round where uploads fail, however many', async () => {
+    write('a.jsonl', 'a')
+    write('b.jsonl', 'b')
+    const reports = faults()
+    const down: typeof fetch = async () => new Response('down', { status: 503 })
+    const bucket = createLogBucketUploader({ logsDir, machine: 'kiosk', highBytes: 8e9, lowBytes: 7e9, client: clientWith(down), now: () => clock })
+
+    expect(await bucket.copy()).toEqual({ uploaded: 0, failed: 2 })
+    expect(reports.map((r) => r.site)).toEqual(['logs.bucket.copy'])
+    expect(reports[0].message).toMatch(/2 of 2 uploads failed/)
+  })
+
+  it('a file purged between the listing and the read is gone, not failed', async () => {
+    write('a.jsonl', 'a')
+    write('b.jsonl', 'b')
+    const reports = faults()
+    const purging: typeof fetch = async (input, init) => {
+      rmSync(join(logsDir, 'b.jsonl'), { force: true }) // the purge runs mid-round
+      return s3.fetch(input, init)
+    }
+    const bucket = createLogBucketUploader({ logsDir, machine: 'kiosk', highBytes: 8e9, lowBytes: 7e9, client: clientWith(purging), now: () => clock })
+
+    expect(await bucket.copy()).toEqual({ uploaded: 1, failed: 0 })
+    expect(reports).toEqual([])
+  })
+
   it("the space check deletes this machine's oldest uploads past the high mark", async () => {
     for (let day = 1; day <= 4; day++) s3.seed(`kiosk/perf-${day}.jsonl`, 'x'.repeat(1000), new Date(Date.UTC(2026, 9, day)))
     s3.seed('den/perf.jsonl', 'x'.repeat(1000), new Date(Date.UTC(2026, 8, 1)))
@@ -119,5 +159,19 @@ describe('the Log Bucket uploader', () => {
     await bucket.tick()
     expect(lists()).toBe(2)
     expect(keys()).toEqual(['kiosk/perf-1.jsonl'])
+  })
+
+  it('a space check that fails is tried again next round, not tomorrow', async () => {
+    const reports = faults()
+    let listing = 0
+    const flaky: typeof fetch = async (input, init) =>
+      String(input).includes('list-type=2') && listing++ === 0 ? new Response('down', { status: 503 }) : s3.fetch(input, init)
+    const bucket = createLogBucketUploader({ logsDir, machine: 'kiosk', highBytes: 8e9, lowBytes: 7e9, client: clientWith(flaky), now: () => clock })
+
+    await bucket.tick()
+    clock += 5 * 60_000
+    await bucket.tick()
+    expect(listing).toBe(2)
+    expect(reports.map((r) => r.site)).toEqual(['logs.bucket.trim'])
   })
 })

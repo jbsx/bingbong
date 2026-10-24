@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createFakeS3 } from './fakeS3'
+import { createFakeS3 } from '../../core/testing/fakeS3'
 import { pullLogs } from './pullLogs'
 import { createS3Client } from './s3Client'
 
@@ -29,5 +29,12 @@ describe('pullLogs', () => {
     expect(readFileSync(join(dir, 'ask-images', 'ask-1.png'), 'utf8')).toBe('png')
     expect(statSync(join(dir, 'decision-1.jsonl')).mtime).toEqual(uploaded)
     expect(s3.requests.filter((r) => r.startsWith('GET kiosk/'))).toEqual(['GET kiosk/ask-images/ask-1.png', 'GET kiosk/decision-1.jsonl'])
+  })
+
+  it('refuses a key that would land outside the folder', async () => {
+    const s3 = createFakeS3({ bucket: 'kachow' })
+    s3.seed('kiosk/../escape.jsonl', 'x', new Date())
+    const client = createS3Client({ endpoint: 'https://r2.test', bucket: 'kachow', accessKeyId: 'id', secretAccessKey: 's', fetch: s3.fetch })
+    await expect(pullLogs(client, 'kiosk', dir)).rejects.toThrow(/refusing key/)
   })
 })

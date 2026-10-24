@@ -21,6 +21,9 @@ export interface LogBucketSettings {
   readonly lowBytes: number
 }
 
+/** How often the logs are copied. */
+export const COPY_INTERVAL_MINUTES = 5
+
 const REQUIRED = [
   'BINGBONG_LOG_BUCKET',
   'BINGBONG_LOG_BUCKET_ENDPOINT',
@@ -67,7 +70,7 @@ export function logBucketStartup(env: Record<string, string | undefined>): {
   if (machine === undefined) return {}
   return {
     start: { ...settings, machine },
-    line: `log bucket: copying the logs to ${settings.bucket}/${machine}/ every 5 minutes`,
+    line: `log bucket: copying the logs to ${settings.bucket}/${machine}/ every ${COPY_INTERVAL_MINUTES} minutes`,
   }
 }
 

@@ -120,7 +120,12 @@ BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # wake scores (object form scripts each h
 
 There is no kiosk build yet: the app will be installed on the kiosk host
 directly, never in a container (#419). The custom wake heads, which have no
-download source, are kept in `models/wake/`.
+download source, are kept in `models/wake/`; on a new machine, copy them to
+where the app reads them:
+
+```sh
+mkdir -p ~/.config/bingbong/models/wake && cp models/wake/*.onnx ~/.config/bingbong/models/wake/
+```
 
 ## The Log Bucket (optional)
 
