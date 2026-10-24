@@ -313,6 +313,8 @@ function buildEnv(
     BINGBONG_WAKE_ENGINE: 'off',
     BINGBONG_ADBLOCK: 'off',
     BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
+    // A dead session bus keeps Chromium's file chooser off xdg-desktop-portal, which would draw it on the real screen.
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(userDataDir, 'no-session-bus')}`,
     ELECTRON_OZONE_PLATFORM_HINT: 'x11',
     XDG_SESSION_TYPE: 'x11',
     DISPLAY: process.env.DISPLAY ?? ':0',

@@ -93,6 +93,10 @@ export async function launchApp({
       BINGBONG_MUTE_AUDIO: '1',
       // Every launch weighs on the stand-in scale, never the machine's Bluetooth: a test steps on by writing this file.
       BINGBONG_SCALE_FIXTURE: join(userDataDir, 'scale-frames.txt'),
+      // Xvfb hides the windows but not the desktop portal: Chromium asks xdg-desktop-portal over the session bus for its file
+      // chooser (a pane download's "Save as"), and the portal draws it on the developer's real screen. A dead bus keeps the
+      // dialog in-process, on Xvfb. The app's only D-Bus use is BlueZ on the system bus.
+      DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(userDataDir, 'no-session-bus')}`,
       ELECTRON_OZONE_PLATFORM_HINT: 'x11',
       WAYLAND_DISPLAY: undefined,
       XDG_SESSION_TYPE: 'x11',
