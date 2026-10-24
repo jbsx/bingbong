@@ -127,8 +127,10 @@ the Player's action by whichever road. Each is offered while there is
 something for it to act on — a song to play whenever a Player is wired,
 the Queue's walk and the corrections while the Queue holds a song, `show` while any song is
 on, the Player's or the page's — withheld by ability, never by state
-(ADR 0080). A fixed small set that grows only with the appliance's own
-features (the Timer next), never per site: an action on a page's element
+(ADR 0080). The set grows only with the appliance's own features, never per site:
+the app's own panel, views and settings are offered by kind, each line
+carrying its state and every op its kind allows (ADR 0091), and
+an action on a page's element
 is the ref's own op, never an Appliance Verb (#374, retiring the
 Capability layer of ADR 0079).
 _Avoid_: capability, tool, skill, feature, affordance, intent
