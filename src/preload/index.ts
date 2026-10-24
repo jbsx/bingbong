@@ -3,6 +3,8 @@ import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
+import type { TtsVoiceEntry } from '../core/tts/ttsVoices'
+import type { SpeakOutcome } from '../core/ports/tts'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
 import { PANEL_IPC } from '../core/panel/ipcChannels'
@@ -176,7 +178,9 @@ contextBridge.exposeInMainWorld('bingbong', {
     },
   },
   tts: {
-    listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
+    listVoices: (): Promise<TtsVoiceEntry[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
+    preview: (voiceId: string): Promise<SpeakOutcome> => ipcRenderer.invoke(TTS_IPC.preview, voiceId),
+    stopPreview: (): void => ipcRenderer.send(TTS_IPC.stopPreview),
   },
   learnedTerms: {
     list: (): Promise<readonly string[]> => ipcRenderer.invoke(LEARNED_TERMS_IPC.list),

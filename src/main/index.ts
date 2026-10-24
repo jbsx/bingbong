@@ -40,6 +40,10 @@ import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
+import { createKokoroSynthesizer } from './tts/createKokoroSynthesizer'
+import { createVoicePreviews } from './tts/createVoicePreviews'
+import { createPreviewRenderer } from './tts/createMainTts'
+import { DEFAULT_TTS_VOICE } from '../core/tts/ttsVoices'
 import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
@@ -195,9 +199,20 @@ const utteranceDumper = createUtteranceDumper({
   enabled: audioDumpEnabled(currentEnv()),
 })
 
-// Piper TTS: binary, voices dir, and base voice come from env (defaults
-// suffice for a standard install); the settings page's voice wins per line.
+// Piper TTS: binary, voices dir, and fallback voice come from env (defaults
+// suffice for a standard install); the settings page's voice wins per line,
+// Kokoro af_heart by default (#412). One Kokoro for the app, its model
+// fetched to <userData>/models on demand and shared with the previews.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
+const kokoro = piperConfig.kokoroModelsDir === null ? null : createKokoroSynthesizer({ modelsDir: piperConfig.kokoroModelsDir })
+// The picker's ▶ (#412): shipped clips first, else rendered once and kept; one aplay, so a muted run's previews are silent too.
+const voicePreviews = createVoicePreviews({
+  // From the built main (out/main), as the preload and renderer are: the app path is out/main under the e2e's launch.
+  samplesDir: join(__dirname, '../../resources/tts-samples'),
+  cacheDir: join(app.getPath('userData'), 'tts-previews'),
+  player: createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice }),
+  render: createPreviewRenderer(piperConfig, kokoro),
+})
 
 // Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
 // the models load once. Scripted doubles ride the same seam for e2e. The
@@ -419,8 +434,9 @@ async function createWindow(): Promise<BrowserWindow> {
   const speakingGate = createSpeakingGate(
     createMainTts({
       config: piperConfig,
+      kokoro,
       pane: pane.view.webContents,
-      getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
+      getVoiceId: () => settingsStore.get().ttsVoice.trim() || DEFAULT_TTS_VOICE,
       tracer: perfTracer,
       prefetch: true,
     }),
@@ -527,7 +543,14 @@ async function createWindow(): Promise<BrowserWindow> {
     vad: voice.vad,
     transcriber: voice.transcriber,
     turn: voice.turn,
-    tts: speakingGate.tts,
+    // Barge-in stops a voice preview as it stops speech (#412).
+    tts: {
+      speak: (text, options) => speakingGate.tts.speak(text, options),
+      stop: () => {
+        speakingGate.tts.stop()
+        voicePreviews.stop()
+      },
+    },
     wake: wakeDetector
       ? {
           detector: wakeDetector,
@@ -595,7 +618,7 @@ app.whenReady().then(async () => {
   })
   app.on('will-quit', () => scaleListener?.stop())
   registerFeedPanelIpc()
-  registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
+  registerTtsIpc({ voicesDir: () => piperConfig.voicesDir, previews: voicePreviews })
   registerVoiceIpc()
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own

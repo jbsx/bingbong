@@ -192,6 +192,8 @@ export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string)
     BINGBONG_PIPER_BIN: join(repoRoot, 'e2e/bin/fake-piper.mjs'),
     BINGBONG_APLAY_BIN: join(repoRoot, 'e2e/bin/fake-aplay.mjs'),
     BINGBONG_WAKE_ENGINE: 'off',
+    // Kokoro off (#412): no launch fetches its 326 MB model; every line is the scripted piper's.
+    BINGBONG_KOKORO: 'off',
     BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
     BINGBONG_ADBLOCK_RESOURCES: '',
     BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),

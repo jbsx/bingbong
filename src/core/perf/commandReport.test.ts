@@ -59,7 +59,7 @@ describe('buildReactionReport', () => {
   })
 
   it('is empty, not a crash, with no reaction spans; a span without a verb counts as unknown', () => {
-    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null })
+    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null, firstSoundByEngine: [] })
     const report = buildReactionReport([{ turnId: 't1', stage: 'reaction', durMs: 100, at: AT, t: 0 }])
     expect(report.byVerb).toEqual([{ verb: 'unknown', count: 1, p50: 100, p95: 100, max: 100 }])
   })
@@ -175,6 +175,27 @@ describe('formatCommandReport', () => {
       'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
       'early fire: 2 of 4 spoken (50%), lead p50 300ms p95 500ms | jev calls per spoken utterance 1.00 (3 on partials)',
     ])
+  })
+
+  it('splits first sound by engine once Kokoro has spoken, the untagged spans before it counted as Piper’s (#412)', () => {
+    const firstSound = (turnId: string, durMs: number, engine?: string): PerfSpanRecord => ({ turnId, stage: 'tts-first-sound', durMs, at: AT, t: 0, ...(engine ? { detail: { engine } } : {}) })
+    const report = buildReactionReport([firstSound('t1', 100), firstSound('t2', 120, 'piper'), firstSound('t3', 500, 'kokoro'), firstSound('t4', 700, 'kokoro')])
+    expect(report.firstSoundByEngine).toEqual([
+      { verb: 'tts-first-sound (kokoro)', count: 2, p50: 500, p95: 700, max: 700 },
+      { verb: 'tts-first-sound (piper)', count: 2, p50: 100, p95: 120, max: 120 },
+    ])
+    expect(formatCommandReport(report, buildDecisionReport([]))).toEqual([
+      'reaction (Endpoint to first effect), by verb:',
+      'verb                      count    p50    p95    max',
+      'tts-first-sound               4  120ms  700ms  700ms',
+      'tts-first-sound (kokoro)      2  500ms  700ms  700ms',
+      'tts-first-sound (piper)       2  100ms  120ms  120ms',
+    ])
+  })
+
+  it('prints no engine rows while one engine has spoken', () => {
+    const report = buildReactionReport([{ turnId: 't1', stage: 'tts-first-sound', durMs: 100, at: AT, t: 0 }])
+    expect(report.firstSoundByEngine).toEqual([])
   })
 
   it('prints a spoken read as its own row and tts-first-sound p50/p95 beside the Reaction rows (#327, AC5)', () => {

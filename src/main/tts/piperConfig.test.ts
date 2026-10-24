@@ -9,7 +9,12 @@ describe('resolvePiperConfig', () => {
       voicesDir: join('/data', 'voices'),
       voiceId: 'en_US-ryan',
       playerBin: 'aplay',
+      kokoroModelsDir: join('/data', 'models'),
     })
+  })
+
+  it('turns Kokoro off when BINGBONG_KOKORO=off', () => {
+    expect(resolvePiperConfig({ BINGBONG_KOKORO: 'off' }, '/data').kokoroModelsDir).toBeNull()
   })
 
   it('honours env overrides', () => {
@@ -23,7 +28,7 @@ describe('resolvePiperConfig', () => {
         },
         '/data',
       ),
-    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay' })
+    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay', kokoroModelsDir: join('/data', 'models') })
   })
 
   it('plays to the null device when the run is muted', () => {

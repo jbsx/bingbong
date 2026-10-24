@@ -22,11 +22,13 @@ export interface TtsSpeaker {
   stop(): void
 }
 
-/** Text → WAV bytes (piper in main). */
+/** Text → WAV bytes (Kokoro or piper in main, #412). */
 export interface SpeechSynthesizer {
   synthesize(text: string): Promise<Uint8Array>
   /** How many synthesizer processes have been started so far (#327): a persistent piper stays at one per voice; the perf log carries it. */
   spawnCount?(): number
+  /** The engine that said the latest line (#412), `kokoro` or `piper`; the perf log carries it. Null before the first. */
+  lastEngine?(): string | null
 }
 
 export interface AudioPlayback {

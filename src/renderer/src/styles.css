@@ -1836,6 +1836,133 @@ details[open] > .settings-summary::before {
   box-shadow: var(--focus-ring);
 }
 
+/* The TTS voice picker (#412): a radio per voice, its cost bar and its ▶, Kokoro then Piper. */
+/* The label over the list, so the names, bars and ▶ have the section's width. */
+.settings-field--voices {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 12px;
+  padding-top: 12px;
+}
+
+.voice-picker {
+  width: 100%;
+  max-width: 888px;
+  max-height: 440px;
+  overflow-y: auto;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 6px 0;
+}
+
+.voice-group-title {
+  padding: 12px 18px 4px;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.voice-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 36px;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 52px;
+  padding: 4px 10px 4px 16px;
+}
+
+.voice-row[data-selected='true'] {
+  background: var(--accentq);
+}
+
+.voice-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.voice-choice input[type='radio'] {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+/* The name never truncates: its detail (accent, voice) takes the line under it. */
+.voice-name {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  align-items: baseline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--fgh);
+}
+
+.voice-detail {
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.voice-cost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-cost-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hair2);
+  overflow: hidden;
+}
+
+.voice-cost-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.voice-cost-percent {
+  width: 40px;
+  text-align: right;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+}
+
+.voice-preview {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hair2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.voice-preview[aria-pressed='true'] {
+  border-color: var(--accent-edge);
+  color: var(--accent);
+}
+
+.voice-preview:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.voice-preview-error {
+  margin: 8px 18px 4px;
+}
+
 /* The weather city's search box and the places it offers, hung under it. */
 .city-picker {
   position: relative;

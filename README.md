@@ -134,7 +134,9 @@ access to the screen). X11 and the PulseAudio socket are passed through, so
 the dashboard renders on the physical screen and mic/speakers work
 unchanged. Every model — Silero VAD, openWakeWord, the custom wake heads,
 Moonshine Small, the Piper voice — is baked into the image and seeded into
-`./data` on first boot. All durable state (Browser Profile, Settings,
+`./data` on first boot. The default voice, Kokoro af_heart, is fetched on
+first boot instead (~330 MB, into `./data/models`); the Piper voice speaks
+until it lands. `BINGBONG_KOKORO=off` keeps every line on Piper. All durable state (Browser Profile, Settings,
 downloads) lives in `./data`: delete it for a fresh start, copy it to
 migrate.
 
@@ -219,7 +221,7 @@ src/
     voice/     Silero VAD adapter, scripted doubles, voice IPC, learned terms
     moonshine/ streaming Moonshine STT engine + model fetch
     wake/      openWakeWord heads (Node) and the Python sidecar
-    tts/       piper → aplay, ducking the pane
+    tts/       Kokoro (in process) or piper → aplay, ducking the pane; voice previews
     panel/     the feed panel's native overlay view
     cli/       the terminal REPL over the browser controller
   preload/     contextBridge preload

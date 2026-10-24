@@ -7,7 +7,7 @@ const DEAD_PANE = { isDestroyed: () => true } as unknown as WebContents
 describe('createMainTts', () => {
   it('resolves a failed line as an outcome, never a throw, when piper cannot run', async () => {
     const tts = createMainTts({
-      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay' },
+      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', kokoroModelsDir: null },
       pane: DEAD_PANE,
       getVoiceId: () => 'test',
     })

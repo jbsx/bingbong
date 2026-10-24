@@ -9,8 +9,8 @@ export interface SpeechCoordinatorDeps {
   ducker?: AudioDucker
   /**
    * Optional perf tracer (#31, #327): each spoken text keyed to a turn id
-   * records a `tts-synthesis` span per sentence (piper rendering, with the
-   * sentence's index), a `tts-first-sound` span from the speak call to the
+   * records a `tts-synthesis` span per sentence (the render, with the
+   * sentence's index and the engine that said it, #412), a `tts-first-sound` span from the speak call to the
    * first sample handed to the player, and a `tts-playback` span (aplay
    * speaking). Texts without a turn id (download announcements) pass
    * through unlogged.
@@ -23,6 +23,8 @@ interface QueuedSpeak {
   options: SpeakOptions
   /** Monotonic ms of the speak call, when traced: where `tts-first-sound` opens. */
   calledAt?: number
+  /** The engine that said the first sentence (#412), carried on `tts-first-sound`. */
+  engine?: string
   resolve: (outcome: SpeakOutcome) => void
 }
 
@@ -90,7 +92,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
 
   /** The first sample went to the player: the Reaction hook, and the first-sound span. */
   function firstSound(item: QueuedSpeak): void {
-    if (tracer && item.calledAt !== undefined) recordSpan(item.options.turnId, 'tts-first-sound', tracer.now() - item.calledAt)
+    if (tracer && item.calledAt !== undefined) recordSpan(item.options.turnId, 'tts-first-sound', tracer.now() - item.calledAt, item.engine === undefined ? undefined : { engine: item.engine })
     try {
       item.options.onFirstSound?.()
     } catch (error) {
@@ -118,7 +120,9 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
         } finally {
           // Recorded even when piper fails — the render time was spent either way.
           if (tracer && synthStart !== undefined) {
-            recordSpan(turnId, 'tts-synthesis', tracer.now() - synthStart, { index, spawns: synth.spawnCount?.() ?? null })
+            const engine = synth.lastEngine?.() ?? undefined
+            if (index === 0 && engine !== undefined) item.engine = engine
+            recordSpan(turnId, 'tts-synthesis', tracer.now() - synthStart, { index, spawns: synth.spawnCount?.() ?? null, ...(engine === undefined ? {} : { engine }) })
           }
         }
         // Stopped while piper rendered — never let a stale sentence reach playback.

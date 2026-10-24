@@ -20,6 +20,9 @@ importers:
       onnxruntime-node:
         specifier: ^1.27.0
         version: 1.27.0
+      phonemizer:
+        specifier: 1.2.1
+        version: 1.2.1
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -1746,6 +1749,9 @@ packages:
 
   performance-now@2.1.0:
     resolution: {integrity: sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==}
+
+  phonemizer@1.2.1:
+    resolution: {integrity: sha512-v0KJ4mi2T4Q7eJQ0W15Xd4G9k4kICSXE8bpDeJ8jisL4RyJhNWsweKTOi88QXFc4r4LZlz5jVL5lCHhkpdT71A==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -3941,6 +3947,8 @@ snapshots:
 
   performance-now@2.1.0:
     optional: true
+
+  phonemizer@1.2.1: {}
 
   picocolors@1.1.1: {}
 
