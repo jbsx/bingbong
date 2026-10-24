@@ -138,6 +138,41 @@ Moonshine Small, the Piper voice — is baked into the image and seeded into
 downloads) lives in `./data`: delete it for a fresh start, copy it to
 migrate.
 
+### The Log Bucket (optional)
+
+The app deletes log files older than 7 days. Beside it, compose runs a
+`log-bucket` sidecar (the pinned `rclone/rclone` image, `docker/log-bucket.sh`)
+that copies the logs, `ask-images/` included, to a Cloudflare R2 bucket
+under `<bucket>/kiosk/` every 5 minutes. It only ever copies: nothing the
+kiosk purges is deleted from the bucket. The uploads are fixed by the
+schedule (about 43k Class A requests a month, 4% of R2's free tier, at any
+load). Once a day it measures the bucket; over 8 GB it deletes this
+machine's oldest files until the bucket is under 7 GB, so storage stays
+inside the free tier's 10 GB.
+
+Setup is the "Log Bucket" block of `.env.example`, copied into
+`config/.env` with:
+
+- **an R2 API token** you create in the Cloudflare dashboard with Object
+  Read & Write on this bucket only (a private bucket that holds only logs);
+- **a billing notification** on the Cloudflare account, as the backstop:
+  going over the free tier is billed, not blocked.
+
+The sidecar reads only the `BINGBONG_LOG_*` and `RCLONE_CONFIG_R2_*` lines
+of the file, so the model keys never enter it. Without them it logs one
+line and idles, and `scripts/kiosk-setup.sh` warns. The logs are not
+encrypted; their privacy rests on the private bucket and the scoped token.
+
+On the dev PC, install [rclone](https://rclone.org/install/), put the same
+lines in the root `.env`, and pull a machine's folder:
+
+```sh
+pnpm logs:pull [machine] [dir]   # default: kiosk → kiosk-logs/kiosk
+pnpm perf:report kiosk-logs/kiosk
+```
+
+`jev:candidates`, `jev:case` and the bugs scripts read that folder too.
+
 ## Monitor brightness (ddcutil, optional)
 
 Night Dim (Settings › Idle screen › Screen) works with nothing installed: it

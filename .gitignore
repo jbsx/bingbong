@@ -17,3 +17,6 @@ e2e/eval/delegation/probe.json
 e2e/eval/traces/
 e2e/live/artifacts/
 e2e/live/private/
+
+# Logs pulled from the Log Bucket (`pnpm logs:pull`, #418).
+kiosk-logs/

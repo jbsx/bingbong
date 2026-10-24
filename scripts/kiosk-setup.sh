@@ -43,6 +43,20 @@ else
   fail "config/.env missing and no .env.example to copy" "create config/.env with your model routing"
 fi
 
+# --- log bucket (optional; the sidecar idles without it) -------------------
+if [ -f config/.env ]; then
+  missing=""
+  for key in BINGBONG_LOG_BUCKET RCLONE_CONFIG_R2_TYPE RCLONE_CONFIG_R2_ENDPOINT RCLONE_CONFIG_R2_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY; do
+    grep -Eq "^[[:space:]]*(export[[:space:]]+)?$key=[^[:space:]]" config/.env || missing="$missing $key"
+  done
+  if [ -z "$missing" ]; then
+    pass "log bucket configured (logs copied to R2 every 5 min)"
+  else
+    warn "log bucket not configured: logs stay on the kiosk and are purged after 7 days (missing:$missing)" \
+      "fill the \"Log Bucket\" block of .env.example into config/.env, with an R2 token scoped to the bucket"
+  fi
+fi
+
 # --- display (X11 passthrough) --------------------------------------------
 if [ -n "${DISPLAY:-}" ]; then
   xsock="/tmp/.X11-unix/X${DISPLAY#*:}"
