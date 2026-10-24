@@ -23,8 +23,8 @@ export interface NightDimMonitor {
   connector: string
 }
 
-export const NIGHT_BRIGHTNESS_MIN = 10
-export const NIGHT_BRIGHTNESS_MAX = 90
+export const NIGHT_BRIGHTNESS_MIN = 0
+export const NIGHT_BRIGHTNESS_MAX = 100
 
 export function defaultNightDim(): NightDim {
   return { enabled: false, from: '23:00', to: '07:00', brightnessPercent: 40, monitor: null }

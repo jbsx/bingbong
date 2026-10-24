@@ -27,7 +27,8 @@ describe('nightDim', () => {
 
   it('reads a saved Night Dim, and anything it cannot as the default', () => {
     expect(sanitizeNightDim({ enabled: true, from: '22:30', to: '06:15', brightnessPercent: 25 })).toEqual({ enabled: true, from: '22:30', to: '06:15', brightnessPercent: 25, monitor: null })
-    expect(sanitizeNightDim({ from: '25:00', to: '7am', brightnessPercent: 0 })).toEqual({ ...defaultNightDim(), brightnessPercent: 10 })
+    expect(sanitizeNightDim({ from: '25:00', to: '7am', brightnessPercent: -5 })).toEqual({ ...defaultNightDim(), brightnessPercent: 0 })
+    expect(sanitizeNightDim({ brightnessPercent: 150 }).brightnessPercent).toBe(100)
     expect(sanitizeNightDim(null)).toEqual(defaultNightDim())
   })
   it('keeps the picked monitor by model and connector, and anything else as veil only', () => {
@@ -41,6 +42,13 @@ describe('nightDim', () => {
     expect(nightLevel(40, 40)).toBe(16)
     expect(nightLevel(100, 10)).toBe(10)
     expect(nightLevel(5, 50)).toBe(3)
+  })
+
+  it('takes the whole range: 0 % down to the monitor\'s floor, 100 % leaving it as it is', () => {
+    expect(sanitizeNightDim({ brightnessPercent: 0 }).brightnessPercent).toBe(0)
+    expect(sanitizeNightDim({ brightnessPercent: 100 }).brightnessPercent).toBe(100)
+    expect(nightLevel(40, 0)).toBe(0)
+    expect(nightLevel(40, 100)).toBeNull()
   })
 
   it('has no night level when the day level is already at the floor or would not move', () => {
