@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-24, base `1353179c` + #421](versions/2026-10-24-1353179c-flag/chart.html), in which a Flag line keeps the previous Task for later, with no Jev call and no page action (#421). [Overview](versions/2026-10-24-1353179c-flag/overview.png) · [changes](versions/2026-10-24-1353179c-flag/changes.md)
+**Latest:** [2026-10-24, base `a35d1386` + #423](versions/2026-10-24-a35d1386-site-question/chart.html), in which a page's own yes/no question (a native confirm) holds its Task and your next line answers it before anything else (#423). [Overview](versions/2026-10-24-a35d1386-site-question/overview.png) · [changes](versions/2026-10-24-a35d1386-site-question/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-24 | `a35d1386` + #423 | [chart](versions/2026-10-24-a35d1386-site-question/chart.html) | A page's confirm pauses its Task and is said aloud; your next line answers it first: yes/ok/confirm or no/cancel with no Jev, else one Jev ask (OK, Cancel, or a new command run after a refusal); unsure refuses. An alert is accepted and said. [changes](versions/2026-10-24-a35d1386-site-question/changes.md) |
 | 2026-10-24 | `1353179c` + #421 | [chart](versions/2026-10-24-1353179c-flag/chart.html) | "mark this as a failure [with the hint …]" keeps the previous Task's records and a shot under logs/flags/ and says "Flagged."; never Jev's, nothing in flight is superseded. [changes](versions/2026-10-24-1353179c-flag/changes.md) |
 | 2026-10-24 | `6c642783` + #420 | [chart](versions/2026-10-24-6c642783-app-on-card/chart.html) | The panel, views and one settings line are on the card (not on the Where Ask); `settings` opens a second ask offering every setting's ops; a chosen op changes the app, says the new value and ends the Task; `open settings` (and weight, dashboard, panel, feed) is Jev's. [changes](versions/2026-10-24-6c642783-app-on-card/changes.md) |
 | 2026-10-24 | `20f843b5` + #417 | [chart](versions/2026-10-24-20f843b5-sheet-leaves/chart.html) | A click on the pop-up waits up to 2 s for it to leave or show something else; a refused or frame-gone action on a pop-up that left goes on. [changes](versions/2026-10-24-20f843b5-sheet-leaves/changes.md) |

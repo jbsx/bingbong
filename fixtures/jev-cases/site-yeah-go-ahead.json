@@ -1,0 +1,25 @@
+{
+  "recordedAt": 1792875600000,
+  "transcript": "yeah go ahead",
+  "note": "#423: AUTHORED seed case, not a real line (none existed); a page's confirm \"Delete this video?\" raised by \"delete the video\". Replace with the first live Site Question lines via jev:candidates / jev:case.",
+  "expect": [
+    {
+      "question": "answer",
+      "label": "accept"
+    }
+  ],
+  "ask": {
+    "state": "A web page in the browser asked the user, in a dialog with OK and Cancel: \"Delete this video?\"\nIt asked while the browser did what the user said: \"delete the video\"\nThe user's next words: \"yeah go ahead\"",
+    "questions": {
+      "answer": {
+        "type": "choice",
+        "instructions": "How do the user's next words answer the page's question? Choose command when the words are not an answer to it but something else for the browser to do.",
+        "options": {
+          "accept": "OK: the words say yes to the page's question",
+          "refuse": "Cancel: the words say no, or not now",
+          "command": "not an answer: a new command for the browser, done after the question is cancelled"
+        }
+      }
+    }
+  }
+}

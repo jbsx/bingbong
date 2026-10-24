@@ -137,9 +137,25 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
     const rl = createInterface({ input })
     closeInput = () => rl.close()
     let queue: Promise<void> = Promise.resolve()
+    // The page asked (#423): the line that raised its question waits on the page, so the next line answers it at once, past the queue.
+    let questionOpen = false
+    subscribe((event) => {
+      if (event.type !== 'site_question') return
+      write(`${event.alert ? 'page says' : 'page asks'}: ${event.text}\n`)
+      if (event.alert !== true) questionOpen = true
+    })
 
     rl.on('line', (line: string) => {
-      if (!finished) queue = queue.then(() => handleLine(line))
+      if (finished) return
+      if (questionOpen) {
+        questionOpen = false
+        void handleLine(line)
+        return
+      }
+      // A question the page closed itself leaves nothing to answer once the line that raised it settles.
+      queue = queue.then(() => handleLine(line)).then(() => {
+        questionOpen = false
+      })
     })
     rl.on('close', () => {
       void queue.then(() => resolve())

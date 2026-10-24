@@ -65,6 +65,7 @@ import {
   type DecisionRecord,
   type FlagKeeper,
   type FlagRecord,
+  type SiteAnswerRecord,
   type NameSource,
   type PickSource,
   type TaskEnded,
@@ -78,6 +79,8 @@ import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noRespo
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appWords, placeName, placeSettings, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
+import { SITE_ANSWERS, alertLine, exactSiteAnswer, readSiteAnswer, siteQuestionAsk, siteQuestionLine, type SiteAnswer, type SiteQuestion } from '../../core/command/siteQuestion'
+import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
@@ -262,6 +265,8 @@ export interface CommandRunnerDeps {
   app?: AppControl
   /** The Flag keeper (#421); absent, a flag is logged and nothing is copied. */
   flags?: FlagKeeper
+  /** Where the page's own question waits (#423): said when it opens, answered by the next line; absent, no line is read as an answer. */
+  siteQuestions?: Pick<SiteQuestionDesk, 'open' | 'answer' | 'subscribe'>
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -467,7 +472,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const knownAddress = (word: string): string | null => (deps.app !== undefined && ownWords.has(word.toLowerCase()) ? null : (deps.knownAddress?.(word) ?? null))
   const { browser, publish, tracer } = deps
   /** The Command whose action is in flight, if one is. */
-  let inFlight: { turnId: string; generation: number } | null = null
+  let inFlight: { turnId: string; generation: number; text: string } | null = null
   let generation = 0
   /**
    * Counts every submission and abort: a reading that finishes after a
@@ -1214,7 +1219,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     silence()
     generation += 1
     const mine = generation
-    inFlight = { turnId, generation: mine }
+    inFlight = { turnId, generation: mine, text }
     const current = (): boolean => inFlight !== null && inFlight.generation === mine
 
     const paneHasPage = isRealPage(page.url) || isRealPage(browser.state().url)
@@ -1411,6 +1416,79 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reportFault('run.commandRunner.flagKeep', error, { turnId })
     }
     log({ ...record, ...(kept !== null ? { shot: kept } : {}) })
+  }
+
+  /** The line of the Command in flight when the page asked its open question (#423); null when it asked on its own. */
+  let siteRaisedBy: string | null = null
+
+  /**
+   * The page spoke (#423): its question, or an alert it showed, is said and
+   * published, outside any turn — the Task that raised it is still under
+   * way, frozen on the page, and keeps its own Answer.
+   */
+  function tellSite(text: string, alert: boolean): void {
+    publish({ type: 'site_question', text, ...(alert ? { alert: true } : {}), at: at() })
+    void deps.speech?.speak(text).catch((error: unknown) => reportFault('run.commandRunner.siteSpeak', error))
+  }
+
+  deps.siteQuestions?.subscribe((event) => {
+    if (event.type === 'question') {
+      siteRaisedBy = inFlight?.text ?? null
+      tellSite(siteQuestionLine(event.question), false)
+    } else if (event.type === 'alert') {
+      const said = alertLine(event.text)
+      if (said !== null) tellSite(said, true)
+    }
+  })
+
+  /**
+   * The user's line read as the open Site Question's answer (#423): the
+   * exact lines with no ask, any other by Jev — accept, refuse, or a new
+   * Command — and, Jev unsure or unavailable, a refusal said aloud. The
+   * page is answered at once; the Task that raised it goes on from there,
+   * never superseded. Resolves whether the line is spent: false for a new
+   * Command, which then runs as usual, the question refused.
+   */
+  async function answerSite(turnId: string, line: string, source: CommandSource, endpointAt: number, question: SiteQuestion): Promise<boolean> {
+    const firedAt = at()
+    const exact = exactSiteAnswer(line)
+    const model = exact === null ? deps.decisionModel() : null
+    const ask = model === null ? null : siteQuestionAsk(question, siteRaisedBy, line)
+    const result = model === null || ask === null ? null : await askJev(model, 'site', turnId, ask.state, ask.questions)
+    const read = result?.status === 'answered' ? readSiteAnswer(result.answers, DEFAULT_DECISION_THRESHOLDS.choice) : null
+    const reply: SiteAnswer = exact ?? read ?? 'refuse'
+    const reading: CommandReading = exact !== null ? 'local_match' : read !== null ? 'jev' : 'best_guess'
+    const record: SiteAnswerRecord = {
+      type: 'site_answer',
+      turnId,
+      at: firedAt,
+      source,
+      transcript: line,
+      question,
+      ...(siteRaisedBy !== null ? { raisedBy: siteRaisedBy } : {}),
+      answer: reply,
+      reading,
+      jevAsked: result !== null,
+      ...(result === null
+        ? {}
+        : result.status === 'answered'
+          ? { jev: { model: result.model, latencyMs: result.latencyMs, confidence: result.answers.answer.confidence, probabilities: result.answers.answer.probabilities }, ask: result.askId }
+          : { jev: jevUnavailableOf(result), ask: result.askId }),
+    }
+    // The page may have closed its question while Jev read (it navigated): the line then runs as usual, and no answer is recorded.
+    const answered = await (deps.siteQuestions?.answer(reply === 'accept') ?? Promise.resolve(false))
+    if (answered || reply === 'command') log(record)
+    if (reply === 'command' || !answered) return false
+    publish({ type: 'command', turnId, text: line, action: `answer the page's question: ${reply === 'accept' ? 'OK' : 'Cancel'}`, keepsIdle: true, task: { id: turnId, hop: 0 }, at: firedAt })
+    span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'answer', effect: 'settled', reading, source })
+    if (reading === 'best_guess') {
+      answer(turnId, SITE_ANSWERS.fallback)
+      if (deps.speech !== undefined) void say(deps.speech, turnId, SITE_ANSWERS.fallback)
+    } else {
+      answer(turnId, SITE_ANSWERS[reply])
+    }
+    publish({ type: 'done', turnId, outcome: 'done', at: at() })
+    return true
   }
 
   function summarize(turnId: string): void {
@@ -2439,7 +2517,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
     async consider(partial) {
       const words = partial.trim()
-      if (words === '' || words === lastPartial) return
+      // A Site Question open (#423): the Endpoint's line answers it, and no partial fires before.
+      if (words === '' || words === lastPartial || deps.siteQuestions?.open() != null) return
       lastPartial = words
       if (firedIn(utterance)) return
       if (considering) {
@@ -2503,6 +2582,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // A Site Question open (#423): this line answers it before anything else reads it, and the Task that raised it is left in flight.
+      const question = deps.siteQuestions?.open() ?? null
+      if (question !== null && (await answerSite(turnId, trimmed, source, endpointAt, question))) {
+        if (options?.turnId !== undefined) summarize(options.turnId)
+        return true
+      }
       // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command.
       const flagged = readFlagLine(trimmed)
       if (flagged !== null) {

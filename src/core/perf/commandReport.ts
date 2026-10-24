@@ -152,7 +152,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       continue
     }
     // A Flag (#421) is the user's word on a Task, no Command: `pnpm bugs:candidates` reads it.
-    if (record.type === 'flag') continue
+    if (record.type === 'flag' || record.type === 'site_answer') continue
     report.commands += 1
     if (record.task !== undefined) {
       const key = record.task.step === undefined ? record.task.id : `${record.task.id}#${record.task.step}`

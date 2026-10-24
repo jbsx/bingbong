@@ -42,6 +42,12 @@ export type PipelineEvent =
   | { type: 'display'; turnId?: string; text: string; failure?: boolean; muted?: boolean; at: number }
   | { type: 'error'; turnId?: string; message: string; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
+  /**
+   * The page spoke for itself (#423), outside any turn: a Site Question
+   * (its native confirm) waiting for the user's next line, or, `alert`, an
+   * alert the pane accepted. `text` is the line the app says.
+   */
+  | { type: 'site_question'; text: string; alert?: true; at: number }
 
 /**
  * Derives a run's outcome when its `done` event omits one: a seen cancelled

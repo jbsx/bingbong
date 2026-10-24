@@ -1,4 +1,5 @@
 import type { ConsentChooser } from '../../core/browser/dialogPolicy'
+import { createSiteQuestionDesk, type SiteQuestionDesk, type SiteQuestionEvent } from '../../core/browser/siteQuestionDesk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
@@ -559,6 +560,8 @@ function makeController(options?: {
   effects?: ActionEffects
   chooseConsent?: ConsentChooser
   frames?: PageFrames
+  siteQuestions?: SiteQuestionDesk
+  leaving?: () => boolean
 }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
@@ -593,6 +596,8 @@ function makeController(options?: {
     },
     ...(options?.subspans ? { subspans: options.subspans } : {}),
     ...(options?.chooseConsent ? { chooseConsent: options.chooseConsent } : {}),
+    ...(options?.siteQuestions ? { siteQuestions: options.siteQuestions } : {}),
+    ...(options?.leaving ? { leaving: options.leaving } : {}),
   })
   return { cdp, page, controller, popupQueue, holds, menuHolds }
 }
@@ -2246,33 +2251,73 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 })
 
 describe('createCdpBrowserController native dialogs and popups', () => {
-  it('auto-dismisses native JS dialogs and reports them on the next outcome', async () => {
+  it('accepts an alert, tells its text for saying, and reports it on the next outcome (#423)', async () => {
     const cdp = new FakeCdp()
-    const { controller } = makeController({ cdp })
+    const siteQuestions = createSiteQuestionDesk()
+    const told: SiteQuestionEvent[] = []
+    siteQuestions.subscribe((event) => told.push(event))
+    const { controller } = makeController({ cdp, siteQuestions })
     await controller.readPage()
 
     cdp.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'hello from alert' })
 
     const outcome = await controller.click(3)
 
-    expect(outcome).toBe(
-      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; native alert dialog auto-dismissed: "hello from alert"',
-    )
-    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: false } })
+    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change; native alert dialog accepted: "hello from alert"')
+    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: true } })
+    expect(told).toEqual([{ type: 'alert', text: 'hello from alert' }])
   })
 
-  it('reports multiple native dialogs in order', async () => {
+  it('raises a confirm as a Site Question and leaves it open until the user answers it (#423)', async () => {
+    const cdp = new FakeCdp()
+    const siteQuestions = createSiteQuestionDesk()
+    const { controller } = makeController({ cdp, siteQuestions })
+    await controller.readPage()
+
+    cdp.emit('Page.javascriptDialogOpening', { type: 'confirm', message: 'Delete this video?' })
+
+    expect(siteQuestions.open()).toEqual({ kind: 'confirm', text: 'Delete this video?' })
+    expect(cdp.calls.filter((call) => call.method === 'Page.handleJavaScriptDialog')).toEqual([])
+    await siteQuestions.answer(true)
+    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: true } })
+    expect(await controller.click(3)).toContain('native confirm dialog answered OK by the user: "Delete this video?"')
+  })
+
+  it('closes the Site Question when the page closes its confirm itself', async () => {
+    const cdp = new FakeCdp()
+    const siteQuestions = createSiteQuestionDesk()
+    makeController({ cdp, siteQuestions })
+
+    cdp.emit('Page.javascriptDialogOpening', { type: 'confirm', message: 'Delete this video?' })
+    cdp.emit('Page.javascriptDialogClosed', { result: false })
+
+    expect(siteQuestions.open()).toBeNull()
+  })
+
+  it('refuses a confirm when no one can be asked, and reports native dialogs in order', async () => {
     const cdp = new FakeCdp()
     const { controller } = makeController({ cdp })
     await controller.readPage()
 
     cdp.emit('Page.javascriptDialogOpening', { type: 'confirm', message: 'first' })
-    cdp.emit('Page.javascriptDialogOpening', { type: 'beforeunload', message: 'second' })
+    cdp.emit('Page.javascriptDialogOpening', { type: 'beforeunload', message: '' })
 
     const outcome = await controller.click(3)
 
-    expect(outcome).toContain('native confirm dialog auto-dismissed: "first"')
-    expect(outcome).toContain('native beforeunload dialog auto-dismissed: "second"')
+    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: false } })
+    expect(outcome).toContain('native confirm dialog refused: "first"')
+    expect(outcome).toContain('leave-page warning: the page stayed')
+  })
+
+  it('reports a leave-page warning met while a Command leaves the page as accepted (#423)', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp, leaving: () => true })
+    await controller.readPage()
+
+    cdp.emit('Page.javascriptDialogOpening', { type: 'beforeunload', message: '' })
+
+    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: true } })
+    expect(await controller.click(3)).toContain('leave-page warning accepted: left as asked')
   })
 
   it('reports blocked window.open popups with their URL on the next outcome', async () => {

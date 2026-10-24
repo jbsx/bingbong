@@ -5,12 +5,12 @@ import { systemClock, type Clock } from '../../core/ports/clock'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import { downloadAnnouncements, sanitizeDownloadFilename, uniqueDownloadPath } from '../../core/downloads/downloadRouting'
 
-// Agent-initiated downloads: the risk gate has already asked the user before
-// the click that started this download (core/pipeline/riskGate.ts), and the
-// tracker (core/downloads/agentActivity.ts) tells us the agent was driving
-// the pane. Manual downloads — the user browsing the pane themselves — keep
-// Electron's default OS save dialog. Routing policy lives in core
-// (downloadRouting.ts); this file is the thin Electron glue, covered by e2e.
+// Routed downloads (#423): every one on the kiosk, and on the desktop one a
+// Task started (core/downloads/taskActivity.ts) — saved to the downloads
+// folder and announced. Any other download, the user's own with the mouse,
+// keeps Electron's default OS Save dialog. Routing policy lives in core
+// (downloadRouting.ts, taskActivity.ts); this file is the thin Electron
+// glue, covered by e2e.
 
 export interface DownloadRouterDeps {
   dir: string
@@ -18,19 +18,19 @@ export interface DownloadRouterDeps {
   clock?: Clock
   /** Forwards announcement events to the dashboard (same channel as the pipeline). */
   emit(event: PipelineEvent): void
-  /** Only downloads that start while the agent drives the pane are routed. */
-  isAgentActive(): boolean
+  /** Whether this download is routed rather than handed to the Save dialog, given its addresses (its redirect chain). */
+  routes(urls: readonly string[]): boolean
 }
 
 export function attachDownloadRouter(target: Session, deps: DownloadRouterDeps): void {
-  const { dir, tts, emit, isAgentActive } = deps
+  const { dir, tts, emit, routes } = deps
   const clock = deps.clock ?? systemClock
   // Paths claimed by in-flight downloads, so two same-name downloads cannot
   // race the existence check into the same file.
   const reserved = new Set<string>()
 
   target.on('will-download', (_event, item) => {
-    if (!isAgentActive()) return
+    if (!routes(item.getURLChain())) return
     mkdirSync(dir, { recursive: true })
     const filename = sanitizeDownloadFilename(item.getFilename())
     const savePath = uniqueDownloadPath(dir, filename, (path) => existsSync(path) || reserved.has(path))

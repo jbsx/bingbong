@@ -81,6 +81,7 @@ import {
 import { readRefStates } from './readRefStates'
 import { mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
+import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
 // and the Electron glue (webContents.debugger) stays a thin adapter.
@@ -255,6 +256,8 @@ export interface CdpBrowserControllerDeps {
   effects?: ActionEffects
   /** Drains popup-block URLs the pane recorded (window.open denied + closed). */
   consumePopupBlocks?: () => string[]
+  /** Permission requests the pane's policy denied since the last call (#423), each its outcome line. */
+  consumePermissionDenials?: () => string[]
   /**
    * Drains auth-popup URLs the pane queued and opens their windows (ADR
    * 0018) — called at outcome time, when no input command is in flight, so
@@ -289,6 +292,10 @@ export interface CdpBrowserControllerDeps {
    * answering null, the privacy-first policy accepts as before.
    */
   chooseConsent?: ConsentChooser
+  /** Where the page's confirm waits for the user (#423); absent, it is refused as no one can be asked. */
+  siteQuestions?: Pick<SiteQuestionDesk, 'raise' | 'closed' | 'told'>
+  /** Whether a Command is leaving the page now (#423): a leave-page warning met then was accepted by the pane. */
+  leaving?: () => boolean
   /** The frames below the top document (#377, ADR 0081); absent, the page is the top document alone. */
   frames?: PageFrames
   /**
@@ -664,18 +671,44 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  // Native JS dialogs (alert/confirm/prompt/beforeunload) freeze the page's
-  // JS thread — there is nothing to deliberate with while one is open, so
-  // they are dismissed deterministically (Tier 1) and their text is queued
-  // for the next outcome line the model reads.
+  // Native JS dialogs freeze the page's JS thread until answered (#423). An
+  // alert has one button: accepted, its text told for saying. A confirm is
+  // a Site Question: raised for the user's next line to answer, the action
+  // that raised it waiting on the page meanwhile; with no one to ask, it is
+  // refused. A leave-page warning Electron settles itself (the pane accepts
+  // it while a Command leaves): only reported. Each is queued for the next
+  // outcome line.
   const nativeDialogReports: string[] = []
+  const handleDialog = (accept: boolean): Promise<void> => cdp.send('Page.handleJavaScriptDialog', { accept }).then(() => undefined, () => undefined)
   cdp.on?.('Page.javascriptDialogOpening', (params) => {
     const { type, message } = (params ?? {}) as { type?: unknown; message?: unknown }
     const kind = typeof type === 'string' ? type : 'dialog'
     const text = typeof message === 'string' ? message : ''
-    nativeDialogReports.push(`native ${kind} dialog auto-dismissed: ${JSON.stringify(truncateOutcomeText(text, 120))}`)
-    void cdp.send('Page.handleJavaScriptDialog', { accept: false }).catch(() => {})
+    const quoted = JSON.stringify(truncateOutcomeText(text, 120))
+    if (kind === 'alert') {
+      nativeDialogReports.push(`native alert dialog accepted: ${quoted}`)
+      void handleDialog(true)
+      deps.siteQuestions?.told(text)
+      return
+    }
+    if (kind === 'confirm' && deps.siteQuestions !== undefined) {
+      deps.siteQuestions.raise({ kind: 'confirm', text }, async (accept) => {
+        nativeDialogReports.push(`native confirm dialog answered ${accept ? 'OK' : 'Cancel'} by the user: ${quoted}`)
+        await handleDialog(accept)
+      })
+      return
+    }
+    if (kind === 'beforeunload') {
+      // The user asked to leave: the warning is accepted here too, should the page wait on this answer and not on Electron's.
+      const leaving = deps.leaving?.() === true
+      nativeDialogReports.push(leaving ? 'leave-page warning accepted: left as asked' : 'leave-page warning: the page stayed')
+      void handleDialog(leaving)
+      return
+    }
+    nativeDialogReports.push(`native ${kind} dialog refused: ${quoted}`)
+    void handleDialog(false)
   })
+  cdp.on?.('Page.javascriptDialogClosed', () => deps.siteQuestions?.closed())
 
   // The opens a click judged and denied (#299), waiting for the outcome
   // line that reports them.
@@ -688,6 +721,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       ...authPopupOpens.map(authPopupOpenedLine),
       ...[...judgedDenied.splice(0), ...(deps.consumePopupBlocks?.() ?? [])].map(popupBlockedLine),
       ...nativeDialogReports.splice(0),
+      ...(deps.consumePermissionDenials?.() ?? []),
     ]
     return reports
   }

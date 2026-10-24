@@ -51,6 +51,9 @@ export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | nu
       return { kind: 'speak', text: event.text, ...(event.failure ? { failure: true } : {}), at: event.at }
     case 'error':
       return { kind: 'error', text: event.message, at: event.at }
+    case 'site_question':
+      // The page's own question, or its alert (#423), is a line the app says.
+      return { kind: 'speak', text: event.text, at: event.at }
     default:
       return null
   }

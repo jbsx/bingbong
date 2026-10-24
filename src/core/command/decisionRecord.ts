@@ -5,6 +5,7 @@ import type { MusicAction } from '../music/musicWords'
 import type { MediaOpAction } from './mediaOp'
 import type { ScrollExtent } from './scrollOp'
 import type { CommandAnswers, HopAnswers } from './jevReading'
+import type { SiteAnswer, SiteQuestion } from './siteQuestion'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
 // Command beside the perf log — what was heard, what was read and by whom,
@@ -227,7 +228,30 @@ export interface FlagKeeper {
   keep(flag: Omit<FlagRecord, 'shot'>, shot: Uint8Array | null, taskAt: number): string | null
 }
 
-export type CommandLogRecord = DecisionRecord | MisfireRecord | FlagRecord
+/**
+ * A Site Question's answer (#423): the user's line read as yes, no or a
+ * new Command — by the exact lines, by Jev, or, Jev unsure or unavailable,
+ * the refusal (`best_guess`). One record per answer, beside the decision
+ * records; a Jev read names its ask.
+ */
+export interface SiteAnswerRecord {
+  readonly type: 'site_answer'
+  readonly turnId: string
+  readonly at: number
+  readonly source: CommandSource
+  readonly transcript: string
+  readonly question: SiteQuestion
+  /** The line of the Command in flight when the page asked; absent when the page asked on its own. */
+  readonly raisedBy?: string
+  readonly answer: SiteAnswer
+  readonly reading: CommandReading
+  readonly jevAsked: boolean
+  /** Jev's Choice (its model, latency, and the answer's probabilities), or why it gave none; absent when it was not asked. */
+  readonly jev?: { readonly model: string; readonly latencyMs: number; readonly confidence: number; readonly probabilities: Readonly<Record<string, number>> } | JevUnavailable
+  readonly ask?: string
+}
+
+export type CommandLogRecord = DecisionRecord | MisfireRecord | FlagRecord | SiteAnswerRecord
 
 /** The next Command this long after one reads as its recovery. */
 export const MISFIRE_WINDOW_MS = 3_000

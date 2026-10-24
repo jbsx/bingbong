@@ -10,6 +10,7 @@ import { PANE_FRAME_RADIUS, trackPaneBackground, trackWindowBackground } from '.
 import { applyPaneZoom } from './paneZoom'
 import { canStepBack } from './paneNavigation'
 import { attachWindowOpenLedger } from './windowOpenLedger'
+import { panePermits, permissionDeniedLine } from '../../core/browser/panePermissions'
 
 export const BROWSER_PARTITION = 'persist:browse'
 
@@ -49,6 +50,8 @@ export interface BrowserPane {
   onState(listener: (state: BrowserPaneState) => void): () => void
   /** Drains URLs of window.open popups blocked since the last call. */
   consumePopupBlocks(): string[]
+  /** Drains the permission requests the pane's policy denied since the last call (#423), each its outcome line. */
+  consumePermissionDenials(): string[]
   /** Holds denied opens while the model acts on the page, until the returned release (ADR 0073). */
   holdWindowOpens(): () => void
   /**
@@ -79,8 +82,20 @@ export function createBrowserPane(deps?: {
     }),
   )
 
-  // Downloads keep Electron's default OS save dialog unless the agent
-  // started them — attachDownloadRouter + the agent-activity tracker decide.
+  // Downloads keep Electron's default OS save dialog unless a Task started
+  // them, or the app runs as a kiosk — attachDownloadRouter decides.
+
+  // The permission policy (#423): what a page in the pane, or a sign-in
+  // pop-up on its session, may have. A denied request is reported on the
+  // next outcome line; a check (a page asking what it has) is answered
+  // silently by the same table.
+  const permissionDenials: string[] = []
+  partitionSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    const allowed = panePermits(permission)
+    if (!allowed) permissionDenials.push(permissionDeniedLine(permission, details.requestingUrl))
+    callback(allowed)
+  })
+  partitionSession.setPermissionCheckHandler((_contents, permission) => panePermits(permission))
 
   const view = new WebContentsView({
     webPreferences: {
@@ -318,6 +333,7 @@ export function createBrowserPane(deps?: {
       return () => listeners.delete(listener)
     },
     consumePopupBlocks: () => windowOpens.consume(),
+    consumePermissionDenials: () => permissionDenials.splice(0),
     holdWindowOpens: () => windowOpens.hold(),
     consumeAuthPopupOpens: () => {
       const urls = drainAuthPopupUrls()

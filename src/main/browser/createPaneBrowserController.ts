@@ -1,10 +1,11 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import type { ConsentChooser } from '../../core/browser/dialogPolicy'
+import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
 import { COLLECT_PAGE_SCRIPT, domQuietScript } from './collectPageScript'
 import { systemClock } from '../../core/ports/clock'
-import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger, type PageFrame, type PageFrames } from './createCdpBrowserController'
+import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger, type CdpPageDriver, type PageFrame, type PageFrames } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
 import { holdPageContextMenu } from './attachPageContextMenu'
 import { drawMarks } from './drawMarks'
@@ -55,6 +56,8 @@ export function createPaneBrowserController(
     holdWindowOpens?: () => () => void
     /** Auth-popup opens queued by the pane, opened here (main pane only). */
     consumeAuthPopupOpens?: () => string[]
+    /** Permission requests the pane denied (#423), queued for the outcome line (main pane only). */
+    consumePermissionDenials?: () => string[]
   },
   deps?: {
     /** Verbose browser sub-spans (#32); absent — no sub-span emission. */
@@ -65,6 +68,8 @@ export function createPaneBrowserController(
     authIdentity?: AuthIdentity
     /** Finds a consent wall's reject the rule cannot read (owner's rule 2026-10-19); absent — the policy accepts as before. */
     chooseConsent?: ConsentChooser
+    /** Where the page's confirm waits for the user (#423); absent, it is refused. */
+    siteQuestions?: SiteQuestionDesk
   },
 ): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
@@ -128,17 +133,44 @@ export function createPaneBrowserController(
     ...(deps?.effects?.landed ? { onLanding: (landing) => deps.effects?.landed?.(landing) } : {}),
   })
 
+  // A leave-page warning (#423): Electron settles it itself, at once, so it
+  // is never the user's to answer. Met while a Command leaves the page — a
+  // navigate, back, forward or reload — the user asked to leave, and it is
+  // accepted; met otherwise, Electron keeps the page, as it always did.
+  let leaving = 0
+  const leave = async <T,>(go: () => Promise<T>): Promise<T> => {
+    leaving += 1
+    try {
+      return await go()
+    } finally {
+      leaving -= 1
+    }
+  }
+  wc.on('will-prevent-unload', (event) => {
+    if (leaving > 0) event.preventDefault()
+  })
+  const leavingPage: CdpPageDriver = {
+    ...page,
+    loadUrl: (url) => leave(() => page.loadUrl(url)),
+    goBack: () => leave(() => page.goBack()),
+    goForward: () => leave(() => page.goForward()),
+    reload: () => leave(() => page.reload()),
+  }
+
   return createCdpBrowserController({
     cdp,
-    page,
+    page: leavingPage,
     collectScript: COLLECT_PAGE_SCRIPT,
     ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
     ...(pane.holdWindowOpens ? { holdWindowOpens: pane.holdWindowOpens } : {}),
     ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
+    ...(pane.consumePermissionDenials ? { consumePermissionDenials: pane.consumePermissionDenials } : {}),
     holdContextMenu: () => holdPageContextMenu(wc),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
     ...(deps?.effects ? { effects: deps.effects } : {}),
     ...(deps?.chooseConsent ? { chooseConsent: deps.chooseConsent } : {}),
+    ...(deps?.siteQuestions ? { siteQuestions: deps.siteQuestions } : {}),
+    leaving: () => leaving > 0,
     frames: electronPageFrames(wc),
     drawMarks,
   })

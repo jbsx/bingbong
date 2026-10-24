@@ -2,7 +2,8 @@ import { app, BrowserWindow, crashReporter, ipcMain, Menu, session } from 'elect
 import { join } from 'node:path'
 import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
-import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
+import { createTaskActivityTracker, routesDownload } from '../core/downloads/taskActivity'
+import { createSiteQuestionDesk } from '../core/browser/siteQuestionDesk'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../core/pipeline/events'
 import { attachAdblock } from './browser/attachAdblock'
@@ -420,12 +421,18 @@ async function createWindow(): Promise<BrowserWindow> {
   win.on('closed', unsubscribeLastPage)
   feedPanel.bringToTop()
   weighInView.bringToTop()
-  const agentActivity = createAgentActivityTracker()
+  // Which downloads are a Task's (#423): the runner's Tasks are tracked below, and the pane's navigations each began during one.
+  const taskActivity = createTaskActivityTracker()
+  pane.view.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) taskActivity.navigationStarted(details.url)
+  })
+  // The page's own question (#423): the pane raises its confirm here, the runner says it and answers it with the next line.
+  const siteQuestions = createSiteQuestionDesk()
   // Auth popups (ADR 0018): while a sign-in popup window is open, browser
   // actions route to it. The CLI harness and the runner share this routed
   // controller.
   const authPopups = createAuthPopupDirector(pane, {
-    createController: (webContents) => createPaneBrowserController({ view: { webContents } }),
+    createController: (webContents) => createPaneBrowserController({ view: { webContents }, consumePermissionDenials: pane.consumePermissionDenials }, { siteQuestions }),
   })
   // The shared browsing resource, in custody (#205, ADR 0038): everything
   // that reaches the pane reaches it through the same handle — the runner,
@@ -445,7 +452,7 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   }
   const paneCustody = holdBrowserCustody(
-    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects, chooseConsent: createConsentChooser(decisionModel, DEFAULT_DECISION_THRESHOLDS.choice, askLog) })), agentActivity),
+    authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects, siteQuestions, chooseConsent: createConsentChooser(decisionModel, DEFAULT_DECISION_THRESHOLDS.choice, askLog) })),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
@@ -483,7 +490,8 @@ async function createWindow(): Promise<BrowserWindow> {
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
     tts: speakingGate.tts,
-    isAgentActive: agentActivity.isActive,
+    // The kiosk has no mouse to answer a Save dialog: every download is routed; the desktop routes a Task's.
+    routes: (urls) => routesDownload({ kiosk: launchConfig.kiosk, byTask: taskActivity.isActive() || taskActivity.startedByTask(urls) }),
     emit: (event) => eventPublisher.publish({ source: 'download', event }),
   })
 
@@ -496,7 +504,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // The app itself on the card (#420, ADR 0091): its panel, views and settings.
   const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
   win.on('closed', appControl.detach)
-  const runner = createCommandRunner({
+  const commandRunner = createCommandRunner({
     browser: controller,
     decisionModel,
     publish: (event) => {
@@ -524,6 +532,8 @@ async function createWindow(): Promise<BrowserWindow> {
     dropLastPage: (url) => lastPageStore.drop(url),
     // `open <one word>` opens the host it names, once the pane has landed there.
     knownAddress: (word) => knownAddresses.addressOf(word),
+    // The page's own question (#423): said when it opens; the next line answers it.
+    siteQuestions,
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.
@@ -550,6 +560,12 @@ async function createWindow(): Promise<BrowserWindow> {
       observe: (text) => learnedTermsStore.observeTranscript(text),
     },
   })
+  // A Task under way (#423): a line run, or a partial that may fire, until it settles — a download it starts is routed.
+  const runner: typeof commandRunner = {
+    ...commandRunner,
+    run: (text, options) => taskActivity.run(() => commandRunner.run(text, options)),
+    consider: (partial) => taskActivity.run(() => commandRunner.consider(partial)),
+  }
   // Escape aborts the Command and closes a Hot Listen (#326), each at once;
   // the voice session is attached below, so it is read when the key comes.
   let voiceSession: VoiceSession | null = null

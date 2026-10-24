@@ -21,6 +21,7 @@ import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { cardBudgetChars, promptChars } from '../../core/decision/cardBudget'
+import { createSiteQuestionDesk, type SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -141,7 +142,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -194,6 +195,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
+    ...(options?.siteQuestions ? { siteQuestions: options.siteQuestions } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
     knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com', settings: 'settings.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
     flags: {
@@ -354,6 +356,130 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
     await runner.run('where are the comments', { source: 'typed' })
     expect(decision.requests).toHaveLength(2)
     expect(Object.keys(cardOf(decision.requests[1]!).options).some((label) => label.startsWith('panel_') || label.startsWith('set_'))).toBe(false)
+  })
+})
+
+describe('a Site Question (#423)', () => {
+  /** The page's click raises a confirm and freezes on it, as a native dialog does: the click settles once it is answered. */
+  function confirmOnClick(browser: FakeBrowser, desk: SiteQuestionDesk, text = 'Delete this video?'): boolean[] {
+    const answered: boolean[] = []
+    const click = browser.click.bind(browser)
+    browser.click = (ref) =>
+      new Promise((resolve) =>
+        desk.raise({ kind: 'confirm', text }, async (accept) => {
+          answered.push(accept)
+          resolve(click(ref))
+        }),
+      )
+    return answered
+  }
+
+  /** Runs a line that clicks a confirm, and waits until its question is open. */
+  async function raise(runner: CommandRunner, desk: SiteQuestionDesk, line = 'click 2'): Promise<{ done: Promise<boolean> }> {
+    const done = runner.run(line)
+    for (let i = 0; i < 20 && desk.open() === null; i += 1) await flushMicrotasks()
+    expect(desk.open()).not.toBeNull()
+    return { done }
+  }
+
+  const siteAnswers = (records: CommandLogRecord[]) => records.filter((record) => record.type === 'site_answer')
+
+  it('says the question aloud and publishes it, and a "yes" accepts it with no ask while the Task that raised it waits', async () => {
+    const speech = new FakeSpeech()
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, events, records, decision, runner } = harness({ speech, siteQuestions })
+    const answered = confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'site_question', text: 'The page asks: Delete this video? Yes or no?' }))
+    expect(speech.spoken.map((line) => line.text)).toContain('The page asks: Delete this video? Yes or no?')
+
+    await runner.run('yes', { source: 'spoken' })
+    await task
+
+    expect(answered).toEqual([true])
+    expect(decision.requests).toEqual([])
+    expect(siteAnswers(records)).toEqual([expect.objectContaining({ transcript: 'yes', answer: 'accept', reading: 'local_match', jevAsked: false, raisedBy: 'click 2', question: { kind: 'confirm', text: 'Delete this video?' } })])
+    expect(events).toContainEqual(expect.objectContaining({ type: 'command', text: 'yes', action: "answer the page's question: OK" }))
+    // The click that raised it was never superseded: it landed once answered.
+    expect(browser.clicks).toEqual([2])
+    expect(events.filter((event) => event.type === 'status' && event.status === 'cancelled')).toEqual([])
+  })
+
+  it.each(['no', 'cancel', 'close this'])('refuses it on %j with no ask, a Dismiss Phrase too', async (line) => {
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, decision, runner } = harness({ siteQuestions })
+    const answered = confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    await runner.run(line)
+    await task
+    expect(answered).toEqual([false])
+    expect(decision.requests).toEqual([])
+  })
+
+  it('hands any other line to Jev with the question on the card, and acts on its sure answer', async () => {
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, records, asks, decision, runner } = harness({ siteQuestions })
+    const answered = confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    decision.script.push({ answers: { answer: choice('accept', 0.92) } })
+    await runner.run('yeah go ahead')
+    await task
+    expect(answered).toEqual([true])
+    expect(decision.requests[0]!.state).toContain('"Delete this video?"')
+    expect(asks.at(-1)).toMatchObject({ kind: 'site' })
+    expect(siteAnswers(records)[0]).toMatchObject({ answer: 'accept', reading: 'jev', jevAsked: true, ask: asks.at(-1)!.id })
+  })
+
+  it.each([
+    ['unsure', { answers: { answer: choice('accept', 0.55) } }],
+    ['unavailable', { unavailable: 'timeout' as const }],
+  ])('refuses it and says so when Jev is %s', async (_how, scripted) => {
+    const speech = new FakeSpeech()
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, records, decision, runner, events } = harness({ siteQuestions, speech })
+    const answered = confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    decision.script.push(scripted)
+    await runner.run('hmm sure why not')
+    await task
+    expect(answered).toEqual([false])
+    expect(siteAnswers(records)[0]).toMatchObject({ answer: 'refuse', reading: 'best_guess' })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: "Refused the page's question." }))
+    expect(speech.spoken.map((line) => line.text)).toContain("Refused the page's question.")
+  })
+
+  it('reads a new Command: refuses the question, then runs the line as usual', async () => {
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, records, decision, runner } = harness({ siteQuestions })
+    const answered = confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    decision.script.push({ answers: { answer: choice('command', 0.9) } })
+    await runner.run('reload')
+    await task
+    expect(answered).toEqual([false])
+    expect(browser.reloads).toBe(1)
+    expect(siteAnswers(records)[0]).toMatchObject({ answer: 'command', reading: 'jev' })
+  })
+
+  it('says an alert the page showed', async () => {
+    const speech = new FakeSpeech()
+    const siteQuestions = createSiteQuestionDesk()
+    const { events } = harness({ siteQuestions, speech })
+    siteQuestions.told('Saved.')
+    expect(speech.spoken.map((line) => line.text)).toEqual(['The page says: Saved.'])
+    expect(events).toContainEqual(expect.objectContaining({ type: 'site_question', text: 'The page says: Saved.', alert: true }))
+  })
+
+  it('fires no partial while a question is open: the Endpoint answers it', async () => {
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, decision, runner } = harness({ siteQuestions })
+    confirmOnClick(browser, siteQuestions)
+    const { done: task } = await raise(runner, siteQuestions)
+    await runner.consider('reload')
+    expect(browser.reloads).toBe(0)
+    expect(decision.requests).toEqual([])
+    await runner.run('yes', { source: 'spoken' })
+    await task
   })
 })
 

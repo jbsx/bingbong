@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { feedText, waitForDisplay } from './feed'
 import { startHarness, type Harness } from './harness'
+import { waitFor } from './waitFor'
 
 describe('browser pane e2e', () => {
   let harness: Harness
@@ -69,6 +72,55 @@ describe('browser pane e2e', () => {
     ])
     expect(event.url).toBe(harness.fixture.url('/dl'))
     expect(event.suggestedFilename).toBe('probe.bin')
+  })
+})
+
+describe('native pop-ups e2e (#423)', () => {
+  let harness: Harness
+
+  beforeAll(async () => {
+    harness = await startHarness()
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+  })
+
+  it("says the page's confirm, and the next typed line answers it: \"yes\" accepts", async () => {
+    await harness.navigatePane(harness.fixture.url('/native-dialog'))
+    // [2] Ask confirm: its click freezes on the page's confirm until the user answers.
+    expect(await harness.submitCommand('click 2')).toBe('submitted')
+    await waitFor(async () => ((await feedText(harness)).includes('The page asks: really proceed? Yes or no?') ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+    expect(await harness.submitCommand('yes')).toBe('submitted')
+    await waitFor(async () => ((await harness.paneEval<boolean | null>('window.__confirmAnswer ?? null')) === true ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+  })
+
+  it('routes a download a Command started to the downloads folder, with no Save dialog', async () => {
+    await harness.navigatePane(harness.fixture.url('/'))
+    expect(await harness.submitCommand(`navigate ${harness.fixture.url('/dl')}`)).toBe('submitted')
+    const saved = join(harness.userDataDir, 'downloads', 'probe.bin')
+    await waitFor(async () => (existsSync(saved) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+  })
+})
+
+describe('kiosk downloads e2e (#423)', () => {
+  let harness: Harness
+
+  beforeAll(async () => {
+    harness = await startHarness({ launchArgs: ['--kiosk'], env: { BINGBONG_IDLE_TIMEOUT_MS: '60000' } })
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+  })
+
+  it('routes every download on the kiosk, one no Command started included, and announces it', async () => {
+    await harness.navigatePane(harness.fixture.url('/'))
+    await harness.paneEval(`location.href = ${JSON.stringify(harness.fixture.url('/dl'))}`)
+    const saved = join(harness.userDataDir, 'downloads', 'probe.bin')
+    await waitFor(async () => (existsSync(saved) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+    await harness.ensurePanelOpen()
+    await waitForDisplay(harness, 'Downloaded "probe.bin"')
   })
 })
 

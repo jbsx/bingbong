@@ -9,9 +9,10 @@ export interface SpeakingGate extends TtsIdle {
 }
 
 /**
- * Watches the shared speaker so listeners can wait for speech to drain — the
- * confirmation voice window opens only after the spoken prompt finishes, so
- * the mic never transcribes the assistant's own voice.
+ * Watches the shared speaker so listeners can wait for speech to drain — a
+ * Hot Listen's silence clock starts only once a spoken line finishes, and
+ * speech captured while one plays is dropped, so the mic never transcribes
+ * the app's own voice.
  *
  * This gate is also the single TTS boundary (#52): every spoken line is
  * stripped of markdown here, so pipeline answers, download announcements
