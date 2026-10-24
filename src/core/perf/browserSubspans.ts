@@ -20,8 +20,8 @@ export function browserSubspansEnabled(env: Record<string, string | undefined>):
   return envFlagEnabled(env, BROWSER_SUBSPANS_ENV)
 }
 
-/** Sub-span stage vocabulary: the landing poll's waits, the post-action readiness waits (#324), extra snapshot round-trips, pre-action safety probes, every collect of the page and its frames (#377). */
-export type BrowserSubspanStage = 'browser-settle' | 'browser-ready' | 'browser-recollection' | 'browser-safety' | 'browser-collect'
+/** Sub-span stage vocabulary: the landing poll's waits, the post-action readiness waits (#324), extra snapshot round-trips, pre-action safety probes, every collect of the page and its frames (#377), the wait for a clicked dialog's sheet to leave (#417). */
+export type BrowserSubspanStage = 'browser-settle' | 'browser-ready' | 'browser-recollection' | 'browser-safety' | 'browser-collect' | 'browser-dialog-wait'
 
 export interface BrowserSubspans {
   /**

@@ -1246,7 +1246,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const state = browser.state()
         const landedOn = { tool: name, outcome: { ok: true as const, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}), ...(state.status !== undefined ? { status: state.status } : {}) }
         // A landing ends the Task with its line only on a fact (ADR 0089); a title or a body that reads as one goes to the Verdict.
-        const landedFailure = spokenFailureOf(landedOn)
+        // An action on the pop-up refused because its control is hidden, inert or covered (#417): still open is read from the page, whatever the refusal says.
+        const refused = spokenFailureOf(landedOn)
+        const onDialog = (refused === 'blocked' || refused === 'consent') && (command.dismiss === true || actsOnDialog(command, page))
+        const landedFailure = onDialog && (command.dismiss === true || !(await dialogStillOpen())) ? null : refused
         const suspected = landedFailure === null ? suspectedFailureOf(landedOn) : null
         suspect = suspected === null ? null : { failure: suspected, url: landedUrl(result) ?? state.url ?? undefined }
         const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
@@ -1282,8 +1285,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return ended(outcome)
     } catch (error) {
       if (!current()) return ended('superseded')
-      react('failed')
       const message = error instanceof Error ? error.message : String(error)
+      // An action on the pop-up that threw — its frame gone with it (#417): still open is read from the page.
+      const onPopup = command.dismiss === true || actsOnDialog(command, page)
+      const open = onPopup ? await dialogStillOpen() : true
+      if (!current()) return ended('superseded')
+      if (!open || (command.dismiss === true && reacting.deferStay === true)) {
+        react('settled')
+        publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
+        inFlight = null
+        publish({ type: 'done', turnId, outcome: 'done', at: at() })
+        return ended(open ? 'stayed' : 'landed')
+      }
+      react('failed')
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
       answerFailure(turnId, failureLineOf(name, message))
       inFlight = null

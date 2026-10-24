@@ -852,6 +852,17 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // Whether a dialog root is open now, read in place — no collect — for a
   // consent dismissal to wait until its sheet has left the page.
   window.__bingbongDialogOpen = () => currentDialogRoot() !== null
+  // What the open dialog shows (#417): its rendered text and its controls'
+  // states, read in place — so a click on it can tell a sheet that left or
+  // moved on from one that has not yet. \`whole\`: a frame that knows no
+  // dialog, its whole body, for a wall served in a frame. Null with none.
+  window.__bingbongDialogFace = (whole) => {
+    const root = currentDialogRoot() || (whole === true ? document.body : null)
+    if (root === null) return null
+    const states = Array.from(root.querySelectorAll('input, select, textarea, [aria-checked], [aria-expanded], [aria-pressed], [aria-selected]'))
+      .map((el) => [el.checked, el.value, el.getAttribute('aria-checked'), el.getAttribute('aria-expanded'), el.getAttribute('aria-pressed'), el.getAttribute('aria-selected')].join(':'))
+    return root.innerText + '\\n' + states.join('|')
+  }
   // The labels of the open dialog root's controls, read in place — no
   // collect, so the numbers the model holds stay put — for a blocked action
   // to ask whether a consent wall is what covers it (ADR 0061). Null when no

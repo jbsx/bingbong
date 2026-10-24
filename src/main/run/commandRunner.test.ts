@@ -2508,6 +2508,95 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(decision.requests[2]!.state).toContain('click "Close" (nothing changed); press Escape (the pop-up closed)')
       })
 
+      describe('#417: still open is read from the page after the rung, whatever the rung\'s own outcome', () => {
+        it('a rung refused as not shown while its sheet left is no wall: the Task goes on from the page it leaves', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          // The sheet was closing as the hop read it: its Close is hidden by the time the rung clicks, and the sheet goes.
+          browser.click = async (n) => {
+            browser.clicks.push(n)
+            uncovered(h, SEARCH_REFS)
+            return blockedActionHead('click', n, { fact: 'notShown' })
+          }
+          decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([1])
+          expect(browser.pressedKeys).toEqual([])
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['none', undefined, 'done']])
+          expect(decision.requests[2]!.state).not.toContain('A dialog is open')
+        })
+
+        it('a rung that throws because its frame went with the sheet is no wall: the Task goes on', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          browser.click = async (n) => {
+            browser.clicks.push(n)
+            uncovered(h, SEARCH_REFS)
+            throw new Error('the frame 5:5 is gone')
+          }
+          decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['none', undefined, 'done']])
+        })
+
+        it('a rung refused while the sheet stays is not yet the wall: the next rung fires', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          browser.click = async (n) => {
+            browser.clicks.push(n)
+            return blockedActionHead('click', n, { fact: 'notShown' })
+          }
+          const press = browser.pressKey.bind(browser)
+          browser.pressKey = async (key, times) => {
+            await press(key, times)
+            if (key.key === 'Escape') uncovered(h, SEARCH_REFS)
+          }
+          decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([1])
+          expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
+        })
+
+        it("Jev's own click on the pop-up, refused as not shown because the pop-up left, is no wall: the Verdict reads the page it leaves", async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          browser.click = async (n) => {
+            browser.clicks.push(n)
+            uncovered(h, SEARCH_REFS)
+            return blockedActionHead('click', n, { fact: 'notShown' })
+          }
+          // The hop reads the sheet and picks its own control: an action on the pop-up, never in the way.
+          decision.script.push(answer('search', 's3-6'), answer('click-2'), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([2])
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+        })
+
+        it('a click on the page itself refused as not shown is still the wall it was', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          coveredOnLanding(h)
+          browser.click = async (n) => {
+            browser.clicks.push(n)
+            uncovered(h, SEARCH_REFS)
+            return blockedActionHead('click', n, { fact: 'notShown' })
+          }
+          decision.script.push(answer('search', 's3-6'), answer('click-3'), SURE_YES)
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(failures(events)).toHaveLength(1)
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'wall'])
+        })
+      })
+
       it('AC9: a cookie wall is stepped past by its reject control first, as the controller\'s policy has it — never Accept All, whatever its close is called', async () => {
         const h = taskHarness()
         const { browser, events, records, decision, runner } = h

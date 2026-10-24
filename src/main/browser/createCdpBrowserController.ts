@@ -226,6 +226,19 @@ const STILL_POLL_MS = 100
 export const DISMISSAL_GONE_MS = 1_000
 
 /**
+ * The most a click on a control of the open dialog waits for its sheet to
+ * leave the page or show something else (#417): the readiness wait ends on
+ * the click's first mutation, and w3schools' FastCMP collapsed its sheet
+ * 50–100 ms on, after the next hop had read it. A control that changes
+ * nothing it shows pays the whole bound; the number is a guess, measured
+ * against a sheet that leaves 1,200 ms on, which 1,000 ms loses.
+ */
+export const SHEET_LEFT_MS = 2_000
+
+/** The poll of that wait, in place. */
+const SHEET_POLL_MS = 25
+
+/**
  * The most the Mark Ask's capture may take (#382, ADR 0084): the rects
  * read again, the capture and the painting. A capture runs well under a
  * tenth of this; past it the pane is taken as giving none.
@@ -723,6 +736,42 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  /** What the open dialog shows, read in place in the top and, for a framed control, in its frame; null once its frame has gone. */
+  async function dialogFace(frame: string | null): Promise<string | null> {
+    try {
+      const top = await evaluateInPage<unknown>(`(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(false) : null)()`)
+      const inFrame = frame === null ? null : await evaluateInFrame<unknown>(frame, `(() => typeof window.__bingbongDialogFace === 'function' ? window.__bingbongDialogFace(true) : null)()`)
+      return `${String(top)}\n${String(inFrame)}`
+    } catch {
+      // The frame went with the sheet: what it showed is no more.
+      return null
+    }
+  }
+
+  /**
+   * After a click on a control of the open dialog (#417): wait, bounded by
+   * {@link SHEET_LEFT_MS}, until no dialog root is open or the dialog shows
+   * something else than `face`, what it showed before the click — so the
+   * next read is of the page behind a sheet that left, or of the dialog
+   * moved on. One `browser-dialog-wait` sub-span when verbose.
+   */
+  async function awaitSheetLeft(face: string | null, frame: string | null): Promise<void> {
+    const start = subspans?.now()
+    let outcome: 'gone' | 'changed' | 'bound' = 'bound'
+    for (let waited = 0; waited < SHEET_LEFT_MS; waited += SHEET_POLL_MS) {
+      if (!(await dialogOpenInPlace())) {
+        outcome = 'gone'
+        break
+      }
+      if ((await dialogFace(frame)) !== face) {
+        outcome = 'changed'
+        break
+      }
+      await new Promise<void>((resolve) => clock.setTimer(SHEET_POLL_MS, resolve))
+    }
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-dialog-wait', subspans.now() - start, { outcome })
+  }
+
   /** Whether a dialog root is open, read in place; a page that cannot be asked is taken as clear. */
   async function dialogOpenInPlace(): Promise<boolean> {
     try {
@@ -1048,7 +1097,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   async function probeAction(at: FrameAddress | null, expectedLabel = ''): Promise<ActionProbe> {
     if (at === null || at.frame === null) return probeInFrame(null, at?.index ?? -1, expectedLabel)
-    const [top, framed] = await Promise.all([probeInFrame(null, -1), probeInFrame(at.frame, at.index, expectedLabel)])
+    // A frame the action took away — a wall's, gone with its sheet (#417) — went with its target and its refs.
+    const gone: ActionProbe = { target: null, signature: { url: '', title: '', scrollX: 0, scrollY: 0, refCount: 0, labels: [], dialogOpen: false, media: null } }
+    const [top, framed] = await Promise.all([probeInFrame(null, -1), probeInFrame(at.frame, at.index, expectedLabel).catch(() => gone)])
     return {
       target: framed.target,
       signature: {
@@ -1774,10 +1825,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function clickRef(ref: number, button: MouseButton = 'left'): Promise<string> {
     const watch = page.watchArrival?.()
     const frame = addressOfRef(ref).frame
+    // A control of the open dialog, as the model was shown it (#417): what the dialog showed before the click.
+    const shown = lastSnapshot === undefined ? undefined : findSnapshotRef(lastSnapshot, ref)
+    const onDialog = button === 'left' && shown?.layer === 'dialog'
+    const face = onDialog ? await dialogFace(frame) : null
     await armReadiness(frame)
     const attempt = await performClick(ref, button)
     if (attempt.kind === 'blocked') return blockedOutcome(button === 'right' ? 'menu' : 'click', ref, attempt)
     const arrival = await settleArrival('click', watch, attempt.at.frame)
+    if (onDialog && arrival === 'none') await awaitSheetLeft(face, attempt.at.frame)
     // A right-click opens no link: an open in its wake is the page's, reported with the rest.
     const openedHere = button === 'left' && (await followNewWindowLink(attempt))
     // A New-window Link followed here is a navigate's arrival, load and all.
@@ -2281,6 +2337,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   async function clickTextOn(piece: DialogText): Promise<string> {
     const watch = page.watchArrival?.()
+    const face = await dialogFace(piece.frame)
     await armReadiness(piece.frame)
     const before = await currentSnapshot()
     const point = await evaluateInFrame<{ x: number; y: number } | null>(piece.frame, `((at) => {
@@ -2303,6 +2360,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (offset === null) throw new Error(`the text ${JSON.stringify(piece.text)} is no longer on the page: its frame is gone`)
     await dispatchPointClick({ x: point.x + offset.x, y: point.y + offset.y })
     const arrival = await settleArrival('click', watch, piece.frame)
+    if (arrival === 'none') await awaitSheetLeft(face, piece.frame)
     // A click can navigate or mutate the page; never trust old refs.
     lastSnapshot = undefined
     const after = await recollection('post-action', () => collectSnapshot())
