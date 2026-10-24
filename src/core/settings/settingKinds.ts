@@ -75,14 +75,9 @@ export const SETTING_KINDS: SettingKinds<AppSettings> = {
   pauseCapMs: { kind: 'kept', why: 'voice' },
   resumptionMergeMs: { kind: 'kept', why: 'voice' },
   hotListenSilenceMs: { kind: 'kept', why: 'voice' },
+  sttEngine: { kind: 'kept', why: 'voice' },
   webZoomPercent: { kind: 'amount', name: 'web page zoom', min: WEB_ZOOM_PERCENT_MIN, max: WEB_ZOOM_PERCENT_MAX, step: 10, unit: '%' },
   ttsVoice: { kind: 'voices', name: 'voice', hint: 'the voice the app speaks in' },
-  sttEngine: choice({ name: 'speech recognition model', hint: 'used from the next start' }, [
-    ['parakeet', 'Parakeet'],
-    ['medium', 'Moonshine Medium'],
-    ['small', 'Moonshine Small'],
-    ['base', 'Moonshine Base'],
-  ]),
   adblockEnabled: { kind: 'switch', name: 'ad blocking' },
   appearance: choice({ name: 'appearance', hint: 'light or dark mode' }, [
     ['system', 'as this computer'],

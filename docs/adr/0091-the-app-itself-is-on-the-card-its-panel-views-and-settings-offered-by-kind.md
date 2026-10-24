@@ -30,9 +30,10 @@ scenario is ~3 a day, `missing`, yield 12.
 - **A Command whose words ask for the panel may open it** (amends ADR
   0021). Every other Command still shows the Peek Card.
 - **Hard policy: what voice may not change.** `micId`,
-  `wakeWordThreshold`, `pauseCapMs`, `resumptionMergeMs` and
-  `hotListenSilenceMs` (a wrong value leaves voice unable to hear the
-  line that would put it back), and the Environment section's values.
+  `wakeWordThreshold`, `pauseCapMs`, `resumptionMergeMs`,
+  `hotListenSilenceMs` and `sttEngine` (owner, 2026-10-24: a wrong
+  value leaves voice unable to hear the line that would put it back),
+  and the Environment section's values.
   The records (news topics and feeds, the Weight people, the usage
   dashboard, the scale's address) are edits of records, not values with
   a kind, and are out.
@@ -50,6 +51,12 @@ scenario is ~3 a day, `missing`, yield 12.
   ask (ADR 0088's budget): a tie on `pnpm jev:gate`, cases grown from the
   three claimed lines and the asks log first.
 - The wording of the state lines and the op lines: a tie on the gate.
+- *Measured 2026-10-24: every setting's ops on every card lost four
+  cases (long pages' further-down options pushed past the Card Budget);
+  one `settings` line on the card, its ops on a second ask, lost none.
+  That line is worded as measured: generated from the settings' names it
+  lost two cases. A new setting is on the settings ask's card with no
+  card code.*
 
 ## Guess
 

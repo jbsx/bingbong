@@ -218,7 +218,7 @@ export const SETTINGS_LABEL = 'settings'
  * ask's card, generated, and it is "one of the app's settings".
  */
 const SETTINGS_LINE =
-  "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the speech recognition model, the Idle Screen's cards"
+  "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards"
 
 /**
  * The app's options on the action card (#420, ADR 0091): the panel's, the

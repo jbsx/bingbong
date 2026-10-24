@@ -144,7 +144,7 @@
           "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
           "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the speech recognition model, the Idle Screen's cards"
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards"
         }
       },
       "slot": {

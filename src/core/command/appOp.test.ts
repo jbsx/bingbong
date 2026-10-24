@@ -26,7 +26,7 @@ describe('appOptions: the app on the card (#420, ADR 0091)', () => {
 
   it('offers no op for a setting voice may not change, nor for a record (hard policy, ADR 0091)', () => {
     const labels = appOptions(stateWith()).map((option) => option.label)
-    for (const kept of ['mic', 'wake_word', 'pause_cap', 'resumption_merge', 'hot_listen', 'usage_dashboard', 'news', 'weight_', 'scale', 'latitude', 'longitude']) {
+    for (const kept of ['mic', 'wake_word', 'pause_cap', 'resumption_merge', 'hot_listen', 'stt_engine', 'usage_dashboard', 'news', 'weight_', 'scale', 'latitude', 'longitude']) {
       expect(labels.filter((label) => label.startsWith('set_') && !label.startsWith('set_idle_cards_') && label.includes(kept))).toEqual([])
     }
     // Nor does any line carry an Environment (.env) value: it is no setting at all.
