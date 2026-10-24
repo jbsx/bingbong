@@ -5,7 +5,7 @@
 Accepted on 2026-10-21 by the owner, grilled from #381 (the companion of
 #380). Amends ADR 0007's selector-only collect. Leaves ADR 0062's
 visibility rule as it is. Amended on 2026-10-22 by the owner's rulings on
-#384 and #386.
+#384 and #386, and on 2026-10-24 by the owner's rulings on #414.
 
 ## Context
 
@@ -53,13 +53,31 @@ be opened but never closed. The summary is the control the platform
 makes: a click toggles it, and it carries the `expanded` state Ref State
 reads. A `details` with no summary keeps the cue.
 
+Two more cues are not Vimium's, ruled on #414. Both hold only inside the
+open dialog's layer, and both are weak: an element that carries one is
+dropped when a ref within the lookback is its descendant, or when it sits
+inside a ref that takes a click whole. The first is an element whose only
+cue is a `tabindex` of 0 or more. Vimium calls such an element a
+second-class citizen and, on its current master, never hints it. The
+second is an element the browser reports as clickable
+(`DOMSnapshot.isClickable`), which means it has a click listener of its
+own. publicholidays.co.uk's anti-adblock dialog closes on a
+`<span tabindex="0">×</span>` and on a `<p>` reading "Continue without
+supporting us" that has its own listener. Without them its only ref was
+DISABLE, which leads further into the wall. The Dismissal Ladder was left
+with Escape, which the dialog ignores. On a page a person sees such a
+control and clicks it; over a dialog, leaving it off the card takes away
+the way out. The layer is small and its refs come first, ahead of the cap,
+so the card cost is bounded. Outside it, the page keeps Vimium's cues as
+above.
+
 The collect walks open shadow roots, for every ref kind, as Vimium does.
 An Unmarked Control is kinded `button` and carries no flag on its line.
 Marked elements take the collect's 400 places first. The cues run in
 every Reachable Frame. The role list stays a superset of Vimium's.
 
-Not taken: `cursor: pointer` and listener detection, which Vimium does not
-use; its `addEventListener` wrapper was disabled in 2018 after it broke
+Not taken outside a dialog's layer: `cursor: pointer` and listener
+detection, which Vimium does not use; its `addEventListener` wrapper was disabled in 2018 after it broke
 Google Payments (Vimium #2997). Not taken either: Vimium's visibility. Its
 3×3 floor and occlusion test exist so a hint can be seen, while ours are
 acted on; ADR 0062's rect rule and act-time Covered verdict stand.
@@ -68,10 +86,15 @@ them, and a "scroll this region" op is a separate decision.
 
 ## Consequences
 
-- A React or jQuery control with a delegated listener and no Vimium cue
-  stays invisible, as it does to Vimium. A ledger miss of that shape
-  reopens the listener question, with `DOMSnapshot.isClickable` measured
-  first.
+- Outside a dialog's layer, a React or jQuery control with a delegated
+  listener and no Vimium cue stays invisible, as it does to Vimium. Inside
+  the layer, a listener of the element's own makes it a ref (#414). A
+  delegated one still does not, unless it carries a `tabindex`.
+- Measured on #414: the anti-adblock dialog gives N refs with the two cues
+  and M without. `browser-collect` with a dialog open adds X ms to the
+  median, against a ≤15 ms budget, and with no dialog open it adds
+  nothing. The gate case from `turn-mvlq72ay-4` passes on every gate
+  model, and no case that passed before is lost.
 - The collect gains a cost, budgeted at ≤15 ms added to the median
   `browser-collect` on a YouTube watch page and a news front page; the
   shadow-root walk counts against it.

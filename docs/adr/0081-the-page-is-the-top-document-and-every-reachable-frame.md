@@ -10,7 +10,8 @@ playing media element in the page's top frame"). Built as two tickets:
 then the frames' text in the Page Read with an iframe consent wall as its
 check, blocked by #377. Amended on 2026-10-21 by the owner's ruling on
 #378 ("widen now"): a frame in the top's open dialog gives the dialog its
-text.
+text. Amended on 2026-10-24 by the owner's ruling on #414: a frame in the
+top's open dialog gives the dialog its controls too.
 
 ## Context
 
@@ -100,6 +101,14 @@ sits, within the collector's 400-character bound. That one field is what
 the read's `dialog open:` line, Jev's card and the consent chooser all
 read. Frames in the page layer outside the text root, such as a sidebar's
 ads, stay out.
+
+Its controls are the dialog's too (#414). A frame whose `<iframe>` sits in
+the top's open dialog collects as that layer: its controls need size, not
+to meet the frame's own viewport, as the top's dialog controls do.
+bbcgoodfood.com's Sourcepoint wall draws "Reject & Pay" and "Accept All &
+Continue" about 10 px below its frame's fold. The frame's collect dropped
+them before the dialog's viewport exemption could see them, and the card
+carried the wall's accordions without its buttons.
 
 **Measured, not assumed.** The build opens with a reproduction on a real
 page with an embedded player, its misses added to the Failed Lines ledger
