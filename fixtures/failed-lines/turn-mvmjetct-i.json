@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvmjetct-i",
+  "transcript": "What's the weather like in Gurgaon?",
+  "at": 1792854722333,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Spoken on publicholidays.co.uk/diwali/ (left there by the Diwali Task; main 134a9916, Mammoth, early fire on the partial): hop 0 read search 0.86 with the whole line as the slot, but the Where Ask read page 0.56 (site 0.25, web 0.19), and #353's 'words that point at this page never search' took the most probable click on the card, the only ref [1] link '⌂' (home), which the action answer gave 0.0003 (mostProbable takes any probability > 0; RUNNER_UP_FLOOR is not applied there). Hop 1 on the home page read search 0.77, Where web 0.46 (page+site 0.54), but a later hop never searches (#332): none, the Task ended unsure with a 2.3 s line said (the unsure end; its words are not logged). Nothing was ever searched",
+  "meant": "Search the web for the weather in Gurgaon (the whole question) and say the forecast",
+  "log": "decision-1792854534608-1.jsonl"
+}

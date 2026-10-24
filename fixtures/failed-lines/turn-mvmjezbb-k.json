@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvmjezbb-k",
+  "transcript": "What's the weather like in Gergan?",
+  "at": 1792854731215,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "The owner said the Gurgaon weather line again after turn-mvmjetct-i ended unsure; Parakeet heard 'Gergan'. Hop 0 searched 'What's the weather like in Gergan' on DuckDuckGo, hop 1 clicked 'Gera, Thuringia, Germany Hourly Weather | AccuWeather' (0.41), hop 2 scrolled, hop 3 read the consent sheet in the way 0.93 and clicked 'Consent', hop 4 read yes 0.79 with no passage (none 0.38) and ended done: the wrong city's page, a sub-second line said, no weather spoken. 16.5 s from the line to the end",
+  "meant": "Hear 'Gurgaon', search the web for its weather and say the forecast",
+  "log": "decision-1792854534608-1.jsonl"
+}
