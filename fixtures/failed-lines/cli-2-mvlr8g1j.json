@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvlr8g1j",
+  "transcript": "scroll down",
+  "at": 1792807395915,
+  "source": "typed",
+  "stage": "page",
+  "happened": "'scroll down' on bbcgoodfood.com under its Sourcepoint consent-or-pay wall (main 883fa740, no model armed, #414 probe): the wheel landed in the consent iframe and scrolled it to 148 px, but the report read 'scrolled down: x=0 y=0' (the top document's offset, not the frame's), and the new refs' labels came out tripled: [8] 'Reject & Pay Reject & Pay Reject & Pay', [10] 'Accept All & Continue Accept All & Continue Accept All & Continue' (aria-label, title and text joined)",
+  "meant": "The report says the consent frame scrolled, and each button is labelled once: 'Reject & Pay', 'Accept All & Continue'",
+  "log": "decision-1792807369696-1.jsonl"
+}
