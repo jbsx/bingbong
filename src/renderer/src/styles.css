@@ -247,7 +247,21 @@ body {
   grid-column: 3;
   justify-self: end;
   display: flex;
+  align-items: center;
   gap: 10px;
+}
+
+/* The app's version: the quietest text, small, never in the way. */
+.app-version {
+  color: var(--fg3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.toolbar .app-version {
+  margin-right: 4px;
 }
 
 /* The Toolbar's first column: the Status Capsule, and beside it the widgets. */
@@ -2177,6 +2191,16 @@ details[open] > .settings-summary::before {
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition: opacity 200ms ease;
+}
+
+/* The version on the Idle Screen: the bottom-right corner, out of the layout. */
+.idle-version {
+  position: absolute;
+  right: 24px;
+  bottom: 16px;
+  z-index: 3;
+  font-size: 16px;
+  pointer-events: none;
 }
 
 /* Out of sight while the cursor rests (useCursorRest), till it moves; still

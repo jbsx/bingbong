@@ -237,6 +237,8 @@ export function App() {
             (ADR 0012); settings keeps capsule + controls. */}
         {view === 'dashboard' ? <BrowserNav /> : null}
         <div className="toolbar-actions">
+          {/* The version, quiet beside the controls: which Release the kiosk runs. */}
+          {window.bingbong.version !== '' ? <span className="app-version">v{window.bingbong.version}</span> : null}
           {/* On the click, not the pointer going down: the pointer-down is
               input, and input wakes the screen this button just showed. */}
           <button

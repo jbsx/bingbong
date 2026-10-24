@@ -188,6 +188,7 @@ export interface BingbongWeightApi {
 }
 
 export interface BingbongApi {
+  /** The app's version (`app.getVersion()`), '' in a window main did not hand it to. */
   version: string
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
   app: LaunchConfig

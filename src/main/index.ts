@@ -97,7 +97,7 @@ import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
-import { KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { APP_VERSION_FLAG, KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { muteOffScreen } from './muteOffScreen'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { attachAppearance } from './attachAppearance'
@@ -322,8 +322,9 @@ async function createWindow(): Promise<BrowserWindow> {
       nodeIntegration: false,
       sandbox: false,
       // App args don't reach the renderer's argv; additionalArguments is how
-      // the preload learns about --kiosk. The idle timeout rides the env.
-      additionalArguments: launchConfig.kiosk ? [KIOSK_FLAG] : [],
+      // the preload learns about --kiosk and the version the Toolbar and
+      // the Idle Screen show. The idle timeout rides the env.
+      additionalArguments: [...(launchConfig.kiosk ? [KIOSK_FLAG] : []), `${APP_VERSION_FLAG}${app.getVersion()}`],
     },
   })
 

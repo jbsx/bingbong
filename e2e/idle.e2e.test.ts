@@ -305,4 +305,35 @@ describe('idle screen e2e: the Last Page and resume', () => {
     await harness.clickDashboardElement('.idle-toggle')
     expect(await idleShown()).toBe(true)
   })
+
+  it('shows the app’s version, quiet and clear of everything, in the Idle Screen’s corner and on the Toolbar', async () => {
+    // Whatever app.getVersion() says: the Release stamps it at packaging, and
+    // a launch of out/main/index.js, as here, has no package.json beside it,
+    // so Electron answers with its own.
+    const version = /^v\d+\.\d+\.\d+$/
+    const shown = (selector: string): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('${selector}')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    // The label's text, whether it sits inside its band, and what else it overlaps.
+    const placed = (label: string, band: string, others: string) =>
+      harness.dashboardEval<{ text: string; inside: boolean; overlaps: string[] }>(`(() => {
+        const label = document.querySelector('${label}')
+        if (!label) return { text: '', inside: false, overlaps: [] }
+        const r = label.getBoundingClientRect()
+        const b = document.querySelector('${band}').getBoundingClientRect()
+        const hit = (o) => r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom
+        return {
+          text: label.textContent,
+          inside: r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom,
+          overlaps: [...document.querySelectorAll('${others}')].filter((el) => !el.contains(label) && hit(el.getBoundingClientRect())).map((el) => el.className),
+        }
+      })()`)
+
+    await harness.pressKey('dashboard', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    await shown('.idle-screen')
+    expect(await placed('.idle-version', '.idle-screen', '.idle-card, .idle-line, .idle-home, .idle-settings, .idle-clock-block')).toEqual({ text: expect.stringMatching(version), inside: true, overlaps: [] })
+
+    await harness.clickDashboardElement('.idle-screen')
+    await shown('.toolbar')
+    expect(await placed('.toolbar .app-version', '.toolbar', '.toolbar button, .toolbar input, .status-capsule, .toolbar-widgets')).toEqual({ text: expect.stringMatching(version), inside: true, overlaps: [] })
+  })
 })

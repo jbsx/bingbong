@@ -7,7 +7,7 @@ import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
 import { PANEL_IPC } from '../core/panel/ipcChannels'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
-import { resolveLaunchConfig } from '../core/app/launchConfig'
+import { appVersionFromArgv, resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
@@ -38,7 +38,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } 
 const launch = resolveLaunchConfig(process.argv, process.env)
 
 contextBridge.exposeInMainWorld('bingbong', {
-  version: '0.1.0',
+  version: appVersionFromArgv(process.argv),
   app: launch,
   browser: {
     navigate: (input: string): Promise<boolean> => ipcRenderer.invoke(BROWSER_IPC.navigate, input),

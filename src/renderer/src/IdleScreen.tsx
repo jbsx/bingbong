@@ -614,6 +614,8 @@ export function IdleScreen({
       >
         <ChromeIcon name="settings" size={32} />
       </button>
+      {/* The version, in the bottom corner and quiet: which Release the kiosk runs. */}
+      {window.bingbong.version !== '' ? <span className="app-version idle-version">v{window.bingbong.version}</span> : null}
       <div className="idle-col idle-col--left">
         {showWeather ? (
           <div className="idle-home" data-card="weather" data-form={weather.status === 'ready' ? 'full' : 'small'}>

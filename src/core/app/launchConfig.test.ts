@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_IDLE_TIMEOUT_MS, KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from './launchConfig'
+import { APP_VERSION_FLAG, DEFAULT_IDLE_TIMEOUT_MS, KIOSK_ENV, KIOSK_FLAG, appVersionFromArgv, resolveLaunchConfig } from './launchConfig'
 
 describe('resolveLaunchConfig', () => {
   it('defaults to a windowed app with the default idle timeout', () => {
@@ -28,5 +28,15 @@ describe('resolveLaunchConfig', () => {
     expect(resolveLaunchConfig([], { BINGBONG_IDLE_TIMEOUT_MS: 'soon' }).idleTimeoutMs).toBe(DEFAULT_IDLE_TIMEOUT_MS)
     expect(resolveLaunchConfig([], { BINGBONG_IDLE_TIMEOUT_MS: '0' }).idleTimeoutMs).toBe(DEFAULT_IDLE_TIMEOUT_MS)
     expect(resolveLaunchConfig([], { BINGBONG_IDLE_TIMEOUT_MS: '-5' }).idleTimeoutMs).toBe(DEFAULT_IDLE_TIMEOUT_MS)
+  })
+})
+
+describe('appVersionFromArgv', () => {
+  it('reads the version main handed the preload', () => {
+    expect(appVersionFromArgv(['electron', KIOSK_FLAG, `${APP_VERSION_FLAG}0.1.42`])).toBe('0.1.42')
+  })
+
+  it('is empty in a window main handed none', () => {
+    expect(appVersionFromArgv(['electron', 'app'])).toBe('')
   })
 })
