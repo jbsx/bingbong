@@ -6,5 +6,6 @@
   "stage": "missing_option",
   "happened": "'when is diwali this year' typed (main ad47a465, Mammoth): search, click publicholidays.co.uk/diwali, show-1 put 'In 2026, Diwali falls on Sunday 8 November' in view (hop 2 Verdict yes 0.51 / not_yet 0.48, under the bar); the scroll raised the site's anti-adblock dialog ('Looks like your ad blocker is on … DISABLE Continue without supporting us', with a ×); hop 3 read in_the_way 0.76 with the answer passage view-3 at 0.95, but the dialog's only ref was [1] 'DISABLE' (a way through) — neither '×' nor 'Continue without supporting us' was collected — so the ladder had Escape alone, it did nothing, and the Task ended wall: 'The pop-up is still open.' The date was never said",
   "meant": "Close the dialog through 'Continue without supporting us' or ×, both offered on the dismiss Choice, and say that Diwali is on Sunday 8 November 2026",
-  "log": "decision-1792805649581-1.jsonl"
+  "log": "decision-1792805649581-1.jsonl",
+  "claimedBy": "#414"
 }

@@ -6,5 +6,6 @@
   "stage": "missing_option",
   "happened": "'accept cookies' typed on bbcgoodfood.com under its Sourcepoint consent-or-pay wall (#408 build, Mammoth): the card carried the wall's purpose accordions but not its own buttons ('Accept cookies and read free content', 'Reject & Pay'), so Jev clicked [5] 'Store and/or access information on a device'; the controller's accept then cleared the wall",
   "meant": "Click the wall's 'Accept cookies and read free content'; the card should carry the wall's own buttons",
-  "log": "decision-1792788751894-1.jsonl"
+  "log": "decision-1792788751894-1.jsonl",
+  "claimedBy": "#414"
 }
