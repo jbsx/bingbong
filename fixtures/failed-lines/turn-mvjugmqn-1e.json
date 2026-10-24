@@ -7,5 +7,7 @@
   "happened": "Mammoth read none 0.83 and the Where Ask none 0.75. The Activity feed is the app's own panel (Ctrl+Shift+F, OverlayPanel), not on the page, and the card carries no appliance verb for the app's panels, so no option could be right",
   "meant": "Hide the app's activity feed panel",
   "log": "decision-1792691664816-1.jsonl",
-  "claimedBy": "#420"
+  "claimedBy": "#420",
+  "fixedBy": "c6936aaa",
+  "case": "turn-mvjugmqn-1e"
 }

@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-17-mvmkgcgs",
+  "transcript": "go back to the browser",
+  "at": 1792856475472,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "'go back to the browser' typed on Wikipedia's Duck page (#420 live run 2026-10-24, base 2eb50a79 + #420, Mammoth): Jev chose the browser's back over show_dashboard; back to the blank start page was refused, ended wall (cli-8-mvmke0rs the same over Settings)",
+  "meant": "Leave Settings or the Weight page for the browser view (show_dashboard)",
+  "log": "decision-1792856281511-1.jsonl"
+}
