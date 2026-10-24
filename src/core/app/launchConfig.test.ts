@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_IDLE_TIMEOUT_MS, KIOSK_FLAG, resolveLaunchConfig } from './launchConfig'
+import { DEFAULT_IDLE_TIMEOUT_MS, KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from './launchConfig'
 
 describe('resolveLaunchConfig', () => {
   it('defaults to a windowed app with the default idle timeout', () => {
@@ -12,6 +12,12 @@ describe('resolveLaunchConfig', () => {
   it('detects the kiosk flag anywhere in argv', () => {
     expect(resolveLaunchConfig(['electron', 'app', KIOSK_FLAG], {}).kiosk).toBe(true)
     expect(resolveLaunchConfig([KIOSK_FLAG], {}).kiosk).toBe(true)
+  })
+
+  it('takes kiosk mode from BINGBONG_KIOSK=1 too, which survives the updater relaunch that drops argv', () => {
+    expect(resolveLaunchConfig([], { [KIOSK_ENV]: '1' }).kiosk).toBe(true)
+    expect(resolveLaunchConfig([], { [KIOSK_ENV]: '0' }).kiosk).toBe(false)
+    expect(resolveLaunchConfig([], { [KIOSK_ENV]: '' }).kiosk).toBe(false)
   })
 
   it('reads the idle timeout from the environment', () => {

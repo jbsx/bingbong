@@ -5,6 +5,33 @@ import { waitFor } from './waitFor'
 // Kiosk e2e (T11): --kiosk launches the window fullscreen with the browser
 // pane dominant — the appliance deployment shape.
 
+// The updater relaunches a new AppImage with no arguments but the same env
+// (#419), so BINGBONG_KIOSK=1 alone must give the whole kiosk: window and renderer.
+describe('kiosk mode from the environment e2e', () => {
+  let harness: Harness | undefined
+
+  afterAll(async () => {
+    await harness?.quit()
+  })
+
+  it('launches fullscreen and kiosk-laid-out with BINGBONG_KIOSK=1 and no flag', async () => {
+    harness = await startHarness({ env: { BINGBONG_KIOSK: '1', BINGBONG_IDLE_TIMEOUT_MS: '60000' } })
+    const app = harness
+    if (!app) throw new Error('harness failed to start')
+
+    await waitFor(
+      async () => {
+        const covers = await app.dashboardEval<boolean>(
+          `window.outerWidth >= screen.width - 1 && window.outerHeight >= screen.height - 1`,
+        )
+        return covers || undefined
+      },
+      { timeoutMs: 20000, intervalMs: 250 },
+    )
+    expect(await app.dashboardEval<boolean>(`!!document.querySelector('.dashboard--kiosk')`)).toBe(true)
+  })
+})
+
 describe('kiosk mode e2e', () => {
   let harness: Harness | undefined
 

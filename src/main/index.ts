@@ -97,7 +97,7 @@ import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
-import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { muteOffScreen } from './muteOffScreen'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { attachAppearance } from './attachAppearance'
@@ -120,6 +120,9 @@ if (exitsAfterInstall(process.env)) process.exit(0)
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
 const launchConfig = resolveLaunchConfig(process.argv, process.env)
+// The updater starts the new AppImage with no arguments but this process's
+// env (#419), so a hand-run `--kiosk` is carried there to stay kiosk after an update.
+if (launchConfig.kiosk) process.env[KIOSK_ENV] = '1'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {

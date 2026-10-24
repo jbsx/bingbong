@@ -108,6 +108,7 @@ wake lines in it apply at the next start.
 ```sh
 BINGBONG_ENV_FILE=…                    # load .env from another path
 BINGBONG_IDLE_TIMEOUT_MS=…             # idle screen timeout (default 5 min)
+BINGBONG_KIOSK=1                       # kiosk mode, as --kiosk (process env only, not the .env)
 
 # Wake
 BINGBONG_WAKE_ENGINE=node|python|off   # default node; python = reference sidecar (wake head only)
