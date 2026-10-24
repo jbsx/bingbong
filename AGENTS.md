@@ -209,6 +209,10 @@ would pop up on screen. Always use `pnpm test:e2e` (it wraps vitest in
 The launch harness (`e2e/electronApp.ts`) forces the X11/Ozone backend and
 strips `WAYLAND_DISPLAY` so Electron binds to Xvfb even on Wayland sessions.
 
+Launch the app only through the harness or a `pnpm` script (`test:e2e`,
+`shot`, `cli`). A process you start by hand — `xvfb-run`, `electron`, a
+backgrounded command — is yours to kill by its PID before the session ends.
+
 The e2e suite on this branch covers the shell only: the pane, the CLI
 harness, settings, the adblocker, kiosk mode, and the YouTube snapshot gate
 (`BINGBONG_YOUTUBE_E2E=1`). Every suite that scripted an orchestrator run

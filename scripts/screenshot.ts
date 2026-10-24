@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -332,9 +333,10 @@ async function main(): Promise<void> {
   ])
   const debugPort = await pickFreePort()
 
+  // The binary under setpriv's parent-death signal, as e2e/electronApp.ts launches it: the app dies with this script.
   const proc = spawn(
-    `${repoRoot}/node_modules/.bin/electron`,
-    ['out/main/index.js', '--ozone-platform=x11', `--remote-debugging-port=${debugPort}`, '--kiosk'],
+    'setpriv',
+    ['--pdeathsig', 'KILL', createRequire(import.meta.url)('electron') as string, 'out/main/index.js', '--ozone-platform=x11', `--remote-debugging-port=${debugPort}`, '--kiosk'],
     {
       cwd: repoRoot,
       stdio: ['ignore', 'ignore', 'pipe'],

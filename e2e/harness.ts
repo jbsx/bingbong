@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -257,7 +258,8 @@ export async function startHarness(
   const fixture = options?.fixture ?? (productionDefaults ? noFixture() : await startFixtureServer())
   const userDataDir = options?.userDataDir ?? (await mkdtemp(join(tmpdir(), 'bingbong-e2e-profile-')))
   const app: LaunchedApp = await launchApp({
-    electronBinary: `${repoRoot}/node_modules/.bin/electron`,
+    // The binary itself, not the node_modules/.bin shim: the shim is a Node wrapper whose Electron child outlives a kill of it.
+    electronBinary: createRequire(import.meta.url)('electron') as string,
     entry: 'out/main/index.js',
     cwd: repoRoot,
     debugPort: await pickFreeDebugPort(),

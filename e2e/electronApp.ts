@@ -84,7 +84,9 @@ export async function launchApp({
   // under and pops real windows on the developer's screen. Force X11.
   // Xvfb hides the windows but not the sound: --mute-audio silences the
   // output stream while every media element's own state (muted, volume) is untouched.
-  const proc = spawn(electronBinary, [entry, ...args, '--ozone-platform=x11', '--mute-audio', `--remote-debugging-port=${debugPort}`], {
+  // setpriv execs Electron in its own place (same pid) with a parent-death signal: when the test runner dies however it dies
+  // (a timeout, Ctrl+C, an agent's shell ending), the kernel kills the app instead of leaving it running on its Xvfb.
+  const proc = spawn('setpriv', ['--pdeathsig', 'KILL', electronBinary, entry, ...args, '--ozone-platform=x11', '--mute-audio', `--remote-debugging-port=${debugPort}`], {
     cwd,
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: buildEnv(process.env, {
