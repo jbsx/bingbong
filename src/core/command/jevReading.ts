@@ -53,7 +53,8 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
   read: 'read the page aloud or show its contents',
   clear: 'clear the text in the focused field',
   stop: 'stop what the browser is doing',
-  none: 'not a command for this page: a remark, a question, a name, noise',
+  // Not "for this page" (#422, gate 2026-10-24): a line for the app itself read as none over a page.
+  none: 'not a command: a remark, a question, a name, noise',
 }
 
 /**

@@ -16,6 +16,7 @@ import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import type { AppChange, AppState } from '../../core/command/appOp'
+import type { UpdateCheck } from '../../core/update/updateCheck'
 import { defaultSettings } from '../../core/settings/settings'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
@@ -261,9 +262,12 @@ describe('what the appliance knows (#402)', () => {
 describe('the app itself on the card (#420, ADR 0091)', () => {
   /** An app whose changes land at once: the panel's and the settings' as asked, the view as shown. */
   function fakeApp(start: Partial<AppState> = {}) {
-    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', settings: defaultSettings(), voices: [], ...start }
+    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', settings: defaultSettings(), voices: [], version: '0.1.1', ...start }
     const changes: AppChange[] = []
+    const installs: string[] = []
+    let found: UpdateCheck = { kind: 'current', version: '0.1.1' }
     const app: AppControl = {
+      checkUpdate: async () => found,
       state: () => state,
       apply: async (change) => {
         changes.push(change)
@@ -274,8 +278,53 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
       },
       findPlace: async (words) => (words === 'Paris' ? { name: 'Paris', where: 'Île-de-France, France', latitude: 48.85, longitude: 2.35 } : null),
     }
-    return { app, changes }
+    const release = (check: 'installing' | Exclude<UpdateCheck, { kind: 'installing' }>): void => {
+      found = check === 'installing' ? { kind: 'installing', version: '0.1.2', install: () => installs.push('install') } : check
+    }
+    return { app, changes, installs, release }
   }
+
+  it('"update yourself" with a Release downloaded says so, then installs once the Answer is spoken (#422)', async () => {
+    const speech = new FakeSpeech()
+    const { app, changes, installs, release } = fakeApp()
+    release('installing')
+    const { browser, decision, runner } = harness({ app, speech })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('update yourself', { source: 'spoken' })
+    expect(cardOf(decision.requests[0]!).options.app_update).toContain('now version 0.1.1')
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Installing version 0.1.2, back in a moment.'])
+    await flushMicrotasks()
+    expect(installs).toEqual([])
+
+    speech.finish()
+    await flushMicrotasks()
+    expect(installs).toEqual(['install'])
+    expect(changes).toEqual([])
+    expect(browser.navigations).toEqual([])
+  })
+
+  it('a later line before the install, "stop" among them, keeps the app running (#422)', async () => {
+    const speech = new FakeSpeech()
+    const { app, installs, release } = fakeApp()
+    release('installing')
+    const { decision, runner } = harness({ app, speech })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('update yourself', { source: 'spoken' })
+    await runner.run('stop', { source: 'spoken' })
+    speech.finish()
+    await flushMicrotasks()
+    expect(installs).toEqual([])
+  })
+
+  it('"check for updates" with none newer says the running version and installs nothing (#422)', async () => {
+    const { app, installs } = fakeApp()
+    const { decision, events, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('check for updates', { source: 'typed' })
+    await flushMicrotasks()
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Up to date, version 0.1.1.'])
+    expect(installs).toEqual([])
+  })
 
   it('"hide the activity panel" closes it in one hop, the result said, the dashboard woken', async () => {
     const speech = new FakeSpeech()

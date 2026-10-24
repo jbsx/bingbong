@@ -77,6 +77,7 @@ import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl
 import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appWords, placeName, placeSettings, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
+import { updateAnswer, type UpdateCheck } from '../../core/update/updateCheck'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
@@ -214,6 +215,8 @@ export interface AppControl {
   apply(change: Exclude<AppChange, { kind: 'place' }>): Promise<AppState>
   /** The geocoder's first match for spoken words (ADR 0091's guess); null for none. */
   findPlace(words: string): Promise<PickedPlace | null>
+  /** An update asked for now (#422): what it found; an `installing` one installs when its `install` is called. */
+  checkUpdate(): Promise<UpdateCheck>
 }
 
 export interface CommandRunnerDeps {
@@ -994,7 +997,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
   }
 
-  async function perform(command: Command, page: CommandPage, resume: ReturnType<typeof resumePlan> | null, current: () => boolean, onPlayed: (outcome: PlayerOutcome) => void): Promise<string> {
+  async function perform(
+    command: Command,
+    page: CommandPage,
+    resume: ReturnType<typeof resumePlan> | null,
+    current: () => boolean,
+    onPlayed: (outcome: PlayerOutcome) => void,
+    afterAnswer: (then: () => void) => void,
+  ): Promise<string> {
     switch (command.verb) {
       case 'play': {
         if (deps.player === undefined) throw new Error('no player on this surface')
@@ -1082,6 +1092,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'app': {
         // An op on the app itself (#420, ADR 0091): one change, its Answer filled from the app as it is after it.
         if (deps.app === undefined || command.app === undefined) throw new Error('no app on this surface')
+        if (command.app.kind === 'update') {
+          // An update (#422): its Answer said first, then a downloaded Release installs, quitting the app.
+          const check = await deps.app.checkUpdate()
+          if (check.kind === 'installing') afterAnswer(check.install)
+          return updateAnswer(check)
+        }
         const before = deps.app.state()
         const change = appChangeOf(command.app, before)
         if (change === null) throw new Error('the words carry no value for it')
@@ -1268,6 +1284,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let unchanged = false
     /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
     let played: PlayerOutcome | null = null
+    /** What waits for the Answer to be said (#422): a downloaded Release's install. */
+    let afterAnswer: (() => void) | null = null
     let suspect: FireResult['suspect'] | null = null
     const ended = (outcome: FireOutcome): FireResult => ({
       outcome,
@@ -1280,7 +1298,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // An action on the pop-up itself (#417): whether it is still open is read from the page after it, whatever its own outcome.
     const onPopup = command.dismiss === true || actsOnDialog(command, page)
     try {
-      const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
+      const result = await perform(command, page, resume, current, (outcome) => (played = outcome), (then) => (afterAnswer = then))
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
@@ -1300,7 +1318,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       } else if (command.verb === 'say' || command.verb === 'app') {
         // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice.
         answer(turnId, result)
-        if (deps.speech !== undefined) void say(deps.speech, turnId, result)
+        const then = afterAnswer as (() => void) | null
+        const spoken = deps.speech !== undefined ? say(deps.speech, turnId, result) : Promise.resolve()
+        // Spoken to its end, or cut, or failed, the install goes ahead — unless a later line, `stop` among them, came first:
+        // the owner changed their mind (#422, a guess; a live "update" then "stop" that should have quit would settle it).
+        if (then !== null) {
+          const asked = submitted
+          void spoken.then(() => {
+            if (generation === mine && submitted === asked) then()
+          })
+        }
       } else if (played !== null) {
         // The Player's own Answer (#343): what it played, queued or did to the element — or, marked a failure, why it could not.
         const outcomeOfPlay: PlayerOutcome = played

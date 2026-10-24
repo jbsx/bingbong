@@ -269,7 +269,7 @@ function currentEnv(): Record<string, string | undefined> {
 
 // What each window last said of its Idle Screen, which the updater installs under (#419, ADR 0090).
 const idleWindows = new Map<number, IdleShown>()
-let updater: Updater = { shownChanged: () => {} }
+let updater: Updater = { shownChanged: () => {}, checkNow: async () => ({ kind: 'unavailable' }) }
 // Night Dim on the monitor itself (#413), told whenever any window's Idle Screen comes up or goes down.
 let nightDim: NightDimGlue = { idleChanged: () => {} }
 
@@ -493,8 +493,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // The CLI harness hears the runner's events beside the window: it prints
   // what the Command's turn published.
   const commandListeners = new Set<(event: PipelineEvent) => void>()
-  // The app itself on the card (#420, ADR 0091): its panel, views and settings.
-  const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
+  // The app itself on the card (#420, ADR 0091): its panel, views and settings — and its update (#422).
+  const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir, version: app.getVersion(), checkUpdate: () => updater.checkNow() })
   win.on('closed', appControl.detach)
   const runner = createCommandRunner({
     browser: controller,

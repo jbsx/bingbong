@@ -1,0 +1,110 @@
+{
+  "recordedAt": 1792771645931,
+  "transcript": "install the update",
+  "note": "#422: an acceptance line of #422, asked over a blank pane; the ask rebuilt by the production card (the update line and none as measured)",
+  "expect": [
+    {
+      "question": "action",
+      "label": "app_update"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"install the update\"\nPage: about:blank — \"\"\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 17:07, Friday 23 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "resume": "reopen the last page the screen showed: \"BBC News - Home\"",
+          "panel_open": "app: open the activity panel, the feed of what was said and done — now closed, overlay, 536 px wide",
+          "panel_close": "app: close the activity panel, hiding it — now closed, overlay, 536 px wide",
+          "panel_overlay": "app: float the activity panel over the page — now closed, overlay, 536 px wide",
+          "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, overlay, 536 px wide",
+          "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, overlay, 536 px wide",
+          "show_dashboard": "app: show the browser, leaving Settings or the Weight page — now showing the browser",
+          "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
+          "show_settings": "app: show the Settings page — now showing the browser",
+          "show_settings_voice": "app: show the Settings page at its Voice section — now showing the browser",
+          "show_settings_learned_terms": "app: show the Settings page at its Speech vocabulary section — now showing the browser",
+          "show_settings_appearance": "app: show the Settings page at its Appearance section — now showing the browser",
+          "show_settings_browsing": "app: show the Settings page at its Browsing section — now showing the browser",
+          "show_settings_idle_screen_cards": "app: show the Settings page at its Cards section — now showing the browser",
+          "show_settings_clock": "app: show the Settings page at its Clock section — now showing the browser",
+          "show_settings_screen": "app: show the Settings page at its Screen section — now showing the browser",
+          "show_settings_weather": "app: show the Settings page at its Weather section — now showing the browser",
+          "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
+          "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
+          "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
+          "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the speech recognition model, the Idle Screen's cards",
+          "app_update": "app: update — now version 0.1.1",
+          "none": "not a command: a remark, a question, a name, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "install",
+          "s0-1": "install the",
+          "s0-2": "install the update",
+          "s1-1": "the",
+          "s1-2": "the update",
+          "s2-2": "update"
+        }
+      },
+      "extent": {
+        "type": "choice",
+        "instructions": "Only when the action scrolls the page or a scrolling part of it: how far? Choose words when the words give a number of screens or pages; screen when they say nothing of how far. Ignored for every other action.",
+        "options": {
+          "words": "as many screens as the number the words carry",
+          "little": "a little: a third of a screen",
+          "screen": "one screen, as Page Down does",
+          "lot": "a lot: three screens",
+          "end": "all the way: to the bottom, or to the top going up"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      }
+    }
+  }
+}

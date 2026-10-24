@@ -2,11 +2,15 @@ import { app } from 'electron'
 import electronUpdater from 'electron-updater'
 import { reportFault } from '../../core/trace/fault'
 import type { IdleShown } from '../../core/idle/ipcChannels'
+import type { UpdateCheck } from '../../core/update/updateCheck'
 import { createIdleInstall } from './idleInstall'
+import { createCheckNow } from './checkNow'
 
 // The kiosk follows the Releases (#419, ADR 0090): every hour the packaged
 // app asks GitHub for a newer Release of the `production` branch, downloads
 // it in the background, and installs and relaunches only at the Idle Screen.
+// A spoken or typed update (#422) asks the same now, and installs a Release
+// already downloaded at once.
 
 const CHECK_EVERY_MS = 60 * 60 * 1000
 
@@ -25,6 +29,8 @@ export function exitsAfterInstall(env: Record<string, string | undefined>): bool
 export interface Updater {
   /** A window's Idle Screen changed: what every open window last said. */
   shownChanged(): void
+  /** An update asked for now (#422): a Release already downloaded installs once its Answer is said; otherwise GitHub is asked. */
+  checkNow(): Promise<UpdateCheck>
 }
 
 /**
@@ -32,7 +38,7 @@ export interface Updater {
  * the e2e suite) there is nothing to update and it does nothing.
  */
 export function attachUpdater(options: { windows(): readonly IdleShown[]; env: Record<string, string | undefined> }): Updater {
-  if (!app.isPackaged || !options.env.APPIMAGE) return { shownChanged: () => {} }
+  if (!app.isPackaged || !options.env.APPIMAGE) return { shownChanged: () => {}, checkNow: async () => ({ kind: 'unavailable' }) }
   const { autoUpdater } = electronUpdater
   autoUpdater.autoDownload = true
   // One road in: the Idle Screen, never a quit in the middle of something.
@@ -49,7 +55,7 @@ export function attachUpdater(options: { windows(): readonly IdleShown[]; env: R
       autoUpdater.quitAndInstall(true, !underSystemd)
     },
   })
-  autoUpdater.on('update-downloaded', () => gate.downloaded())
+  autoUpdater.on('update-downloaded', (info) => gate.downloaded(info.version))
   // Every failure, a check's or a download's, arrives here: one fault each.
   autoUpdater.on('error', (error) => reportFault('update.autoUpdater', error))
   const check = (): void => {
@@ -58,5 +64,14 @@ export function attachUpdater(options: { windows(): readonly IdleShown[]; env: R
   }
   check()
   setInterval(check, CHECK_EVERY_MS).unref()
-  return { shownChanged: () => gate.shownChanged() }
+  const checkNow = createCheckNow({
+    gate,
+    runningVersion: app.getVersion(),
+    // A failed check rejects here too, after the 'error' event above has reported it.
+    check: async () => {
+      const result = await autoUpdater.checkForUpdates()
+      return result === null ? null : { available: result.isUpdateAvailable, version: result.updateInfo.version }
+    },
+  })
+  return { shownChanged: () => gate.shownChanged(), checkNow }
 }

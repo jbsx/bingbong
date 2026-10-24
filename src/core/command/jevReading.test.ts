@@ -469,7 +469,7 @@ describe('the Where Ask (#379, ADR 0082): the same action card, asked where the 
   it('leaves the first ask as it was measured', () => {
     const first = commandQuestions('turn on ambient mode', SITE)
     expect(first.action.instructions).toMatch(/^Which one action does the browser take for the user's words\? .* Choose none when the words are not a command\.$/)
-    expect(first.action.options.none).toBe('not a command for this page: a remark, a question, a name, noise')
+    expect(first.action.options.none).toBe('not a command: a remark, a question, a name, noise')
   })
 })
 

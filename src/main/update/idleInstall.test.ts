@@ -23,7 +23,7 @@ describe('createIdleInstall', () => {
   it('waits for the Idle Screen when an update finishes downloading during a command (ADR 0090)', () => {
     const { shown, installs, gate } = harness()
     shown.set(1, { up: false, open: false, prompting: false })
-    gate.downloaded()
+    gate.downloaded('0.1.2')
     expect(installs).toEqual([])
 
     shown.set(1, RESTING)
@@ -34,18 +34,18 @@ describe('createIdleInstall', () => {
   it('installs at once when the download lands while the Idle Screen is up', () => {
     const { shown, installs, gate } = harness()
     shown.set(1, RESTING)
-    gate.downloaded()
+    gate.downloaded('0.1.2')
     expect(installs).toEqual(['install'])
   })
 
   it('never installs with nothing downloaded, nor with no window, nor twice', () => {
     const { shown, installs, gate } = harness()
-    gate.downloaded()
+    gate.downloaded('0.1.2')
     expect(installs).toEqual([])
     shown.set(1, RESTING)
     gate.shownChanged()
     gate.shownChanged()
-    gate.downloaded()
+    gate.downloaded('0.1.2')
     expect(installs).toEqual(['install'])
 
     const idle = harness()
@@ -58,7 +58,7 @@ describe('createIdleInstall', () => {
     const { shown, installs, gate } = harness()
     shown.set(1, RESTING)
     shown.set(2, { up: true, open: true, prompting: true })
-    gate.downloaded()
+    gate.downloaded('0.1.2')
     expect(installs).toEqual([])
   })
 })
