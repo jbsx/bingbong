@@ -23,7 +23,10 @@ as fast as it can, built on this shell.
   `screenshot`, `back`, `reload`, `resume` (the last page, reopened after a
   restart). Every action's outcome names what happened on the
   page — a blocker, a consent wall, a covered click, an empty or not-found
-  landing — in one line.
+  landing — in one line. From the keyboard, wherever focus is,
+  `Ctrl/Cmd+R` or `F5` reloads the page and `Alt+←/→` (`Cmd+[`/`]` on
+  macOS) steps it back and forward; no key reloads, zooms or closes the
+  app itself.
 - **A direct command runner, for now.** Commands in the CLI grammar above
   run straight against the browser and show in the feed. This is the seam
   the Jev-driven agent replaces (`src/main/run/commandRunner.ts`).

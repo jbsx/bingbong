@@ -101,18 +101,6 @@ function isPanelShortcut(input: Electron.Input): boolean {
   )
 }
 
-/**
- * Reload chords (Ctrl/Cmd+R, F5 — shift variants included) never reload
- * the overlay: a mid-run reload would throw the feed away. The input is
- * simply dropped.
- */
-function isReloadChord(input: Electron.Input): boolean {
-  if (input.type !== 'keyDown') return false
-  const key = input.key.toLowerCase()
-  if (key === 'f5') return true
-  return key === 'r' && (input.control || input.meta)
-}
-
 export function attachFeedPanelOverlayToWindow(
   win: BrowserWindow,
   deps: { preloadDir: string; defaultWidth?: number; shortcutHeld?: () => boolean },
@@ -175,15 +163,6 @@ export function attachFeedPanelOverlayToWindow(
   }
   registerShortcut(win.webContents)
   registerShortcut(wc)
-
-  // The overlay's reload chords are blocked: the panel's page holds the
-  // feed — an accidental Ctrl+R/F5 must not throw it away. Only the
-  // overlay: the pane is a real browser page (F5 is its user's to use).
-  const onOverlayInput = (event: Electron.Event, input: Electron.Input): void => {
-    if (isReloadChord(input)) event.preventDefault()
-  }
-  wc.on('before-input-event', onOverlayInput)
-  wc.once('destroyed', () => wc.removeListener('before-input-event', onOverlayInput))
 
   // A late-loading overlay missed earlier broadcasts — re-push the fold to
   // it on load. The dashboard is deliberately excluded: it pulls getState

@@ -18,8 +18,6 @@ export interface VoiceApi {
   monitoring: boolean
   /** The live partial transcript while the user speaks (#324); '' between Utterances. */
   partial: string
-  /** Hotkey handler — arm when idle, disarm when listening. */
-  toggleHotkey(): void
 }
 
 export interface UseVoiceDeps {
@@ -136,14 +134,6 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     }
   }, [])
 
-  const toggleHotkey = useCallback(() => {
-    if (listening) {
-      void window.bingbong.voice.disarm()
-      return
-    }
-    void window.bingbong.voice.arm()
-  }, [listening])
-
   useEffect(() => {
     const applyState = (state: VoiceState) => {
       setListening(state.listening)
@@ -177,5 +167,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, reason, monitoring, partial, toggleHotkey }
+  return { listening, transcribing, reason, monitoring, partial }
 }

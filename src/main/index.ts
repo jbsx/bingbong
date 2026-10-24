@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, ipcMain, session } from 'electron'
+import { app, BrowserWindow, crashReporter, ipcMain, Menu, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -20,7 +20,7 @@ import { resolveAuthIdentity } from '../core/browser/authIdentity'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness } from './cli/runCliHarness'
 import { saveScreenshotFile } from './run/saveScreenshotFile'
-import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/attachCommandRunner'
+import { attachAbortHotkey, attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/attachCommandRunner'
 import { createCommandRunner, type CommandRunner } from './run/commandRunner'
 import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
 import { createDecisionLogSink } from './run/decisionLogSink'
@@ -90,6 +90,7 @@ import { createBluezScaleTransport } from './scale/bluezScale'
 import { createStandInScaleTransport, SCALE_FIXTURE_ENV } from './scale/standInScale'
 import { createWeighInStore } from './scale/weighInStore'
 import { attachTimerAlarm } from './timer/timerAlarm'
+import { appMenuTemplate, attachAppShortcuts, type AppShortcutActions } from './appShortcuts'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
@@ -554,12 +555,26 @@ async function createWindow(): Promise<BrowserWindow> {
     return aborted || closed
   }
   attachCommandRunnerToWindow(runner, win, escape)
-  // Escape aborts from the pane too, where React never sees the key.
-  const onPaneInput = (event: Electron.Event, input: Electron.Input): void => {
-    if (input.type === 'keyDown' && input.key === 'Escape' && escape()) event.preventDefault()
+  // Escape aborts from the pane and the feed panel too, where the dashboard never sees the key.
+  for (const contents of [pane.view.webContents, feedPanel.contents()]) {
+    if (contents !== null) win.on('closed', attachAbortHotkey(escape, contents))
   }
-  pane.view.webContents.on('before-input-event', onPaneInput)
-  win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
+  // The app's shortcuts (reload, back and forward, listen) act on the pane from every surface.
+  const shortcuts: AppShortcutActions = {
+    reload: (ignoringCache) => pane.reload(ignoringCache),
+    back: () => pane.goBack(),
+    forward: () => pane.goForward(),
+    listen: () => {
+      if (voiceSession === null) return
+      if (voiceSession.getState().listening) voiceSession.disarm()
+      else voiceSession.arm()
+    },
+    // A packaged appliance keeps its DevTools shut; detached, they never squeeze the layout.
+    ...(app.isPackaged ? {} : { devTools: (contents: Electron.WebContents) => contents.openDevTools({ mode: 'detach' }) }),
+  }
+  for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents(), weighInView.contents()]) {
+    if (contents !== null) win.on('closed', attachAppShortcuts(contents, shortcuts))
+  }
 
   if (runningCliHarness) {
     startCliHarness(runner, (listener) => {
@@ -618,6 +633,9 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 app.whenReady().then(async () => {
+  // No default menu: its accelerators reloaded, zoomed and closed whichever surface held focus (appShortcuts.ts).
+  const menu = appMenuTemplate(process.platform)
+  Menu.setApplicationMenu(menu === null ? null : Menu.buildFromTemplate(menu))
   registerBrowserIpc()
   registerLastPageIpc(lastPageStore)
   registerTimerIpc(timer)

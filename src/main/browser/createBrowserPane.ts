@@ -35,6 +35,8 @@ export interface BrowserPane {
   navigate(input: string): boolean
   goBack(): void
   goForward(): void
+  /** Reloads the page; `ignoringCache` refetches past the HTTP cache (Shift+reload). */
+  reload(ignoringCache?: boolean): void
   /** Discards Session-owned navigation while preserving the persistent Browser Profile. */
   reset(): void
   setPaneRect(rect: PaneRect): void
@@ -271,6 +273,9 @@ export function createBrowserPane(deps?: {
       whenLive(() => {
         if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
       })
+    },
+    reload(ignoringCache = false) {
+      whenLive(() => (ignoringCache ? wc.reloadIgnoringCache() : wc.reload()))
     },
     reset() {
       whenLive(() => {

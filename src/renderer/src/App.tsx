@@ -131,20 +131,6 @@ export function App() {
     }
   }, [ping])
 
-  // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening. (The feed
-  // panel's Ctrl/Cmd+Shift+F lives in main — before-input-event on every
-  // input surface, so it works from the pane and overlay too, #45.)
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'Space' && (event.ctrlKey || event.metaKey) && !event.altKey) {
-        event.preventDefault()
-        voice.toggleHotkey()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [voice])
-
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
   const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
