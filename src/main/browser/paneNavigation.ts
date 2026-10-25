@@ -119,8 +119,15 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     for (const listener of [...commitListeners]) listener()
     wakeStages()
   })
+  // Main-frame route changes inside the document: a history step on a
+  // single-page site (YouTube's back) lands with one of these and no
+  // `did-navigate`, so the step's wait counts them too.
+  let inPageSteps = 0
   wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
-    if (isMainFrame) status = null
+    if (!isMainFrame) return
+    status = null
+    inPageSteps += 1
+    wakeStages()
   })
   wc.on('dom-ready', () => {
     domReady = true
@@ -274,8 +281,14 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     const navigated = new Promise<void>((resolve) => {
       wc.once('did-navigate', () => resolve())
     })
+    // A step that stays in the document ends there too; waiting for a
+    // `did-navigate` that never comes would hold the browser withheld for
+    // good, since only a later navigation could end it (2026-10-25 kiosk).
+    const before = inPageSteps
+    const inPage = until(() => inPageSteps !== before)
     go()
-    return boundedWait(navigated, HISTORY_STEP_TIMEOUT_MS, `stopped waiting for the page to go ${direction}; it may still be navigating`, clock)
+    const stepped = Promise.race([navigated, inPage.reached]).finally(inPage.forget)
+    return boundedWait(stepped, HISTORY_STEP_TIMEOUT_MS, `stopped waiting for the page to go ${direction}; it may still be navigating`, clock)
   }
 
   /**

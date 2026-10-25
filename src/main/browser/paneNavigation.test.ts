@@ -271,6 +271,44 @@ describe('createPaneNavigation', () => {
     expect(settled).toBe(true)
   })
 
+  it('ends a history step that stays in the document, as a single-page site steps back', async () => {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
+
+    const back = page.goBack()
+    wc.inPage('https://www.youtube.com/watch?v=x', true)
+    await back
+    // Settled before the bound, so nothing is left to withhold the browser.
+    clock.advance(HISTORY_STEP_TIMEOUT_MS)
+    await flushMicrotasks()
+  })
+
+  it('does not end a history step on a subframe’s in-page navigation', async () => {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
+
+    const back = page.goBack()
+    wc.inPage('https://ads.example/frame#x', false)
+    clock.advance(HISTORY_STEP_TIMEOUT_MS)
+    await expect(back).rejects.toBeInstanceOf(UnsettledActionError)
+  })
+
+  it('releases an unsettled history step when the in-page navigation lands late', async () => {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
+
+    const back = page.goBack()
+    clock.advance(HISTORY_STEP_TIMEOUT_MS)
+    const error = (await back.catch((err: unknown) => err)) as UnsettledActionError
+    expect(error).toBeInstanceOf(UnsettledActionError)
+
+    wc.inPage('https://www.youtube.com/watch?v=x', true)
+    await error.settlement
+  })
+
   it('refuses a history step with no history without arming a wait at all', async () => {
     const wc = fakeWebContents({
       navigationHistory: { canGoBack: () => false, canGoForward: () => true, goBack: () => {}, goForward: () => {} },
