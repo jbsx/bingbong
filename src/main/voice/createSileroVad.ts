@@ -1,5 +1,6 @@
 import type { VadScorer } from '../../core/ports/stt'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing.ts'
+import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
 
 /**
  * Silero VAD v5 over onnxruntime-node. The ONNX model is a streaming
@@ -12,7 +13,7 @@ import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing.ts'
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: OrtSessionOptions): Promise<OrtSession> }
   Tensor: {
     new (type: 'float32', data: Float32Array, dims: number[]): unknown
     new (type: 'int64', data: BigInt64Array, dims: number[]): unknown
@@ -48,7 +49,7 @@ export async function createSileroVad(deps: CreateSileroVadDeps): Promise<VadSco
 
   async function ensureSession(): Promise<{ ort: OrtModule; session: OrtSession }> {
     ort ??= await loadRuntime()
-    sessionReady ??= ort.InferenceSession.create(deps.modelPath)
+    sessionReady ??= ort.InferenceSession.create(deps.modelPath, ortSessionOptions())
     return { ort, session: await sessionReady }
   }
 

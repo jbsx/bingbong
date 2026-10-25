@@ -3,6 +3,7 @@ import type { TurnDetector } from '../../core/ports/stt'
 import { SMART_TURN_FRAMES, SMART_TURN_MELS, smartTurnFeatures } from '../../core/voice/smartTurnFeatures.ts'
 import { fsMoonshineStore, type MoonshineModelStore } from '../moonshine/moonshineModels.ts'
 import { createRetriable } from '../moonshine/retriable.ts'
+import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
 
 /**
  * Smart Turn v3 over onnxruntime-node (#357): pipecat-ai's open end-of-turn
@@ -25,7 +26,7 @@ export const SMART_TURN_FILE = {
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: OrtSessionOptions): Promise<OrtSession> }
   Tensor: new (type: 'float32', data: Float32Array, dims: number[]) => unknown
 }
 
@@ -63,7 +64,7 @@ export function createSmartTurn(deps: CreateSmartTurnDeps): SmartTurn {
     const size = store.size?.(path)
     if (!store.exists(path) || (size !== undefined && size < SMART_TURN_FILE.minBytes)) await store.fetch(SMART_TURN_FILE.url, path)
     const ort = await loadRuntime()
-    loaded = { ort, session: await ort.InferenceSession.create(path) }
+    loaded = { ort, session: await ort.InferenceSession.create(path, ortSessionOptions()) }
     return loaded
   })
   // The rejection is observed (and retried) by the next check; this only keeps it from going unhandled.

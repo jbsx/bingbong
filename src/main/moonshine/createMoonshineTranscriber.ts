@@ -5,6 +5,7 @@ import { createBiasApplier, createBiasIndex, type BiasApplier, type BiasIndex, t
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
 import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
+import { ortSessionOptions, STT_THREADS, type OrtSessionOptions } from '../ortSessionOptions.ts'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -33,7 +34,7 @@ const DEFAULT_MIN_PASS_SAMPLES = WAV_SAMPLE_RATE
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: OrtSessionOptions): Promise<OrtSession> }
   Tensor: {
     new (type: 'float32', data: Float32Array, dims: number[]): unknown
     new (type: 'int64', data: BigInt64Array, dims: number[]): unknown
@@ -123,8 +124,8 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const ensureSessions = createRetriable(async () => {
     ort ??= await loadRuntime()
     const runtime = ort
-    const encoder = await runtime.InferenceSession.create(deps.encoderPath)
-    const decoder = await runtime.InferenceSession.create(deps.decoderPath)
+    const encoder = await runtime.InferenceSession.create(deps.encoderPath, ortSessionOptions(STT_THREADS))
+    const decoder = await runtime.InferenceSession.create(deps.decoderPath, ortSessionOptions())
     return { runtime, encoder, decoder }
   })
 

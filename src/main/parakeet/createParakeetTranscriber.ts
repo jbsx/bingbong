@@ -4,6 +4,7 @@ import { createBiasApplier, createBiasIndex, type BiasApplier, type BiasIndex } 
 import type { BiasInput } from '../moonshine/createMoonshineTranscriber.ts'
 import { createRetriable } from '../moonshine/retriable.ts'
 import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
+import { ortSessionOptions, STT_THREADS, type OrtSessionOptions } from '../ortSessionOptions.ts'
 
 // The default STT engine (#358): NVIDIA Parakeet TDT 0.6B v2, the int8
 // onnx-asr export, on the app's onnxruntime-node stack. Three graphs: the
@@ -32,7 +33,7 @@ const DEFAULT_MAX_TOKENS_PER_STEP = 10
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: OrtSessionOptions): Promise<OrtSession> }
   Tensor: {
     new (type: 'float32', data: Float32Array, dims: number[]): unknown
     new (type: 'int64', data: BigInt64Array, dims: number[]): unknown
@@ -88,9 +89,9 @@ export function createParakeetTranscriber(deps: ParakeetTranscriberDeps): Transc
   // pass retries — a poisoned memo would break STT until restart.
   const ensureSessions = createRetriable(async () => {
     const runtime = await loadRuntime()
-    const preprocessor = await runtime.InferenceSession.create(deps.preprocessorPath)
-    const encoder = await runtime.InferenceSession.create(deps.encoderPath)
-    const joint = await runtime.InferenceSession.create(deps.decoderJointPath)
+    const preprocessor = await runtime.InferenceSession.create(deps.preprocessorPath, ortSessionOptions(STT_THREADS))
+    const encoder = await runtime.InferenceSession.create(deps.encoderPath, ortSessionOptions(STT_THREADS))
+    const joint = await runtime.InferenceSession.create(deps.decoderJointPath, ortSessionOptions())
     return { runtime, preprocessor, encoder, joint }
   })
 

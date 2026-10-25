@@ -1,5 +1,6 @@
 import type { WakeScores, WakeWordDetector } from '../../core/ports/wake'
 import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake'
+import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
 
 /**
  * The "bing bong" wake word plus the "abort" / "hold on" interrupt heads:
@@ -15,7 +16,7 @@ import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/port
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: OrtSessionOptions): Promise<OrtSession> }
   Tensor: new (type: 'float32', data: Float32Array, dims: number[]) => unknown
 }
 
@@ -85,11 +86,11 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
   async function ensureSessions() {
     ort ??= await (deps.loadRuntime ?? importOrt)()
     sessionsReady ??= Promise.all([
-      ort.InferenceSession.create(deps.melspecModelPath),
-      ort.InferenceSession.create(deps.embeddingModelPath),
-      ort.InferenceSession.create(deps.headModelPaths.wake),
-      ort.InferenceSession.create(deps.headModelPaths.abort),
-      ort.InferenceSession.create(deps.headModelPaths.holdOn),
+      ort.InferenceSession.create(deps.melspecModelPath, ortSessionOptions()),
+      ort.InferenceSession.create(deps.embeddingModelPath, ortSessionOptions()),
+      ort.InferenceSession.create(deps.headModelPaths.wake, ortSessionOptions()),
+      ort.InferenceSession.create(deps.headModelPaths.abort, ortSessionOptions()),
+      ort.InferenceSession.create(deps.headModelPaths.holdOn, ortSessionOptions()),
     ]).then(([melspec, embedding, wake, abort, holdOn]) => ({
       melspec,
       embedding,
