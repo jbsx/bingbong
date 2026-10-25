@@ -5,15 +5,15 @@ import { fakePerfHarness } from '../testing/doubles'
 // The verbose browser sub-span channel (#32): one shared object between the
 // pipeline's tool gate (which opens the current-turn scope) and the browser
 // controller (which emits sub-spans for its internal delays and extra
-// round-trips). Flag off (the default) or no open scope — nothing is written,
+// round-trips). Flag off (set to 0) or no open scope — nothing is written,
 // so the default log stays byte-identical to whole-action tool spans.
 
 describe('browserSubspansEnabled', () => {
-  it.each(['1', 'true', 'yes', 'on', 'TRUE', 'Yes'])('enables for %s', (value) => {
+  it.each([undefined, '', '1', 'true', 'yes', 'on', 'nonsense'])('is on for %s (on by default since 2026-10-25)', (value) => {
     expect(browserSubspansEnabled({ [BROWSER_SUBSPANS_ENV]: value })).toBe(true)
   })
 
-  it.each([undefined, '', '0', 'false', 'no', 'off', 'nonsense'])('disables for %s', (value) => {
+  it.each(['0', 'false', 'no', 'off', 'OFF', ' No '])('is off for %s', (value) => {
     expect(browserSubspansEnabled({ [BROWSER_SUBSPANS_ENV]: value })).toBe(false)
   })
 })

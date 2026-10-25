@@ -1,6 +1,7 @@
 import type { PerfSpanRecord, StageTally } from './perfTracer'
 import type { CommandLogRecord } from '../command/decisionRecord'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
+import { buildAppReport, formatAppReport, isAppRecord, type AppReport } from './appTelemetry.ts'
 import { buildDecisionReport, buildReactionReport, formatCommandReport, type DecisionReport, type ReactionReport } from './commandReport.ts'
 
 // The #33 report: per-stage p50/p95/max/count over every span in the log,
@@ -43,6 +44,8 @@ export interface PerfReport {
   decisions: DecisionReport
   /** What fired each Endpoint (#357), from the stt spans that say; null when none do. */
   endpoints: EndpointReport | null
+  /** The app's own records: the runs' builds and machines, CPU samples, playback. */
+  app: AppReport
 }
 
 /** The turn check against the pause cap (#357): how often each fired the Endpoint. */
@@ -149,7 +152,28 @@ function diffSummary(record: PerfSpanRecord, raw: Map<string, StageTally> | unde
   return problems.length > 0 ? { turnId: record.turnId, problems } : null
 }
 
-export function buildPerfReport(records: readonly PerfSpanRecord[], decisions: readonly CommandLogRecord[] = []): PerfReport {
+/** One summary per turn: a turn's summaries summed, stage by stage, in the order first stored. */
+function mergedSummaries(summaries: readonly PerfSpanRecord[]): PerfSpanRecord[] {
+  const merged = new Map<string, { record: PerfSpanRecord; stages: Record<string, StageTally> }>()
+  for (const summary of summaries) {
+    const stages = storedStages(summary)
+    const seen = merged.get(summary.turnId)
+    if (seen === undefined) {
+      merged.set(summary.turnId, { record: summary, stages })
+      continue
+    }
+    for (const [stage, tally] of Object.entries(stages)) {
+      const sum = seen.stages[stage] ?? { count: 0, durMs: 0 }
+      seen.stages[stage] = { count: sum.count + tally.count, durMs: sum.durMs + tally.durMs }
+    }
+    seen.record = { ...seen.record, durMs: seen.record.durMs + summary.durMs }
+  }
+  return [...merged.values()].map(({ record, stages }) => ({ ...record, detail: { stages } }))
+}
+
+export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: readonly CommandLogRecord[] = []): PerfReport {
+  // The app's own records are no turn's: they get their own lines, not stage rows.
+  const records = all.filter((record) => !isAppRecord(record))
   const durations = new Map<string, number[]>()
   const turnTallies = new Map<string, Map<string, StageTally>>()
   const summaries: PerfSpanRecord[] = []
@@ -192,7 +216,9 @@ export function buildPerfReport(records: readonly PerfSpanRecord[], decisions: r
     })
     .sort((a, b) => b.p95 - a.p95 || b.totalMs - a.totalMs || a.stage.localeCompare(b.stage))
 
-  const mismatches = summaries
+  // A turn summarized more than once (a Command's settle, then its Task's end) froze its tally at each:
+  // its summaries together are what its raw spans are checked against.
+  const mismatches = mergedSummaries(summaries)
     .map((s) => diffSummary(s, turnTallies.get(s.turnId)))
     .filter((m): m is SummaryMismatch => m !== null)
   const turnsWithoutSummary = [...turnTallies.keys()].filter((id) => !summaryTurns.has(id)).length
@@ -206,6 +232,7 @@ export function buildPerfReport(records: readonly PerfSpanRecord[], decisions: r
     reaction: buildReactionReport(records),
     decisions: buildDecisionReport(decisions),
     endpoints: buildEndpointReport(records),
+    app: buildAppReport(all),
   }
 }
 
@@ -222,6 +249,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   const lines: string[] = [`perf report: ${context.logsDir}`]
   if (report.stageStats.length === 0) {
     lines.push(`no perf spans found (files ${context.fileCount}, skipped lines ${context.skippedLines})`)
+    lines.push(...formatAppReport(report.app))
     appendCommandLines(lines, report, context)
     return lines.join('\n')
   }
@@ -261,6 +289,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
     }
   }
   if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
+  lines.push(...formatAppReport(report.app))
   appendCommandLines(lines, report, context)
   return lines.join('\n')
 }

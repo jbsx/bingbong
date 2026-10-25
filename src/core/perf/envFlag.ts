@@ -6,3 +6,9 @@ export function envFlagEnabled(env: Record<string, string | undefined>, name: st
   const value = env[name]?.trim().toLowerCase()
   return value === '1' || value === 'true' || value === 'yes' || value === 'on'
 }
+
+/** The opt-out side (kiosk telemetry 2026-10-25): a flag counts as off only for 0/false/no/off; unset and anything else leave it on. */
+export function envFlagDisabled(env: Record<string, string | undefined>, name: string): boolean {
+  const value = env[name]?.trim().toLowerCase()
+  return value === '0' || value === 'false' || value === 'no' || value === 'off'
+}

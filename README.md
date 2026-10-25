@@ -116,7 +116,7 @@ BINGBONG_WAKE_MODEL=…                  # override the "bing bong" head path
 BINGBONG_WAKE_ABORT_MODEL=…            # override the "abort" head path
 
 # Diagnostics
-BINGBONG_BROWSER_SUBSPANS=1            # verbose sub-spans inside browser actions (perf log)
+BINGBONG_BROWSER_SUBSPANS=0            # turn off the sub-spans inside browser actions (on by default)
 BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offline STT A/B
 
 # Scripted doubles — replace the real engines; used by the e2e suite
@@ -297,8 +297,17 @@ Every turn is perf-logged, zero config: one JSONL span per finished stage
 stream, written to a rotating `logs/` dir under the profile.
 `pnpm perf:report` aggregates per-stage latency percentiles and, on this
 branch, the Reaction p50/p95 per Command verb with the decision log beside it;
-`BINGBONG_BROWSER_SUBSPANS=1` drills into browser actions; see
+the sub-spans inside browser actions are on by default (`BINGBONG_BROWSER_SUBSPANS=0` turns them off); see
 `docs/stt-latency.md` and `docs/moonshine-ab.md` for measured results.
+Each Reaction also says when it fired (`firedMs`: the page read and the ask,
+apart from the action's own wait), the report prints that split, and each
+Utterance gets an `end-of-speech` span (the pause plus the Smart Turn check).
+The run's first STT is marked `cold`, and `wake-to-transcript` counts its blank
+transcripts (`blips`). Beside the turns, under the id `app`, the log holds
+the run's stamp (build, machine, kiosk, CPU), a CPU sample of every process
+every 15 s, and one `playback` record per piece of media the pane played:
+start time, stalls, dropped frames, picture height. The report prints them
+as `runs:`, `cpu` and `playback:` lines.
 
 `BINGBONG_AUDIO_DUMP=1` writes every detected utterance to `audio-dumps/`
 under the profile as a 16 kHz mono WAV — the artifact shape offline STT

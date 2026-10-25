@@ -69,6 +69,20 @@ describe('buildPerfReport', () => {
     expect(report.mismatches).toEqual([])
   })
 
+  it('checks a turn summarized twice — a Command\'s settle, then its Task\'s end — against both summaries together', () => {
+    const records = [
+      span('t1', 'stt', 300),
+      span('t1', 'reaction', 2_000),
+      summary('t1', { stt: { count: 1, durMs: 300 }, reaction: { count: 1, durMs: 2_000 } }, 2_300),
+      span('t1', 'task', 9_000),
+      summary('t1', { task: { count: 1, durMs: 9_000 } }, 9_000),
+    ]
+
+    const report = buildPerfReport(records)
+    expect(report.mismatches).toEqual([])
+    expect(report.turnsWithSummary).toBe(1)
+  })
+
   it('tolerates float-ordering noise up to 1ms between stored and recomputed', () => {
     const report = buildPerfReport([
       span('turn-1', 'llm', 1600.05),

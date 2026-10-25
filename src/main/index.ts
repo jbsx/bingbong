@@ -62,6 +62,7 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
+import { attachPlaybackWatch, startCpuSampler, writeRunStamp } from './perf/attachAppTelemetry'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -226,9 +227,11 @@ registerLearnedTermsIpc(learnedTermsStore)
 // for its life; every window's dashboard and overlay hear it.
 let scaleListener: ScaleListener | null = null
 
-// Verbose browser sub-spans (#32), opt-in behind the established env-flag
-// pattern. Flag off — the channel stays wired but writes nothing.
+// Browser sub-spans (#32), on unless BINGBONG_BROWSER_SUBSPANS=0: the
+// collect inside a slow kiosk line is read off them.
 const browserSubspans = createBrowserSubspans({ tracer: perfTracer, enabled: browserSubspansEnabled(currentEnv()) })
+// Which build wrote this log, on which machine (kiosk telemetry 2026-10-25): the kiosk's logs said neither.
+writeRunStamp(perfTracer, { version: app.getVersion(), machine: currentEnv().BINGBONG_LOG_MACHINE?.trim() || null, kiosk: launchConfig.kiosk, electron: process.versions.electron ?? '?' })
 
 // Opt-in utterance audio dumps (#34): BINGBONG_AUDIO_DUMP=1 writes each
 // detected utterance under <userData>/audio-dumps as a 16 kHz mono WAV —
@@ -483,6 +486,8 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   })
   win.on('closed', music.stop)
+  // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
+  win.on('closed', attachPlaybackWatch(perfTracer, pane.view.webContents))
   // Now Playing (#344): the Idle Screen's card follows the Player.
   win.on('closed', attachNowPlayingToWindow(win, music.player))
 
@@ -676,6 +681,8 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 app.whenReady().then(async () => {
+  // Every process's CPU every 15 s: a slow line on the kiosk is read beside how busy it was.
+  app.on('will-quit', startCpuSampler(perfTracer, () => app.getAppMetrics()))
   // No default menu: its accelerators reloaded, zoomed and closed whichever surface held focus (appShortcuts.ts).
   const menu = appMenuTemplate(process.platform)
   Menu.setApplicationMenu(menu === null ? null : Menu.buildFromTemplate(menu))

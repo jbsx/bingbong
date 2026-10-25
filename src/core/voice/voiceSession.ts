@@ -175,6 +175,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // Wake→transcript span (#27): the monotonic marker of the command listen's
   // start (hotkey or wake word); null outside a command listen.
   let commandListenStart: number | null = null
+  // Blank transcripts (blips) inside the command listen: a long wake-to-transcript with many is an open ear, not a slow one.
+  let listenBlips = 0
+  // The first decode of the run loads the STT engine's sessions: its span says so, apart from a warm one.
+  let decoded = 0
   // The Hot Listen (#326): a wake listen that has submitted an utterance
   // and stays open for the next; its silence clock, when running.
   let hot = false
@@ -332,6 +336,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     listening = true
     reason = nextReason
     commandListenStart = deps.tracer?.now() ?? null
+    listenBlips = 0
     resetEndpointer()
     deps.vad.reset()
     emitState()
@@ -470,6 +475,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     const tracer = deps.tracer
     const turnId = tracer ? tracer.mintTurnId() : null
     const endpointAt = tracer ? tracer.now() : null
+    const cold = decoded === 0
+    decoded += 1
     const recordStt = (extra?: Record<string, unknown>): void => {
       if (!tracer || turnId === null || endpointAt === null) return
       // The log is advisory; never fail an utterance over bookkeeping (the
@@ -491,8 +498,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
                 turnScoreMs: utterance.turn.scoreMs,
               }
             : {}),
+          ...(cold ? { cold: true } : {}),
           ...extra,
         })
+        // End of speech to the Endpoint: the pause, and the turn check that read it — audio queues behind the check, so it adds.
+        tracer.span(turnId, 'end-of-speech', utterance.silenceMs + (utterance.endedBy === 'turn' ? (utterance.turn?.scoreMs ?? 0) : 0), { endedBy: utterance.endedBy })
       } catch (error) {
         reportFault('voice.voiceSession.sttSpan', error)
         // swallowed — see above
@@ -517,6 +527,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
     if (text === '') {
       // A blip, not a command: back to the open ear, reason intact.
+      listenBlips += 1
       backToListening()
       startSilenceClock()
       return
@@ -526,7 +537,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       // Advisory like every tracer call — but the marker is control flow
       // (only a non-empty transcript may consume it), so it clears either way.
       try {
-        tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
+        tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason, blips: listenBlips })
       } catch (error) {
         reportFault('voice.voiceSession.wakeToTranscriptSpan', error)
         // swallowed — see recordStt above
