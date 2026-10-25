@@ -1,23 +1,21 @@
 import type { PerfTracer } from './perfTracer'
-import { envFlagEnabled } from './envFlag'
+import { envFlagDisabled } from './envFlag'
 import { reportFault } from '../trace/fault'
 
-// Verbose browser sub-spans (#32): browser actions already appear as whole
-// `tool` spans at the pipeline's gated-execution choke point (#30). Behind an
-// env flag, this channel adds drill-down below that choke point — one sub-span
-// per deliberate delay and extra round-trip inside a browser action (settle
-// sleeps, snapshot recollections, pre-action safety probes). One channel
-// object is shared per app: the pipeline's tool gate opens the current-turn
-// scope around each gated execution, and the browser controller emits through
-// it. With the flag off (the default) or outside any scope (CLI harness,
-// detached subagent panes) nothing is written, so the default log stays
-// byte-identical to whole-action spans.
+// Browser sub-spans (#32): one sub-span per deliberate delay and extra
+// round-trip inside a browser action (settle sleeps, snapshot recollections,
+// pre-action safety probes, every collect of the page). One channel object is
+// shared per app: the Command runner opens the current-turn scope around each
+// Command, and the browser controller emits through it. On by default since
+// 2026-10-25 — the kiosk's slow lines were spent inside a collect no span showed —
+// and off with the flag set to 0/false/no/off; outside any scope (CLI
+// harness, detached panes) nothing is written.
 
-/** Env opt-in for verbose browser sub-spans (#32): `BINGBONG_BROWSER_SUBSPANS=1`. */
+/** Env opt-out for browser sub-spans (#32; on by default 2026-10-25): `BINGBONG_BROWSER_SUBSPANS=0`. */
 export const BROWSER_SUBSPANS_ENV = 'BINGBONG_BROWSER_SUBSPANS'
 
 export function browserSubspansEnabled(env: Record<string, string | undefined>): boolean {
-  return envFlagEnabled(env, BROWSER_SUBSPANS_ENV)
+  return !envFlagDisabled(env, BROWSER_SUBSPANS_ENV)
 }
 
 /** Sub-span stage vocabulary: the landing poll's waits, the post-action readiness waits (#324), extra snapshot round-trips, pre-action safety probes, every collect of the page and its frames (#377), the wait for a clicked dialog's sheet to leave (#417). */

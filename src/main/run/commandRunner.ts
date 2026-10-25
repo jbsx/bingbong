@@ -2437,6 +2437,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
     }
     const firedAt = at()
+    // The Reaction's first part, Endpoint to fire: the page read and the ask, apart from the action's own wait.
+    const firedMs = Math.max(0, monotonic() - endpointAt)
     if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
@@ -2487,7 +2489,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       firedAt,
       {
         react: (detail, endedAt) => {
-          if (options.measured) span(turnId, endedAt - endpointAt, detail)
+          if (options.measured) span(turnId, endedAt - endpointAt, { ...detail, firedMs })
         },
         settled: () => summarize(turnId),
         ...(ladder.length > 0 ? { deferStay: true as const } : {}),

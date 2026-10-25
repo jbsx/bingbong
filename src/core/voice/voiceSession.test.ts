@@ -768,7 +768,47 @@ describe('voice session — perf spans (#27)', () => {
     await harness.speakUtterance() // 8 speech frames, then the pause cap; at most 20 frames of it handed to STT (#357)
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
-    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + 20) * 32, truncated: false, endedBy: 'cap', silenceMs: SUBMIT_SILENCE * 32 })
+    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + 20) * 32, truncated: false, endedBy: 'cap', silenceMs: SUBMIT_SILENCE * 32, cold: true })
+  })
+
+  it('marks only the run\'s first decode cold: it loads the engine\'s sessions', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['go', 'stop']), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    const stt = harness.perf.filter((record) => record.stage === 'stt')
+    expect(stt.map((record) => record.detail?.cold)).toEqual([true, undefined])
+  })
+
+  it('an end-of-speech span: the pause, and the turn check that read it — audio queues behind the check', async () => {
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['go']),
+      perf: {},
+      turn: {
+        score: async () => {
+          harness.clock.advance(900)
+          return 0.92
+        },
+      },
+    })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    const end = harness.perf.find((record) => record.stage === 'end-of-speech')
+    expect(end).toMatchObject({ durMs: DEFAULTS.turnCheckFrames * 32 + 900, detail: { endedBy: 'turn' } })
+  })
+
+  it('an end-of-speech span at the pause cap is the pause alone', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.find((record) => record.stage === 'end-of-speech')).toMatchObject({ durMs: SUBMIT_SILENCE * 32, detail: { endedBy: 'cap' } })
   })
 
   it('names the engine that transcribed in the stt detail (#358)', async () => {
@@ -815,7 +855,7 @@ describe('voice session — perf spans (#27)', () => {
     harness.session.arm()
     await harness.speakUtterance()
 
-    expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
+    expect(harness.perf.map((record) => record.stage)).toEqual(['stt', 'end-of-speech'])
     expect(harness.perf[0].detail).toMatchObject({ error: 'stt model missing', truncated: false })
     expect(harness.errors).toEqual(['stt model missing'])
   })
@@ -836,6 +876,8 @@ describe('voice session — perf spans (#27)', () => {
     expect(wake).toBeDefined()
     // 300ms to the blip + 1500ms its STT + 400ms gap + 1500ms the command's STT.
     expect(wake!.durMs).toBe(3_700)
+    // The blank one is counted: a long span with many is an open ear, not a slow one.
+    expect(wake!.detail).toEqual({ reason: 'hotkey', blips: 1 })
     expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String), truncated: false, endpointAt: expect.any(Number) }])
   })
 

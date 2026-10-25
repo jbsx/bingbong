@@ -33,6 +33,8 @@ export interface ReactionReport {
   byFire: { early: ReactionStats | null; endpoint: ReactionStats | null }
   /** The `tts-first-sound` spans (#327): speak call to the first sample handed to the player; null when none. */
   firstSound: ReactionStats | null
+  /** The Reactions that say when they fired, split there: the read and the ask, then the action's own wait; null when none says. */
+  split: { toFire: ReactionStats; afterFire: ReactionStats } | null
 }
 
 export interface DecisionReport {
@@ -95,10 +97,17 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
   const endpoint: number[] = []
   const firstSound: number[] = []
   const byVerb = new Map<string, number[]>()
+  const toFire: number[] = []
+  const afterFire: number[] = []
   for (const record of records) {
     if (record.stage === FIRST_SOUND_STAGE) firstSound.push(record.durMs)
     if (record.stage !== REACTION_STAGE) continue
     all.push(record.durMs)
+    const firedMs = record.detail?.firedMs
+    if (typeof firedMs === 'number') {
+      toFire.push(firedMs)
+      afterFire.push(Math.max(0, record.durMs - firedMs))
+    }
     ;(record.detail?.earlyFire === true ? early : endpoint).push(record.durMs)
     const verb = verbOf(record)
     const durations = byVerb.get(verb)
@@ -112,6 +121,7 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
       .sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb)),
     byFire: { early: early.length === 0 ? null : statsOf('early', early), endpoint: endpoint.length === 0 ? null : statsOf('endpoint', endpoint) },
     firstSound: firstSound.length === 0 ? null : statsOf(FIRST_SOUND_STAGE, firstSound),
+    split: toFire.length === 0 ? null : { toFire: statsOf('Endpoint to fire', toFire), afterFire: statsOf('fire to effect', afterFire) },
   }
 }
 
@@ -230,6 +240,11 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
     if (reaction.byFire.early !== null) {
       lines.push('', 'reaction by Early Fire:')
       lines.push(...table(['fired', 'count', 'p50', 'p95', 'max'], fired.map(rowOf)))
+    }
+    if (reaction.split !== null) {
+      // The read and the ask before the action fires, apart from the action's own wait.
+      lines.push('', 'reaction split:')
+      lines.push(...table(['part', 'count', 'p50', 'p95', 'max'], [reaction.split.toFire, reaction.split.afterFire].map(rowOf)))
     }
   }
   if (decisions.commands > 0 || decisions.misfires > 0) {

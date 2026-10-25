@@ -1625,6 +1625,19 @@ describe('what every Command records', () => {
     expect(reaction).toMatchObject({ turnId: 'voice-1', durMs: 500, detail: { verb: 'click', effect: 'mutation', reading: 'local_match', source: 'spoken' } })
   })
 
+  it('the reaction carries its first part, Endpoint to fire, apart from the action\'s own wait', async () => {
+    const { browser, perf, runner } = harness()
+    browser.click = async () => {
+      perf.state.monotonicMs = 2_000
+      return 'clicked [2]: no observable change'
+    }
+    perf.state.monotonicMs = 700
+    await runner.run('click sign in', { source: 'spoken', turnId: 'voice-1', endpointAt: 400 })
+
+    const reaction = perf.records.find((record) => record.stage === 'reaction')
+    expect(reaction).toMatchObject({ durMs: 1_600, detail: { verb: 'click', firedMs: 300 } })
+  })
+
   it('closes the span at the action\'s end when no effect was observed, and at submit for a typed Command', async () => {
     const { perf, runner } = harness()
     perf.state.monotonicMs = 100

@@ -59,7 +59,7 @@ describe('buildReactionReport', () => {
   })
 
   it('is empty, not a crash, with no reaction spans; a span without a verb counts as unknown', () => {
-    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null })
+    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null, split: null })
     const report = buildReactionReport([{ turnId: 't1', stage: 'reaction', durMs: 100, at: AT, t: 0 }])
     expect(report.byVerb).toEqual([{ verb: 'unknown', count: 1, p50: 100, p95: 100, max: 100 }])
   })
