@@ -1,4 +1,5 @@
 import type { PerfSpanRecord } from './perfTracer'
+import { buildLifecycleReport, formatLifecycleReport, type LagSummary, type LifecycleReport, type LongTasks, type MachineMemory } from './lifecycleTelemetry.ts'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
 // The app's own records in the perf log, beside the turns' (kiosk telemetry
@@ -27,8 +28,28 @@ export interface RunStamp {
 
 /** One process as the sampler sees it: its kind and its share of one core since the last sample. */
 export interface ProcessCpu {
+  /** Its kind, or the surface it renders (`dashboard`, `pane`) when the sampler knows it (#429). */
   type: string
   percent: number
+  /** Its working set (#429); absent when unread. */
+  memoryMb?: number
+}
+
+/** The main process's event-loop delay over one sample (#429), in ms. */
+export interface LoopDelay {
+  p50: number
+  p99: number
+  max: number
+}
+
+/** What the sample carries beside the CPU (#429); each part absent when unread. */
+export interface SampleExtras {
+  loop?: LoopDelay
+  memory?: MachineMemory | null
+  /** Long tasks per surface since the last sample; null for a surface that did not answer. */
+  longTasks?: Record<string, LongTasks | null>
+  /** How far the voice chain ran behind the audio it was handed. */
+  vadLag?: LagSummary | null
 }
 
 /** One CPU sample: every process's share summed, and by kind, in percent of one core. */
@@ -36,17 +57,34 @@ export interface CpuSample {
   total: number
   byType: Record<string, number>
   load1: number
+  memoryMb?: Record<string, number>
+  availableMb?: number
+  swapUsedMb?: number
+  loop?: LoopDelay
+  longTasks?: Record<string, LongTasks | null>
+  vadLag?: LagSummary | null
 }
 
-export function cpuSampleOf(processes: readonly ProcessCpu[], load1: number): CpuSample {
+export function cpuSampleOf(processes: readonly ProcessCpu[], load1: number, extras: SampleExtras = {}): CpuSample {
   const byType: Record<string, number> = {}
+  const memoryMb: Record<string, number> = {}
   let total = 0
-  for (const { type, percent } of processes) {
+  for (const { type, percent, memoryMb: mb } of processes) {
+    if (typeof mb === 'number' && Number.isFinite(mb)) memoryMb[type] = Math.round((memoryMb[type] ?? 0) + mb)
     if (!Number.isFinite(percent)) continue
     byType[type] = round1((byType[type] ?? 0) + percent)
     total += percent
   }
-  return { total: round1(total), byType, load1: round1(load1) }
+  return {
+    total: round1(total),
+    byType,
+    load1: round1(load1),
+    ...(Object.keys(memoryMb).length > 0 ? { memoryMb } : {}),
+    ...(extras.memory ? { availableMb: extras.memory.availableMb, swapUsedMb: extras.memory.swapUsedMb } : {}),
+    ...(extras.loop ? { loop: extras.loop } : {}),
+    ...(extras.longTasks ? { longTasks: extras.longTasks } : {}),
+    ...(extras.vadLag !== undefined ? { vadLag: extras.vadLag } : {}),
+  }
 }
 
 /** One piece of media's playing, as the pane's own media events told it (by kind: any audio or video element). */
@@ -85,6 +123,8 @@ export interface AppReport {
     droppedFrames: number
     totalFrames: number
   } | null
+  /** Boot, model loads, quit and the steady state (#429). */
+  lifecycle: LifecycleReport
 }
 
 export function isAppRecord(record: PerfSpanRecord): boolean {
@@ -122,7 +162,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
       plays.push(detail as unknown as PlaybackRecord)
     }
   }
-  return { runs: [...runs.values()], cpu: cpuReport(totals, byType), playback: playbackReport(plays) }
+  return { runs: [...runs.values()], cpu: cpuReport(totals, byType), playback: playbackReport(plays), lifecycle: buildLifecycleReport(records) }
 }
 
 function cpuReport(totals: number[], byType: Map<string, number[]>): AppReport['cpu'] {
@@ -167,6 +207,7 @@ export function formatAppReport(report: AppReport): string[] {
     const frames = p.totalFrames > 0 ? ` | dropped ${p.droppedFrames}/${p.totalFrames} frames (${round1((100 * p.droppedFrames) / p.totalFrames)}%)` : ''
     lines.push(`playback: ${p.count} played (${p.neverPlayed} never started) | ${start} | stalls ${p.stalls} for ${formatMs(p.stallMs)}${frames}`)
   }
+  lines.push(...formatLifecycleReport(report.lifecycle))
   return lines
 }
 

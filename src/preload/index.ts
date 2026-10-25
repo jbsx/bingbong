@@ -36,6 +36,10 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } 
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
+// The renderer's next frame; the preload's types carry no DOM.
+const nextFrame = (callback: () => void): void => {
+  ;(globalThis as unknown as { requestAnimationFrame(callback: () => void): number }).requestAnimationFrame(callback)
+}
 
 contextBridge.exposeInMainWorld('bingbong', {
   version: appVersionFromArgv(process.argv),
@@ -217,7 +221,11 @@ contextBridge.exposeInMainWorld('bingbong', {
     },
     getState: (): Promise<VoiceState> => ipcRenderer.invoke(VOICE_IPC.getState),
     onState: (listener: (state: VoiceState) => void): (() => void) => {
-      const wrapped = (_event: unknown, state: VoiceState): void => listener(state)
+      const wrapped = (_event: unknown, state: VoiceState): void => {
+        listener(state)
+        // A wake listen's Listening, painted: a frame after the state lands (#429). Main keeps the first.
+        if (state.listening && state.reason === 'wake') nextFrame(() => setTimeout(() => ipcRenderer.send(VOICE_IPC.listeningShown), 0))
+      }
       ipcRenderer.on(VOICE_IPC.stateChanged, wrapped)
       return () => ipcRenderer.removeListener(VOICE_IPC.stateChanged, wrapped)
     },

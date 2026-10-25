@@ -62,7 +62,7 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
-import { attachPlaybackWatch, startCpuSampler, writeRunStamp } from './perf/attachAppTelemetry'
+import { attachPlaybackWatch, startBootClock, startCpuSampler, startQuitTrace, trackSurface, writeRunStamp } from './perf/attachAppTelemetry'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -206,6 +206,16 @@ const appDirs = resolveAppDirs({ isPackaged: app.isPackaged, appPath: app.getApp
 const logsDir = join(app.getPath('userData'), 'logs')
 setFaultSink(createFaultLogSink(logsDir))
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
+// The quit step by step (#429), registered before every other quit hook so
+// its events come first; each record is on disk the moment it happens, so a
+// quit that hangs or is killed still says how far it got. Electron turns a
+// SIGTERM into this same quit (measured 2026-10-25): a Node signal listener
+// would never run. Node's `exit` comes just before Electron's `quit`.
+const quitTrace = startQuitTrace(perfTracer)
+app.on('before-quit', () => quitTrace.event('before-quit'))
+app.on('will-quit', () => quitTrace.event('will-quit'))
+app.on('quit', () => quitTrace.event('quit'))
+process.on('exit', () => quitTrace.event('exit'))
 const decisionLog = createDecisionLogSink(logsDir)
 const askLog = createAskLogSink(logsDir)
 // A Flag (#421) keeps its Task's records and the pane's shot under logs/flags/, past the purge.
@@ -266,6 +276,10 @@ const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('user
 // (BINGBONG_WAKE_ENGINE=python, wake head only).
 const wakeConfig = resolveWakeConfig(bootEnv, appDirs)
 const wakeDetector = createMainWake(wakeConfig)
+// The boot milestones (#429): the run is ready once the dashboard has painted
+// and, with a wake word, its model is in and the ear can hear it.
+const boot = startBootClock(perfTracer, wakeDetector ? ['dashboard-painted', 'wake-loaded'] : ['dashboard-painted'])
+boot.mark('main-loaded')
 const chimeWav = createChimeWav()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
 const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice })
@@ -340,6 +354,17 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   })
 
+  boot.mark('window-created')
+  trackSurface('dashboard', win.webContents)
+  win.webContents.once('did-finish-load', () => {
+    boot.mark('dashboard-loaded')
+    // Painted: a frame after the load, the first the screen can show.
+    win.webContents
+      .executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)))')
+      .then(() => boot.mark('dashboard-painted'))
+      .catch((error: unknown) => reportFault('perf.boot.dashboardPainted', error))
+  })
+
   // Fullscreen must sit where windowed does (#331, see fullscreenFit).
   if (launchConfig.kiosk) holdFullscreenFit(win)
 
@@ -350,6 +375,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // marks its download-capable verbs, so only agent-initiated downloads get
   // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
+  trackSurface('pane', pane.view.webContents)
   // A video codec the GPU cannot decode is not offered to the pane's pages (#425): YouTube then serves one it can.
   win.on('closed', attachCodecRefusal(pane.session, pane.view.webContents))
   // The feed panel overlay (#45) stacks above the browser pane — attached
@@ -670,6 +696,7 @@ async function createWindow(): Promise<BrowserWindow> {
     tracer: perfTracer,
     dumper: utteranceDumper,
   })
+  boot.mark('voice-attached')
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -682,7 +709,8 @@ async function createWindow(): Promise<BrowserWindow> {
 
 app.whenReady().then(async () => {
   // Every process's CPU every 15 s: a slow line on the kiosk is read beside how busy it was.
-  app.on('will-quit', startCpuSampler(perfTracer, () => app.getAppMetrics()))
+  boot.mark('app-ready')
+  app.on('will-quit', quitTrace.hook('cpu-sampler', startCpuSampler(perfTracer, () => app.getAppMetrics())))
   // No default menu: its accelerators reloaded, zoomed and closed whichever surface held focus (appShortcuts.ts).
   const menu = appMenuTemplate(process.platform)
   Menu.setApplicationMenu(menu === null ? null : Menu.buildFromTemplate(menu))
@@ -720,7 +748,7 @@ app.whenReady().then(async () => {
       logsDir,
       client: createS3Client(logBucket.start),
     }).start()
-    app.on('will-quit', stopLogBucket)
+    app.on('will-quit', quitTrace.hook('log-bucket', stopLogBucket))
   }
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
   const scaleFixture = process.env[SCALE_FIXTURE_ENV]
@@ -729,7 +757,7 @@ app.whenReady().then(async () => {
     store: createWeighInStore(join(app.getPath('userData'), 'weighins.json')),
     settings: settingsStore,
   })
-  app.on('will-quit', () => scaleListener?.stop())
+  app.on('will-quit', quitTrace.hook('scale', () => scaleListener?.stop()))
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
@@ -764,12 +792,16 @@ app.whenReady().then(async () => {
   // Appearance (ADR 0020): resolve the tri-state Setting through
   // nativeTheme before the first window.
   const detachAppearance = attachAppearance(settingsStore)
-  app.on('will-quit', () => {
-    adblock.dispose()
-    accessGuard.dispose()
-    detachAppearance()
-  })
+  app.on(
+    'will-quit',
+    quitTrace.hook('adblock', () => {
+      adblock.dispose()
+      accessGuard.dispose()
+      detachAppearance()
+    }),
+  )
   await adblock.ready()
+  boot.mark('adblock-ready')
   // Enabling the blocker re-registers its listeners; re-assert ours so the
   // ordering is deterministic regardless of enable/disable sequencing.
   identityHeaders.refresh()
@@ -777,6 +809,7 @@ app.whenReady().then(async () => {
   await createWindow()
   // The packaged app follows the Releases, installing at the Idle Screen (#419, ADR 0090).
   updater = attachUpdater({ windows: () => [...idleWindows.values()], env: process.env })
+  boot.mark('updater-attached')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

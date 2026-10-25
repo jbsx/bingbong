@@ -6,6 +6,7 @@ import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
 import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
 import { ortSessionOptions, STT_THREADS, type OrtSessionOptions } from '../ortSessionOptions.ts'
+import { timeModelLoad } from '../perf/modelLoads'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -121,13 +122,18 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
 
   // A failed create/load (missing or partial model file) un-memoizes so the
   // next pass retries — a poisoned memo would break STT until restart.
-  const ensureSessions = createRetriable(async () => {
-    ort ??= await loadRuntime()
-    const runtime = ort
-    const encoder = await runtime.InferenceSession.create(deps.encoderPath, ortSessionOptions(STT_THREADS))
-    const decoder = await runtime.InferenceSession.create(deps.decoderPath, ortSessionOptions())
-    return { runtime, encoder, decoder }
-  })
+  const ensureSessions = createRetriable(() =>
+    timeModelLoad(
+      'stt',
+      (async () => {
+        ort ??= await loadRuntime()
+        const runtime = ort
+        const encoder = await runtime.InferenceSession.create(deps.encoderPath, ortSessionOptions(STT_THREADS))
+        const decoder = await runtime.InferenceSession.create(deps.decoderPath, ortSessionOptions())
+        return { runtime, encoder, decoder }
+      })(),
+    ),
+  )
 
   const ensureVocab = createRetriable(deps.loadVocab)
 

@@ -4,6 +4,7 @@ import { SMART_TURN_FRAMES, SMART_TURN_MELS, smartTurnFeatures } from '../../cor
 import { fsMoonshineStore, type MoonshineModelStore } from '../moonshine/moonshineModels.ts'
 import { createRetriable } from '../moonshine/retriable.ts'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
+import { timeModelLoad } from '../perf/modelLoads'
 
 /**
  * Smart Turn v3 over onnxruntime-node (#357): pipecat-ai's open end-of-turn
@@ -64,7 +65,7 @@ export function createSmartTurn(deps: CreateSmartTurnDeps): SmartTurn {
     const size = store.size?.(path)
     if (!store.exists(path) || (size !== undefined && size < SMART_TURN_FILE.minBytes)) await store.fetch(SMART_TURN_FILE.url, path)
     const ort = await loadRuntime()
-    loaded = { ort, session: await ort.InferenceSession.create(path, ortSessionOptions()) }
+    loaded = { ort, session: await timeModelLoad('smart-turn', ort.InferenceSession.create(path, ortSessionOptions())) }
     return loaded
   })
   // The rejection is observed (and retried) by the next check; this only keeps it from going unhandled.

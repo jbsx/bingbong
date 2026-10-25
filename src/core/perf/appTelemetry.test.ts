@@ -25,6 +25,29 @@ describe('cpuSampleOf', () => {
       load1: 1.2,
     })
   })
+
+  it('carries memory by process, the machine, the loop, long tasks and the voice lag beside the CPU (#429)', () => {
+    const sample = cpuSampleOf(
+      [
+        { type: 'Browser', percent: 10, memoryMb: 900.4 },
+        { type: 'dashboard', percent: 4, memoryMb: 150 },
+        { type: 'pane', percent: 13, memoryMb: 200.6 },
+      ],
+      0.5,
+      { loop: { p50: 1, p99: 30, max: 120 }, memory: { availableMb: 2_029, swapUsedMb: 515 }, longTasks: { dashboard: { count: 1, ms: 70 }, pane: null }, vadLag: null },
+    )
+    expect(sample).toEqual({
+      total: 27,
+      byType: { Browser: 10, dashboard: 4, pane: 13 },
+      load1: 0.5,
+      memoryMb: { Browser: 900, dashboard: 150, pane: 201 },
+      availableMb: 2_029,
+      swapUsedMb: 515,
+      loop: { p50: 1, p99: 30, max: 120 },
+      longTasks: { dashboard: { count: 1, ms: 70 }, pane: null },
+      vadLag: null,
+    })
+  })
 })
 
 describe('buildAppReport', () => {

@@ -1,6 +1,7 @@
 import type { WakeScores, WakeWordDetector } from '../../core/ports/wake'
 import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
+import { timeModelLoad } from '../perf/modelLoads'
 
 /**
  * The "bing bong" wake word plus the "abort" / "hold on" interrupt heads:
@@ -85,13 +86,13 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
 
   async function ensureSessions() {
     ort ??= await (deps.loadRuntime ?? importOrt)()
-    sessionsReady ??= Promise.all([
+    sessionsReady ??= timeModelLoad('wake', Promise.all([
       ort.InferenceSession.create(deps.melspecModelPath, ortSessionOptions()),
       ort.InferenceSession.create(deps.embeddingModelPath, ortSessionOptions()),
       ort.InferenceSession.create(deps.headModelPaths.wake, ortSessionOptions()),
       ort.InferenceSession.create(deps.headModelPaths.abort, ortSessionOptions()),
       ort.InferenceSession.create(deps.headModelPaths.holdOn, ortSessionOptions()),
-    ]).then(([melspec, embedding, wake, abort, holdOn]) => ({
+    ])).then(([melspec, embedding, wake, abort, holdOn]) => ({
       melspec,
       embedding,
       heads: { wake, abort, holdOn },

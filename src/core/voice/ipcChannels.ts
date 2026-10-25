@@ -9,6 +9,8 @@ export const VOICE_IPC = {
   getState: 'voice:getState',
   /** Main → renderer: listening state changes. */
   stateChanged: 'voice:stateChanged',
+  /** Renderer → main: a wake listen's Listening has painted (#429). */
+  listeningShown: 'voice:listeningShown',
   /** Main → renderer: a transcript was heard and where it went. */
   heard: 'voice:heard',
   /** Main → renderer: the live partial transcript while the user speaks (#324); '' clears it. */

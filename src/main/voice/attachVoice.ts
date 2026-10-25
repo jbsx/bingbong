@@ -12,6 +12,8 @@ import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { reportFault } from '../../core/trace/fault'
 import type { Ducking } from '../../core/music/ducking'
+import { APP_TURN_ID } from '../../core/perf/appTelemetry'
+import { vadLag } from '../perf/attachAppTelemetry'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
@@ -22,6 +24,8 @@ import type { Ducking } from '../../core/music/ducking'
 // Status Capsule can show them.
 
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
+// A wake listen's opening, until the dashboard says it painted Listening (#429).
+const wakeOpenings = new WeakMap<BrowserWindow, { tracer: PerfTracer; at: number | null }>()
 
 function sessionFor(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent): VoiceSession | undefined {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -40,7 +44,19 @@ export function registerVoiceIpc(): void {
   ipcMain.on(VOICE_IPC.audio, (event, chunk: unknown) => {
     if (!(chunk instanceof Float32Array)) return
     const session = sessionFor(event)
-    if (session) void session.pushAudio(chunk)
+    if (!session) return
+    // Arrival to scored (#429): how far the voice chain runs behind the audio it is handed.
+    const arrived = performance.now()
+    void session.pushAudio(chunk).then(() => vadLag.record(performance.now() - arrived))
+  })
+
+  ipcMain.on(VOICE_IPC.listeningShown, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || event.sender !== win.webContents) return
+    const opening = wakeOpenings.get(win)
+    if (opening?.at == null) return
+    opening.tracer.span(APP_TURN_ID, 'wake-to-listening', opening.tracer.now() - opening.at)
+    opening.at = null
   })
 
   ipcMain.handle(VOICE_IPC.getState, (event) => {
@@ -49,6 +65,8 @@ export function registerVoiceIpc(): void {
 }
 
 export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): VoiceSession {
+  if (deps.tracer) wakeOpenings.set(win, { tracer: deps.tracer, at: null })
+  let wasListening = false
   const session = createVoiceSession({
     vad: deps.vad,
     transcriber: deps.transcriber,
@@ -87,6 +105,12 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     getRunState: () => runnerFor(win)?.getState() ?? 'idle',
     onAbort: () => runnerFor(win)?.abort(),
     onStateChange: (state: VoiceState) => {
+      // A wake listen opening (#429): timed until the dashboard has painted it.
+      const opening = wakeOpenings.get(win)
+      if (opening !== undefined) {
+        if (state.listening && state.reason === 'wake' && !wasListening) opening.at = opening.tracer.now()
+        wasListening = state.listening
+      }
       deps.ducking?.voiceState(state)
       // Open from the listen's start through its STT window: `listening` alone is false while it transcribes.
       deps.onEar?.(state.listening || state.transcribing)
