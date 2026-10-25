@@ -89,6 +89,8 @@ describe('idle screen e2e: music over the Idle Screen', () => {
       { timeoutMs: 10_000, intervalMs: 250 },
     )
     expect(later.paused).toBe(false)
+    // Nothing on the screen loops for the length of the song: a frame every 16 ms kept the kiosk's fans up (2026-10-25).
+    expect(await harness.dashboardEval<string[]>(`document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).map((a) => a.animationName ?? 'animation')`)).toEqual([])
     // The card's progress moves with it.
     const shown = await dashboardText('.idle-music-time')
     await waitFor(async () => ((await dashboardText('.idle-music-time')) !== shown ? true : undefined), { timeoutMs: 5_000, intervalMs: 250 })
