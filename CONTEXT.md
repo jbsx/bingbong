@@ -1329,8 +1329,15 @@ _Avoid_: header, dashboard header, browser chrome, title bar
 The single control naming the assistant's state — orb, pill, and the live
 run/voice hints collapsed into one pill-shaped surface. It names each state
 once — the pill says the state, the hint carries only instruction, the live
-words or the elapsed time — and never grows past its third of the Toolbar:
-long text ellipsizes. Its orb is the feed's assistant mark: one visual
+words, or what the Command is on and for how long: the stage's detail and its
+seconds — and never grows past its third of the Toolbar: long text ellipsizes.
+A Command's stages are Thinking (from the moment its line is taken, the heard
+words beside it, over the page read and every ask), Acting (the action's
+words), Loading (the action's wait for its navigation or settle, until the
+next Hop reads the page) and Speaking. Past the first Hop the hint names the
+Hop, and the seconds are the stage's own. A stage that runs past 5 s names its
+wait ("still thinking", "page still loading"). The screen never names the
+Decision Model (owner ruling 2026-10-25, #428). Its orb is the feed's assistant mark: one visual
 identity for "this is Bing Bong" — save that a failed Command's mark (the
 Peek Card's dot, the Feed Answer's mark and rail) takes the failure colour,
 so a failure never reads as a success (owner ruling 2026-10-18, #329).
