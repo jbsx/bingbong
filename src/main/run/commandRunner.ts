@@ -1282,8 +1282,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reacted = true
       reacting.react({ verb: command.verb, effect, reading: readingKind, source }, endedAt)
     }
+    // Loading (#428): once the action shows its first effect — the document left, the page changed — what is left of it is the wait for its navigation or settle.
+    let performing = true
+    let loading = false
     const release = deps.onEffect?.((effect) => {
       if (current() && speech === undefined) react(effect)
+      if (current() && speech === undefined && performing && !loading) {
+        loading = true
+        publish({ type: 'status', turnId, status: 'loading', hop: task.hop, at: at() })
+      }
     })
     // How its navigation landed (#328), heard while it is the Command in flight.
     let landing: PageLanding | undefined
@@ -1311,6 +1318,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A chooser the page opened before this action is not its own (#424): dropped, never answered by this line.
       if (OPENS_CHOOSER.has(command.verb)) await browser.takeFileChooser?.()
       const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
+      performing = false
       if (!current()) return ended('superseded')
       const chooser = OPENS_CHOOSER.has(command.verb) ? ((await browser.takeFileChooser?.()) ?? null) : null
       if (chooser !== null) uploaded = await upload(turnId, text, chooser)
@@ -1415,6 +1423,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { ...ended('wall'), error: message }
     } finally {
+      performing = false
       release?.()
       releaseLanding?.()
       reacting.settled()
@@ -1916,6 +1925,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         log({ ...last, ended })
         return { ended }
       }
+      // Loading (#428): the page the move left is read before the next one.
+      publish({ type: 'status', turnId: stepTurnId, status: 'loading', hop, at: at() })
       const after = await collectPage(null)
       const stillOpen = after.refs.some((ref) => opened.appeared.includes(ref.label))
       task.actions.push(`${doneAction(command, now)} (${stillOpen ? 'it is still open' : 'what it opened closed'})`)
@@ -2003,8 +2014,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const spoken = task.source === 'spoken'
       // The hop is being read: the Task is running, and abort reaches it.
       reading = { turnId, submission: task.submission }
-      // Loading (#428): the last hop's action waits for the page it left to settle and draw, before this hop reads it.
-      if (task.pending !== undefined && !superseded(task)) publish({ type: 'status', turnId, status: 'loading', hop: hop - 1, at: at() })
+      // Loading (#428): the last hop's action waits for the page it left to settle and draw, before this hop reads it — that hop's stage, not this one's.
+      const firedHop = hop - 1
+      if (task.pending !== undefined && !superseded(task)) publish({ type: 'status', turnId, status: 'loading', hop: firedHop, at: at() })
       // A re-read (the page moved under the reading) comes back here too, so it waits for the page to draw as the hop did.
       const page = superseded(task) ? blankPage(browser) : await drawn(task, await withResults(task, await collectPage(null)))
       visit(task, page.url)
@@ -2569,9 +2581,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const had = acting || sounding > 0
       // Escape, "stop" or the Abort Head soon after a Jev-read hop fired: the Task overran (#328).
       overrun()
-      // A reading under way is stale from here: when its answer comes, it fires nothing.
+      // A reading under way is stale from here: when its answer comes, it fires nothing — and it reads stopped now, never still thinking (#428).
       submitted += 1
       stoppedAt.add(submitted)
+      if (reading !== null) publish({ type: 'status', turnId: reading.turnId, status: 'cancelled', at: at() })
       reading = null
       cancelInFlight('stopped')
       silence()
@@ -2663,14 +2676,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
       // Thinking (#428): the line is taken, before anything reads it — the page read and every ask after it are under way,
       // so the Status Capsule never says Ready while it is read. The heard words ride it, so the user sees they were heard right.
-      publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: trimmed, at: at() })
+      const thinking = (): void => publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: trimmed, at: at() })
       // A Site Question open (#423): this line answers it before anything else reads it, and the Task that raised it is left in flight.
       const question = deps.siteQuestions?.open() ?? null
+      if (question !== null) thinking()
       if (question !== null && (await answerSite(turnId, trimmed, source, endpointAt, question))) {
         if (options?.turnId !== undefined) summarize(options.turnId)
         return true
       }
-      // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command.
+      // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command — and no stage of its own, so the pill stays on the Task it leaves.
       const flagged = readFlagLine(trimmed)
       if (flagged !== null) {
         if (source === 'spoken') observeTerms(trimmed)
@@ -2678,6 +2692,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         return true
       }
+      if (question === null) thinking()
       // When it was given (#330): an abandoned reading is filed here, however late its reading ends.
       const givenAt = at()
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).

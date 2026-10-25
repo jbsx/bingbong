@@ -26,19 +26,25 @@ export function createRunProgressTracker(): {
   // `command`, and each Hop is a turn of its own, so the stage leads.
   // Only that turn's `done` clears the hint, never a late one gone by.
   let activeTurn: string | null = null
+  // The last stage entered, kept past its turn's `done`: an action's wait goes on into the next hop's turn (#428).
+  let last: RunProgress | null = null
 
   return {
     onEvent(event) {
       switch (event.type) {
-        case 'status':
+        case 'status': {
           activeTurn = event.turnId
+          // The same action's wait, carried from its own turn into the next hop's: its seconds go on climbing.
+          const goesOn = last !== null && event.status === 'loading' && last.stage === 'loading' && last.hop === event.hop
           progress = {
             stage: event.status,
-            startedAt: event.at,
+            startedAt: goesOn ? last!.startedAt : event.at,
             ...(event.detail !== undefined ? { detail: event.detail } : {}),
             ...(event.hop !== undefined ? { hop: event.hop } : {}),
           }
+          last = progress
           return
+        }
         case 'done':
           if (event.turnId !== activeTurn) return
           activeTurn = null
@@ -63,10 +69,12 @@ export type CapsuleStatus = 'idle' | 'listening' | 'transcribing' | PipelineStat
 export const STUCK_STAGE_MS = 5_000
 
 /** The line a stage past {@link STUCK_STAGE_MS} carries: which wait it is. */
-const STUCK_LINES: Partial<Record<PipelineStatus, string>> = {
+const STUCK_LINES: Readonly<Record<PipelineStatus, string | null>> = {
   thinking: 'still thinking',
   acting: 'still acting',
   loading: 'page still loading',
+  speaking: null,
+  cancelled: null,
 }
 
 /**
@@ -79,7 +87,7 @@ const STUCK_LINES: Partial<Record<PipelineStatus, string>> = {
 export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; tail: string } {
   const elapsed = Math.max(0, now - progress.startedAt)
   const seconds = Math.floor(elapsed / 1000)
-  const stuck = elapsed >= STUCK_STAGE_MS ? (STUCK_LINES[progress.stage] ?? null) : null
+  const stuck = elapsed >= STUCK_STAGE_MS ? STUCK_LINES[progress.stage] : null
   const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
   const detail = progress.detail === undefined || progress.detail === '' ? null : progress.stage === 'thinking' ? `“${progress.detail}”` : progress.detail
   return {

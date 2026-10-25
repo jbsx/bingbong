@@ -1454,9 +1454,9 @@ describe('a Command still being read', () => {
     release()
     await run
     expect(browser.clicks).toEqual([])
-    expect(types(events)).toEqual(['status', 'command', 'done'])
-    expect(events[1]).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
-    expect(events[2]).toMatchObject({ outcome: 'cancelled' })
+    expect(types(events)).toEqual(['status', 'status', 'command', 'done'])
+    expect(events[2]).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
+    expect(events[3]).toMatchObject({ outcome: 'cancelled' })
   })
 
   it.each([
@@ -5017,6 +5017,42 @@ describe('the stages a Command passes through (#428)', () => {
       { status: 'thinking', hop: 0, detail: 'navigate youtube.com' },
       { status: 'acting', hop: 0, detail: 'navigate youtube.com' },
     ])
+  })
+
+  it('an action whose effect shows goes on to loading while it waits for its navigation or settle: a navigate shows Loading at hop 0', async () => {
+    const { browser, events, observe, runner } = harness()
+    const navigate = browser.navigate.bind(browser)
+    browser.navigate = async (url) => {
+      observe('navigation')
+      return navigate(url)
+    }
+    await runner.run('navigate youtube.com')
+    expect(stages(events)).toEqual([
+      { status: 'thinking', hop: 0, detail: 'navigate youtube.com' },
+      { status: 'acting', hop: 0, detail: 'navigate youtube.com' },
+      { status: 'loading', hop: 0 },
+    ])
+  })
+
+  it('a Flag publishes no stage of its own: the pill stays on the Task it leaves alone', async () => {
+    const { events, runner } = harness()
+    await runner.run('navigate youtube.com')
+    events.length = 0
+    await runner.run('mark this as a failure')
+    expect(stages(events)).toEqual([])
+  })
+
+  it('an abort while a line is read says stopped at once, never still thinking', async () => {
+    const { events, decision, runner } = harness()
+    const release = decision.hold(0)
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } })
+    const running = runner.run('sign me in please', { turnId: 't1' })
+    await flushMicrotasks()
+    runner.abort()
+    expect(stages(events).map((stage) => stage.status)).toEqual(['thinking', 'cancelled'])
+    expect(events.at(-1)).toMatchObject({ type: 'status', turnId: 't1', status: 'cancelled' })
+    release()
+    await running
   })
 
   it('never names Jev or the Decision Model in any stage', async () => {

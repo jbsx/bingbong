@@ -74,4 +74,16 @@ describe('createRunProgressTracker', () => {
     tracker.onEvent({ type: 'done', turnId: 't2', outcome: 'done', at: 500 })
     expect(tracker.current()).toBeNull()
   })
+
+  it('keeps an action\'s wait on its own anchor when the next hop\'s turn takes it up', () => {
+    const tracker = createRunProgressTracker()
+    tracker.onEvent(status('t1', 'loading', 100, { hop: 0 }))
+    tracker.onEvent({ type: 'done', turnId: 't1', outcome: 'done', at: 900 })
+    tracker.onEvent(status('t2', 'loading', 950, { hop: 0 }))
+    expect(tracker.current()).toEqual({ stage: 'loading', startedAt: 100, hop: 0 })
+    // The next hop's own stage starts its own count.
+    tracker.onEvent(status('t2', 'thinking', 1_200, { hop: 1 }))
+    tracker.onEvent(status('t2', 'loading', 1_500, { hop: 1 }))
+    expect(tracker.current()).toEqual({ stage: 'loading', startedAt: 1_500, hop: 1 })
+  })
 })

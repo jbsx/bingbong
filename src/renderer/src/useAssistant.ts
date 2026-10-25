@@ -8,6 +8,13 @@ import { createTaskProgressTracker, type TaskProgress } from '../../core/pipelin
 
 export type OrbStatus = CapsuleStatus
 
+/**
+ * How long the Capsule holds a stage past its turn's `done` before it says
+ * Ready (#428): a hop's `done` is followed at once by the next hop's stage,
+ * and the pill never blinks Ready between them.
+ */
+const READY_HOLD_MS = 300
+
 export interface Assistant {
   status: OrbStatus
   /**
@@ -45,6 +52,7 @@ export function useAssistant(): Assistant {
   const lastStatus = useRef<OrbStatus>('idle')
   // The turn whose stage the pill shows (#428): a line thinks before its `command`, and only that turn's `done` returns it to Ready — never a late one gone by.
   const statusTurn = useRef<string | null>(null)
+  const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const progressTracker = useRef(createRunProgressTracker())
   const taskProgressTracker = useRef(createTaskProgressTracker())
   // The feed's projection wiring (#44) is shared with the panel's overlay
@@ -57,24 +65,40 @@ export function useAssistant(): Assistant {
     const unsubscribe = window.bingbong.assistant.onEvent((event: PipelineEvent) => {
       feedProjection.handleEvent(event)
       progressTracker.current.onEvent(event)
-      setProgress(progressTracker.current.current())
       taskProgressTracker.current.onEvent(event)
       setTaskProgress(taskProgressTracker.current.current())
+      // The hint and the pill go quiet together, once the hold has passed with no stage after it.
+      const progressNow = progressTracker.current.current()
       switch (event.type) {
         case 'status':
+          if (readyTimer.current !== null) clearTimeout(readyTimer.current)
+          readyTimer.current = null
+          setProgress(progressNow)
           lastStatus.current = event.status
           statusTurn.current = event.turnId
           setStatus(event.status)
           return
         case 'done':
-          if (event.turnId !== statusTurn.current) return
-          if (lastStatus.current !== 'cancelled') setStatus('idle')
+          if (event.turnId !== statusTurn.current || lastStatus.current === 'cancelled') {
+            if (readyTimer.current === null) setProgress(progressNow)
+            return
+          }
+          if (readyTimer.current !== null) clearTimeout(readyTimer.current)
+          readyTimer.current = setTimeout(() => {
+            readyTimer.current = null
+            setProgress(progressTracker.current.current())
+            setStatus('idle')
+          }, READY_HOLD_MS)
           return
         default:
+          if (readyTimer.current === null) setProgress(progressNow)
           return
       }
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (readyTimer.current !== null) clearTimeout(readyTimer.current)
+    }
   }, [])
 
   const submit = useCallback((text: string) => {
