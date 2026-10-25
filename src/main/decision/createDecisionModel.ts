@@ -20,9 +20,10 @@ import { createJevDecisionModel } from './createJevDecisionModel.ts'
  * One scripted ask: the raw answers (read against the questions like a
  * vendor's), or an unavailable reason. With `when`, it answers only an ask
  * whose state carries those words — a line's reading, never a consent
- * wall's ask that came first; without, the next ask in order.
+ * wall's ask that came first; without, the next ask in order. With
+ * `delayMs`, it answers that much later, as a slow model would (#428).
  */
-type ScriptEntry = ({ readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }) & { readonly when?: string }
+type ScriptEntry = ({ readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }) & { readonly when?: string; readonly delayMs?: number }
 
 function isScriptEntry(value: unknown): value is ScriptEntry {
   if (typeof value !== 'object' || value === null) return false
@@ -81,6 +82,7 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
       const at = script.entries.findIndex((candidate) => candidate.when === undefined || request.state.includes(candidate.when))
       const entry = at < 0 ? undefined : script.entries.splice(at, 1)[0]
       if (entry === undefined) return unavailable('failed', `${DECISION_SCRIPT_ENV_KEY} ran out of answers`)
+      if (entry.delayMs !== undefined && entry.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, entry.delayMs))
       if ('unavailable' in entry) return unavailable(entry.unavailable, `scripted ${entry.unavailable}`)
       const answers = readDecisionAnswers(request.questions, withChoicesFilled(request.questions, entry.answers))
       if (answers === null) return unavailable('malformed', 'the scripted answers did not match the questions asked')

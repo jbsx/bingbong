@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { OrbStatus } from './useAssistant'
-import { describeRunProgress, type RunProgress } from '../../core/pipeline/runProgress'
+import { runProgressParts, type RunProgress } from '../../core/pipeline/runProgress'
 import type { TaskProgress } from '../../core/pipeline/taskProgress'
 
 /**
@@ -41,6 +41,7 @@ const PILL_LABELS: Record<OrbStatus, string> = {
   idle: 'Ready',
   thinking: 'Thinking…',
   acting: 'Acting…',
+  loading: 'Loading…',
   speaking: 'Speaking…',
   cancelled: 'Stopped',
   listening: 'Listening…',
@@ -82,11 +83,12 @@ export function StatusPill({ status }: { status: OrbStatus }) {
 }
 
 /**
- * The Toolbar's live progress line (#43): climbing elapsed counter (the
- * stage too when the pill shows another state, #331),
- * rendered from event timestamps with a renderer-side tick — no heartbeat
- * IPC. A genuine hang reads as an honestly climbing number; Stop stays the
- * only escape.
+ * The Toolbar's live progress line (#43): what the stage is on and the
+ * seconds in it (#428) — the Hop past the first, a stuck stage named —
+ * the stage too when the pill shows another state (#331), rendered from
+ * event timestamps with a renderer-side tick — no heartbeat IPC. A long
+ * detail ellipsizes and the seconds stay in sight; a genuine hang reads as
+ * an honestly climbing number, and Stop stays the only escape.
  */
 export function RunHint({ progress, status }: { progress: RunProgress; status: OrbStatus }) {
   const [now, setNow] = useState(() => Date.now())
@@ -95,10 +97,16 @@ export function RunHint({ progress, status }: { progress: RunProgress; status: O
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [])
+  const parts = runProgressParts(progress, now, status)
 
   return (
     <span className="run-hint" role="status">
-      {describeRunProgress(progress, now, status)}
+      {parts.named !== '' ? <span className="run-hint-tail">{parts.named}</span> : null}
+      {parts.detail !== null ? <span className="run-hint-detail">{parts.detail}</span> : null}
+      <span className="run-hint-tail">
+        {parts.detail !== null ? ' · ' : ''}
+        {parts.tail}
+      </span>
     </span>
   )
 }

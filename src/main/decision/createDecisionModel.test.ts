@@ -107,6 +107,24 @@ describe('createDecisionModel', () => {
     expect(await decision?.ask({ state: 'The user spoke: "play fixture song"', questions: QUESTIONS })).toMatchObject({ status: 'answered' })
   })
 
+  it('holds an entry with `delayMs` that long before it answers, as a slow model would (#428)', async () => {
+    vi.useFakeTimers()
+    try {
+      const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: ANSWERS, delayMs: 3000 }]) })
+      let settled = false
+      const asked = decision!.ask({ state: 's', questions: QUESTIONS }).then((result) => {
+        settled = true
+        return result
+      })
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await asked).toMatchObject({ status: 'answered' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps one model per configuration, so a script is consumed in order, and rebuilds when the env changes', async () => {
     let env: Record<string, string | undefined> = { BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: ANSWERS }, { unavailable: 'http' }]) }
     const source = createDecisionModelSource(() => env)

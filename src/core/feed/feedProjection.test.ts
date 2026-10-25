@@ -200,10 +200,11 @@ describe('feed projection', () => {
       { type: 'command', turnId: 't1', text: 'read', at: 1 },
       { type: 'status', turnId: 't1', status: 'thinking', at: 2 },
       { type: 'status', turnId: 't1', status: 'acting', at: 3 },
-      { type: 'status', turnId: 't1', status: 'speaking', at: 4 },
-      { type: 'status', turnId: 't1', status: 'cancelled', at: 5 },
+      { type: 'status', turnId: 't1', status: 'loading', at: 4 },
+      { type: 'status', turnId: 't1', status: 'speaking', at: 5 },
+      { type: 'status', turnId: 't1', status: 'cancelled', at: 6 },
     ]).entries()
-    expect(feed.filter((entry) => entry.kind === 'stage').map((entry) => entry.text)).toEqual(['Understanding', 'Working on the page', 'Reading aloud', 'Stopped'])
+    expect(feed.filter((entry) => entry.kind === 'stage').map((entry) => entry.text)).toEqual(['Understanding', 'Working on the page', 'Waiting for the page', 'Reading aloud', 'Stopped'])
   })
 
   it('stamps every entry with the turn it came from, conversation lines included, and marks a failure line (#329)', () => {

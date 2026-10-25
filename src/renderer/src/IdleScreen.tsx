@@ -22,8 +22,9 @@ import type { UsageState } from './useUsage'
 import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
-import { StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
+import { RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
+import type { RunProgress } from '../../core/pipeline/runProgress'
 import { GlobeIcon } from './WeatherIcon'
 import { ChromeIcon } from './ChromeIcon'
 import { dateLabel } from './dateLabel'
@@ -425,16 +426,19 @@ function useFitZoom(): number {
 }
 
 /**
- * The Status Capsule over the Idle Screen while Bing Bong works on a
- * Command that never needs the pane (the Timer, a Stop): thinking, acting,
- * speaking. The ear's own states are the Voice Prompt's to say.
+ * The Status Capsule over the Idle Screen while Bing Bong works (#428):
+ * every working stage — thinking from the moment a line is taken, before
+ * any Command is read, acting, loading, speaking — with the run hint
+ * beside it, until a Command that touches the pane takes the screen down.
+ * The ear's own states are the Voice Prompt's to say.
  */
-function IdleStatus({ status }: { status: OrbStatus }) {
+function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProgress | null }) {
   if (status === 'idle' || status === 'listening' || status === 'transcribing') return null
   return (
     <div className="status-capsule idle-status">
       <StatusOrb status={status} />
       <StatusPill status={status} />
+      {progress !== null ? <RunHint progress={progress} status={status} /> : null}
     </div>
   )
 }
@@ -473,6 +477,7 @@ export function IdleScreen({
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
   status,
+  progress = null,
   voice,
   popup = null,
 }: {
@@ -507,6 +512,8 @@ export function IdleScreen({
   /** The settings button in the corner was tapped: show the settings page. */
   onOpenSettings?: () => void
   status: OrbStatus
+  /** The active run's stage, detail and its start (#428), for the run hint beside the pill. */
+  progress?: RunProgress | null
   voice: IdleVoice
   /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
   popup?: React.ReactNode
@@ -600,7 +607,7 @@ export function IdleScreen({
       {/* The window's drag region while the Toolbar is unmounted (ADR
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />
-      <IdleStatus status={status} />
+      <IdleStatus status={status} progress={progress} />
       {/* Settings, in the corner and quiet: on the pointer going down, as
           the other idle controls are, before the same tap wakes the screen. */}
       <button

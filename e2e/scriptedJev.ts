@@ -19,6 +19,8 @@ interface Reading {
   readonly progress?: number
   /** The Shelf ask's pick (#424): `file-N`, or `none`. */
   readonly file?: string
+  /** How long the stand-in holds its answer (#428), as a slow model would. */
+  readonly delayMs?: number
 }
 
 /** What a hop's reading adds to the Command's: the Verdict and the Progress Noul. */
@@ -27,7 +29,7 @@ type HopReading = Pick<Reading, 'outcome' | 'progress'>
 const choice = (label: string) => ({ type: 'choice', choice: label, confidence: 0.9 })
 
 /** A line's reading: `play <words>` and `queue <words>` the Appliance Verb with the words past the first as the Slot. */
-export function readingOf(line: string, action?: string, more: { readonly amount?: string; readonly file?: string } & HopReading = {}): Reading {
+export function readingOf(line: string, action?: string, more: { readonly amount?: string; readonly file?: string; readonly delayMs?: number } & HopReading = {}): Reading {
   const words = line.trim().split(/\s+/)
   const head = words[0]!.toLowerCase()
   if (action === undefined && (head === 'play' || head === 'queue')) return { line, action: head, slot: `s1-${words.length - 1}`, ...more }
@@ -76,6 +78,7 @@ export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRI
       ...(reading.progress !== undefined ? { progress: { type: 'noul', noul: reading.progress } } : {}),
       ...(reading.file !== undefined ? { file: choice(reading.file) } : {}),
     },
+    ...(reading.delayMs !== undefined ? { delayMs: reading.delayMs } : {}),
   }))
   return { BINGBONG_DECISION_SCRIPT: JSON.stringify(entries) }
 }

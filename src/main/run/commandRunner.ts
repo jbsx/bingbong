@@ -1241,7 +1241,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const current = (): boolean => inFlight !== null && inFlight.generation === mine
 
     const paneHasPage = isRealPage(page.url) || isRealPage(browser.state().url)
-    publish({ type: 'command', turnId, text, action: describeCommand(command, page), ...(commandKeepsIdle(command, paneHasPage) ? { keepsIdle: true } : {}), task, at: firedAt })
+    const action = describeCommand(command, page)
+    publish({ type: 'command', turnId, text, action, ...(commandKeepsIdle(command, paneHasPage) ? { keepsIdle: true } : {}), task, at: firedAt })
     if (!paneHasPage && verbNeedsPage(command.verb)) {
       // A blank pane has nothing to act on (#361): it is never shown, and an action on it, hidden under the Idle Screen, would never settle.
       inFlight = null
@@ -1264,7 +1265,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
-    publish({ type: 'status', turnId, status: 'acting', at: at() })
+    // Acting (#428): the stage names the action's words, the `command`'s own, and its Hop.
+    publish({ type: 'status', turnId, status: 'acting', hop: task.hop, detail: action, at: at() })
     const callId = `${turnId}-1`
     // `resume` decides once, here, whether it is a navigate: the tool the Feed names and the action performed agree.
     const resume = command.verb === 'resume' ? resumePlan() : null
@@ -1321,7 +1323,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (card !== null) answer(turnId, card.text, card.failure ? 'failure' : undefined)
       if (speech !== undefined) {
         const shownAt = monotonic()
-        publish({ type: 'status', turnId, status: 'speaking', at: at() })
+        publish({ type: 'status', turnId, status: 'speaking', hop: task.hop, at: at() })
         await speakPageRead(speech, turnId, result, current, () => {
           if (current()) react('spoken')
         })
@@ -2001,6 +2003,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const spoken = task.source === 'spoken'
       // The hop is being read: the Task is running, and abort reaches it.
       reading = { turnId, submission: task.submission }
+      // Loading (#428): the last hop's action waits for the page it left to settle and draw, before this hop reads it.
+      if (task.pending !== undefined && !superseded(task)) publish({ type: 'status', turnId, status: 'loading', hop: hop - 1, at: at() })
       // A re-read (the page moved under the reading) comes back here too, so it waits for the page to draw as the hop did.
       const page = superseded(task) ? blankPage(browser) : await drawn(task, await withResults(task, await collectPage(null)))
       visit(task, page.url)
@@ -2018,6 +2022,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
         task.opened = facts.changed ? openedBy(last, before, page) : undefined
       }
+      // Thinking (#428): the page is in hand, and this hop is read.
+      if (!superseded(task)) publish({ type: 'status', turnId, status: 'thinking', hop, at: at() })
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
@@ -2539,6 +2545,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const first = index === 0
       const step: StepContext = { line: line.text, step: index + 1, of: words.length, done: [...done] }
       const stepTurnId = first ? turnId : (tracer?.mintTurnId() ?? `${turnId}-step${index + 1}`)
+      // A later Step's words are read afresh (#428): its own hop 0 thinks, on its own words; the first's thinking is the line's.
+      if (!first) publish({ type: 'status', turnId: stepTurnId, status: 'thinking', hop: 0, detail: words[index]!, at: at() })
       reading = { turnId: stepTurnId, submission: line.submission }
       // The first Step's turn already holds the split's ask: its own reading's ask is named apart.
       const heard = await read(stepTurnId, words[index]!, first ? pending : null, line.source === 'spoken', { split: false, step, ...(first ? { askId: `${turnId}-step1` } : {}) })
@@ -2653,6 +2661,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // Thinking (#428): the line is taken, before anything reads it — the page read and every ask after it are under way,
+      // so the Status Capsule never says Ready while it is read. The heard words ride it, so the user sees they were heard right.
+      publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: trimmed, at: at() })
       // A Site Question open (#423): this line answers it before anything else reads it, and the Task that raised it is left in flight.
       const question = deps.siteQuestions?.open() ?? null
       if (question !== null && (await answerSite(turnId, trimmed, source, endpointAt, question))) {

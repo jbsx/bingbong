@@ -190,6 +190,7 @@ export function App() {
           }}
           onOpenSettings={() => setView('settings')}
           status={status}
+          progress={assistant.progress}
           voice={voice}
           popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
         />

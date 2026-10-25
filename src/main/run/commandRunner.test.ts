@@ -727,7 +727,7 @@ describe('the Timer (CONTEXT.md)', () => {
     expect(calls).toEqual(['set 300000'])
     expect(decision.requests).toEqual([])
     expect(browser.navigations).toEqual([])
-    expect(events[0]).toMatchObject({ type: 'command', action: 'timer 5 minutes', keepsIdle: true })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', action: 'timer 5 minutes', keepsIdle: true })
     expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ name: 'timer', args: {} })
     expect(displays(events)).toEqual(['Timer set for 5 minutes.'])
   })
@@ -747,7 +747,7 @@ describe('the Timer (CONTEXT.md)', () => {
     const { events, runner } = harness({ timer })
     await runner.run('stop', { source: 'spoken' })
     expect(calls).toEqual(['silence'])
-    expect(events[0]).toMatchObject({ type: 'command', keepsIdle: true })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', keepsIdle: true })
     expect(displays(events)).toEqual(['Stopped.'])
   })
 
@@ -1080,9 +1080,9 @@ describe('a Command the Local Match settles', () => {
     expect(await runner.run('navigate youtube.com')).toBe(true)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(decision.requests).toEqual([])
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
-    expect(events[0]).toMatchObject({ type: 'command', text: 'navigate youtube.com', action: 'navigate youtube.com' })
-    expect(events[0]).not.toHaveProperty('keepsIdle')
+    expect(types(events)).toEqual(['status', 'command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
+    expect(events[1]).toMatchObject({ type: 'command', text: 'navigate youtube.com', action: 'navigate youtube.com' })
+    expect(events[1]).not.toHaveProperty('keepsIdle')
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(events.some((event) => event.type === 'speak')).toBe(false)
   })
@@ -1102,8 +1102,8 @@ describe('a Command the Local Match settles', () => {
     expect(browser.clicks).toEqual([2])
     expect(browser.shownRefs).toEqual([2])
     expect(decision.requests).toEqual([])
-    expect(events[0]).toMatchObject({ type: 'command', text: 'click sign in', action: 'click [2] "Sign in"' })
-    expect(events[2]).toMatchObject({ type: 'tool_call', name: 'click', args: { ref: 2 } })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', text: 'click sign in', action: 'click [2] "Sign in"' })
+    expect(events[3]).toMatchObject({ type: 'tool_call', name: 'click', args: { ref: 2 } })
   })
 
   it("asks Jev for \"the first result\" (ADR 0089): which link is a result, and not an ad, is a judgement", async () => {
@@ -1123,7 +1123,7 @@ describe('a Command the Local Match settles', () => {
     expect(decision.requests[0]!.state).toContain('"open the first result"')
     expect(browser.clicks).toEqual([3])
     expect(browser.navigations).toEqual([])
-    expect(events[0]).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
   })
 
   it('asks Jev for an open whose words are about the page rather than an address; the ref on its action card is clicked (#370)', async () => {
@@ -1260,7 +1260,7 @@ describe('a Command the Local Match cannot settle', () => {
     expect(request.questions).not.toHaveProperty('outcome')
     expect(Object.keys((request.questions.slot as DecisionChoiceQuestion).options)).toContain('s0-2')
     expect(browser.clicks).toEqual([1])
-    expect(events[0]).toMatchObject({ type: 'command', text: 'take me home', action: 'click [1] "Home"' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', text: 'take me home', action: 'click [1] "Home"' })
   })
 
   it('fires nothing and publishes no error when Jev is unavailable: no ref by shared words, one greyed Feed Entry (#353)', async () => {
@@ -1341,10 +1341,10 @@ describe('a Command the Local Match cannot settle', () => {
 
     expect(await runner.run('what a lovely day', { source: 'spoken' })).toBe(true)
 
-    expect(types(events)).toEqual(['command', 'display', 'done'])
-    expect(events[0]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
-    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nNo command found. (A second look found nothing on this page to look for.)', muted: true })
-    expect(events[0]).not.toHaveProperty('action')
+    expect(types(events)).toEqual(['status', 'command', 'display', 'done'])
+    expect(events[1]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
+    expect(events[2]).toMatchObject({ type: 'display', text: 'No response.\n\nNo command found. (A second look found nothing on this page to look for.)', muted: true })
+    expect(events[1]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
     expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'jev', jev: { confidence: { action: 0.7 } } })
@@ -1435,7 +1435,7 @@ describe('a Command still being read', () => {
     expect(abandoned).toHaveLength(1)
     expect(abandoned[0]).toMatchObject({ dropped: true, action: 'abandoned: a later Command came first' })
     const abandonedTurn = (abandoned[0] as { turnId: string }).turnId
-    expect(types(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn))).toEqual(['command', 'done'])
+    expect(types(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn))).toEqual(['status', 'command', 'done'])
     expect(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn).at(-1)).toMatchObject({ outcome: 'cancelled' })
     // The reading is still recorded — it is data — but no Reaction was measured for it.
     expect(records.filter((record) => record.type === 'decision' && record.turnId === abandonedTurn)).toHaveLength(1)
@@ -1454,9 +1454,9 @@ describe('a Command still being read', () => {
     release()
     await run
     expect(browser.clicks).toEqual([])
-    expect(types(events)).toEqual(['command', 'done'])
-    expect(events[0]).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
-    expect(events[1]).toMatchObject({ outcome: 'cancelled' })
+    expect(types(events)).toEqual(['status', 'command', 'done'])
+    expect(events[1]).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
+    expect(events[2]).toMatchObject({ outcome: 'cancelled' })
   })
 
   it.each([
@@ -1550,7 +1550,7 @@ describe('a Command in flight', () => {
 
     const firstTurn = (events[0] as { turnId: string }).turnId
     const firstTurnEvents = events.filter((event) => 'turnId' in event && event.turnId === firstTurn)
-    expect(types(firstTurnEvents)).toEqual(['command', 'status', 'tool_call', 'status', 'display', 'done'])
+    expect(types(firstTurnEvents)).toEqual(['status', 'command', 'status', 'tool_call', 'status', 'display', 'done'])
     expect(firstTurnEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
     expect(events.filter((event) => event.type === 'tool_result')).toHaveLength(1)
     expect(events.filter((event) => event.type === 'tool_result')[0]).toMatchObject({ name: 'back' })
@@ -1567,7 +1567,7 @@ describe('a Command in flight', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
     release()
     await run
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'status', 'display', 'done'])
+    expect(types(events)).toEqual(['status', 'command', 'status', 'tool_call', 'status', 'display', 'done'])
     expect(runner.abort()).toBe(false)
   })
 
@@ -1591,9 +1591,9 @@ describe('a Command in flight', () => {
       throw new Error('ref 9 refused')
     }
     await runner.run('click 9')
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
-    expect(events[3]).toMatchObject({ type: 'tool_result', ok: false, error: 'ref 9 refused' })
-    expect(events[5]).toMatchObject({ type: 'done', outcome: 'failed' })
+    expect(types(events)).toEqual(['status', 'command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
+    expect(events[4]).toMatchObject({ type: 'tool_result', ok: false, error: 'ref 9 refused' })
+    expect(events[6]).toMatchObject({ type: 'done', outcome: 'failed' })
     // The Feed is not kept: the decision record carries the message (post mortem 2026-10-19).
     expect(records).toEqual([expect.objectContaining({ type: 'decision', verb: 'click', target: 9, error: 'ref 9 refused', ended: 'local_match' })])
   })
@@ -1660,8 +1660,8 @@ describe('what every Command records', () => {
     expect(records[0]).toEqual({
       type: 'decision',
       turnId: 'voice-1',
-      // The ask's own stamp takes a tick of the counting clock first (#338).
-      at: 1_700_000_000_002,
+      // The thinking stage (#428) and the ask's own stamp (#338) each take a tick of the counting clock first.
+      at: 1_700_000_000_003,
       source: 'spoken',
       transcript: 'hello there into search',
       reading: 'jev',
@@ -1704,9 +1704,9 @@ describe('what every Command records', () => {
 
     const misfires = records.filter((record) => record.type === 'misfire')
     expect(misfires).toEqual([
-      // Each Command reads the clock once when given (#330), then when it fires.
-      { type: 'misfire', turnId: 't1', at: 11_001, signal: 'opposite_scroll', signalTurnId: 't2', withinMs: 1_000 },
-      { type: 'misfire', turnId: 't3', at: 21_001, signal: 'back', signalTurnId: 't4', withinMs: 1_000 },
+      // Each Command reads the clock once when taken (#428), once when given (#330), then when it fires.
+      { type: 'misfire', turnId: 't1', at: 11_002, signal: 'opposite_scroll', signalTurnId: 't2', withinMs: 1_000 },
+      { type: 'misfire', turnId: 't3', at: 21_002, signal: 'back', signalTurnId: 't4', withinMs: 1_000 },
     ])
   })
 
@@ -1779,7 +1779,7 @@ describe('the Name Match (ADR 0077)', () => {
     expect(await runner.run('search line stack tips', { source: 'spoken' })).toBe(true)
     expect(browser.navigations[0]).toContain('linus')
     expect(browser.navigations[0]).not.toContain('stack')
-    expect(events[0]).toMatchObject({ type: 'command', text: 'search line stack tips', action: 'search linus tech tips' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', text: 'search line stack tips', action: 'search linus tech tips' })
     expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', reading: 'jev' })
     expect(admitted).toEqual(['linus tech tips'])
   })
@@ -1791,7 +1791,7 @@ describe('the Name Match (ADR 0077)', () => {
     expect(await runner.run('search line stack tips', { source: 'spoken' })).toBe(true)
     expect(browser.typed).toEqual([{ ref: 3, text: 'linus tech tips', submit: true }])
     expect(browser.navigations).toEqual([])
-    expect(events[0]).toMatchObject({ type: 'command', action: 'search for "linus tech tips" with [3] "Search"' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', action: 'search for "linus tech tips" with [3] "Search"' })
     expect(decision(records[0])).toMatchObject({ verb: 'type', submit: true, target: 3, slot: 'linus tech tips', slotHeard: 'line stack tips' })
   })
 
@@ -4374,7 +4374,7 @@ describe('a pop-up covering the page (#336)', () => {
     const { browser, events, runner } = harness()
     browser.collectPage = () => new Promise(() => {})
     await runner.run('cancel', { source: 'spoken' })
-    expect(events[0]).toMatchObject({ type: 'command', action: 'stop' })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', action: 'stop' })
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Nothing to stop.', muted: true })])
   })
 
@@ -4574,7 +4574,7 @@ describe('a Command on a blank pane (#361)', () => {
     browser.snapshot = { ...browser.snapshot, url: 'about:blank', title: '', refs: [] }
     await runner.run('scroll down')
     expect(browser.scrolls).toEqual([])
-    expect(events[0]).toMatchObject({ type: 'command', action: 'scroll down', keepsIdle: true })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ type: 'command', action: 'scroll down', keepsIdle: true })
     expect(events.find((event) => event.type === 'display')).toMatchObject({ text: "There's no page open.", failure: true })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
   })
@@ -4965,5 +4965,64 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
       expect(uncaptured.decision.requests.some(isMarkAsk)).toBe(false)
       expect(decisions(uncaptured.records)[0]).toMatchObject({ verb: 'click', target: 1, ask: 't1' })
     })
+  })
+})
+
+describe('the stages a Command passes through (#428)', () => {
+  const stages = (events: PipelineEvent[]) =>
+    events.flatMap((event) => (event.type === 'status' ? [{ status: event.status, hop: event.hop, ...(event.detail !== undefined ? { detail: event.detail } : {}) }] : []))
+
+  it('a typed line publishes thinking the moment it is taken, before the page read: the Capsule never says Ready while it is read', async () => {
+    const { browser, events, decision, runner } = harness()
+    const release = decision.hold(0)
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+    const collectsBefore = browser.collects
+    const running = runner.run('sign me in please')
+    // Published before the page is collected: nothing else has happened yet.
+    expect(events).toEqual([expect.objectContaining({ type: 'status', status: 'thinking', hop: 0, detail: 'sign me in please' })])
+    expect(browser.collects).toBe(collectsBefore)
+    await flushMicrotasks()
+    expect(types(events)).toEqual(['status'])
+    release()
+    await running
+    expect(types(events).indexOf('status')).toBeLessThan(types(events).indexOf('command'))
+  })
+
+  it('every hop passes thinking → acting (with the action\'s words) → loading; the Verdict hop thinks only', async () => {
+    const { events, decision, runner } = harness()
+    decision.script.push(
+      { answers: { action: choice('click-2'), slot: choice('none') } },
+      // An action that moves the page: a click on this fake page changes nothing, and a second in a row would end the Task.
+      { answers: { action: choice('reload'), slot: choice('none'), progress: { type: 'noul', noul: 0.9 } } },
+      SURE_YES,
+    )
+    await runner.run('sign me in please')
+    const actions = events.flatMap((event) => (event.type === 'command' && event.action !== undefined && event.dropped !== true ? [event.action] : []))
+    expect(actions).toHaveLength(2)
+    expect(stages(events)).toEqual([
+      { status: 'thinking', hop: 0, detail: 'sign me in please' },
+      { status: 'acting', hop: 0, detail: actions[0] },
+      { status: 'loading', hop: 0 },
+      { status: 'thinking', hop: 1 },
+      { status: 'acting', hop: 1, detail: actions[1] },
+      { status: 'loading', hop: 1 },
+      { status: 'thinking', hop: 2 },
+    ])
+  })
+
+  it('a Local-Matched line that ends at hop 0 thinks, then acts, and loads nothing', async () => {
+    const { events, runner } = harness()
+    await runner.run('navigate youtube.com')
+    expect(stages(events)).toEqual([
+      { status: 'thinking', hop: 0, detail: 'navigate youtube.com' },
+      { status: 'acting', hop: 0, detail: 'navigate youtube.com' },
+    ])
+  })
+
+  it('never names Jev or the Decision Model in any stage', async () => {
+    const { events, decision, runner } = harness()
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+    await runner.run('sign me in please')
+    for (const event of events) if (event.type === 'status') expect(JSON.stringify(event)).not.toMatch(/jev|decision model/i)
   })
 })

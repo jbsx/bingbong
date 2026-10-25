@@ -90,6 +90,7 @@ const SILENT_CLOSES: ReadonlySet<string> = new Set(['done', 'no next step', 'not
 const STEP_NAMES: Readonly<Record<PipelineStatus, string>> = {
   thinking: 'Understanding',
   acting: 'Working on the page',
+  loading: 'Waiting for the page',
   speaking: 'Reading aloud',
   cancelled: 'Stopped',
 }

@@ -43,6 +43,8 @@ export function useAssistant(): Assistant {
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null)
   const lastStatus = useRef<OrbStatus>('idle')
+  // The turn whose stage the pill shows (#428): a line thinks before its `command`, and only that turn's `done` returns it to Ready — never a late one gone by.
+  const statusTurn = useRef<string | null>(null)
   const progressTracker = useRef(createRunProgressTracker())
   const taskProgressTracker = useRef(createTaskProgressTracker())
   // The feed's projection wiring (#44) is shared with the panel's overlay
@@ -61,9 +63,11 @@ export function useAssistant(): Assistant {
       switch (event.type) {
         case 'status':
           lastStatus.current = event.status
+          statusTurn.current = event.turnId
           setStatus(event.status)
           return
         case 'done':
+          if (event.turnId !== statusTurn.current) return
           if (lastStatus.current !== 'cancelled') setStatus('idle')
           return
         default:

@@ -1,4 +1,10 @@
-export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'cancelled'
+/**
+ * The stages a Command passes through (#428), each published as it is
+ * entered: `thinking` from the moment a line is taken, over the page read
+ * and every Decision Model ask; `acting` while its action runs; `loading`
+ * while the page an action left settles, before the next hop reads it.
+ */
+export type PipelineStatus = 'thinking' | 'acting' | 'loading' | 'speaking' | 'cancelled'
 
 /**
  * The command stream every observer rides — the Feed, the Peek Card, the
@@ -18,10 +24,14 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'cancelled'
  * first, the Progress Noul's probability that the last action helped (#373).
  * `keepsIdle` marks a Command whose verb never touches the pane (the
  * Timer, a Stop): it leaves the Idle Screen up, as a dropped one does.
+ *
+ * A `status` names the stage entered (#428) and the Hop it is in;
+ * `detail` is what the stage is on — the heard words while hop 0 thinks,
+ * the action's words (the `command`'s own) while it acts.
  */
 export type PipelineEvent =
   | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; keepsIdle?: boolean; task?: { id: string; hop: number; step?: number; of?: number; progress?: number }; at: number }
-  | { type: 'status'; turnId: string; status: PipelineStatus; at: number }
+  | { type: 'status'; turnId: string; status: PipelineStatus; hop?: number; detail?: string; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {
       type: 'tool_result'

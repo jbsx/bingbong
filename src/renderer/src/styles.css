@@ -390,17 +390,29 @@ body {
   --status-color: var(--fgh);
 }
 
-/* The live run's climbing seconds (#43): the honest "still alive" signal. */
+/* The live run's stage detail and climbing seconds (#43, #428): the honest
+   "still alive" signal. A long detail ellipsizes; the seconds stay. */
 .run-hint {
+  display: flex;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-size: 22px;
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.run-hint-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-hint-tail {
+  flex: none;
+  white-space: pre;
 }
 
 /* The voice hint: instruction or the live words, the quiet layer — shown
@@ -2222,6 +2234,8 @@ details[open] > .settings-summary::before {
   top: 12px;
   left: 50%;
   z-index: 3;
+  width: max-content;
+  max-width: calc(100% - 96px);
   transform: translateX(-50%);
 }
 
