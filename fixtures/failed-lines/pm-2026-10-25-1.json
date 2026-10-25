@@ -1,0 +1,9 @@
+{
+  "turnId": "pm-2026-10-25-1",
+  "transcript": "(a spoken line naming Kanye West; the exact words and transcript were not logged)",
+  "at": 1792926000000,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Owner report, first run on the kiosk (i3-7100), 2026-10-25, time approximate: Parakeet did not hear 'Kanye West', and no Learned Term could repair it, since none had been admitted yet. The kiosk's logs never reached the Log Bucket, so the heard words and the line's outcome are lost. A name on no page has no road: the bias only re-ranks tokens Parakeet already emitted (createParakeetTranscriber.ts:194-201), the Seed Lexicon holds no names, and a Learned Term is admitted only after two identical proposals. Same class as turn-mvi5bacg-7",
+  "meant": "Hear 'Kanye West' on the first try"
+}
