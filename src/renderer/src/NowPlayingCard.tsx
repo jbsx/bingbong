@@ -22,7 +22,7 @@ function CardGlyph({ name, size }: { name: keyof typeof GLYPHS; size: number }) 
   )
 }
 
-/** Three bars: the kicker's mark, moving only while the song plays (styles.css keeps it still under reduced motion). */
+/** Three bars: the kicker's mark, shown only while the song plays. Still: a looping animation here asks for a frame every 16 ms for the whole song, which kept the kiosk's fans up (2026-10-25). */
 function Bars() {
   return (
     <svg className="idle-music-bars" width={16} height={16} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
