@@ -115,7 +115,7 @@ export interface BingbongSettingsApi {
   openEnvFile(): Promise<string>
   /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
   hostChecks(): Promise<HostFinding[]>
-  /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
+  /** The monitors ddcutil finds and the backlights, for Night Dim (#413), and why none when there are none. */
   monitors(): Promise<MonitorList>
   /** The app's own folder dialog (#424), for the upload folder; answers the folder picked, '' for none. */
   pickFolder(): Promise<string>

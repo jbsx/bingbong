@@ -11,11 +11,11 @@ export interface NightDim {
   to: string
   /** How bright the screen stays while dimmed, in percent. */
   brightnessPercent: number
-  /** The monitor whose own brightness is lowered over DDC/CI (#413); none, the veil only. */
+  /** The monitor whose own brightness is lowered over DDC/CI (#413), or the built-in panel whose backlight is; none, the veil only. */
   monitor: NightDimMonitor | null
 }
 
-/** A monitor as Night Dim keeps it: by its EDID model and its connector, never by the I²C bus, which renumbers. */
+/** A monitor as Night Dim keeps it: by its EDID model (a backlight by its device name) and its connector, never by the I²C bus, which renumbers. */
 export interface NightDimMonitor {
   /** The EDID model, `325E1`. */
   model: string

@@ -11,6 +11,8 @@ describe('dimRecoveryFile', () => {
     expect(file.read()).toBeNull()
     file.write({ model: 'PHL 325E1', connector: 'HDMI-A-1', bus: 0, dayLevel: 40 })
     expect(createDimRecoveryFile(path).read()).toEqual({ model: 'PHL 325E1', connector: 'HDMI-A-1', bus: 0, dayLevel: 40 })
+    file.write({ model: 'intel_backlight', connector: 'eDP-1', backlight: 'intel_backlight', dayLevel: 96000 })
+    expect(createDimRecoveryFile(path).read()).toEqual({ model: 'intel_backlight', connector: 'eDP-1', backlight: 'intel_backlight', dayLevel: 96000 })
     file.clear()
     expect(existsSync(path)).toBe(false)
     expect(file.read()).toBeNull()

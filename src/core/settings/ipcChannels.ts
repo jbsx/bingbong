@@ -11,7 +11,7 @@ export const SETTINGS_IPC = {
   envOpen: 'settings:envOpen',
   /** What the host checks found missing at boot (#419): aplay, a microphone, a display. */
   hostChecks: 'settings:hostChecks',
-  /** The monitors ddcutil finds for Night Dim (#413), and why none when it finds none. */
+  /** The monitors ddcutil finds and the backlights, for Night Dim (#413), and why none when there are none. */
   monitors: 'settings:monitors',
   /** The Shelf folder's picker (#424): the app's own folder dialog, a mouse control — never the pane's chooser. */
   pickFolder: 'settings:pickFolder',

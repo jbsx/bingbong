@@ -203,7 +203,7 @@ pnpm perf:report kiosk-logs/kiosk
 
 `jev:candidates`, `jev:case` and the bugs scripts read that folder too.
 
-## Monitor brightness (ddcutil, optional)
+## Monitor brightness (ddcutil or the backlight, optional)
 
 Night Dim (Settings › Idle screen › Screen) works with nothing installed: it
 lays a black veil over the Idle Screen, so the pixels darken but the
@@ -249,8 +249,29 @@ ddcutil setvcp 10 40            # set 40 %; each call takes about 0.1–0.5 s
 On the kiosk this is host setup like any other; how the kiosk is installed
 is #419.
 
+**A built-in panel** (a laptop's eDP screen) has no DDC/CI, so
+`ddcutil detect` finds nothing on it. Its backlight is used instead: the
+level is read from `/sys/class/backlight/<name>/brightness` and set through
+logind's `SetBrightness`, which the user at the screen may call with no
+root, no udev rule and no ddcutil. Check it:
+
+```sh
+ls /sys/class/backlight                       # e.g. intel_backlight
+cat /sys/class/backlight/intel_backlight/{brightness,max_brightness}
+busctl call org.freedesktop.login1 /org/freedesktop/login1/session/auto \
+  org.freedesktop.login1.Session SetBrightness ssu backlight intel_backlight 500
+```
+
+The call lands on the caller's session, or for a caller outside one, as
+the kiosk's systemd user service is, on the user's display session, which
+must be the active one at the screen. To try it as the service does:
+`systemd-run --user --wait busctl call …` with the same arguments. Its levels are the device's own steps, not percent, and on
+many panels 0 turns the backlight off, so a 0 % slider means a black
+screen.
+
 Then pick the monitor: **Settings › Screen › Monitor** lists what
-`ddcutil detect` finds, by model and connector ("PHL 325E1 · HDMI-A-1").
+`ddcutil detect` finds, by model and connector ("PHL 325E1 · HDMI-A-1"),
+and each backlight by its name and connector ("intel_backlight · eDP-1").
 The choice is kept by model and connector, so it survives the I²C buses
 renumbering; the list is read again each time Settings opens. The default,
 *Veil only*, never calls ddcutil.
@@ -261,7 +282,8 @@ of 40 is 16) and draws no veil. Waking the dashboard, the window ending and
 quitting the app put the day level back. Before lowering, the day level is
 written to `night-dim.json` in the app's data directory; if the app dies at
 night, the next start restores it from there. If ddcutil is missing, the
-monitor does not answer, or it is already at 0, the veil dims as before.
+monitor does not answer, logind refuses the backlight, or it is already at
+0, the veil dims as before.
 The Monitor field says why, and a failed call is in `faults-*.jsonl`. Each
 call is bounded at 3 s.
 

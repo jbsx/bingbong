@@ -5,14 +5,16 @@ import { IDLE_IPC } from '../../core/idle/ipcChannels'
 import { SETTINGS_IPC } from '../../core/settings/ipcChannels'
 import { reportFault } from '../../core/trace/fault'
 import type { SettingsStore } from '../settings/settingsStore'
+import { createBacklight } from './backlight'
 import { createDdcRun } from './ddcRun'
 import { createDimRecoveryFile } from './dimRecoveryFile'
 
-// Glue for Night Dim on the monitor itself (#413): the switch logic is
-// core/idle/monitorDim (unit-tested); this file feeds it the Idle Screen,
-// the clock and the setting, tells the dashboard when the veil stands down,
-// lists the monitors for Settings, and puts the day level back on quit and
-// at boot. Covered by e2e through the scripted monitor.
+// Glue for Night Dim on the monitor itself (#413) or a built-in panel's
+// backlight: the switch logic is core/idle/monitorDim (unit-tested); this
+// file feeds it the Idle Screen, the clock and the setting, tells the
+// dashboard when the veil stands down, lists the monitors for Settings, and
+// puts the day level back on quit and at boot. Covered by e2e through the
+// scripted monitor.
 
 /** How often the window's start and end are noticed while nothing else changes. */
 const TICK_MS = 30_000
@@ -32,6 +34,7 @@ export function attachNightDim(options: { settings: SettingsStore; idleUp: () =>
   const recovery = createDimRecoveryFile(join(options.userDataDir, 'night-dim.json'))
   const dim = createMonitorDim({
     run: createDdcRun(options.env),
+    backlight: createBacklight(options.env),
     recovery,
     onDimmed: (dimmed) => send(dimmed),
   })

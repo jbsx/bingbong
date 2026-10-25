@@ -8,6 +8,7 @@ import type { DdcRun } from '../../core/idle/monitorDim'
 //
 // With BINGBONG_DDC_SCRIPT set, a scripted monitor answers instead and no
 // test or agent run ever reaches a real one; the e2e harness always sets it.
+// It scripts the backlights too (./backlight.ts).
 
 export const DDC_SCRIPT_ENV = 'BINGBONG_DDC_SCRIPT'
 export const DDC_TIMEOUT_MS = 3000
@@ -15,13 +16,13 @@ export const DDC_TIMEOUT_MS = 3000
 /** Runs one program with args, answering its stdout; rejects on a non-zero exit, a spawn failure or the timeout. */
 export type ExecFile = (file: string, args: readonly string[], timeoutMs: number) => Promise<string>
 
-const execFileText: ExecFile = (file, args, timeoutMs) =>
+export const execFileText: ExecFile = (file, args, timeoutMs) =>
   new Promise((resolve, reject) => {
     execFile(file, [...args], { timeout: timeoutMs, encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error === null) return resolve(stdout)
-      if (error.killed) return reject(Object.assign(new Error(`ddcutil ${args.join(' ')} timed out after ${timeoutMs} ms`), { code: 'ETIMEDOUT' }))
+      if (error.killed) return reject(Object.assign(new Error(`${file} ${args.join(' ')} timed out after ${timeoutMs} ms`), { code: 'ETIMEDOUT' }))
       const said = stderr.trim() || stdout.trim()
-      reject(Object.assign(new Error(said === '' ? error.message : `ddcutil ${args.join(' ')}: ${said}`), { code: error.code }))
+      reject(Object.assign(new Error(said === '' ? error.message : `${file} ${args.join(' ')}: ${said}`), { code: error.code }))
     })
   })
 
@@ -46,7 +47,7 @@ export function createDdcutilRun(options: { exec?: ExecFile; timeoutMs?: number 
 }
 
 /** The scripted monitor's script: the displays it lists and the brightness it starts at. */
-interface DdcScript {
+export interface DdcScript {
   /** Each display as detect lists it: `{ bus: 0, connector: 'card0-HDMI-A-1', monitor: 'PHL:PHL 325E1:UK0' }`. */
   displays?: { bus: number; connector: string; monitor: string }[]
   /** The brightness every display starts at. */
@@ -57,12 +58,13 @@ interface DdcScript {
   missing?: boolean
   /** A file each call is appended to, one line of args each, for the e2e to read. */
   log?: string
+  /** Each built-in panel's backlight: `{ name: 'intel_backlight', connector: 'card1-eDP-1', level: 96000, max: 96000 }`. */
+  backlights?: { name: string; connector: string; level: number; max: number }[]
 }
 
-const SCRIPT_SHAPE = `${DDC_SCRIPT_ENV} must be a JSON object: { displays, level, fail, missing, log }`
+const SCRIPT_SHAPE = `${DDC_SCRIPT_ENV} must be a JSON object: { displays, level, fail, missing, log, backlights }`
 
-/** The stand-in for ddcutil: answers detect, getvcp and setvcp as a monitor would and touches no bus. */
-export function createScriptedDdcRun(json: string): DdcRun {
+export function parseDdcScript(json: string): DdcScript {
   let script: DdcScript
   try {
     script = JSON.parse(json) as DdcScript
@@ -70,6 +72,12 @@ export function createScriptedDdcRun(json: string): DdcRun {
     throw new Error(SCRIPT_SHAPE, { cause: error })
   }
   if (typeof script !== 'object' || script === null || Array.isArray(script)) throw new Error(SCRIPT_SHAPE)
+  return script
+}
+
+/** The stand-in for ddcutil: answers detect, getvcp and setvcp as a monitor would and touches no bus. */
+export function createScriptedDdcRun(json: string): DdcRun {
+  const script = parseDdcScript(json)
   const displays = script.displays ?? []
   const levels = new Map(displays.map((display) => [display.bus, script.level ?? 50]))
   return queued(async (args) => {

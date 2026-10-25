@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { BacklightPort } from './backlight'
 import { createMonitorDim, type DimRecord, type MonitorDimState } from './monitorDim'
 import { defaultNightDim, type NightDim } from './nightDim'
 
@@ -14,13 +15,26 @@ Display 2
 `
 
 const PHILIPS = { model: 'PHL 325E1', connector: 'HDMI-A-1' }
+const PANEL = { model: 'intel_backlight', connector: 'eDP-1' }
 const night = new Date(2026, 9, 24, 23, 30)
 const day = new Date(2026, 9, 24, 12, 0)
 const picked: NightDim = { ...defaultNightDim(), enabled: true, brightnessPercent: 40, monitor: PHILIPS }
 
-/** A monitor on the bus that answers ddcutil's args as the real one does, and keeps every call. */
-function fakeMonitor(options: { level?: number; detect?: string; fail?: 'get' | 'set' | 'detect'; missing?: boolean } = {}) {
-  const monitor = { level: options.level ?? 40, calls: [] as string[], fail: options.fail }
+/** A monitor on the bus that answers ddcutil's args as the real one does, and keeps every call; with `panel`, a built-in panel's backlight beside it, its calls kept too. */
+function fakeMonitor(options: { level?: number; detect?: string; fail?: 'get' | 'set' | 'detect'; missing?: boolean; panel?: number } = {}) {
+  const monitor = { level: options.level ?? 40, panel: options.panel ?? 0, calls: [] as string[], fail: options.fail }
+  const backlight: BacklightPort = {
+    list: async () => (options.panel === undefined ? [] : [{ ...PANEL, backlight: 'intel_backlight' }]),
+    read: async (name) => {
+      monitor.calls.push(`backlight get ${name}`)
+      return { current: monitor.panel, max: 96000 }
+    },
+    set: async (name, level) => {
+      monitor.calls.push(`backlight set ${name} ${level}`)
+      if (monitor.fail === 'set') throw new Error('SetBrightness timed out')
+      monitor.panel = level
+    },
+  }
   const run = async (args: readonly string[]): Promise<string> => {
     monitor.calls.push(args.join(' '))
     if (options.missing) throw Object.assign(new Error('spawn ddcutil ENOENT'), { code: 'ENOENT' })
@@ -36,7 +50,7 @@ function fakeMonitor(options: { level?: number; detect?: string; fail?: 'get' | 
     monitor.level = Number(args[args.length - 1])
     return ''
   }
-  return { monitor, run }
+  return { monitor, run, backlight }
 }
 
 function memoryRecovery(start: DimRecord | null = null) {
@@ -45,10 +59,10 @@ function memoryRecovery(start: DimRecord | null = null) {
 }
 
 function setup(options: Parameters<typeof fakeMonitor>[0] = {}, recoveryStart: DimRecord | null = null) {
-  const { monitor, run } = fakeMonitor(options)
+  const { monitor, run, backlight } = fakeMonitor(options)
   const recovery = memoryRecovery(recoveryStart)
   const dimmed: boolean[] = []
-  const dim = createMonitorDim({ run, recovery, onDimmed: (value) => dimmed.push(value) })
+  const dim = createMonitorDim({ run, backlight, recovery, onDimmed: (value) => dimmed.push(value) })
   const at = (idleUp: boolean, now: Date, nightDim = picked): MonitorDimState => ({ idleUp, now, nightDim })
   return { monitor, recovery, dimmed, dim, at }
 }
@@ -213,7 +227,53 @@ describe('monitorDim', () => {
       note: '',
     })
     expect(await setup({ missing: true }).dim.monitors()).toEqual({ monitors: [], note: 'ddcutil not installed — see the README' })
-    expect(await setup({ detect: 'No displays found.\n' }).dim.monitors()).toEqual({ monitors: [], note: 'No monitor answers over DDC/CI — see the README' })
+    expect(await setup({ detect: 'No displays found.\n' }).dim.monitors()).toEqual({ monitors: [], note: 'No monitor answers over DDC/CI, and no backlight — see the README' })
     expect((await setup({ fail: 'detect' }).dim.monitors()).note).toBe('ddcutil detect failed: detect timed out')
+  })
+
+  describe('a built-in panel, which has no DDC/CI', () => {
+    const onPanel: NightDim = { ...picked, monitor: PANEL }
+
+    it('lists its backlight beside the monitors, with nothing to say when ddcutil is missing or finds none', async () => {
+      const panel = { ...PANEL, backlight: 'intel_backlight' }
+      expect(await setup({ missing: true, panel: 96000 }).dim.monitors()).toEqual({ monitors: [panel], note: '' })
+      expect(await setup({ detect: 'No displays found.\n', panel: 96000 }).dim.monitors()).toEqual({ monitors: [panel], note: '' })
+      expect((await setup({ panel: 96000 }).dim.monitors()).monitors).toEqual([{ bus: 0, ...PHILIPS }, { bus: 1, model: '27MQ95FSHDRU', connector: 'DVI-D-1' }, panel])
+    })
+
+    it('lowers the picked backlight to its share of the day level and puts it back, with ddcutil missing', async () => {
+      const { monitor, dimmed, dim, at, recovery } = setup({ missing: true, panel: 96000 })
+      await dim.update(at(true, night, onPanel))
+      expect(monitor.calls).toEqual(['detect --terse', 'backlight get intel_backlight', 'backlight set intel_backlight 38400'])
+      expect(recovery.record).toEqual({ ...PANEL, backlight: 'intel_backlight', dayLevel: 96000 })
+      expect(dimmed).toEqual([true])
+      await dim.update(at(false, night, onPanel))
+      expect(monitor.panel).toBe(96000)
+      expect(recovery.record).toBeNull()
+      expect(dimmed).toEqual([true, false])
+    })
+
+    it('at boot, restores the backlight a crash at night left by its name, with no detect', async () => {
+      const { monitor, dim, recovery } = setup({ missing: true, panel: 38400 }, { ...PANEL, backlight: 'intel_backlight', dayLevel: 96000 })
+      await dim.recover()
+      expect(monitor.calls).toEqual(['backlight set intel_backlight 96000'])
+      expect(recovery.record).toBeNull()
+    })
+
+    it('keeps the veil when the set fails, and says why', async () => {
+      const { dimmed, dim, at, recovery } = setup({ missing: true, panel: 96000, fail: 'set' })
+      await dim.update(at(true, night, onPanel))
+      expect(dimmed).toEqual([])
+      // The record stays until a raise lands: the panel may have gone down.
+      expect(recovery.record).toEqual({ ...PANEL, backlight: 'intel_backlight', dayLevel: 96000 })
+      expect((await dim.monitors()).note).toBe('The veil dimmed instead tonight: SetBrightness timed out')
+    })
+
+    it('keeps the veil, with ddcutil\'s own failure, when the picked backlight is gone and ddcutil failed', async () => {
+      const { dimmed, dim, at } = setup({ missing: true })
+      await dim.update(at(true, night, onPanel))
+      expect(dimmed).toEqual([])
+      expect((await dim.monitors()).note).toBe('ddcutil not installed — see the README')
+    })
   })
 })

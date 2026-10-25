@@ -1,27 +1,27 @@
 import { reportFault } from '../trace/fault'
+import type { BacklightDisplay, BacklightPort } from './backlight'
 import { parseBrightness, parseDetect, type DdcDisplay } from './ddc'
 import { isNightDimmed, nightLevel, type NightDim, type NightDimMonitor } from './nightDim'
 
 // Night Dim on the monitor itself (#413): while the Idle Screen is up inside
 // the window, the picked monitor's own brightness (VCP 0x10) goes down over
-// DDC/CI, and comes back up when the dashboard wakes, when the window ends
-// and when the app quits. The veil is the fallback: veil only, a monitor
+// DDC/CI, or a built-in panel's through its backlight, and comes back up
+// when the dashboard wakes, when the window ends and when the app quits. The veil is the fallback: veil only, a monitor
 // already at its floor, or any call that fails, which also keeps the veil
 // for the rest of that night. The two never apply together — `onDimmed`
 // tells the dashboard when the monitor took over and when it gave back.
 //
-// Every call is a ddcutil run (main's, through one queue with a timeout);
-// this module decides which, in order, one at a time.
+// Every call is a ddcutil run or a backlight read or set (main's, each with
+// a timeout); this module decides which, in order, one at a time.
 
 /** One ddcutil run: its args, answering its stdout; rejects on a failure or a timeout. */
 export type DdcRun = (args: readonly string[]) => Promise<string>
 
-/** What is written before a monitor goes down, so a crash at night cannot leave it dim. */
-export interface DimRecord extends NightDimMonitor {
-  /** The bus it was on, for when detect no longer finds it by name. */
-  bus: number
-  dayLevel: number
-}
+/** A screen Night Dim can lower: a monitor on an I²C bus, or a built-in panel's backlight. */
+export type DimDisplay = DdcDisplay | BacklightDisplay
+
+/** What is written before a monitor goes down, so a crash at night cannot leave it dim: the display (its bus, for when detect no longer finds it by name) and its day level. */
+export type DimRecord = DimDisplay & { dayLevel: number }
 
 /** Where the {@link DimRecord} lives: `<userData>/night-dim.json` in main. */
 export interface DimRecoveryStore {
@@ -39,8 +39,8 @@ export interface MonitorDimState {
 
 /** What Settings › Screen › Monitor lists, and a line on why it lists none. */
 export interface MonitorList {
-  monitors: DdcDisplay[]
-  /** Empty when ddcutil answered with a monitor; otherwise why the veil is all there is. */
+  monitors: DimDisplay[]
+  /** Empty when a monitor or a backlight was found; otherwise why the veil is all there is. */
   note: string
 }
 
@@ -51,7 +51,7 @@ export interface MonitorDim {
   restore(): Promise<void>
   /** At boot: put back the day level a crash at night left in the record. */
   recover(): Promise<void>
-  /** The monitors ddcutil finds now; also where each one's bus is resolved. */
+  /** The monitors ddcutil finds now and the backlights; also where each monitor's bus is resolved. */
   monitors(): Promise<MonitorList>
   /** Whether the monitor is down right now and the veil stands down. */
   dimmed(): boolean
@@ -61,12 +61,15 @@ export interface MonitorDim {
 
 export interface MonitorDimDeps {
   run: DdcRun
+  backlight: BacklightPort
   recovery: DimRecoveryStore
   onDimmed(dimmed: boolean): void
 }
 
 const getArgs = (bus: number): string[] => ['--bus', String(bus), 'getvcp', '10', '--terse']
 const setArgs = (bus: number, level: number): string[] => ['--bus', String(bus), 'setvcp', '10', String(level)]
+
+const isBacklight = (display: DimDisplay): display is BacklightDisplay => 'backlight' in display
 
 const sameMonitor = (a: NightDimMonitor, b: NightDimMonitor): boolean => a.model === b.model && a.connector === b.connector
 
@@ -77,9 +80,11 @@ function whyNone(error: unknown): string {
 }
 
 export function createMonitorDim(deps: MonitorDimDeps): MonitorDim {
-  const { run, recovery, onDimmed } = deps
-  /** The last list ddcutil gave; a bus is looked up here first, then by detecting again. */
-  let displays: DdcDisplay[] | null = null
+  const { run, backlight, recovery, onDimmed } = deps
+  /** The last list detect gave; a display is looked up here first, then by detecting again. */
+  let displays: DimDisplay[] | null = null
+  /** Why ddcutil listed nothing on the last detect, if it failed. */
+  let ddcFailure: unknown = null
   /** The monitor while it is down. */
   let lowered: DimRecord | null = null
   /** A call failed inside this window: the veil until the window ends. */
@@ -105,20 +110,42 @@ export function createMonitorDim(deps: MonitorDimDeps): MonitorDim {
     reportFault(site, error)
   }
 
-  const detect = async (): Promise<DdcDisplay[]> => {
-    displays = parseDetect(await run(['detect', '--terse']))
+  /** Both kinds; ddcutil failing lists no monitor and keeps why, a built-in panel needing no ddcutil. */
+  const detect = async (): Promise<DimDisplay[]> => {
+    let monitors: DdcDisplay[] = []
+    ddcFailure = null
+    try {
+      monitors = parseDetect(await run(['detect', '--terse']))
+    } catch (error) {
+      ddcFailure = error
+    }
+    let backlights: BacklightDisplay[] = []
+    try {
+      backlights = await backlight.list()
+    } catch (error) {
+      reportFault('idle.monitorDim.backlights', error)
+    }
+    displays = [...monitors, ...backlights]
     return displays
   }
 
-  const busOf = async (monitor: NightDimMonitor): Promise<number | null> => {
+  /** The display as it is reached now; none when neither kind has it. Rejects with ddcutil's own failure when that may be why. */
+  const find = async (monitor: NightDimMonitor): Promise<DimDisplay | null> => {
     const known = displays?.find((display) => sameMonitor(display, monitor))
-    if (known !== undefined) return known.bus
-    return (await detect()).find((display) => sameMonitor(display, monitor))?.bus ?? null
+    if (known !== undefined) return known
+    const found = (await detect()).find((display) => sameMonitor(display, monitor))
+    if (found === undefined && ddcFailure !== null) throw ddcFailure
+    return found ?? null
+  }
+
+  const setLevel = async (display: DimDisplay, level: number): Promise<void> => {
+    if (isBacklight(display)) await backlight.set(display.backlight, level)
+    else await run(setArgs(display.bus, level))
   }
 
   /** Puts the day level back and deletes the record; on a failure the record stays, for the next try and the next boot. */
   const raise = async (record: DimRecord): Promise<void> => {
-    await run(setArgs(record.bus, record.dayLevel))
+    await setLevel(record, record.dayLevel)
     recovery.clear()
   }
 
@@ -145,25 +172,26 @@ export function createMonitorDim(deps: MonitorDimDeps): MonitorDim {
     }
   }
 
-  const readLevel = async (bus: number, monitor: NightDimMonitor): Promise<number> => {
-    const brightness = parseBrightness(await run(getArgs(bus)))
-    if (brightness === null) throw new Error(`${monitor.model} did not report its brightness`)
+  const readLevel = async (display: DimDisplay): Promise<number> => {
+    if (isBacklight(display)) return (await backlight.read(display.backlight)).current
+    const brightness = parseBrightness(await run(getArgs(display.bus)))
+    if (brightness === null) throw new Error(`${display.model} did not report its brightness`)
     return brightness.current
   }
 
   const lower = async (state: MonitorDimState, monitor: NightDimMonitor): Promise<void> => {
     try {
-      const bus = await busOf(monitor)
-      if (bus === null) throw new Error(`${monitor.model} on ${monitor.connector} is not on any I2C bus ddcutil can see`)
+      const display = await find(monitor)
+      if (display === null) throw new Error(`${monitor.model} on ${monitor.connector} is neither on an I2C bus ddcutil can see nor a backlight`)
       // A record a failed restore left holds the true day level; the monitor's own reading would be its night one.
       const kept = recovery.read()
-      const dayLevel = kept !== null && sameMonitor(kept, monitor) ? kept.dayLevel : await readLevel(bus, monitor)
+      const dayLevel = kept !== null && sameMonitor(kept, monitor) ? kept.dayLevel : await readLevel(display)
       const level = nightLevel(dayLevel, state.nightDim.brightnessPercent)
       // Already at its floor: only the veil goes darker.
       if (level === null) return
-      const record: DimRecord = { ...monitor, bus, dayLevel }
+      const record: DimRecord = { ...display, dayLevel }
       recovery.write(record)
-      await run(setArgs(bus, level))
+      await setLevel(display, level)
       lowered = record
       onDimmed(true)
     } catch (error) {
@@ -201,14 +229,18 @@ export function createMonitorDim(deps: MonitorDimDeps): MonitorDim {
       return enqueue(async () => {
         const record = recovery.read()
         if (record === null) return
-        let bus = record.bus
-        try {
-          bus = (await busOf(record)) ?? record.bus
-        } catch (error) {
-          reportFault('idle.monitorDim.recover', error)
+        // A backlight keeps its name; a monitor may be on another bus since.
+        let found: DimRecord = record
+        if (!isBacklight(record)) {
+          try {
+            const display = await find(record)
+            if (display !== null) found = { ...display, dayLevel: record.dayLevel }
+          } catch (error) {
+            reportFault('idle.monitorDim.recover', error)
+          }
         }
         try {
-          await raise({ ...record, bus })
+          await raise(found)
         } catch (error) {
           reportFault('idle.monitorDim.recover', error)
         }
@@ -217,12 +249,7 @@ export function createMonitorDim(deps: MonitorDimDeps): MonitorDim {
     async monitors() {
       let note = ''
       await enqueue(async () => {
-        try {
-          if ((await detect()).length === 0) note = 'No monitor answers over DDC/CI — see the README'
-        } catch (error) {
-          displays = null
-          note = whyNone(error)
-        }
+        if ((await detect()).length === 0) note = ddcFailure === null ? 'No monitor answers over DDC/CI, and no backlight — see the README' : whyNone(ddcFailure)
       })
       if (note === '' && whyTonight !== '') note = `The veil dimmed instead tonight: ${whyTonight}`
       return { monitors: displays ?? [], note }

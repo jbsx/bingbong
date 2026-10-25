@@ -745,9 +745,10 @@ function launchIdleMinutes(): number {
 const monitorKey = (monitor: NightDimMonitor): string => `${monitor.model} · ${monitor.connector}`
 
 /**
- * Which monitor Night Dim turns down over DDC/CI (#413), or the veil only:
- * the monitors ddcutil finds, listed again each time Settings opens, by
- * model and connector — never by bus, which renumbers.
+ * Which monitor Night Dim turns down over DDC/CI (#413), or which built-in
+ * panel through its backlight, or the veil only: the monitors ddcutil finds
+ * and the backlights, listed again each time Settings opens, by model and
+ * connector — never by bus, which renumbers.
  */
 function NightDimMonitorField({ value, onChange }: { value: NightDimMonitor | null; onChange: (monitor: NightDimMonitor | null) => void }) {
   const [found, setFound] = useState<MonitorList | null>(null)

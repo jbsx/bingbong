@@ -9,12 +9,15 @@ import { waitFor } from './waitFor'
 // Night Dim on the monitor itself (#413), against the scripted monitor
 // (BINGBONG_DDC_SCRIPT): no run touches a real one. Each check reads the
 // ddcutil calls the double was handed. The app boots on a record a crash at
-// night left behind, with the Philips moved to another bus since.
+// night left behind, with the Philips moved to another bus since. A
+// built-in panel's backlight is scripted beside the monitors, as the
+// kiosk's eDP panel, which has no DDC/CI.
 
 const HOUR = 60 * 60 * 1000
 const pad = (n: number): string => String(n).padStart(2, '0')
 const clockTime = (at: Date): string => `${pad(at.getHours())}:${pad(at.getMinutes())}`
 const PHILIPS = { model: 'PHL 325E1', connector: 'HDMI-A-1' }
+const PANEL = { model: 'intel_backlight', connector: 'eDP-1' }
 
 describe('night dim monitor e2e', () => {
   let harness: Harness
@@ -46,6 +49,7 @@ describe('night dim monitor e2e', () => {
         { bus: 3, connector: 'card0-HDMI-A-1', monitor: 'PHL:PHL 325E1:UK02123456789' },
       ],
       level: 16,
+      backlights: [{ name: 'intel_backlight', connector: 'card1-eDP-1', level: 96000, max: 96000 }],
       log: join(userDataDir, 'ddc-calls.log'),
     }
     harness = await startHarness({ userDataDir, env: { BINGBONG_DDC_SCRIPT: JSON.stringify(script) } })
@@ -61,7 +65,7 @@ describe('night dim monitor e2e', () => {
     await waitFor(async () => (existsSync(join(userDataDir, 'night-dim.json')) ? undefined : true), { timeoutMs: 5000, intervalMs: 100 })
   })
 
-  it('lists the monitors ddcutil finds under Settings › Screen › Monitor, by model and connector', async () => {
+  it('lists the monitors ddcutil finds and the backlights under Settings › Screen › Monitor, by model and connector', async () => {
     const now = Date.now()
     await harness.dashboardEval(
       `window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, nightDim: ${JSON.stringify({ enabled: true, from: clockTime(new Date(now - HOUR)), to: clockTime(new Date(now + HOUR)), brightnessPercent: 40, monitor: null })} }))`,
@@ -71,11 +75,11 @@ describe('night dim monitor e2e', () => {
     const options = await waitFor(
       async () => {
         const found = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('select[aria-label="Night Dim monitor"] option')].map((option) => option.textContent)`)
-        return found.length === 3 ? found : undefined
+        return found.length === 4 ? found : undefined
       },
       { timeoutMs: 10000, intervalMs: 100 },
     )
-    expect(options).toEqual(['Veil only', '27MQ95FSHDRU · DVI-D-1', 'PHL 325E1 · HDMI-A-1'])
+    expect(options).toEqual(['Veil only', '27MQ95FSHDRU · DVI-D-1', 'PHL 325E1 · HDMI-A-1', 'intel_backlight · eDP-1'])
   })
 
   it('lowers the picked monitor to 40 % of its day level under the Idle Screen, with no veil', async () => {
@@ -97,11 +101,19 @@ describe('night dim monitor e2e', () => {
     await callsEnd(since, ['--bus 3 setvcp 10 40', '--bus 3 getvcp 10 --terse', '--bus 3 setvcp 10 16'])
   })
 
+  it('picking the built-in panel under the Idle Screen puts the monitor back and lowers the backlight instead', async () => {
+    const since = (await calls()).length
+    await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, nightDim: { ...s.nightDim, monitor: ${JSON.stringify(PANEL)} } }))`)
+    await callsEnd(since, ['--bus 3 setvcp 10 40', 'backlight get intel_backlight', 'backlight set intel_backlight 38400'])
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen') && !document.querySelector('.idle-night')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    expect(JSON.parse(await readFile(join(userDataDir, 'night-dim.json'), 'utf8'))).toEqual({ ...PANEL, backlight: 'intel_backlight', dayLevel: 96000 })
+  })
+
   it('restores the day level when the app quits at night', async () => {
     const since = (await calls()).length
     quit = true
     await harness.quit()
-    expect((await calls()).slice(since)).toEqual(['--bus 3 setvcp 10 40'])
+    expect((await calls()).slice(since)).toEqual(['backlight set intel_backlight 96000'])
     expect(existsSync(join(userDataDir, 'night-dim.json'))).toBe(false)
   })
 })

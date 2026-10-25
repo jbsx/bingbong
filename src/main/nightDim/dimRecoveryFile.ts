@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import type { DimRecord, DimRecoveryStore } from '../../core/idle/monitorDim'
+import type { DimRecoveryStore } from '../../core/idle/monitorDim'
 import { reportFault } from '../../core/trace/fault'
 
 /**
  * `<userData>/night-dim.json` (#413): the day level, written before a
- * monitor goes down and deleted once it is back up, so a crash at night
+ * monitor or a backlight goes down and deleted once it is back up, so a crash at night
  * leaves the next boot what to restore. Written synchronously: the record
  * is on disk before the call that lowers the monitor starts.
  */
@@ -20,9 +20,13 @@ export function createDimRecoveryFile(path: string): DimRecoveryStore {
         reportFault('idle.dimRecoveryFile.read', error)
         return null
       }
-      const record = raw as Partial<DimRecord> | null
-      if (typeof record?.model !== 'string' || typeof record.connector !== 'string' || !Number.isInteger(record.bus) || !Number.isInteger(record.dayLevel)) return null
-      return { model: record.model, connector: record.connector, bus: record.bus as number, dayLevel: record.dayLevel as number }
+      const record = raw as { model?: unknown; connector?: unknown; bus?: unknown; backlight?: unknown; dayLevel?: unknown } | null
+      if (typeof record?.model !== 'string' || typeof record.connector !== 'string' || !Number.isInteger(record.dayLevel)) return null
+      const { model, connector } = record
+      const dayLevel = record.dayLevel as number
+      // A built-in panel by its backlight's name, a monitor by its bus.
+      if (typeof record.backlight === 'string' && record.backlight !== '') return { model, connector, backlight: record.backlight, dayLevel }
+      return Number.isInteger(record.bus) ? { model, connector, bus: record.bus as number, dayLevel } : null
     },
     write(record) {
       writeFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
