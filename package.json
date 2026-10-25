@@ -10,6 +10,7 @@
     "build": "electron-vite build",
     "dist": "pnpm build && electron-builder --linux AppImage --publish never",
     "release": "node scripts/release.ts",
+    "kiosk:push": "node scripts/kiosk-push.ts",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.scripts.json",
     "lint": "eslint .",
