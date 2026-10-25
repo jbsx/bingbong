@@ -13,7 +13,7 @@ const CHECK_MS = 1_000
 
 /** The pane's Player, its end-of-song poll running; the returned stop ends the poll. */
 export function attachPlayer(
-  browser: Pick<BrowserController, 'navigate' | 'evaluate'>,
+  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate'>,
   session: Session,
   memory: { songs: SongMemory; learn(term: string): void },
 ): { player: Player; stop: () => void } {

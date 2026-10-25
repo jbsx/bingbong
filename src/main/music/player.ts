@@ -12,10 +12,10 @@ import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { CONTINUE_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type PausedAll, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
-// queue and the verbs live here. `play <words>` navigates the pane to the
-// results, takes the first plain video off the page's data and opens its
-// watch page; `queue <words>` fetches the same results with the pane's
-// session, so the song playing is never interrupted. Every other verb is
+// queue and the verbs live here. `play <words>` fetches the results with
+// the pane's session, takes the first plain video off their data and lands
+// the pane on its watch page with no page read; `queue <words>` fetches the
+// same results, so the song playing is never interrupted. Every other verb is
 // one evaluate on `#movie_player`'s video. The poll (`check`, once a
 // second) hears the song's end — the page pauses it in its last second, so
 // YouTube's Autoplay never wanders on, and an ad's end in the same element
@@ -78,7 +78,7 @@ export interface Player {
 }
 
 export interface PlayerDeps {
-  browser: Pick<BrowserController, 'navigate' | 'evaluate' | 'evaluateInFrames'>
+  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'evaluateInFrames'>
   /** A results page's HTML, fetched with the pane's session (its cookies, its consent). */
   fetchResults(url: string): Promise<string>
   /** Waits between reads of a page still building; real time when absent. */
@@ -197,13 +197,14 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   const control = (op: ElementOp, reach: ControlReach = 'page'): Promise<ElementState | null> => evaluate<ElementState>(controlScript(op, reach))
 
-  /** The watch page for this song, once its player holds its video: true; false for any other landing. */
-  async function landedOn(song: Song, current: () => boolean): Promise<boolean | 'superseded'> {
+  /** The watch page for this song, once its player holds its video: true; 'elsewhere' off any watch page; false for any other landing. */
+  async function landedOn(song: Song, current: () => boolean): Promise<boolean | 'elsewhere' | 'superseded'> {
     for (let read = 0; read < WATCH_READS; read += 1) {
       if (!current()) return 'superseded'
       const status = await evaluate<WatchStatus>(WATCH_SCRIPT)
       if (status !== null) {
-        if (!status.watch || (status.id !== null && status.id !== song.id) || status.error) return false
+        if (!status.watch) return 'elsewhere'
+        if ((status.id !== null && status.id !== song.id) || status.error) return false
         if (status.hasVideo) return true
       }
       await sleep(WATCH_READ_MS)
@@ -211,18 +212,37 @@ export function createPlayer(deps: PlayerDeps): Player {
     return false
   }
 
+  /**
+   * The watch page, landed with no page read: the Player reads the landing
+   * itself, and a collect would run on YouTube's own main thread while it
+   * starts the video. A landing off the watch page (a consent wall) is
+   * navigated again in full, which dismisses what it can.
+   */
+  async function goTo(song: Song, current: () => boolean): Promise<boolean | 'elsewhere' | 'superseded'> {
+    const url = watchUrl(song.id)
+    if (browser.land === undefined) {
+      await browser.navigate(url)
+      return landedOn(song, current)
+    }
+    await browser.land(url)
+    const landed = await landedOn(song, current)
+    if (landed !== 'elsewhere') return landed
+    await browser.navigate(url)
+    return landedOn(song, current)
+  }
+
   /** Open a song's watch page; the queue moves on to it only when it landed. */
   async function open(song: Song, current: () => boolean): Promise<'opened' | 'failed' | 'superseded'> {
+    let landed: boolean | 'elsewhere' | 'superseded'
     try {
-      await browser.navigate(watchUrl(song.id))
+      landed = await goTo(song, current)
     } catch (error) {
       reportFault('music.player.open', error)
       return current() ? 'failed' : 'superseded'
     }
-    const landed = await landedOn(song, current)
     // A page opened while ducked starts at YouTube's remembered volume: down to the floor at once (#344).
     if (landed === true && ducked !== null) await control({ op: 'level', to: floorOf(ducked.restore) })
-    return landed === 'superseded' ? 'superseded' : landed ? 'opened' : 'failed'
+    return landed === 'superseded' ? 'superseded' : landed === true ? 'opened' : 'failed'
   }
 
   /** The next queued song opens in the background, a failed one passed over, until one lands or none is left. */
@@ -265,8 +285,27 @@ export function createPlayer(deps: PlayerDeps): Player {
     return { result: `playing: id=${song.id} title=${JSON.stringify(song.title)}`, answer, video: song.id }
   }
 
-  /** The results page for these words in the pane, and its plain videos; an outcome when it shows none. */
+  /**
+   * The plain videos for these words: fetched with the pane's session, so
+   * no page is drawn or read for a search the Player reads off the data —
+   * on two cores standing in for the kiosk's i3 that page cost about 1.5 s
+   * of every `play` (2026-10-25). A fetch
+   * that fails or carries no results data (a consent wall a fresh profile
+   * has not passed) is read off the results page in the pane, whose
+   * navigate dismisses what it can. An outcome when they show none.
+   */
   async function readResults(words: string, current: () => boolean): Promise<readonly Song[] | PlayerOutcome> {
+    let fetched: unknown = null
+    try {
+      fetched = initialDataOf(await deps.fetchResults(resultsUrl(words)))
+    } catch (error) {
+      reportFault('music.player.fetchResults', error)
+    }
+    if (!current()) return superseded
+    if (fetched !== null) {
+      const found = plainVideos(fetched)
+      return found.length === 0 ? noVideos(words) : found
+    }
     const line = await browser.navigate(resultsUrl(words))
     if (!current()) return superseded
     const wall = spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: line } })

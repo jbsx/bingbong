@@ -177,6 +177,12 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     this.snapshot = { ...this.snapshot, url, title: `Fake page: ${url}` }
     return `navigated: url=${url} title=${JSON.stringify(this.pageState.title)}`
   }
+  /** Every `land` (a navigate that reads nothing), in order; each is in `navigations` too. */
+  readonly landings: string[] = []
+  async land(url: string): Promise<void> {
+    this.landings.push(url)
+    await this.navigate(url)
+  }
   /** The part of every Page Read, in order (ADR 0047). */
   readonly pageReads: number[] = []
   /** How many parts the fake page's text reads in. */

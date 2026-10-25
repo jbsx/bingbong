@@ -115,6 +115,14 @@ export interface MarkedScreenshot {
 export interface BrowserController {
   navigate(url: string): Promise<string>
   /**
+   * A navigate that reads nothing: the page loaded and settled the way a
+   * navigate's landing is, with no collect, no consent dismissal and no
+   * line. For a caller that reads the landing itself (the Player) — a
+   * collect runs on the page's own main thread, and on a slow machine it
+   * holds up the very page it reads. The next read collects afresh.
+   */
+  land?(url: string): Promise<void>
+  /**
    * A Page Read (ADR 0047): the page's refs and one part of its whole text,
    * part 1 — from the top — when none is named. Rejects for a part the
    * page does not have.
