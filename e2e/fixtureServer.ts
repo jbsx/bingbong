@@ -1511,6 +1511,65 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       )
       return
     }
+    // A list that builds itself one result per frame (#425), as YouTube's results page does: loaded in a
+    // hidden pane, no frame comes and it stops at the first; shown or parked, all 19 are there within a moment.
+    if (req.url === '/lazy-list') {
+      res.end(
+        page(`<main style="color:#fff"><h1>Lazy results</h1><ul id="results"></ul></main>
+<script>
+  let n = 0
+  const add = () => {
+    n += 1
+    const item = document.createElement('li')
+    item.innerHTML = '<a style="color:#fff" href="/second?result=' + n + '">Result ' + n + '</a>'
+    document.getElementById('results').appendChild(item)
+    if (n < 19) requestAnimationFrame(add)
+    else window.__doneAt = Date.now()
+  }
+  add()
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && window.__visibleAt === undefined) window.__visibleAt = Date.now()
+  })
+</script>`),
+      )
+      return
+    }
+    // A real decoded video (#425): two seconds of a canvas recorded as VP9 while the page is shown, then looped
+    // muted. Each frame it presents is stamped, so a test reads when the picture came back after the pane was hidden.
+    if (req.url === '/recorded-video') {
+      res.end(
+        page(`<video id="clip" muted loop playsinline width="640" height="360"></video>
+<script>
+  const clip = document.getElementById('clip')
+  const canvas = document.createElement('canvas')
+  canvas.width = 640
+  canvas.height = 360
+  const g = canvas.getContext('2d')
+  let f = 0
+  const tick = setInterval(() => {
+    f += 1
+    g.fillStyle = 'hsl(' + ((f * 7) % 360) + ' 80% 50%)'
+    g.fillRect(0, 0, 640, 360)
+  }, 33)
+  const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm;codecs=vp9' })
+  const parts = []
+  recorder.ondataavailable = (event) => parts.push(event.data)
+  recorder.onstop = () => {
+    clearInterval(tick)
+    clip.src = URL.createObjectURL(new Blob(parts, { type: 'video/webm' }))
+    void clip.play().then(() => (window.__ready = true))
+  }
+  recorder.start()
+  setTimeout(() => recorder.stop(), 2000)
+  const stamp = () => {
+    window.__frameAt = Date.now()
+    clip.requestVideoFrameCallback(stamp)
+  }
+  clip.requestVideoFrameCallback(stamp)
+</script>`),
+      )
+      return
+    }
     if (req.url === '/native-video') {
       res.end(nativeVideoPage([{ id: 'one', title: MEDIA_FIXTURE_TITLES.one, track: true }]))
       return

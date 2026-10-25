@@ -2,6 +2,8 @@ import { app, BrowserWindow, session, WebContentsView } from 'electron'
 import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
 import { DESKTOP_PANE_SIZE, HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
 import { hiddenPaneBounds, toPaneBounds, type PaneBounds } from '../../core/browser/paneGeometry'
+import { createPaneVisibility, type PaneVisibilityRule } from '../../core/browser/paneVisibility'
+import { systemClock } from '../../core/ports/clock'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
@@ -41,8 +43,10 @@ export interface BrowserPane {
   /** Discards Session-owned navigation while preserving the persistent Browser Profile. */
   reset(): void
   setPaneRect(rect: PaneRect): void
-  /** The window the pane's view is in: hidden, the pane keeps its size off that window's edge (ADR 0079). */
+  /** The window the pane's view is in: out of sight, the pane keeps its size at that window's edge (ADR 0079). */
   setHost(win: BrowserWindow): void
+  /** Out of sight, the pane is hidden at rest and parked while it may be read (ADR 0079, 2026-10-25): the ear, the Idle Prompt and every Task say when. */
+  reading: Pick<PaneVisibilityRule, 'ear' | 'prompt' | 'task'>
   /** The last rect the renderer reported — reopened subagent panes mirror it (#57). */
   rect(): PaneRect
   onRect(listener: (rect: PaneRect) => void): () => void
@@ -221,7 +225,7 @@ export function createBrowserPane(deps?: {
   let shown: PaneBounds | null = null
   let host: BrowserWindow | null = null
 
-  /** The view's bounds for a reported rect: as reported, or, hidden, off the window at the size it was last shown. */
+  /** The view's bounds for a reported rect: as reported, or, out of sight, at the window's edge at the size it was last shown. */
   function boundsOf(rect: PaneRect): PaneBounds {
     const bounds = toPaneBounds(rect)
     if (bounds.width > 0) {
@@ -230,6 +234,24 @@ export function createBrowserPane(deps?: {
     }
     const window = host !== null && !host.isDestroyed() ? host.getContentBounds() : DESKTOP_PANE_SIZE
     return hiddenPaneBounds(shown, window)
+  }
+
+  // Out of sight, hidden at rest and parked while it may be read (ADR 0079,
+  // 2026-10-25). Hidden keeps the parked bounds, so the page keeps its real
+  // size and a park only makes it visible again; Chromium then stops
+  // decoding and painting a page no one sees, and its audio plays on.
+  const visibility = createPaneVisibility({ clock: systemClock, onChange: () => place() })
+
+  function place(): void {
+    whenLive(() => {
+      if (visibility.current() === 'hidden') {
+        view.setVisible(false)
+        view.setBounds(boundsOf(paneRect))
+      } else {
+        view.setBounds(boundsOf(paneRect))
+        view.setVisible(true)
+      }
+    })
   }
 
   function whenLive(fn: () => void): void {
@@ -312,16 +334,25 @@ export function createBrowserPane(deps?: {
     },
     setPaneRect(rect) {
       paneRect = rect
-      whenLive(() => view.setBounds(boundsOf(rect)))
+      visibility.inSight(toPaneBounds(rect).width > 0)
+      place()
       for (const listener of rectListeners) listener(rect)
     },
     setHost(win) {
       host = win
-      const place = (): void => whenLive(() => view.setBounds(boundsOf(paneRect)))
       place()
-      // Hidden, the pane keeps to the window's edge as the window resizes: wholly outside it, the view would lay out at 0×0 again.
+      // A view never shown lays out at 0×0 even hidden at its real size: it is shown parked for its first frame,
+      // counted from when the window is on screen with its dashboard loaded, not from a window not yet drawn.
+      const shown = (): void => {
+        if (win.isVisible()) visibility.hosted()
+        else win.once('show', () => visibility.hosted())
+      }
+      if (win.webContents.getURL() === '' || win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', shown)
+      else shown()
+      // Out of sight, the pane keeps to the window's edge as the window resizes: wholly outside it, the view would lay out at 0×0 again.
       win.on('resize', place)
     },
+    reading: { ear: (open) => visibility.ear(open), prompt: (open) => visibility.prompt(open), task: (run) => visibility.task(run) },
     rect: () => paneRect,
     onRect(listener) {
       rectListeners.add(listener)

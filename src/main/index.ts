@@ -154,6 +154,14 @@ attachGpuStability({
 // webContents. Must precede app ready.
 app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
 
+// Hardware video decode (#425): every song the Player plays is a full
+// video, and the kiosk's i3 cannot afford to decode it in software. On
+// Linux Chromium decodes through VA-API under this feature; Electron 43
+// has it on already (measured 2026-10-25: VP9 and H.264 power-efficient
+// with it, software without), and naming it keeps an upgrade from
+// dropping it. The VA driver itself is the machine's (kiosk-install.sh).
+if (process.platform === 'linux') app.commandLine.appendSwitch('enable-features', 'AcceleratedVideoDecodeLinuxGL')
+
 // A test or an agent under xvfb-run plays nothing through the speakers.
 muteOffScreen(app, process.env)
 
@@ -366,6 +374,8 @@ async function createWindow(): Promise<BrowserWindow> {
     const report = shown as Partial<IdleShown> | null | undefined
     idleShown = { up: report?.up === true, open: report?.open === true, prompting: report?.prompting === true }
     idleWindows.set(windowId, idleShown)
+    // A line typed in the Idle Prompt may read the pane: it is parked while the Prompt is open (ADR 0079, 2026-10-25).
+    pane.reading.prompt(idleShown.up && idleShown.open)
     updater.shownChanged()
     nightDim.idleChanged()
   }
@@ -566,11 +576,13 @@ async function createWindow(): Promise<BrowserWindow> {
       observe: (text) => learnedTermsStore.observeTranscript(text),
     },
   })
-  // A Task under way (#423): a line run, or a partial that may fire, until it settles — a download it starts is routed.
+  // A Task under way (#423): a line run, or a partial that may fire, until it settles — a download it starts is routed,
+  // and the pane out of sight is parked so the Task reads the page built in full (ADR 0079, 2026-10-25).
+  const underTask = <T>(task: () => Promise<T>): Promise<T> => pane.reading.task(() => taskActivity.run(task))
   const runner: typeof commandRunner = {
     ...commandRunner,
-    run: (text, options) => taskActivity.run(() => commandRunner.run(text, options)),
-    consider: (partial) => taskActivity.run(() => commandRunner.consider(partial)),
+    run: (text, options) => underTask(() => commandRunner.run(text, options)),
+    consider: (partial) => underTask(() => commandRunner.consider(partial)),
   }
   // Escape aborts the Command and closes a Hot Listen (#326), each at once;
   // the voice session is attached below, so it is read when the key comes.
@@ -644,6 +656,8 @@ async function createWindow(): Promise<BrowserWindow> {
     getHotListenSilenceMs: () => settingsStore.get().hotListenSilenceMs,
     speaking: speakingGate,
     ducking,
+    // From the ear's opening the pane out of sight is parked: the page fills in before the line has been said (ADR 0079, 2026-10-25).
+    onEar: (open) => pane.reading.ear(open),
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,

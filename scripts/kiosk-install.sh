@@ -28,6 +28,14 @@ if ! /sbin/ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2 '; then
   sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 fi
 
+# Hardware video decode (#425): Chromium decodes through VA-API, which needs
+# the GPU's driver. iHD covers the kiosk's Kaby Lake (HD 630); vainfo shows
+# what it decodes.
+if ! dpkg -s intel-media-va-driver vainfo >/dev/null 2>&1; then
+  say "installing intel-media-va-driver and vainfo (hardware video decode)"
+  sudo apt-get install -y intel-media-va-driver vainfo
+fi
+
 # The AppImage: a fixed name with no version in it, so the updater replaces
 # this same file in place.
 mkdir -p "$(dirname "$APPIMAGE")"

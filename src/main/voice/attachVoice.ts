@@ -88,6 +88,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onAbort: () => runnerFor(win)?.abort(),
     onStateChange: (state: VoiceState) => {
       deps.ducking?.voiceState(state)
+      // Open from the listen's start through its STT window: `listening` alone is false while it transcribes.
+      deps.onEar?.(state.listening || state.transcribing)
       deps.publisher.publish({ source: 'voice-state', state })
     },
     onHeard: (heard) => {
@@ -124,6 +126,8 @@ export interface AttachVoiceDeps {
   speaking?: TtsIdle
   /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */
   ducking?: Ducking
+  /** Told on every voice state whether the ear is open; absent tells no one. */
+  onEar?(open: boolean): void
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
