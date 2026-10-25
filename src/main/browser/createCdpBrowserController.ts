@@ -79,7 +79,7 @@ import {
   OWN_SLOT_SCRIPT,
   TAG_OF_FN,
 } from './collectPageScript'
-import { readRefStates } from './readRefStates'
+import { readRefStates, type RefStatesTally } from './readRefStates'
 import { mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
@@ -887,12 +887,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** The collect with each ref's Ref State, or as it was when the tree cannot be read. */
   async function withRefStates(page: CollectedPage): Promise<CollectedPage> {
+    const start = subspans?.now()
+    let counts: RefStatesTally = { asked: 0, read: 0 }
     try {
       // The tree is read over the top document's session: a frame's refs keep no Ref State (#377).
-      return await readRefStates(cdp, page, (index) => (addresses[index]?.frame === null ? addresses[index].index : null))
+      return await readRefStates(cdp, page, (index) => (addresses[index]?.frame === null ? addresses[index].index : null), (told) => (counts = told))
     } catch (error) {
       reportFault('browser.createCdpBrowserController.refStates', error)
       return page
+    } finally {
+      // The tree's read on its own (#432): inside browser-collect, the part the refs' states cost.
+      if (subspans !== undefined && start !== undefined) subspans.emit('browser-ref-states', subspans.now() - start, { ...counts })
     }
   }
 

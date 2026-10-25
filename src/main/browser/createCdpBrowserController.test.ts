@@ -2769,7 +2769,8 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
       ['browser-recollection', { reason: 'settled-state' }],
       // The tab reads the same twice running: one poll settles it.
       ['browser-settle', { action: 'landing-retry', ms: 100 }],
-      // The first collect threw and was never timed; the retry's is.
+      // The first collect threw and was never timed; the retry's is, its Ref States read inside it (#432).
+      ['browser-ref-states', { asked: 20, read: 0 }],
       ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'landing-retry' }],
     ])
@@ -2821,10 +2822,13 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
     })
 
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
+      ['browser-ref-states', { asked: 20, read: 0 }],
       ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-ref-states', { asked: 20, read: 0 }],
       ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-ref-states', { asked: 20, read: 0 }],
       ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
     ])
@@ -2943,6 +2947,20 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     return { records, subspans: createBrowserSubspans({ tracer, enabled }) }
   }
 
+  it('times the Ref States read on its own inside the collect, with the refs asked and the refs the tree told of (#432)', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const cdp = new FakeCdp()
+    cdp.axNodes.set(1, { role: { type: 'role', value: 'button' }, properties: [{ name: 'pressed', value: { type: 'tristate', value: 'true' } }] })
+    const { controller } = makeController({ cdp, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.collectPage())
+
+    expect(records.map((record) => [record.stage, record.detail])).toEqual([
+      ['browser-ref-states', { asked: 20, read: 1 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+    ])
+  })
+
   it('emits only the collect and its recollection for a navigate, keyed by the open turn — the load is its own wait (#324, #377)', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
@@ -2950,6 +2968,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     await subspans.runInTurn('turn-1', () => controller.navigate('youtube.com'))
 
     expect(records).toEqual([
+      { turnId: 'turn-1', stage: 'browser-ref-states', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { asked: 20, read: 0 } },
       { turnId: 'turn-1', stage: 'browser-collect', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { refs: 20, frames: 0, unread: 0 } },
       { turnId: 'turn-1', stage: 'browser-recollection', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { reason: 'settled-state' } },
     ])
@@ -2967,6 +2986,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     await subspans.runInTurn('turn-1', () => controller.click(3))
 
     expect(records.map((record) => [record.turnId, record.stage, record.detail])).toEqual([
+      ['turn-1', 'browser-ref-states', { asked: 20, read: 0 }],
       ['turn-1', 'browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['turn-1', 'browser-recollection', { reason: 'resolve-ref' }],
       ['turn-1', 'browser-safety', { kind: 'click-prep' }],

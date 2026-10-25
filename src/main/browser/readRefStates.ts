@@ -6,6 +6,15 @@
 // are let go. A ref whose node is gone costs only its own state, and the
 // misses are one fault; a registry that cannot be held is the caller's to
 // report. A page without its states is still a page.
+//
+// Measured against one read of the whole tree (#432, `browser-ref-states`,
+// the CLI harness on a YouTube watch page and a Wikipedia article): the
+// per-ref reads, at most MAX_SNAPSHOT_REFS of them, cost 2–8 ms once the
+// page's tree is built (28–132 ms on the first read after a load);
+// `Accessibility.getFullAXTree` matched by backend node id cost 31–60 ms on
+// the watch page and 248–310 ms on the article. The domain is left as the
+// reads leave it: `Accessibility.disable` after a read made the next one
+// cold (34–41 ms against 5–8) and the playing page's renderer no less busy.
 
 import { refStatesOf, type AxNode, type RefRead } from '../../core/browser/refStates'
 import { refElementIndices, refKindOf, type CollectedPage } from '../../core/browser/snapshot'
@@ -27,15 +36,29 @@ interface PartialTreeResponse {
   readonly nodes?: readonly AxNode[]
 }
 
+/** What one read came to (#432): the refs asked of the tree, and those it told a state or a name of. */
+export interface RefStatesTally {
+  readonly asked: number
+  readonly read: number
+}
+
 /**
  * The page with each ref's Ref State on its element; elements the tree said
  * nothing of are left as they were. `registryIndexOf` says where an element
  * sits in the top document's registry, null for one read in a frame (#377),
  * which this session's tree cannot reach; absent, the element's own index.
  */
-export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, registryIndexOf: (index: number) => number | null = (index) => index): Promise<CollectedPage> {
+export async function readRefStates(
+  cdp: CdpDebugger,
+  page: CollectedPage,
+  registryIndexOf: (index: number) => number | null = (index) => index,
+  tally?: (counts: RefStatesTally) => void,
+): Promise<CollectedPage> {
   const indices = refElementIndices(page).filter((index) => registryIndexOf(index) !== null)
-  if (indices.length === 0) return page
+  if (indices.length === 0) {
+    tally?.({ asked: 0, read: 0 })
+    return page
+  }
   try {
     const registry = await cdp.send<RemoteObjectResponse>('Runtime.evaluate', {
       expression: '/* REF_HANDLES */ window.__bingbongRefs',
@@ -65,6 +88,7 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, regis
         }),
       )
     ).filter((miss): miss is string => miss !== null)
+    tally?.({ asked: indices.length, read: reads.size })
     if (misses.length > 0) reportFault('browser.readRefStates.refs', new Error(`${misses.length} of ${indices.length} refs unread: ${misses[0]}`))
     return {
       ...page,
