@@ -30,8 +30,10 @@ export function createPlaybackTracker(write: (record: PlaybackRecord) => void): 
   let open = new Map<string, PlaybackView>()
 
   function close(view: PlaybackView, closed: PlaybackRecord['closed']): void {
-    const { key: _key, closed: _closed, ...rest } = view
-    write({ ...rest, closed })
+    // The view's own key and closed flag are the tracker's, not the record's.
+    const record: PlaybackRecord & Partial<Pick<PlaybackView, 'key'>> = { ...view, closed }
+    delete record.key
+    write(record)
   }
 
   return {
