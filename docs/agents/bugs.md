@@ -2,7 +2,7 @@
 
 Every line that did not do what was meant lives in `fixtures/failed-lines/`
 (#371), one JSON file per line, tagged with the first stage of the pipeline
-that failed it. GitHub Issues hold the hypotheses and the fixes; the ledger
+that failed it. The issue tracker holds the hypotheses and the fixes; the ledger
 holds the evidence they are judged against. Memory notes and post mortems
 are prose about the ledger, never a second copy of it.
 
