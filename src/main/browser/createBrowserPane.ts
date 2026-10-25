@@ -107,6 +107,9 @@ export function createBrowserPane(deps?: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The partition's frame preloads reach embedded frames too (#425: an embedded player is refused the codec its
+      // page is). Sandboxed, they get no Node either way; the adblock scriptlets' preload keeps to the top frame itself.
+      nodeIntegrationInSubFrames: true,
     },
   })
   // The behind-content canvas (ADR 0012, 0020): theme-tracked, so it

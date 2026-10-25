@@ -1511,6 +1511,21 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       )
       return
     }
+    // What a page hears about each codec at its first script (#425), and, given ?frame=<url>, the same page embedded
+    // from that address: a refused codec must be refused before the page can ask, in every frame.
+    if (req.url?.startsWith('/codec-probe')) {
+      const frame = new URL(req.url, 'http://fixture').searchParams.get('frame')
+      res.end(`<html><body style="background:#222"><script>
+  window.__codecsAtParse = {
+    av1: MediaSource.isTypeSupported('video/mp4; codecs="av01.0.08M.08"'),
+    vp9: MediaSource.isTypeSupported('video/webm; codecs="vp09.00.40.08"'),
+  }
+  // Embedded, it tells its parent what it heard; on top, it keeps what its embed heard.
+  if (window !== window.top) parent.postMessage({ codecsAtParse: window.__codecsAtParse }, '*')
+  else addEventListener('message', (event) => { if (event.data && event.data.codecsAtParse) window.__embedCodecs = event.data.codecsAtParse })
+</script>${frame ? `<iframe id="embed" src="${frame}"></iframe>` : ''}</body></html>`)
+      return
+    }
     // A list that builds itself one result per frame (#425), as YouTube's results page does: loaded in a
     // hidden pane, no frame comes and it stops at the first; shown or parked, all 19 are there within a moment.
     if (req.url === '/lazy-list') {

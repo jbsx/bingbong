@@ -10,6 +10,7 @@ import { attachAdblock } from './browser/attachAdblock'
 import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessGuard'
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
+import { attachCodecRefusal } from './browser/attachCodecRefusal'
 import { paneBackgroundColor } from './browser/paneBackgrounds'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { registerLastPageIpc } from './browser/attachLastPage'
@@ -346,6 +347,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // marks its download-capable verbs, so only agent-initiated downloads get
   // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
+  // A video codec the GPU cannot decode is not offered to the pane's pages (#425): YouTube then serves one it can.
+  win.on('closed', attachCodecRefusal(pane.session, pane.view.webContents))
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // above it before the first frame.
   // What the dashboard last said of the Idle Screen (#361): typing opens its Prompt, and the Feed stays shut under it.
