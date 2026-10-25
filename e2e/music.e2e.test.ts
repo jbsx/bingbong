@@ -64,6 +64,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody'].map((line) => readingOf(line)))
     harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
     await harness.waitForCliOutput(/bingbong browser harness/)
+    // A profile that has met YouTube, as every used one has. `play` lands
+    // straight on a watch page, and a brand-new profile's first watch page
+    // has YouTube's own app pause its pre-roll ad over and over, so the song
+    // never comes; one visit before, in this launch or an earlier one, and
+    // the ad plays through (measured 2026-10-25, 4 of 4 stuck without it).
+    await cli(harness, 'navigate https://www.youtube.com/', /^(navigated|error)/)
   }, 120_000)
 
   afterAll(async () => {

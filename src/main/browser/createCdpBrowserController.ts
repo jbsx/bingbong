@@ -1457,6 +1457,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return navigationOutcome()
   }
 
+  async function land(input: string): Promise<void> {
+    const url = normalizeUrlInput(input)
+    if (!url) throw new Error(`cannot navigate to: "${input}"`)
+    const release = observingCommits()
+    try {
+      await loadAndSettle(url)
+    } finally {
+      release()
+    }
+  }
+
   /**
    * A region Look's clip (#195): the fractions resolved against the visual
    * viewport, offset by its page position because a capture clip is in
@@ -2648,6 +2659,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   return {
     navigate,
+    land,
     readPage,
     pageReadParts,
     click,

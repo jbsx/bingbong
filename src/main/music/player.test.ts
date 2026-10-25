@@ -21,24 +21,65 @@ function wired() {
   youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
   youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
   youtube.watches.set('ccccccccccc', { title: 'Song C' })
-  const player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {} })
   const always = (): boolean => true
   const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, always)
   return { browser, youtube, player, perform }
 }
 
 describe('the Player', () => {
-  it('`play <words>` searches, opens the pick and plays it', async () => {
-    const { browser, player, perform } = wired()
+  it('`play <words>` fetches the results, opens the pick and plays it: the pane draws no results page', async () => {
+    const { browser, youtube, player, perform } = wired()
     const played = await perform({ kind: 'search', place: 'now' }, 'song a')
-    expect(browser.navigations).toEqual([`${RESULTS}song+a`, `${WATCH}aaaaaaaaaaa`])
+    expect(youtube.fetched).toEqual([`${RESULTS}song+a`])
+    expect(browser.navigations).toEqual([`${WATCH}aaaaaaaaaaa`])
     expect(played).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
     expect(played.failure).toBeUndefined()
     expect(player.queue().current).toEqual({ id: 'aaaaaaaaaaa', title: 'Song A' })
   })
 
+  it('opens the watch page with a land: no page read, the Player reads the landing itself', async () => {
+    const { browser, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+  })
+
+  it('a land off the watch page (a consent wall) is navigated again in full, once, before the song fails', async () => {
+    const { browser, youtube, perform } = wired()
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A', fails: 'notWatch' })
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ failure: true })
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(browser.navigations.filter((url) => url === `${WATCH}aaaaaaaaaaa`)).toHaveLength(2)
+  })
+
+  it('a watch page showing the player\'s error is not navigated again', async () => {
+    const { browser, youtube, perform } = wired()
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A', fails: 'error' })
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.navigations.filter((url) => url === `${WATCH}aaaaaaaaaaa`)).toHaveLength(1)
+  })
+
+  it('a fetch with no results data (a consent wall) reads the results page in the pane instead', async () => {
+    const { browser, youtube, player, perform } = wired()
+    youtube.fetchResults = async () => '<html>Before you continue to YouTube</html>'
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
+    expect(browser.navigations).toEqual([`${RESULTS}song+a`, `${WATCH}aaaaaaaaaaa`])
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+  })
+
+  it('a fetch that fails reads the results page in the pane instead', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    const player = createPlayer({ browser, fetchResults: async () => Promise.reject(new Error('net::ERR_BLOCKED_BY_CLIENT')), sleep: async () => {} })
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).toMatchObject({ video: 'aaaaaaaaaaa' })
+    expect(browser.navigations[0]).toBe(`${RESULTS}song+a`)
+  })
+
   it('a results page whose cards are not drawn yet (an empty landing) is no wall: its data decides', async () => {
-    const { browser, player, perform } = wired()
+    const { browser, youtube, player, perform } = wired()
+    youtube.fetchResults = async () => '<html>no data</html>'
     const navigate = browser.navigate.bind(browser)
     browser.navigate = async (url) => `${await navigate(url)}\n#  — ${url}\nviewport 985x575 scroll 0/575\nsignature 2347a05e\n[1] button "Guide"`
     expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
@@ -50,8 +91,8 @@ describe('the Player', () => {
     await perform({ kind: 'search', place: 'now' }, 'song a')
     expect(await perform({ kind: 'search', place: 'end' }, 'song b')).toMatchObject({ answer: 'Queued “Song B” (1st).', video: 'bbbbbbbbbbb' })
     expect(await perform({ kind: 'search', place: 'end' }, 'song c')).toMatchObject({ answer: 'Queued “Song C” (2nd).' })
-    expect(youtube.fetched).toEqual([`${RESULTS}song+b`, `${RESULTS}song+c`])
-    expect(browser.navigations).toHaveLength(2)
+    expect(youtube.fetched).toEqual([`${RESULTS}song+a`, `${RESULTS}song+b`, `${RESULTS}song+c`])
+    expect(browser.navigations).toHaveLength(1)
     expect(player.queue().upNext.map((song) => song.title)).toEqual(['Song B', 'Song C'])
   })
 
@@ -82,7 +123,7 @@ describe('the Player', () => {
     youtube.endVideo()
     await player.check()
     await player.check()
-    expect(browser.navigations).toHaveLength(2)
+    expect(browser.navigations).toHaveLength(1)
     expect(player.queue().current).toBeNull()
   })
 
@@ -191,10 +232,10 @@ describe('the Player', () => {
   })
 
   it('a search superseded mid-way opens nothing more', async () => {
-    const { browser, player } = wired()
-    const outcome = await player.perform({ kind: 'search', place: 'now' }, 'song a', () => browser.navigations.length < 1)
+    const { browser, youtube, player } = wired()
+    const outcome = await player.perform({ kind: 'search', place: 'now' }, 'song a', () => youtube.fetched.length < 1)
     expect(outcome).toMatchObject({ superseded: true })
-    expect(browser.navigations).toEqual([`${RESULTS}song+a`])
+    expect(browser.navigations).toEqual([])
     expect(player.queue().current).toBeNull()
   })
 })
@@ -263,7 +304,7 @@ describe('the Player\'s Now Playing (#344)', () => {
     expect(await perform({ kind: 'unpause' })).toMatchObject({ answer: 'Playing “Song A”.' })
     expect(youtube.controls.at(-1)).toEqual({ op: 'restart' })
     expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: false, paused: false })
-    expect(browser.navigations).toHaveLength(2)
+    expect(browser.navigations).toHaveLength(1)
   })
 
   it('"show the video" names the ended song too: the watch page is still there', async () => {
@@ -478,18 +519,20 @@ describe('a pick that stayed (#345)', () => {
   })
 
   it('a correction on a remembered song forgets it, searches again and passes the wrong one by', async () => {
-    const { browser, perform, play, playFor, songs } = remembering()
+    const { browser, youtube, perform, play, playFor, songs } = remembering()
     await play()
     await playFor(31)
     await play()
     const opened = browser.navigations.length
+    const searched = youtube.fetched.length
     expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Playing “Second” instead.', video: 'second00000' })
-    expect(browser.navigations.slice(opened)).toEqual([`${RESULTS}midnight+drive`, `${WATCH}second00000`])
+    expect(youtube.fetched.slice(searched)).toEqual([`${RESULTS}midnight+drive`])
+    expect(browser.navigations.slice(opened)).toEqual([`${WATCH}second00000`])
     expect(songs.all()).toEqual([])
   })
 
   it('a correction inside 30 s leaves the wrong pick unremembered, and the next `play` searches', async () => {
-    const { browser, perform, play, playFor, songs } = remembering()
+    const { youtube, perform, play, playFor, songs } = remembering()
     await play()
     await playFor(10)
     await perform({ kind: 'correct', step: 1 })
@@ -497,9 +540,9 @@ describe('a pick that stayed (#345)', () => {
     // The corrected pick stayed: it is the one remembered.
     expect(songs.all()).toEqual(['midnight drive → second00000'])
     await perform({ kind: 'forget' })
-    const opened = browser.navigations.length
+    const searched = youtube.fetched.length
     expect(await play()).toMatchObject({ pick: 'searched' })
-    expect(browser.navigations[opened]).toBe(`${RESULTS}midnight+drive`)
+    expect(youtube.fetched[searched]).toBe(`${RESULTS}midnight+drive`)
   })
 
   it('`forget this song` forgets the song playing, and says when it was not remembered', async () => {

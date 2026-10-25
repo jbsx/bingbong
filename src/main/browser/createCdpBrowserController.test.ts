@@ -858,6 +858,21 @@ describe('createCdpBrowserController iframe refs', () => {
   })
 })
 
+describe('createCdpBrowserController land', () => {
+  it('loads the page and reads nothing; the next read collects the page it landed on', async () => {
+    const { cdp, page, controller } = makeController()
+    await controller.readPage()
+    const collectsBefore = cdp.collectCalls().length
+
+    await controller.land?.('https://www.youtube.com/watch?v=aaaaaaaaaaa')
+
+    expect(page.loadedUrls.at(-1)).toBe('https://www.youtube.com/watch?v=aaaaaaaaaaa')
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore)
+    await controller.describeRef(7)
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore + 1)
+  })
+})
+
 describe('createCdpBrowserController describeRef', () => {
   it('returns the snapshot facts for a ref, collecting on demand', async () => {
     const { cdp, controller } = makeController()

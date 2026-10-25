@@ -793,10 +793,11 @@ describe('the Player (#343)', () => {
     return { ...wired, youtube, player, runner: { ...wired.runner, run } }
   }
 
-  it('`play <words>` is Jev\'s (ADR 0079): its `play` reading opens the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
-    const { browser, events, records, decision, runner } = music()
+  it('`play <words>` is Jev\'s (ADR 0079): its `play` reading fetches the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
+    const { browser, youtube, events, records, decision, runner } = music()
     await runner.run('play bohemian rhapsody')
-    expect(browser.navigations).toEqual(['https://www.youtube.com/results?search_query=bohemian+rhapsody', 'https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+    expect(youtube.fetched).toEqual(['https://www.youtube.com/results?search_query=bohemian+rhapsody'])
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
     expect(decision.requests).toHaveLength(1)
     expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody' })])
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
