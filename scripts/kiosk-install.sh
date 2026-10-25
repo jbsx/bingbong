@@ -22,18 +22,46 @@ RELAUNCH_EXIT_CODE=75
 
 say() { printf '%s\n' "kiosk-install: $*"; }
 
+# Installs packages through the machine's own manager: pacman (Arch) or
+# apt-get (Debian, Ubuntu), each with its own names. `install_pkgs "<arch
+# names>" "<debian names>"`; a Debian name may be "a|b", tried in turn.
+install_pkgs() {
+  if command -v pacman >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    sudo pacman -S --needed --noconfirm $1
+  elif command -v apt-get >/dev/null 2>&1; then
+    for name in $2; do
+      found=
+      for alt in $(printf '%s' "$name" | tr '|' ' '); do
+        if sudo apt-get install -y "$alt"; then found=1; break; fi
+      done
+      [ -n "$found" ] || { say "could not install $name"; exit 1; }
+    done
+  else
+    say "no pacman or apt-get here: install these yourself: $1"
+    exit 1
+  fi
+}
+
 # The AppImage runtime mounts itself with FUSE 2 (it dlopens libfuse.so.2).
 if ! /sbin/ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2 '; then
   say "installing libfuse2 (the AppImage runtime needs it)"
-  sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+  install_pkgs fuse2 'libfuse2t64|libfuse2'
 fi
 
 # Hardware video decode (#425): Chromium decodes through VA-API, which needs
 # the GPU's driver. iHD covers the kiosk's Kaby Lake (HD 630); vainfo shows
 # what it decodes.
-if ! dpkg -s intel-media-va-driver vainfo >/dev/null 2>&1; then
-  say "installing intel-media-va-driver and vainfo (hardware video decode)"
-  sudo apt-get install -y intel-media-va-driver vainfo
+has_ihd() {
+  # Arch keeps it in /usr/lib/dri, Debian under its multiarch dir.
+  for driver in /usr/lib/dri/iHD_drv_video.so /usr/lib/*/dri/iHD_drv_video.so; do
+    [ -e "$driver" ] && return 0
+  done
+  return 1
+}
+if ! command -v vainfo >/dev/null 2>&1 || ! has_ihd; then
+  say "installing the Intel VA-API driver and vainfo (hardware video decode)"
+  install_pkgs 'intel-media-driver libva-utils' 'intel-media-va-driver vainfo'
 fi
 
 # The AppImage: a fixed name with no version in it, so the updater replaces

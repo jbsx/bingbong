@@ -128,15 +128,18 @@ BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # wake scores (object form scripts each h
 ## Kiosk deployment
 
 The kiosk runs the app on the host as an AppImage (ADR 0090), never in a
-container. On the kiosk (Debian, i3), from a checkout or with the script
-alone:
+container. On the kiosk (Arch or Debian, i3), from a checkout or with the
+script alone:
 
 ```sh
 scripts/kiosk-install.sh            # the latest Release from GitHub
 ```
 
-It installs `libfuse2t64` if missing (the AppImage runtime needs FUSE 2,
-so it asks for sudo once), puts the AppImage at
+It installs what is missing through pacman or apt-get, asking for sudo:
+FUSE 2, which the AppImage runtime needs (`fuse2`, or `libfuse2t64`), and
+Intel's VA-API driver with `vainfo` for hardware video decode
+(`intel-media-driver libva-utils`, or `intel-media-va-driver vainfo`). It
+puts the AppImage at
 `~/.local/bin/bingbong.AppImage`, writes the user service
 `bingbong.service` (`--kiosk`, `Restart=on-failure`), and adds the line
 that starts it to `~/.config/i3/config`:
