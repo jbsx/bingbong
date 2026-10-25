@@ -10,6 +10,7 @@ import { attachAdblock } from './browser/attachAdblock'
 import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessGuard'
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
+import { paneBackgroundColor } from './browser/paneBackgrounds'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { registerLastPageIpc } from './browser/attachLastPage'
 import { createLastPageStore } from './browser/lastPageStore'
@@ -101,6 +102,7 @@ import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { APP_VERSION_FLAG, KIOSK_ENV, KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { windowFrame } from '../core/app/windowFrame'
 import { muteOffScreen } from './muteOffScreen'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { attachAppearance } from './attachAppearance'
@@ -310,15 +312,10 @@ async function createWindow(): Promise<BrowserWindow> {
     // buttons — the renderer's Toolbar band is the drag region, Alt+F4
     // closes.
     titleBarStyle: 'hidden',
-    // On Linux Electron frames a title-bar-less window with its own 4 px
-    // resize border on three sides (_GTK_FRAME_EXTENTS 4,4,0,4), painted in
-    // GTK's light ground — a white border around the dark shell. Only a
-    // translucent window drops it (hasShadow does not); the dashboard paints
-    // its own ground, so nothing shows through.
-    transparent: true,
-    // Kiosk = fullscreen appliance; the renderer reads the same flag and
-    // the layout is pixel-identical to windowed (ADR 0012).
-    ...(launchConfig.kiosk ? { fullscreen: true, autoHideMenuBar: true } : {}),
+    // Transparent windowed, opaque kiosk (#426, see windowFrame). The
+    // renderer reads the same flag and the layout is pixel-identical to
+    // windowed (ADR 0012).
+    ...windowFrame(launchConfig, paneBackgroundColor()),
     webPreferences: {
       preload: resolvePreloadPath(join(__dirname, '../preload')),
       contextIsolation: true,
