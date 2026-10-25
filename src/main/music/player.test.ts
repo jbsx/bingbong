@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { WithheldResourceError } from '../../core/browser/unsettledAction'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
@@ -372,6 +374,84 @@ describe('the Player\'s Ducking (#344)', () => {
     await player.duck(true)
     await player.duck(false)
     expect(browser.evaluations).toEqual([])
+  })
+})
+
+describe('a browser custody withholds (#433)', () => {
+  afterEach(() => setFaultSink(null))
+
+  /** The Player over a custody that refuses every call until `settle()`, then lets the page through. */
+  function custodyWired() {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    let refusing = false
+    let asked = 0
+    let settle = (): void => {}
+    let settledEdge: Promise<void> = Promise.resolve()
+    const guarded = {
+      navigate: browser.navigate.bind(browser),
+      land: browser.land.bind(browser),
+      evaluateInFrames: browser.evaluateInFrames.bind(browser),
+      evaluate: <T>(expression: string): Promise<T> => {
+        asked += 1
+        return refusing ? Promise.reject(new WithheldResourceError('evaluate')) : browser.evaluate<T>(expression)
+      },
+    }
+    const custody = { settled: () => settledEdge }
+    const player = createPlayer({ browser: guarded, custody, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {} })
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    return {
+      browser,
+      player,
+      faults,
+      asked: () => asked,
+      withhold() {
+        refusing = true
+        settledEdge = new Promise<void>((resolve) => {
+          settle = () => {
+            refusing = false
+            resolve()
+          }
+        })
+      },
+      settle: () => settle(),
+    }
+  }
+
+  it('one refused evaluate and one fault for the spell, however long it lasts, and one read of the song on settling', async () => {
+    const wired = custodyWired()
+    await wired.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    wired.withhold()
+    const before = wired.asked()
+    // A minute of the 1 s poll, the duck a spoken line sets beside it.
+    await wired.player.duck(true)
+    for (let tick = 0; tick < 60; tick += 1) await wired.player.check()
+    await wired.player.duck(false)
+    expect(wired.asked() - before).toBe(1)
+    expect(wired.faults.filter((fault) => fault.site === 'music.player.evaluate')).toHaveLength(1)
+    const evaluated = wired.browser.evaluations.length
+    wired.settle()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // Resumed on the edge, not the next tick: the song is read once, and asked again from then on.
+    expect(wired.browser.evaluations.length).toBeGreaterThan(evaluated)
+    expect(wired.faults).toHaveLength(1)
+    const resumed = wired.asked()
+    await wired.player.check()
+    expect(wired.asked()).toBeGreaterThan(resumed)
+  })
+
+  it('a refusal that is not custody\'s is reported every time, as before', async () => {
+    const wired = custodyWired()
+    await wired.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    wired.browser.evaluator = () => {
+      throw new Error('Script not run')
+    }
+    await wired.player.check()
+    await wired.player.check()
+    expect(wired.faults.filter((fault) => fault.site === 'music.player.evaluate')).toHaveLength(2)
   })
 })
 

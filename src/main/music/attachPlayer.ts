@@ -1,5 +1,6 @@
 import type { Session } from 'electron'
 import type { BrowserController } from '../../core/ports/browser'
+import type { BrowserCustody } from '../../core/browser/unsettledAction'
 import { reportFault } from '../../core/trace/fault'
 import { createPlayer, type Player, type SongMemory } from './player'
 
@@ -11,14 +12,16 @@ import { createPlayer, type Player, type SongMemory } from './player'
 /** How often the Player listens for the song's end. */
 const CHECK_MS = 1_000
 
-/** The pane's Player, its end-of-song poll running; the returned stop ends the poll. */
+/** The pane's Player, its end-of-song poll running; a withheld browser is waited out on custody's settling (#433). The returned stop ends the poll. */
 export function attachPlayer(
   browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate'>,
   session: Session,
   memory: { songs: SongMemory; learn(term: string): void },
+  custody: Pick<BrowserCustody<BrowserController>, 'settled'>,
 ): { player: Player; stop: () => void } {
   const player = createPlayer({
     browser,
+    custody,
     songs: memory.songs,
     learn: memory.learn,
     fetchResults: async (url) => {

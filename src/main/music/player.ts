@@ -7,6 +7,7 @@ import { initialDataOf, plainVideos, resultsUrl, watchUrl } from '../../core/mus
 import { songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
+import { WithheldResourceError, type BrowserCustody } from '../../core/browser/unsettledAction'
 import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { CONTINUE_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type PausedAll, type WatchStatus } from './youtubeScripts'
@@ -87,6 +88,12 @@ export interface PlayerDeps {
   songs?: SongMemory
   /** A Learned Term a song that stayed teaches (#345): admitted at once. */
   learn?(term: string): void
+  /**
+   * The custody the browser is held in (ADR 0038, #433): a refusal waits on
+   * its `settled()` edge rather than asking again. Absent, a refusal is one
+   * more failed read.
+   */
+  custody?: Pick<BrowserCustody<BrowserController>, 'settled'>
 }
 
 /**
@@ -186,10 +193,31 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
   }
 
+  /** While custody withholds the browser (#433): the wait on its settling, every evaluate meanwhile answered null unasked. */
+  let withheld: Promise<void> | null = null
+
+  /** A refused evaluate starts the spell: one fault, then no page is asked until custody settles, and the song is read once on it. */
+  function waitOutWithheld(custody: Pick<BrowserCustody<BrowserController>, 'settled'>): void {
+    const resume = (): void => {
+      withheld = null
+      void player.check().catch((error: unknown) => reportFault('music.player.check', error))
+    }
+    withheld = custody.settled().then(resume, resume)
+  }
+
   async function evaluate<T>(script: string): Promise<T | null> {
+    if (withheld !== null) return null
     try {
       return (await browser.evaluate<T>(script)) ?? null
     } catch (error) {
+      if (error instanceof WithheldResourceError && deps.custody !== undefined) {
+        // Evaluates already in flight are refused too: the spell's first logs it.
+        if (withheld === null) {
+          reportFault('music.player.evaluate', error)
+          waitOutWithheld(deps.custody)
+        }
+        return null
+      }
       reportFault('music.player.evaluate', error)
       return null
     }
@@ -564,7 +592,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
   }
 
-  return {
+  const player: Player = {
     async perform(music, words, current) {
       generation += 1
       try {
@@ -617,4 +645,5 @@ export function createPlayer(deps: PlayerDeps): Player {
       return ducking
     },
   }
+  return player
 }

@@ -510,7 +510,7 @@ async function createWindow(): Promise<BrowserWindow> {
     learn: (term) => {
       learnedTermsStore.admit(term)
     },
-  })
+  }, paneCustody)
   win.on('closed', music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   win.on('closed', attachPlaybackWatch(perfTracer, pane.view.webContents))
