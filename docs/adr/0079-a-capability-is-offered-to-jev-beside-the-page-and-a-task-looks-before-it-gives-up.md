@@ -90,7 +90,8 @@ as "nothing changed". No new Verdict outcome is needed.
 **A hidden page is collected at its real size.** The pane under the Idle
 Screen keeps an off-screen rect of the dashboard's size, not 0×0; a
 Command typed over the screen reads the page as it is, with no automatic
-resume.
+resume. (Since 2026-10-25 it is hidden at rest and parked only while it
+may be read: see the amendment below.)
 
 ## Considered options
 
@@ -155,3 +156,50 @@ player among them (#376): it is a grammar line that fires without an ask,
 and pausing is a mechanism by kind, not by site. Since ADR 0081 (#377)
 it reaches every Reachable Frame too, as the collect and the ops do. The Player's queue is unchanged: a song it never started stays off
 the Now Playing card and is not remembered.
+
+## Amendment: a hidden page is hidden at rest, parked while it may be read (2026-10-25)
+
+Grilled on 2026-10-25 for #425, from the owner's first run on the kiosk
+(i3-7100): everything lagged and the fans ran at idle.
+
+The pane out of sight was parked one pixel on screen so that it kept its
+size, and so Chromium took the page for visible: a video under the Idle
+Screen was decoded and drawn at full rate for no one, and an animated page
+painted on. On the dev PC the parked watch page cost its renderer 18 % of a
+core, more than when it was shown. #344's fear that a hidden view would
+stop its audio was never observed: its closing comment found the hidden
+pane playing, and a 2026-10-25 measurement found no stall over six minutes
+hidden.
+
+**At rest, the pane out of sight is hidden**, whatever takes its place (the
+Idle Screen, Settings, the weight page): set not visible at its real size,
+so the page reports `hidden`. Chromium stops decoding its video about ten
+seconds later while its audio plays on; its rendering stops, and its
+renderer drops to about 3.5 % of a core. YouTube's autoplay, its ads and
+the Player's one-second poll go on as before.
+
+**While it may be read, it is parked.** A hidden page stops building
+itself: a YouTube results page loaded hidden lays out 2 results of 19 until
+it is shown. So from the moment the ear opens (the wake word, Hot Listen,
+push-to-talk, the Idle Prompt), or a Task starts without one (the CLI
+harness), until the Task has ended and the ear has closed, the pane out of
+sight is parked one pixel on screen as before. The page fills in within
+about 300 ms, before the line has been said, so no Task waits for it.
+
+**A pane is never 0×0.** A view never shown lays out at 0×0 even when
+hidden at its real size, so a pane is shown parked for one frame when it is
+created. Once shown, a view keeps its real size while hidden, across
+reloads too.
+
+The rule is by kind, for every page on every site: no page is
+special-cased, and no machine is either.
+
+Considered:
+- **Hiding only a playing video.** This leaves every other animated page
+  painting. Rejected: the widest net.
+- **Covering the pane with another view.** Chromium reports a covered
+  view hidden too, so it gains nothing over hiding.
+- **Turning background throttling off.** This makes a hidden page visible
+  again and undoes the saving.
+- **Parking at Task start.** This costs every Task from the Idle Screen
+  up to 300 ms, or gives it a first read of a half-built page.
