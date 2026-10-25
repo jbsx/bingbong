@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvnp61c6-3",
+  "transcript": "Play highs and lows by Canivast",
+  "at": 1792924859067,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk, v0.1.1 (CPU pinned by the ONNX pools): Parakeet heard 'Canivast' for 'Kanye West'; Jev was not asked (ended unavailable) and the best guess was none, so nothing fired. STT 2368 ms for 1.7 s of speech, wake to transcript 15.1 s. The same words were heard right 26 s later (turn-mvnp6mp7-4) and at 11:12 (turn-mvnqaznz-4). Same class as turn-mvi5bacg-7",
+  "meant": "Hear 'Kanye West' and play Highs and Lows by Kanye West",
+  "log": "decision-1792924821131-1.jsonl"
+}

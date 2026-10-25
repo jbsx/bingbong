@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvnsfarj-1",
+  "transcript": "Play highs and lows by Kanye Rest",
+  "at": 1792930329188,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk, v0.1.1: Parakeet heard 'Kanye Rest' for 'Kanye West'; Jev read play with the slot 'highs and lows by Kanye Rest' and the Player searched YouTube for those words (the results load hit ERR_ABORTED). Wake to transcript 39.7 s. Same class as turn-mvi5bacg-7",
+  "meant": "Hear 'Kanye West' and play Highs and Lows by Kanye West",
+  "log": "decision-1792930381924-1.jsonl"
+}
