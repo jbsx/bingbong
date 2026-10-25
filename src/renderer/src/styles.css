@@ -1,10 +1,11 @@
-/* Bing Bong's skin: F1 Headline (ADR 0078) — one flat near-black ground,
-   panels a faint lift of it with hairline edges, no gradients, no blur,
-   at most the barest shadow. Peach is Bing Bong: the accent is spent only
+/* Bing Bong's skin: F1 Headline (ADR 0078) — one flat ground, pure black
+   in dark, panels on it with hairline edges, no gradients, no blur, at
+   most the barest shadow. Peach is Bing Bong: the accent is spent only
    on the voice state, the thing it is working on, the primary button,
    today and the Timer. Colour intensity is importance (E4): status
    colours only where they mean something, data keeps its own colours,
-   everything else neutral, near-white text never #fff. Two reading
+   everything else neutral, in dark the text in three opaque steps from
+   #fff. Two reading
    distances: in every state one thing is read from three metres, the rest
    is the quiet layer, and nothing is set under 16 px. Light is a real
    second set under the same names (ADR 0020), engine-fed by the
@@ -125,51 +126,53 @@
   --font-scale: 1;
 }
 
-/* The dark set — F1 Headline as round 6 drew it (shell-chrome.css). */
+/* The dark set — F1 Headline at full contrast: a pure black ground, every
+   colour at its full brightness, text in three opaque steps (white, #bdbdbd,
+   #858585), hairlines and tracks opaque greys that hold on black. */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #07090d;
-    --fg: #f2f4f8;
-    --fgh: #e8ebf2;
-    --fg2: rgba(214, 220, 232, 0.62);
-    --fg3: rgba(200, 208, 224, 0.4);
-    --hair: rgba(255, 255, 255, 0.06);
-    --hair2: rgba(255, 255, 255, 0.1);
-    --track: rgba(255, 255, 255, 0.07);
-    --surface: rgba(255, 255, 255, 0.018);
+    --bg: #000;
+    --fg: #fff;
+    --fgh: #fff;
+    --fg2: #bdbdbd;
+    --fg3: #858585;
+    --hair: #3a3a3a;
+    --hair2: #555;
+    --track: #2b2b2b;
+    --surface: transparent;
     --raise: rgba(255, 255, 255, 0.04);
     --raise2: rgba(255, 255, 255, 0.065);
-    --surface-solid: #0b0d11;
-    --accent: #f0a27a;
+    --surface-solid: #000;
+    --accent: #ffac82;
     --accent-soft: #ffd2b4;
-    --accentq: rgba(240, 162, 122, 0.14);
-    --accent-edge: rgba(240, 162, 122, 0.35);
-    --onaccent: #1a1210;
-    --ok: #6fdca2;
+    --accentq: rgba(255, 172, 130, 0.14);
+    --accent-edge: rgba(255, 172, 130, 0.35);
+    --onaccent: #000;
+    --ok: #81ffbc;
     --fail: #ff7a6b;
-    --warn: #e8b25a;
-    --idle: rgba(200, 208, 224, 0.55);
+    --warn: #ffc463;
+    --idle: #858585;
     --fail-text: #ffd9d3;
     --scrim: rgba(0, 0, 0, 0.55);
-    --rain: #7cb6f0;
-    --codex: #a593f0;
+    --rain: #84c1ff;
+    --codex: #af9cff;
     --claude: #ff8f74;
-    --kaggle: #dcb25e;
-    --down: #6fdca2;
-    --up: #f2a560;
-    --jaish: #62c3d2;
-    --barun: #d68bc2;
-    --codexq: #8e88b4;
-    --kaggleq: #a8976f;
-    --rainq: #7f97b2;
-    --jaishq: #6f9ea7;
-    --barunq: #a3879a;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
-    --focus-ring: 0 0 0 3px rgba(240, 162, 122, 0.28);
-    --panel-peek: rgba(11, 13, 17, 0.96);
-    --news-star: #a8976f;
+    --kaggle: #ffce6d;
+    --down: #81ffbc;
+    --up: #ffae65;
+    --jaish: #77edff;
+    --barun: #ffa6e7;
+    --codexq: #c9c1ff;
+    --kaggleq: #ffe5a8;
+    --rainq: #b6d8ff;
+    --jaishq: #a9f1ff;
+    --barunq: #ffd3f1;
+    --shadow: none;
+    --shadow-pop: none;
+    --focus-ring: 0 0 0 3px rgba(255, 172, 130, 0.28);
+    --panel-peek: #000;
+    --news-star: #ffe5a8;
     --wx-sun: #ffd60a;
     --wx-sun-fill: rgba(255, 214, 10, 0.3);
     --wx-moon: #d1d1d6;
@@ -180,11 +183,26 @@
     --wx-bolt: #ff9f0a;
     --wx-bolt-fill: rgba(255, 159, 10, 0.3);
     --wx-sunset: #ff7a4d;
-    --wx-sat: 80%;
-    --wx-light: 66%;
+    --wx-sat: 100%;
+    --wx-light: 71%;
     --usage-glm: #8f5bff;
-    --usage-grok: #3afdda;
+    --usage-grok: #3affdc;
     --code-bg: rgba(255, 255, 255, 0.05);
+  }
+
+  /* At full contrast nothing is veiled: the bars draw at full strength, the orb without its halo. */
+  :root .wx-lohi-bar {
+    opacity: 1;
+  }
+
+  :root .idle-voice-orb {
+    box-shadow: none;
+  }
+
+  :root .usage-ring-arc,
+  :root .usage-ring-inner,
+  :root .wx-rain-line {
+    stroke-opacity: 1;
   }
 }
 
@@ -3344,7 +3362,6 @@ button.idle-line {
 
 .usage-chart-grid {
   stroke: var(--hair);
-  stroke-dasharray: 2 7;
   vector-effect: non-scaling-stroke;
 }
 

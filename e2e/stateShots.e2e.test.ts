@@ -23,8 +23,8 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // native views, so the X root is grabbed, not one view), named like the
 // round-6 shots, into BINGBONG_STATE_SHOT_DIR (default a temp folder). In
 // every state the app's own surfaces must set no text under 16 px, clip or
-// overflow none of it, and draw none of it in #fff — the page in the pane
-// is not ours and is not read. It runs in every `pnpm test:e2e` — the owner's
+// overflow none of it, and in dark stand on the pure black ground — the
+// page in the pane is not ours and is not read. It runs in every `pnpm test:e2e` — the owner's
 // ruling (2026-10-20): the e2e is the source of truth, no screenshot is
 // reviewed by hand — on an X screen of its own at the appliance's size, since
 // the suite's is a desk's; `pnpm shot:states` runs it alone.
@@ -52,9 +52,17 @@ function onScreen(command: string): void {
   execSync(command, { env: { ...process.env, DISPLAY: screen?.display } })
 }
 
-/** What breaks the theme's floor on the surface it runs in: small, clipped, off-screen or #fff text. */
+/** What breaks the theme's floor on the surface it runs in: small, clipped or off-screen text, or in dark a ground that is not pure black. */
 const CHECK_SCRIPT = `(() => {
   const issues = []
+  if (matchMedia('(prefers-color-scheme: dark)').matches) {
+    // The ground and every panel on it: any opaque surface larger than a control.
+    for (const el of [document.body, ...document.querySelectorAll('body *')]) {
+      const box = el.getBoundingClientRect()
+      const ground = getComputedStyle(el).backgroundColor
+      if ((el === document.body || box.width * box.height > 40000) && /^rgb\\(/.test(ground) && ground !== 'rgb(0, 0, 0)') issues.push('ground not black (' + ground + '): ' + (el.className || el.tagName))
+    }
+  }
   const name = (el) => {
     const cls = typeof el.className === 'string' && el.className !== '' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()
     const words = (el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40)
@@ -71,7 +79,6 @@ const CHECK_SCRIPT = `(() => {
     if (box.width <= 1 || box.height <= 1 || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
     if (el.closest('[aria-hidden="true"]') && el.closest('.feed-surface')) continue
     if (parseFloat(style.fontSize) < 16) issues.push('under 16 px (' + style.fontSize + '): ' + name(el))
-    if (style.color === 'rgb(255, 255, 255)') issues.push('#fff: ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
     // The live words in the capsule grow without bound and ellipsize by design (#331): the one clip allowed.

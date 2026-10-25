@@ -9,11 +9,11 @@ import { nativeTheme } from 'electron'
 // drives their engine-level prefers-color-scheme; only these native
 // surfaces need the repaint. The colors mirror styles.css's sheet (ADR
 // 0078): --surface-solid, the panel tone the pane's viewport paints on the
-// ground, light #eceef1 and dark #0b0d11 — keep them in step when the
+// ground, light #eceef1 and dark #000 — keep them in step when the
 // token sheet moves.
 
 const PANE_BACKGROUND_LIGHT = '#eceef1'
-const PANE_BACKGROUND_DARK = '#0b0d11'
+const PANE_BACKGROUND_DARK = '#000'
 
 /** The pane's rounded corners (ADR 0078): styles.css's --radius-lg less the frame's 1 px hairline. */
 export const PANE_FRAME_RADIUS = 19

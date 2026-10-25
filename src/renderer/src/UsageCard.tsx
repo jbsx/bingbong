@@ -221,12 +221,6 @@ function lastValueTops(ends: readonly (number | null)[], gap: number): number[] 
   return tops
 }
 
-/** A 5-hour window draws solid; a provider's longer ones take the dashboard's two dashes in turn. */
-function dashOf(window: UsageWindow, index: number): string | undefined {
-  if (window.key.toLowerCase().startsWith('5h')) return undefined
-  return index % 2 ? '3 5' : '9 5'
-}
-
 /** When the dashboard last refreshed, amber once that is past USAGE_STALE_MS (a failed poll keeps the last numbers on screen). */
 function Updated({ updatedAt, now, format }: { updatedAt: number; now: number; format: TimeFormat }) {
   const stale = now - updatedAt > USAGE_STALE_MS
@@ -236,15 +230,15 @@ function Updated({ updatedAt, now, format }: { updatedAt: number; now: number; f
 
 /**
  * The dashboard's last twelve hours for the charted windows: the legend and
- * "last 12 h" over it, each line in its provider's tone over a faint fill,
- * a 5-hour window solid and a longer one dashed, and at the right edge where
+ * "last 12 h" over it, each line solid in its provider's tone over a faint
+ * fill, the legend naming its window, and at the right edge where
  * each ends, its last value large in its tone; under it −12h, −6h and now
  * with when the dashboard last refreshed. The plot stretches to its box; its
  * strokes keep their width (non-scaling), the dots and figures sit in HTML.
  */
 function UsageChart({ providers, updatedAt, now, format }: { providers: readonly UsageView[]; updatedAt: number; now: number; format: TimeFormat }) {
   const start = now - USAGE_HISTORY_MS
-  const lines = providers.flatMap((p) => p.lines.map((window, index) => ({ provider: p.name, window, dash: dashOf(window, index) })))
+  const lines = providers.flatMap((p) => p.lines.map((window) => ({ provider: p.name, window })))
   const peak = Math.max(0, ...lines.flatMap(({ window }) => window.history.filter(([time]) => time >= start).map(([, pct]) => pct)))
   const ceiling = chartCeiling(peak)
   const rows = [1, 0.5, 0].map((share) => Math.round(ceiling * share))
@@ -260,10 +254,10 @@ function UsageChart({ providers, updatedAt, now, format }: { providers: readonly
     <section className="usage-chart" data-lines={Math.min(drawn.length, 4)} aria-label="usage over the last twelve hours">
       <div className="usage-chart-head">
         <span className="usage-chart-legend">
-          {lines.map(({ provider, window, dash }) => (
+          {lines.map(({ provider, window }) => (
             <span key={`${provider}:${window.key}`} className={`usage-legend ${toneClass(provider)}`}>
               <svg width={22} height={6} aria-hidden="true">
-                <line x1={2} y1={3} x2={20} y2={3} strokeDasharray={dash === undefined ? undefined : dash === '9 5' ? '5 3' : '2 3'} />
+                <line x1={2} y1={3} x2={20} y2={3} />
               </svg>
               {named ? provider : `${provider} · ${window.caption}`}
             </span>
@@ -285,8 +279,8 @@ function UsageChart({ providers, updatedAt, now, format }: { providers: readonly
             {drawn.map(({ provider, window, area }) => (
               <path key={`${provider}:${window.key}:area`} className={`usage-fill ${toneClass(provider)}`} d={area} />
             ))}
-            {drawn.map(({ provider, window, dash, line }) => (
-              <path key={`${provider}:${window.key}`} className={`usage-line ${toneClass(provider)}`} d={line} strokeDasharray={dash} />
+            {drawn.map(({ provider, window, line }) => (
+              <path key={`${provider}:${window.key}`} className={`usage-line ${toneClass(provider)}`} d={line} />
             ))}
           </svg>
           {drawn.map(({ provider, window, end }) =>
