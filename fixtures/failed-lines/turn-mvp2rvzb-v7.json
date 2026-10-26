@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: 'Set music volume to fifty percent.': Jev read volume to 50 (right); the next card, 21 s later, read 8%. Only the following 'to seventy percent' (turn-mvp2sch1-v8) held at 70%",
   "meant": "Set the music to 50% and keep it there",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#459"
+  "claimedBy": "#459",
+  "fixedBy": "d2e7dd7d",
+  "case": "turn-mvp2rvzb-v7-duck"
 }
