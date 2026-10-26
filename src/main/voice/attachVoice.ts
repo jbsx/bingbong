@@ -27,6 +27,9 @@ import type { VoiceProcessConfig } from './voiceProcessConfig'
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
 // A wake listen's opening, until the dashboard says it painted Listening (#429).
 const wakeOpenings = new WeakMap<BrowserWindow, { tracer: PerfTracer; at: number | null }>()
+// The hearing receipt (#441): when each chunk not yet scored arrived, oldest first, and the arrival of the one
+// speech started in, until the dashboard says it painted the receipt.
+const hearingReceipts = new WeakMap<BrowserWindow, { tracer: PerfTracer; arrivals: number[]; onset: number | null }>()
 
 function sessionFor(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent): VoiceSession | undefined {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -44,11 +47,17 @@ export function registerVoiceIpc(): void {
 
   ipcMain.on(VOICE_IPC.audio, (event, chunk: unknown) => {
     if (!(chunk instanceof Float32Array)) return
-    const session = sessionFor(event)
-    if (!session) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const session = win ? sessions.get(win) : undefined
+    if (!win || !session) return
     // Arrival to scored (#429): how far the voice chain runs behind the audio it is handed.
     const arrived = performance.now()
-    void session.pushAudio(chunk).then(() => vadLag.record(performance.now() - arrived))
+    const receipt = hearingReceipts.get(win)
+    receipt?.arrivals.push(receipt.tracer.now())
+    void session.pushAudio(chunk).then(() => {
+      vadLag.record(performance.now() - arrived)
+      receipt?.arrivals.shift()
+    })
   })
 
   ipcMain.on(VOICE_IPC.listeningShown, (event) => {
@@ -60,13 +69,24 @@ export function registerVoiceIpc(): void {
     opening.at = null
   })
 
+  ipcMain.on(VOICE_IPC.hearingShown, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || event.sender !== win.webContents) return
+    const receipt = hearingReceipts.get(win)
+    if (receipt?.onset == null) return
+    receipt.tracer.span(APP_TURN_ID, 'speech-to-hearing', receipt.tracer.now() - receipt.onset)
+    receipt.onset = null
+  })
+
   ipcMain.handle(VOICE_IPC.getState, (event) => {
-    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false, transcribing: false }
+    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
   })
 }
 
 export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): VoiceChainClient {
   if (deps.tracer) wakeOpenings.set(win, { tracer: deps.tracer, at: null })
+  const receipt = deps.tracer ? { tracer: deps.tracer, arrivals: [] as number[], onset: null as number | null } : null
+  if (receipt) hearingReceipts.set(win, receipt)
   let wasListening = false
   const tracer = deps.tracer
   const session = createVoiceChainClient<VoiceProcessConfig>({
@@ -99,6 +119,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       // speaks — and the page, once collected, names the Page Terms the same
       // speech is decoded under (ADR 0077).
       onSpeechStart: () => {
+        // The chunk being scored is the one speech started in: the hearing receipt is timed from its arrival (#441).
+        if (receipt) receipt.onset = receipt.arrivals[0] ?? receipt.tracer.now()
         deps.ducking?.speechStarted()
         const page = runnerFor(win)?.prepare()
         if (page !== undefined && deps.onPagePrepared !== undefined) void page.then((snapshot) => deps.onPagePrepared?.(snapshot))

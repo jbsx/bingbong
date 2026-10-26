@@ -359,7 +359,7 @@ export interface VoiceChainClient extends VoiceSession {
   stop(): void
 }
 
-const IDLE_STATE: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false }
+const IDLE_STATE: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
 /** The longest wait between restarts. */
 const MAX_RESTART_DELAY_MS = 30_000
 /** A process that stayed up this long resets the backoff. */

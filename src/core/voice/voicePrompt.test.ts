@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { earPhase, partialSpans, quietLine } from './voicePrompt'
+import { earPhase, partialSpans, quietLine, wordlessLine } from './voicePrompt'
 
 // The Voice Prompt's live words (#359): the partial transcript, a Page Term in it marked.
 
@@ -37,7 +37,7 @@ describe('quietLine', () => {
 })
 
 describe('earPhase', () => {
-  const ear = (listening: boolean, transcribing: boolean, monitoring: boolean) => ({ listening, transcribing, monitoring })
+  const ear = (listening: boolean, transcribing: boolean, monitoring: boolean, hearing = false) => ({ listening, transcribing, monitoring, hearing })
 
   it('is at rest while only the wake word listens', () => {
     expect(earPhase(ear(false, false, true))).toBe('rest')
@@ -48,11 +48,24 @@ describe('earPhase', () => {
     expect(earPhase(ear(false, true, true))).toBe('transcribing')
   })
 
+  it('is hearing from the frame speech starts in the Utterance being taken (#441), and transcribing outranks it', () => {
+    expect(earPhase(ear(true, false, true, true))).toBe('hearing')
+    expect(earPhase(ear(false, true, true, true))).toBe('transcribing')
+  })
+
   it('says the microphone is off when nothing listens, not even for the wake word', () => {
     expect(earPhase(ear(false, false, false))).toBe('off')
   })
 
   it('is at rest before main has said anything', () => {
     expect(earPhase(null)).toBe('rest')
+  })
+})
+
+describe('wordlessLine', () => {
+  it('asks for a command until speech starts, then says "…" until the first partial (#441)', () => {
+    expect(wordlessLine('listening')).toBe('say a command')
+    expect(wordlessLine('hearing')).toBe('…')
+    expect(wordlessLine('transcribing')).toBe('…')
   })
 })

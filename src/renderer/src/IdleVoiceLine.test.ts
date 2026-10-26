@@ -6,7 +6,7 @@ import { VoiceLine, type IdleVoice } from './IdleScreen'
 // The Voice Prompt on the Idle Screen (#360, AC4): the first Clock Line says
 // the ear's real state in the Status Capsule's word.
 
-const AT_REST: IdleVoice = { listening: false, transcribing: false, monitoring: true, partial: '' }
+const AT_REST: IdleVoice = { listening: false, transcribing: false, hearing: false, monitoring: true, partial: '' }
 const render = (voice: IdleVoice): string => renderToStaticMarkup(createElement(VoiceLine, { voice }))
 const text = (html: string): string => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
@@ -23,6 +23,14 @@ describe('the idle Voice Prompt', () => {
     const html = render({ ...AT_REST, listening: true, partial: 'play some jazz' })
     expect(html).toContain('idle-voice--listening')
     expect(text(html)).toBe('“play some jazz…” Listening')
+  })
+
+  it('asks for a command until speech starts, then says "…" — still Listening — until the first partial (#441)', () => {
+    expect(text(render({ ...AT_REST, listening: true }))).toBe('say a command Listening')
+    const hearing = render({ ...AT_REST, listening: true, hearing: true })
+    expect(hearing).toContain('idle-voice--hearing')
+    expect(hearing).not.toContain('idle-voice-said--waiting')
+    expect(text(hearing)).toBe('… Listening')
   })
 
   it('says Transcribing while the words are read, and says the microphone is off when nothing listens', () => {

@@ -178,6 +178,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // is decided. Implies the emitted `listening` is false while the internal
   // listen stays open (its reason survives a discarded utterance).
   let transcribing = false
+  // Speech has started in the Utterance in capture (#441): the receipt the
+  // screen shows before the first partial. Emitted only while listening.
+  let hearing = false
   let reason: VoiceListenReason | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
@@ -221,6 +224,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   /** The utterance in capture is let go before its Endpoint: the engine drops it, and the runner its partials (#326). */
   function letGo(): void {
+    setHearing(false)
     deps.transcriber.cancel()
     clearPartial()
     deps.onUtteranceDropped?.()
@@ -273,11 +277,19 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   /** The single source of the emitted state — emitState and getState agree. */
   function currentState(): VoiceState {
-    return { listening: listening && !transcribing, reason, monitoring, transcribing }
+    const open = listening && !transcribing
+    return { listening: open, reason, monitoring, transcribing, hearing: open && hearing }
   }
 
   function emitState(): void {
     deps.onStateChange(currentState())
+  }
+
+  /** Speech started or ended in the Utterance in capture (#441): said at once, on the frame that changed it. */
+  function setHearing(next: boolean): void {
+    if (hearing === next) return
+    hearing = next
+    if (listening && !transcribing) emitState()
   }
 
   /**
@@ -365,6 +377,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (capturing() || transcribing) deps.onUtteranceDropped?.()
     listening = false
     transcribing = false
+    hearing = false
     hot = false
     muted = false
     stopSilenceClock()
@@ -443,8 +456,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           muted = speaking()
           if (!muted) {
             deps.transcriber.begin()
-            // Speech started (#324): the page is collected in parallel with it.
+            // Speech started (#324): the page is collected in parallel with it, and the screen says the ear has it (#441).
             deps.onSpeechStart?.()
+            setHearing(true)
           }
         } else if (!muted && speaking()) {
           // A line started under the speech: the capture so far is let go.
@@ -478,6 +492,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // (#38) — the state flips here, not when the transcript arrives, so the
     // UI never claims "listening" while it thinks.
     transcribing = true
+    hearing = false
     clearPartial()
     emitState()
 

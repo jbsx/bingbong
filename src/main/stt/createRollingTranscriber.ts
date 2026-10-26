@@ -8,8 +8,14 @@ import { reportFault } from '../../core/trace/fault.ts'
 // pass — audio in, text out — so Moonshine and Parakeet stream the same way
 // and Early Fire (#326) reads their partials alike.
 
-/** First partial pass waits for a second of speech by default. */
-const DEFAULT_PARTIAL_MIN_SAMPLES = WAV_SAMPLE_RATE
+/**
+ * First partial pass waits for half a second of speech by default (#441):
+ * half of all Utterances are under 1 s and never showed a word while spoken.
+ * Measured against 1 s on the constrained voice chain (3 runs each): the turn
+ * check and the VAD lag stayed inside the 1 s runs' noise; the voice process
+ * costs ~2.5 points of a core more while lines are spoken.
+ */
+const DEFAULT_PARTIAL_MIN_SAMPLES = WAV_SAMPLE_RATE / 2
 /** New partial passes wait for another half second of speech by default. */
 const DEFAULT_PARTIAL_STRIDE_SAMPLES = WAV_SAMPLE_RATE / 2
 
@@ -20,7 +26,7 @@ export interface RollingTranscriberDeps {
   decodePass: (pcm: Float32Array) => Promise<string>
   /** Where a failed partial pass is reported (the fault site). */
   partialFaultSite: string
-  /** Accumulated samples required before the first partial pass (default 1 s). */
+  /** Accumulated samples required before the first partial pass (default 0.5 s). */
   partialMinSamples?: number
   /** New-sample growth required between partial passes (default 0.5 s). */
   partialStrideSamples?: number

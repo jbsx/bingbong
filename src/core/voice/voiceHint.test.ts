@@ -3,7 +3,7 @@ import { voiceHint } from './voiceHint'
 
 // The Status Capsule's voice hint (#331; the rule is in voiceHint.ts).
 
-const quiet = { transcribing: false, listening: false, monitoring: false, partial: '' }
+const quiet = { transcribing: false, listening: false, hearing: false, monitoring: false, partial: '' }
 
 describe('voiceHint', () => {
   it('says nothing while transcribing — the pill already reads Transcribing…', () => {
@@ -12,6 +12,11 @@ describe('voiceHint', () => {
 
   it('asks for a command while listening, without saying listening again', () => {
     expect(voiceHint({ ...quiet, listening: true })).toEqual({ kind: 'listening', text: 'say a command' })
+  })
+
+  it('says "…" once speech has started, until the first partial lands (#441)', () => {
+    expect(voiceHint({ ...quiet, listening: true, hearing: true })).toEqual({ kind: 'listening', text: '…' })
+    expect(voiceHint({ ...quiet, listening: true, hearing: true, partial: 'next' })).toEqual({ kind: 'listening', text: '“next…”' })
   })
 
   it('shows the live partial transcript while the user speaks', () => {

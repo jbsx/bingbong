@@ -6,9 +6,9 @@ import type { VoiceState } from '../voice/ipcChannels'
 // spoken line and a ringing Timer, and comes back when the last of them
 // lets go.
 
-const closed: VoiceState = { listening: false, reason: null, monitoring: true, transcribing: false }
-const open: VoiceState = { listening: true, reason: 'wake', monitoring: true, transcribing: false }
-const thinking: VoiceState = { listening: false, reason: 'wake', monitoring: true, transcribing: true }
+const closed: VoiceState = { listening: false, reason: null, monitoring: true, transcribing: false, hearing: false }
+const open: VoiceState = { listening: true, reason: 'wake', monitoring: true, transcribing: false, hearing: false }
+const thinking: VoiceState = { listening: false, reason: 'wake', monitoring: true, transcribing: true, hearing: false }
 
 function wired() {
   const calls: boolean[] = []

@@ -42,7 +42,7 @@ describe('window event publisher', () => {
 
   it('publishes voice events through their source-specific sinks, overlay first', () => {
     const { calls, publisher } = harness()
-    publisher.publish({ source: 'voice-state', state: { listening: true, reason: 'hotkey', monitoring: false, transcribing: false } })
+    publisher.publish({ source: 'voice-state', state: { listening: true, reason: 'hotkey', monitoring: false, transcribing: false, hearing: false } })
     publisher.publish({ source: 'voice-heard', heard: { text: 'stop', routed: 'abort', at: 2 } })
     publisher.publish({ source: 'voice-error', error: { message: 'mic', at: 3 } })
     expect(calls).toEqual([

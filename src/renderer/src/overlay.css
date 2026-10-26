@@ -166,6 +166,7 @@ body,
 }
 
 .voice-prompt--listening,
+.voice-prompt--hearing,
 .voice-prompt--transcribing {
   border-top-color: var(--accent-edge);
   background: var(--accentq);
@@ -307,6 +308,7 @@ body,
 }
 
 .voice-prompt--listening .prompt-input:placeholder-shown,
+.voice-prompt--hearing .prompt-input:placeholder-shown,
 .voice-prompt--transcribing .prompt-input:placeholder-shown {
   border-bottom-color: transparent;
 }

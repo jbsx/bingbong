@@ -4,9 +4,13 @@
 // the Voice Prompt is on screen (#359) the Prompt carries the hint and the
 // live words, and the capsule says only the state.
 
+import { wordlessLine } from './voicePrompt'
+
 export interface VoiceHintInput {
   transcribing: boolean
   listening: boolean
+  /** Speech has started in the Utterance being taken (#441): "…" until the first partial. */
+  hearing: boolean
   /** Only the wake word listens (the mic is not open for a command). */
   monitoring: boolean
   /** The live partial transcript (#324); empty before the first words. */
@@ -21,7 +25,7 @@ export interface VoiceHint {
 export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean } = {}): VoiceHint | null {
   if (voice.transcribing || options.promptShown === true) return null
   if (voice.listening) {
-    return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : 'say a command' }
+    return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
   }
   if (voice.monitoring) return { kind: 'monitoring', text: 'say “Bing Bong” or press Ctrl+Space' }
   return null

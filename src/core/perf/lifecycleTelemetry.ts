@@ -211,6 +211,8 @@ export interface LifecycleReport {
     wakeGate: WakeGateCount | null
   } | null
   wakeToListening: { count: number; p50: number; p95: number } | null
+  /** Speech start to the dashboard's hearing frame (#441): the onset chunk's arrival in main to its paint. */
+  speechToHearing: { count: number; p50: number; p95: number } | null
 }
 
 const isApp = (record: PerfSpanRecord, stage: string): boolean => record.turnId === 'app' && record.stage === stage && record.detail !== undefined
@@ -223,7 +225,7 @@ function percentiles(values: number[]): { p50: number; p95: number; max: number 
 }
 
 export function buildLifecycleReport(records: readonly PerfSpanRecord[]): LifecycleReport {
-  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: wakeReport(records) }
+  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: spanReport(records, 'wake-to-listening'), speechToHearing: spanReport(records, 'speech-to-hearing') }
 }
 
 function bootReport(records: readonly PerfSpanRecord[]): LifecycleReport['boot'] {
@@ -374,8 +376,8 @@ function steadyReport(records: readonly PerfSpanRecord[]): LifecycleReport['stea
   }
 }
 
-function wakeReport(records: readonly PerfSpanRecord[]): LifecycleReport['wakeToListening'] {
-  const spans = records.filter((record) => record.turnId === 'app' && record.stage === 'wake-to-listening').map((record) => record.durMs)
+function spanReport(records: readonly PerfSpanRecord[], stage: 'wake-to-listening' | 'speech-to-hearing'): LifecycleReport['wakeToListening'] {
+  const spans = records.filter((record) => record.turnId === 'app' && record.stage === stage).map((record) => record.durMs)
   if (spans.length === 0) return null
   const { p50, p95 } = percentiles(spans)
   return { count: spans.length, p50, p95 }
@@ -413,6 +415,10 @@ export function formatLifecycleReport(report: LifecycleReport): string[] {
   if (report.wakeToListening !== null) {
     const w = report.wakeToListening
     lines.push(`wake-to-listening: ×${w.count} p50 ${formatMs(w.p50)} p95 ${formatMs(w.p95)}`)
+  }
+  if (report.speechToHearing !== null) {
+    const h = report.speechToHearing
+    lines.push(`speech-to-hearing: ×${h.count} p50 ${formatMs(h.p50)} p95 ${formatMs(h.p95)}`)
   }
   return lines
 }

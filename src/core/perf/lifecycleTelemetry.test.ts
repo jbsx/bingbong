@@ -109,6 +109,8 @@ describe('buildLifecycleReport', () => {
       app('boot', { milestone: 'app-ready', sinceStartMs: 600 }),
       app('boot', { milestone: 'ready', sinceStartMs: 11_000 }),
       { turnId: APP_TURN_ID, stage: 'wake-to-listening', durMs: 120, at: (at += 1), t: 0 },
+      { turnId: APP_TURN_ID, stage: 'speech-to-hearing', durMs: 30, at: (at += 1), t: 0 },
+      { turnId: APP_TURN_ID, stage: 'speech-to-hearing', durMs: 50, at: (at += 1), t: 0 },
     ]
     const report = buildLifecycleReport(records)
     expect(report.boot).toEqual([
@@ -131,12 +133,14 @@ describe('buildLifecycleReport', () => {
       wakeGate: { heard: 375, scored: 47 },
     })
     expect(report.wakeToListening).toEqual({ count: 1, p50: 120, p95: 120 })
+    expect(report.speechToHearing).toEqual({ count: 2, p50: 30, p95: 50 })
     expect(report.quit).toBeNull()
     expect(formatLifecycleReport(report)).toEqual([
       'boot (ms since start, p50/max): app-ready 400ms/600ms, ready 9000ms/11000ms',
       'model loads: stt ×1 p50 6800ms max 6800ms, stt (again) ×0 p50 0ms max 0ms (1 failed), wake ×1 p50 1200ms max 1200ms',
       'steady: main loop delay p99 p50 20ms p95 40ms max 40ms | memory p50/max Browser 900/1000MB, pane 200/210MB | machine available min 650MB, swap max 520MB | long tasks dashboard 3 for 240ms (worst sample 180ms), pane 3 for 400ms (worst sample 400ms) | vad lag p50 4ms max 90ms | wake gate open 12.5 % (47 of 375 chunks scored)',
       'wake-to-listening: ×1 p50 120ms p95 120ms',
+      'speech-to-hearing: ×2 p50 30ms p95 50ms',
     ])
   })
 

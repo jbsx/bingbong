@@ -8,6 +8,8 @@ export interface VoiceApi {
   listening: boolean
   /** True while a finished utterance is being transcribed — the STT window (#38). */
   transcribing: boolean
+  /** Speech has started in the Utterance being taken (#441); false before it and from its Endpoint. */
+  hearing: boolean
   /** Reason for listening — drives the hint line next to the orb. */
   reason: VoiceListenReason | null
   /** Wake-word monitoring is live — the mic stays open between commands. */
@@ -48,6 +50,7 @@ async function preferC920(micId: string): Promise<string> {
 export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
+  const [hearing, setHearing] = useState(false)
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
   const [monitoring, setMonitoring] = useState(false)
   const [partial, setPartial] = useState('')
@@ -97,6 +100,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     const applyState = (state: VoiceState) => {
       setListening(state.listening)
       setTranscribing(state.transcribing)
+      setHearing(state.hearing)
       setReason(state.reason)
       setMonitoring(state.monitoring)
       // The mic also stays up through the STT window: a discarded blip
@@ -126,5 +130,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, reason, monitoring, partial }
+  return { listening, transcribing, hearing, reason, monitoring, partial }
 }

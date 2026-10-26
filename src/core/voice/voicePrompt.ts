@@ -35,18 +35,27 @@ export function partialSpans(text: string, terms: readonly string[]): PartialSpa
 }
 
 /** The ear's real state, as the Voice Prompt says it (CONTEXT.md). */
-export type EarPhase = 'rest' | 'listening' | 'transcribing' | 'off'
+export type EarPhase = 'rest' | 'listening' | 'hearing' | 'transcribing' | 'off'
 
 /**
- * What the ear is doing: taking an Utterance, reading one it took, waiting
- * for the wake word (at rest), or nothing at all — the microphone off.
- * Before main has said, at rest.
+ * What the ear is doing: open for an Utterance, hearing one being spoken
+ * (#441), reading one it took, waiting for the wake word (at rest), or
+ * nothing at all — the microphone off. Before main has said, at rest.
  */
-export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean } | null): EarPhase {
+export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean } | null): EarPhase {
   if (voice === null) return 'rest'
   if (voice.transcribing) return 'transcribing'
-  if (voice.listening) return 'listening'
+  if (voice.listening) return voice.hearing ? 'hearing' : 'listening'
   return voice.monitoring ? 'rest' : 'off'
+}
+
+/**
+ * The said-line before the first partial lands (#441): "say a command"
+ * while the open ear waits for speech; "…" from the frame speech starts —
+ * the receipt that the ear has the line — and through the read.
+ */
+export function wordlessLine(phase: EarPhase): string {
+  return phase === 'listening' ? 'say a command' : '…'
 }
 
 /** What ends the Utterance being taken (#357): the turn check when the words are done, else the Pause cap of quiet, in seconds. */

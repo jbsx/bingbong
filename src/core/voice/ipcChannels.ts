@@ -11,6 +11,8 @@ export const VOICE_IPC = {
   stateChanged: 'voice:stateChanged',
   /** Renderer → main: a wake listen's Listening has painted (#429). */
   listeningShown: 'voice:listeningShown',
+  /** Renderer → main: the hearing receipt has painted (#441). */
+  hearingShown: 'voice:hearingShown',
   /** Main → renderer: a transcript was heard and where it went. */
   heard: 'voice:heard',
   /** Main → renderer: the live partial transcript while the user speaks (#324); '' clears it. */
@@ -32,6 +34,13 @@ export interface VoiceState {
    * the ear is open while it thinks.
    */
   transcribing: boolean
+  /**
+   * Speech has started in the Utterance being taken (#441): set on the VAD
+   * frame its capture begins, cleared at its Endpoint or a drop. Only ever
+   * true while `listening` is, so the screen can say the ear has the line
+   * before the first partial lands.
+   */
+  hearing: boolean
 }
 
 export interface VoiceHeardEvent {

@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-25, base `d0263a1f` + #428](versions/2026-10-25-d0263a1f-stages/chart.html), in which the Status Capsule says “Thinking…” with your words from the moment you ask, on the Idle Screen too, then each hop's “Acting…” with the action and “Loading…”, with the stage's own seconds and a stuck line past 5 s (#428). [Overview](versions/2026-10-25-d0263a1f-stages/overview.png) · [changes](versions/2026-10-25-d0263a1f-stages/changes.md)
+**Latest:** [2026-10-26, base `4af7377e` + #441](versions/2026-10-26-4af7377e-hearing/chart.html), in which the screen says “…” under “Listening” from the frame the app confirms you are speaking, and your first words replace it after half a second of speech (#441). [Overview](versions/2026-10-26-4af7377e-hearing/overview.png) · [voice view](versions/2026-10-26-4af7377e-hearing/voice.png) · [changes](versions/2026-10-26-4af7377e-hearing/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-26 | `4af7377e` + #441 | [chart](versions/2026-10-26-4af7377e-hearing/chart.html) | No transition changes. While listening, “say a command” becomes “…” on the frame speech is confirmed (Voice Prompt, Idle Screen, Capsule hint), still under “Listening”; the first partial comes at 0.5 s of speech, not 1 s; a `speech-to-hearing` perf span. [changes](versions/2026-10-26-4af7377e-hearing/changes.md) |
 | 2026-10-25 | `d0263a1f` + #428 | [chart](versions/2026-10-25-d0263a1f-stages/chart.html) | No transition changes. The Capsule says “Thinking…” (with the heard words) before the page read, then per hop “Acting…” (the action's words) and “Loading…”; per-stage seconds; “still thinking” / “page still loading” past 5 s; the Idle Screen shows it. [changes](versions/2026-10-25-d0263a1f-stages/changes.md) |
 | 2026-10-24 | `765548d3` + #424 | [chart](versions/2026-10-24-765548d3-shelf/chart.html) | Every file chooser is intercepted; a click or key that opens one makes the Shelf ask (downloads + the upload folder, newest first); the pick is set, nothing sent, "Attached &lt;name&gt;." said, else a failure line ("No file on the shelf fits that upload." for an empty Shelf or none); the Task ends. Settings gains the upload folder. [changes](versions/2026-10-24-765548d3-shelf/changes.md) |
 | 2026-10-24 | `a35d1386` + #423 | [chart](versions/2026-10-24-a35d1386-site-question/chart.html) | A page's confirm pauses its Task and is said aloud; your next line answers it first: yes/ok/confirm or no/cancel with no Jev, else one Jev ask (OK, Cancel, or a new command run after a refusal); unsure refuses. An alert is accepted and said. [changes](versions/2026-10-24-a35d1386-site-question/changes.md) |

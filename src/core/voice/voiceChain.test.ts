@@ -166,8 +166,15 @@ describe('the voice chain across the process boundary (#430)', () => {
     expect(chain.partials).toContain('scroll')
     expect(chain.submitted).toEqual([{ text: 'scroll down', submitted: expect.objectContaining({ truncated: false, turnId: expect.any(String), endpointAt: expect.any(Number) }) }])
     expect(chain.heard).toEqual([{ text: 'scroll down', routed: 'command' }])
+    // The ear says it hears from speech start to the Endpoint (#441): open, hearing, transcribing, closed.
+    expect(chain.states.map(({ listening, hearing, transcribing }) => ({ listening, hearing, transcribing }))).toEqual([
+      { listening: true, hearing: false, transcribing: false },
+      { listening: true, hearing: true, transcribing: false },
+      { listening: false, hearing: false, transcribing: true },
+      { listening: false, hearing: false, transcribing: false },
+    ])
     // Single-shot: the listen closed with the Command.
-    expect(chain.client.getState()).toMatchObject({ listening: false, transcribing: false })
+    expect(chain.client.getState()).toMatchObject({ listening: false, transcribing: false, hearing: false })
     // The process's spans land in main's tracer.
     expect(chain.spans.map((span) => span.stage)).toEqual(expect.arrayContaining(['stt', 'end-of-speech']))
   })
@@ -281,7 +288,7 @@ describe('the voice chain across the process boundary (#430)', () => {
       // A frame in flight is let go, not left hanging.
       await pending
       expect(faults).toContain('voice.chain.exit')
-      expect(chain.client.getState()).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+      expect(chain.client.getState()).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false, hearing: false })
       expect(chain.errors).toEqual(['The voice process stopped; starting it again.'])
       chain.clock.advance(1_000)
       await settle()

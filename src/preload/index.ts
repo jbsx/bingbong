@@ -225,6 +225,8 @@ contextBridge.exposeInMainWorld('bingbong', {
         listener(state)
         // A wake listen's Listening, painted: a frame after the state lands (#429). Main keeps the first.
         if (state.listening && state.reason === 'wake') nextFrame(() => setTimeout(() => ipcRenderer.send(VOICE_IPC.listeningShown), 0))
+        // The hearing receipt, painted (#441): main times it from the chunk speech started in.
+        if (state.hearing) nextFrame(() => setTimeout(() => ipcRenderer.send(VOICE_IPC.hearingShown), 0))
       }
       ipcRenderer.on(VOICE_IPC.stateChanged, wrapped)
       return () => ipcRenderer.removeListener(VOICE_IPC.stateChanged, wrapped)

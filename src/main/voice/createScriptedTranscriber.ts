@@ -9,7 +9,7 @@ interface ScriptedUtterance {
   partials?: string[]
 }
 
-/** Frames pushed between scripted partials: the real engine's first after 1 s and every 0.5 s after, compressed for the suite. */
+/** Frames pushed between scripted partials: the real engine's first after 0.5 s and every 0.5 s after, compressed for the suite. */
 export const SCRIPTED_PARTIAL_STRIDE_FRAMES = 2
 
 function isEntry(t: unknown): t is string | ScriptedUtterance {

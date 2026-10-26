@@ -9,7 +9,7 @@ import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } from '../../core/idle/timeFormat'
 import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
-import { earPhase, type EarPhase } from '../../core/voice/voicePrompt'
+import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
 import { defaultWeightSettings, type WeightSettings } from '../../core/scale/weightSettings'
@@ -165,30 +165,34 @@ export interface IdleVoice {
   listening: boolean
   transcribing: boolean
   monitoring: boolean
+  /** Speech has started in the Utterance being taken (#441). */
+  hearing: boolean
   /** The live words of the Utterance being taken; empty before the first. */
   partial: string
 }
 
-const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { listening: 'Listening', transcribing: 'Transcribing' }
+// Hearing keeps the pill's word (#441): the said-line's "…" is what changes when speech starts.
+const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
 
 /**
  * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb and the
  * hint, saying the ear's real state in the Status Capsule's word — waiting
  * for the wake word, the orb and the hint with the waveform still;
  * `LISTENING` with the waveform live and the live words only while an
- * Utterance is taken; `TRANSCRIBING` while its words are read; with the
+ * Utterance is taken — "…" from the frame speech starts until the first
+ * partial (#441); `TRANSCRIBING` while its words are read; with the
  * microphone off, it says so.
  */
 export function VoiceLine({ voice }: { voice: IdleVoice }) {
   const phase = earPhase(voice)
-  const taking = phase === 'listening' || phase === 'transcribing'
+  const taking = phase === 'listening' || phase === 'hearing' || phase === 'transcribing'
   return (
     <div className={`idle-line idle-voice idle-voice--${phase}`} role="status" aria-label={taking ? EAR_WORD[phase] : phase === 'off' ? 'microphone off' : 'waiting for the wake word'}>
       <span className="idle-voice-orb" aria-hidden="true" />
       {phase === 'off' ? (
         <span className="idle-voice-hint">Microphone off — start typing</span>
       ) : taking ? (
-        <span className={voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? 'say a command' : `“${voice.partial}…”`}</span>
+        <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? wordlessLine(phase) : `“${voice.partial}…”`}</span>
       ) : (
         <span className="idle-voice-hint">
           Say <span className="idle-voice-word">“Bing Bong”</span> or start typing
