@@ -58,26 +58,24 @@ body,
   margin-top: 0;
 }
 
-/* The panel surface paints at the folded width, right-anchored, with the
-   window's gutter drawn inside its view: in steady state the view bounds
-   equal that width, so min(100%, var) changes nothing — but during a
-   resize drag main cloaks the view wider (window-left to panel-right) so
-   the pointer never leaves it, and the surface must stay exactly where it
-   was. One look in both modes (ADR 0078): a solid panel on a hairline,
-   rounded like the pane's frame; the difference is what happens to the
-   page beneath (covered vs narrowed), never the skin. */
+/* The panel surface paints at the folded width, right-anchored, filling its
+   view: in steady state the view bounds equal that width, so min(100%, var)
+   changes nothing — but during a resize drag main cloaks the view wider
+   (window-left to panel-right) so the pointer never leaves it, and the
+   surface must stay exactly where it was. One look in both modes (#453): a
+   flat solid column, square, its one edge a hairline on the left; the
+   difference is what happens to the page beneath (covered vs narrowed),
+   never the skin. */
 .feed-surface {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100% - 16px);
+  height: 100%;
   min-height: 0;
-  width: calc(min(100%, var(--panel-width, 100%)) - 16px);
-  margin: 0 16px 16px 0;
+  width: min(100%, var(--panel-width, 100%));
   align-self: flex-end;
   flex: none;
-  border: 1px solid var(--hair);
-  border-radius: var(--radius-lg);
+  border-left: 1px solid var(--frame-hair);
   background: var(--surface-solid);
   overflow: hidden;
 }
@@ -427,7 +425,8 @@ body,
 }
 
 /* The collapsed edge tab: the panel folded to a slim tab on the right
-   edge — a chevron and the word, the only part of the feed left. */
+   edge — a chevron and the word, the only part of the feed left. Square,
+   its one edge the panel's left hairline (#453). */
 .feed-edge-tab {
   display: flex;
   flex-direction: column;
@@ -437,9 +436,8 @@ body,
   width: 100%;
   height: 100%;
   padding: 0;
-  border: 1px solid var(--hair2);
-  border-right: none;
-  border-radius: 14px 0 0 14px;
+  border: none;
+  border-left: 1px solid var(--frame-hair);
   background: var(--surface-solid);
   color: var(--fg2);
   cursor: pointer;

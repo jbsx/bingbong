@@ -117,9 +117,9 @@ export function BrowserNav() {
 }
 
 /**
- * The browsing pane (ADR 0078): the page in its frame — inset by the
- * gutter, rounded, on a hairline; the section is the viewport's rect
- * reporter and nothing else.
+ * The browsing pane (#453): the page edge to edge under the Toolbar, flat —
+ * no inset, radius or border; the section is the viewport's rect reporter
+ * and nothing else.
  */
 export function BrowserPane() {
   const viewportRef = useRef<HTMLDivElement>(null)

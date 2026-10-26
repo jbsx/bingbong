@@ -50,6 +50,8 @@
   --fg3: rgba(36, 44, 60, 0.56); /* labels, the quietest text */
   --hair: rgba(16, 22, 34, 0.08);
   --hair2: rgba(16, 22, 34, 0.14);
+  /* The frame's one line (#453): the band's foot and the panel's left edge, the only edges the pane has. */
+  --frame-hair: var(--hair2);
   --track: rgba(16, 22, 34, 0.09);
   --surface: rgba(16, 22, 34, 0.025); /* a panel */
   --raise: rgba(16, 22, 34, 0.05); /* a bubble, a pressed control */
@@ -148,6 +150,7 @@
     --fg3: #959595;
     --hair: #3a3a3a;
     --hair2: #555;
+    --frame-hair: #3a3a3a;
     --track: #2b2b2b;
     --surface: transparent;
     --raise: rgba(255, 255, 255, 0.04);
@@ -253,28 +256,37 @@ body {
   font-family: InterVariable, system-ui, sans-serif;
 }
 
-/* The shell (ADR 0078): the Toolbar band, the pane in its frame, and the
-   feed panel's slot. Kiosk is pixel-identical to windowed (the
+/* The shell (ADR 0078, #453): the Toolbar band, the pane edge to edge under
+   it, and the feed panel's slot. Kiosk is pixel-identical to windowed (the
    dashboard--kiosk class survives only as an observable flag). */
 .dashboard {
   display: grid;
+  /* One column the window's width: the Toolbar's row never widens it, so a
+     long capsule ellipsizes instead of scrolling the shell sideways. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   height: 100%;
 }
 
 /* The Toolbar: the one reserved band above the pane, and the window's only
-   drag region — the OS title bar is hidden. Capsule left, address cluster
-   centre, controls right. Interactive controls opt out of dragging below.
-   On a narrow window the address cluster gives way first: the capsule
-   column keeps room for its state word beside the orb, and the controls
-   keep theirs, so "Ready" is never cut to "Rea". */
+   drag region — the OS title bar is hidden. One row on one centre (#453):
+   the Capsule and the widgets left, the browsing cluster and the controls
+   right, every control's middle on the band's. Its bottom hairline is the
+   pane's only edge. Interactive controls opt out of dragging below.
+   Groups sit further apart than their members (principle 7): 32 px between
+   the left group and the right cluster, 12 px inside a group. Both numbers
+   are a guess — ui.md asks only for more outside than inside; the owner's
+   read of the shots would settle the ratio. The 16 px side inset is a guess
+   too: the pane has no edge inside the window to be flush with, so the
+   band's two groups share the window's inset (the kiosk and chrome e2e
+   pin it), and a look from the chair would settle it. */
 .toolbar {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) min-content;
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 32px;
   height: var(--tb-h);
   padding: 0 16px;
+  border-bottom: 1px solid var(--frame-hair);
   -webkit-app-region: drag;
 }
 
@@ -284,15 +296,25 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.toolbar-actions {
-  /* Pinned to the right column: on the settings page the address cluster
-     is absent, and an unpinned grid would pull the controls to the centre
-     (#331). */
-  grid-column: 3;
-  justify-self: end;
+/* The right cluster: at the band's right edge, its size set by the window
+   alone, so nothing the capsule says moves it (#334) and on the settings
+   page, with no address field, the controls stay where they were (#331).
+   The left group takes what is left: a long hint ellipsizes at the
+   cluster's start before the state word is touched. */
+.toolbar-end {
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.toolbar-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* The app's version: the quietest text, small, never in the way. */
@@ -304,19 +326,16 @@ body {
   user-select: none;
 }
 
-.toolbar .app-version {
-  margin-right: 4px;
-}
-
-/* The Toolbar's first column: the Status Capsule, and beside it the widgets. */
+/* The left group: the Status Capsule, and right after it the widgets. The
+   hint and the widgets' words are 24 px, each centred on the band, so they
+   read as one line beside the state word. It grows from nothing into the
+   room the right cluster leaves, so its words never push the cluster. */
 .toolbar-start {
-  grid-column: 1;
-  justify-self: start;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: 100%;
+  gap: 12px;
+  min-width: 8rem;
 }
 
 /* The Status Capsule: the one thing on the Toolbar read from the chair —
@@ -339,6 +358,15 @@ body {
   border: 1px solid var(--hair);
   border-radius: 44px;
   background: var(--surface);
+}
+
+/* In dark the state word and its dot are the mark (#453): no pill outline,
+   which on black was brighter than the state it framed. The live tint's
+   wash keeps the capsule's shape while Bing Bong works or listens. */
+@media (prefers-color-scheme: dark) {
+  :root .status-capsule {
+    border-color: transparent;
+  }
 }
 
 /* The Task's progress bar (#375): the theme's bar (ADR 0078) along the
@@ -485,7 +513,7 @@ body {
    only while no Voice Prompt is on screen (#359). */
 .voice-hint {
   min-width: 0;
-  font-size: var(--type-l);
+  font-size: var(--type-m);
   color: var(--fg2);
   white-space: nowrap;
   overflow: hidden;
@@ -545,14 +573,15 @@ body {
 }
 
 /* The Toolbar's widgets (owner ruling 2026-10-19): the running Timer and
-   the song Now Playing, each a chip beside the capsule. On a narrow window
+   the song Now Playing, right after the capsule in the left group, as tall
+   as the hint's line and set like it, unboxed (#453). On a narrow window
    they give way before the capsule does: the song's title ellipsizes, the
    countdown keeps its digits. */
 .toolbar-widgets {
   flex: 0 100 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   overflow: hidden;
 }
@@ -562,11 +591,9 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  height: 48px;
-  padding: 0 18px 0 14px;
-  border: 1px solid var(--hair);
-  border-radius: 24px;
-  background: var(--surface);
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--fgh);
   font: inherit;
   font-size: var(--type-m);
@@ -601,8 +628,6 @@ body {
 }
 
 .toolbar-timer--ringing {
-  border-color: var(--hair2);
-  background: var(--raise2);
   color: var(--fgh);
   font-weight: 600;
   cursor: pointer;
@@ -629,56 +654,40 @@ body {
 }
 
 /* A narrow window: the widgets shrink to their glyphs (the countdown and
-   title stay in the tooltip and accessible name) and hold that size, and
-   the capsule's column keeps room for them beside the state word, so the
-   back arrow never draws over a clipped chip. */
+   title stay in the tooltip and accessible name) and hold that size, so
+   the back arrow never draws over a clipped one; the address field lets go
+   of its floor before the state word is cut. */
 @media (max-width: 960px) {
-  .toolbar:has(.toolbar-widgets) {
-    grid-template-columns: minmax(calc(8rem + 120px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
-  }
-
   .toolbar-widgets {
     flex: none;
   }
 
-  .toolbar-widget {
-    padding: 0 12px;
-  }
-
   .toolbar-widget-text {
     display: none;
+  }
+
+  .url-form {
+    min-width: 0;
   }
 }
 
 /* A very narrow window: the Timer's glyph alone, so the address field keeps
    enough room to show where it is; the song stays on the Idle Screen. */
 @media (max-width: 560px) {
-  .toolbar:has(.toolbar-widgets) {
-    grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
-  }
-
-  .toolbar:has(.toolbar-timer) {
-    grid-template-columns: minmax(calc(8rem + 60px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
-  }
-
   .toolbar-song {
     display: none;
   }
 }
 
-/* The Toolbar's browsing cluster: back/forward and the address, centred.
-   The .chrome-button/.url-input/.chrome-loading hooks stay as e2e
-   observation points. */
+/* The Toolbar's browsing cluster: back/forward and the address, the start
+   of the right cluster. The .chrome-button/.url-input/.chrome-loading hooks
+   stay as e2e observation points. */
 .browser-nav {
-  grid-column: 2;
-  justify-self: center;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
-  /* Held to its column on a narrow window, so the address field shrinks
-     rather than running under the controls. */
-  max-width: 100%;
 }
 
 .chrome-button {
@@ -723,11 +732,16 @@ body {
 /* The address: the host in the primary ink, the rest quiet. The input
    holds the value; while it is not being edited a drawn copy of the same
    words sits over it, split at the host. */
+/* It takes the room between the left group and the icons, 320 to 640 px
+   (#453), measured from the window, never from what the capsule says: 640
+   on the appliance's 1920, 320 from 1600 down, leaving the hint its line on
+   a laptop. The 1280 px the window keeps for the rest is a guess — the hint
+   ("Say “Bing Bong” or start typing") beside "Ready" needs about 620; a
+   look at a laptop's shots would settle it. */
 .url-form {
   position: relative;
-  flex: 0 1 auto;
-  width: min(560px, 30vw);
-  min-width: 0;
+  flex: 0 1 clamp(320px, 100vw - 1280px, 640px);
+  min-width: 320px;
   height: 48px;
 }
 
@@ -740,7 +754,7 @@ body {
   background: var(--surface);
   color: var(--fgh);
   font: inherit;
-  font-size: var(--type-s);
+  font-size: var(--type-m);
 }
 
 .url-input::placeholder {
@@ -763,10 +777,11 @@ body {
   right: 52px;
   top: 0;
   bottom: 0;
-  display: flex;
-  align-items: center;
+  /* A block, so a long address ends in an ellipsis rather than a cut (#453: at 24 px a watch URL outruns the field). */
+  display: block;
+  line-height: 48px;
   overflow: hidden;
-  font-size: var(--type-s);
+  font-size: var(--type-m);
   color: var(--fg2);
   white-space: pre;
   text-overflow: ellipsis;
@@ -868,15 +883,15 @@ body {
   min-width: 0;
 }
 
-/* The pane in its frame (ADR 0078): inset from the window by the gutter,
-   rounded — main rounds the native view to the same radius — on a hairline.
+/* The pane, flat (#453): edge to edge under the band — no inset, no
+   radius, no border; the band's bottom hairline is its only edge, in both
+   themes, so a white page never loses its top against the light ground.
    The page inside is never restyled. */
 .dashboard-browsing {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  padding: 0 16px 16px;
 }
 
 .browser-pane {
@@ -884,8 +899,6 @@ body {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--hair2);
-  border-radius: var(--radius-lg);
 }
 
 .browser-viewport {
@@ -899,7 +912,7 @@ body {
    from the folded panel state as a var; the fold owns the spec's bound
    (min 320 / max 75% of the window) and this live clamp re-bounds the
    slot against the workspace when the window shrinks, without discarding
-   the persisted width. The panel's own gutter is drawn inside it. */
+   the persisted width. */
 .feed-slot {
   pointer-events: none;
 }

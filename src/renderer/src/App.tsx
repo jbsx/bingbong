@@ -208,9 +208,10 @@ export function App() {
   return (
     <div className={window.bingbong.app.kiosk ? 'dashboard dashboard--kiosk' : 'dashboard'}>
       {/* The Toolbar (ADR 0012): the one reserved band above the pane —
-          never overlapping it — and the window's only drag region. Status
-          Capsule left, address field center, controls right. Interactive
-          controls opt out of the drag region in CSS. */}
+          never overlapping it — and the window's only drag region. One row on
+          one centre (#453): the Status Capsule and the widgets left, the
+          browsing cluster and the controls right. Interactive controls opt
+          out of the drag region in CSS. */}
       <header className="toolbar">
         {/* The Status Capsule (ADR 0012): orb + pill + the live run/voice
             hints collapsed into one control. The class hooks inside
@@ -241,42 +242,46 @@ export function App() {
           {/* The running Timer and the song Now Playing (owner ruling 2026-10-19), in sight while the app is in use. */}
           <ToolbarWidgets timer={timer} nowPlaying={nowPlaying} />
         </div>
-        {/* The address field lives in the Toolbar only while browsing
-            (ADR 0012); settings keeps capsule + controls. */}
-        {view === 'dashboard' ? <BrowserNav /> : null}
-        <div className="toolbar-actions">
-          {/* The version, quiet beside the controls: which Release the kiosk runs. */}
-          {window.bingbong.version !== '' ? <span className="app-version">v{window.bingbong.version}</span> : null}
-          {/* On the click, not the pointer going down: the pointer-down is
-              input, and input wakes the screen this button just showed. */}
-          <button
-            type="button"
-            className="chrome-button idle-toggle"
-            aria-label="Show the idle screen"
-            title="Idle screen (Ctrl+Shift+L)"
-            onClick={showIdleNow}
-          >
-            <ChromeIcon name="home" />
-          </button>
-          <button
-            type="button"
-            className="chrome-button feed-panel-toggle"
-            aria-label={panel.open ? 'Collapse the activity feed' : 'Open the activity feed'}
-            aria-pressed={panel.open}
-            title="Activity feed (Ctrl+Shift+F)"
-            onClick={() => window.bingbong.feedPanel.toggle()}
-          >
-            <ChromeIcon name="panel" />
-          </button>
-          <button
-            type="button"
-            className="chrome-button settings-toggle"
-            aria-label={view === 'settings' ? 'Back to dashboard' : 'Open settings'}
-            aria-pressed={view === 'settings'}
-            onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
-          >
-            <ChromeIcon name="settings" />
-          </button>
+        {/* The right cluster (#453), flush with the pane's right edge: back,
+            forward and the address, then the controls, one group on one
+            centre. The address field lives in it only while browsing
+            (ADR 0012); settings keeps capsule + controls. The version is
+            not here: the Idle Screen's corner and Settings › This computer
+            carry it. */}
+        <div className="toolbar-end">
+          {view === 'dashboard' ? <BrowserNav /> : null}
+          <div className="toolbar-actions">
+            {/* On the click, not the pointer going down: the pointer-down is
+                input, and input wakes the screen this button just showed. */}
+            <button
+              type="button"
+              className="chrome-button idle-toggle"
+              aria-label="Show the idle screen"
+              title="Idle screen (Ctrl+Shift+L)"
+              onClick={showIdleNow}
+            >
+              <ChromeIcon name="home" />
+            </button>
+            <button
+              type="button"
+              className="chrome-button feed-panel-toggle"
+              aria-label={panel.open ? 'Collapse the activity feed' : 'Open the activity feed'}
+              aria-pressed={panel.open}
+              title="Activity feed (Ctrl+Shift+F)"
+              onClick={() => window.bingbong.feedPanel.toggle()}
+            >
+              <ChromeIcon name="panel" />
+            </button>
+            <button
+              type="button"
+              className="chrome-button settings-toggle"
+              aria-label={view === 'settings' ? 'Back to dashboard' : 'Open settings'}
+              aria-pressed={view === 'settings'}
+              onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
+            >
+              <ChromeIcon name="settings" />
+            </button>
+          </div>
         </div>
       </header>
 

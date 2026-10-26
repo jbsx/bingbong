@@ -15,9 +15,6 @@ import { nativeTheme } from 'electron'
 const PANE_BACKGROUND_LIGHT = '#eceef1'
 const PANE_BACKGROUND_DARK = '#000'
 
-/** The pane's rounded corners (ADR 0078): styles.css's --radius-lg less the frame's 1 px hairline. */
-export const PANE_FRAME_RADIUS = 19
-
 interface ThemedSurface {
   apply(color: string): void
   dead(): boolean

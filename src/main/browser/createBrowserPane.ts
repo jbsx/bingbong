@@ -8,7 +8,7 @@ import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
 import { attachPageContextMenu } from './attachPageContextMenu'
-import { PANE_FRAME_RADIUS, trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
+import { trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
 import { canStepBack } from './paneNavigation'
 import { attachWindowOpenLedger } from './windowOpenLedger'
@@ -116,9 +116,6 @@ export function createBrowserPane(deps?: {
   // matches the pane's surface in either appearance and repaints when the
   // resolved theme changes — no wrong-color flash between navigations.
   trackPaneBackground(view)
-  // The pane's frame (ADR 0078): rounded like the frame the dashboard draws
-  // around the viewport, one pixel inside its hairline.
-  view.setBorderRadius(PANE_FRAME_RADIUS)
   const wc = view.webContents
 
   // The reconstructed page menu (the appliance input pass): right-click on a page

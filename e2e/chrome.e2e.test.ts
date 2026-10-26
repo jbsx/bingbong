@@ -107,8 +107,8 @@ describe('shell chrome e2e', () => {
         room,
       }
     })()`)
-    // The default view less the window gutter it carries (ADR 0078).
-    expect(fit.panel).toBe(520)
+    // The default view, filled by the flat column (#453).
+    expect(fit.panel).toBe(536)
     expect(fit.text).toBeLessThanOrEqual(fit.room)
 
     await harness.clickOverlayElement('.panel-stop')

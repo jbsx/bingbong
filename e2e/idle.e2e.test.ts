@@ -306,7 +306,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
     expect(await idleShown()).toBe(true)
   })
 
-  it('shows the app’s version, quiet and clear of everything, in the Idle Screen’s corner and on the Toolbar', async () => {
+  it('shows the app’s version, quiet and clear of everything, in the Idle Screen’s corner and in Settings, never on the Toolbar', async () => {
     // Whatever app.getVersion() says: the Release stamps it at packaging, and
     // a launch of out/main/index.js, as here, has no package.json beside it,
     // so Electron answers with its own.
@@ -334,6 +334,12 @@ describe('idle screen e2e: the Last Page and resume', () => {
 
     await harness.clickDashboardElement('.idle-screen')
     await shown('.toolbar')
-    expect(await placed('.toolbar .app-version', '.toolbar', '.toolbar button, .toolbar input, .status-capsule, .toolbar-widgets')).toEqual({ text: expect.stringMatching(version), inside: true, overlaps: [] })
+    // A 12 px string cannot be read from the chair (#453): the Toolbar carries none; Settings › This computer does.
+    expect(await harness.dashboardEval<string>(`document.querySelector('.toolbar')?.textContent ?? ''`)).not.toMatch(/v\d+\.\d+\.\d+/)
+    await harness.clickDashboardElement('.settings-toggle')
+    await shown('.settings-version')
+    expect(await harness.dashboardEval<string>(`document.querySelector('.settings-version').textContent`)).toMatch(/^Bing Bong v\d+\.\d+\.\d+$/)
+    await harness.clickDashboardElement('.settings-toggle')
+    await shown('.url-input')
   })
 })

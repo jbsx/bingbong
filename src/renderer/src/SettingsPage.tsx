@@ -462,8 +462,11 @@ const IDLE_CARD_HOMES: Record<IdleCardId, string> = {
  */
 function HostSection() {
   const [findings, setFindings] = useState<readonly HostFinding[] | null>(null)
+  // Which Release this is: the Toolbar no longer carries it (#453), the Idle Screen's corner and this section do.
+  const [version, setVersion] = useState('')
 
   useEffect(() => {
+    setVersion(window.bingbong.version)
     let cancelled = false
     window.bingbong.settings
       .hostChecks()
@@ -488,6 +491,7 @@ function HostSection() {
         </p>
       ))}
       <p className="settings-note">Checked once when the app starts; restart it after plugging something in.</p>
+      {version !== '' ? <p className="settings-note settings-version">Bing Bong v{version}</p> : null}
     </Section>
   )
 }
