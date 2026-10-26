@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: the card read the media ref at volume 8%; Jev chose volume up and the op set 13; the next card (29 s later) read 2%. The level set does not hold on the element: the same drift as the #408 lines (cli-10/11/12-mvle*), which 49eb89b3 marked fixed for the direction only",
   "meant": "Raise the music volume audibly, and keep it there",
-  "log": "decision-1793008066207-1.jsonl"
+  "log": "decision-1793008066207-1.jsonl",
+  "claimedBy": "#459"
 }

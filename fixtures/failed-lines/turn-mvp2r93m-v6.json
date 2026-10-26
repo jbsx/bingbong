@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: third try, 'The raise music volume.': card read 1%, the op set 11; the next card read 2%. After three raises the music was quieter than before the first",
   "meant": "Raise the music volume audibly, and keep it there",
-  "log": "decision-1793008066207-1.jsonl"
+  "log": "decision-1793008066207-1.jsonl",
+  "claimedBy": "#459"
 }
