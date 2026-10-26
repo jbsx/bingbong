@@ -1,4 +1,5 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
@@ -171,3 +172,93 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
 })
 
 let secondSong = ''
+
+// A volume a Media Op sets lasts into the next song (#460): the op sets the
+// element alone (#408), YouTube opens the next song at its own remembered
+// level × that track's loudness factor, and the Player carries the level
+// heard, matched to the new track's loudness (the owner's matched level).
+// The issue's two loud tracks, remembered against their words so `play`
+// opens each by id.
+const LOUD = { id: 'JTRDwh0BHG4', words: 'niyam tum se tum tak' }
+const LOUDER = { id: 'kX_QK6T5_4E', words: 'the second loud track' }
+const SET_LINE = 'set the music volume to 20'
+
+interface LevelFacts {
+  id: string | null
+  ad: boolean
+  volume: number
+  loudnessDb: number | null
+  currentTime: number
+}
+
+const LEVEL_FACTS = `(() => {
+  const player = document.querySelector('#movie_player')
+  const video = player ? player.querySelector('video') : null
+  const response = player && typeof player.getPlayerResponse === 'function' ? player.getPlayerResponse() : null
+  const audio = response && response.playerConfig ? response.playerConfig.audioConfig : null
+  return {
+    id: new URLSearchParams(location.search).get('v'),
+    ad: player ? player.classList.contains('ad-showing') : true,
+    volume: video ? video.volume * 100 : -1,
+    loudnessDb: audio && typeof audio.loudnessDb === 'number' ? audio.loudnessDb : null,
+    currentTime: video ? video.currentTime : 0,
+  }
+})()`
+
+const factorOf = (db: number | null): number => (db === null ? 1 : Math.min(1, 10 ** (-db / 20)))
+
+describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries into the next song (#460, network)', () => {
+  let harness: Harness
+  let userDataDir = ''
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-carry-'))
+    const at = Date.now()
+    await writeFile(
+      join(userDataDir, 'songs.json'),
+      JSON.stringify({ songs: [{ words: LOUD.words, id: LOUD.id, title: 'Tum Se Tum Tak', at }, { words: LOUDER.words, id: LOUDER.id, title: 'The second loud track', at }] }),
+    )
+    // The `volume-N` reading for whichever ref the watch page gives its video: each entry answers only the ask whose card carries that media ref.
+    // 250 of them stay under the 128 KB a single environment string may take.
+    const script = JSON.parse(decisionScript(readingOf(`play ${LOUD.words}`), readingOf(`queue ${LOUDER.words}`)).BINGBONG_DECISION_SCRIPT) as Record<string, unknown>[]
+    const volume = JSON.parse(decisionScript(readingOf(SET_LINE, 'volume-1', { amount: 'to' })).BINGBONG_DECISION_SCRIPT)[0] as { answers: Record<string, unknown> }
+    for (let ref = 1; ref <= 250; ref += 1) {
+      script.push({ when: `[${ref}] media "`, answers: { ...volume.answers, action: { type: 'choice', choice: `volume-${ref}`, confidence: 0.9 } } })
+    }
+    harness = await startHarness({ userDataDir, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: { BINGBONG_DECISION_SCRIPT: JSON.stringify(script) } })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+    await cli(harness, 'navigate https://www.youtube.com/', /^(navigated|error)/)
+  }, 120_000)
+
+  afterAll(async () => {
+    if (harness) console.log(harness.cliOutput())
+    await harness?.quit()
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  const level = (): Promise<LevelFacts> => harness.paneEval<LevelFacts>(LEVEL_FACTS)
+  const levelUntil = (predicate: (facts: LevelFacts) => boolean, timeoutMs = 60_000): Promise<LevelFacts> =>
+    waitFor(
+      async () => {
+        const facts = await level().catch(() => null)
+        return facts !== null && predicate(facts) ? facts : undefined
+      },
+      { timeoutMs, intervalMs: 250 },
+    )
+
+  it('a `volume` Media Op to 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s: about 19.9', async () => {
+    expect(await cli(harness, `play ${LOUD.words}`, /^(playing: id=|No videos|.*can't be played|error:)/)).toMatch(new RegExp(`^playing: id=${LOUD.id}`))
+    expect(await cli(harness, `queue ${LOUDER.words}`, /^(queued: id=|No videos|Couldn't search|error:)/)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
+    const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1)
+    expect(await cli(harness, SET_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume \d+% → 20%$/)
+    expect((await level()).volume).toBeCloseTo(20, 1)
+    expect(await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/)).toMatch(new RegExp(`^playing: id=${LOUDER.id}`))
+    // Past any ad and the song's first second, where YouTube may put its own level back.
+    const after = await levelUntil((facts) => facts.id === LOUDER.id && !facts.ad && facts.currentTime > 2.5, 90_000)
+    const expected = 20 * (factorOf(after.loudnessDb) / factorOf(before.loudnessDb))
+    console.log(`#460 carry: ${LOUD.id} loudnessDb=${before.loudnessDb} → ${LOUDER.id} loudnessDb=${after.loudnessDb}; element ${after.volume.toFixed(2)}, expected ${expected.toFixed(2)}`)
+    expect(after.volume).toBeCloseTo(expected, 0)
+    // The issue's tracks at 5.22 and 5.25 dB: about 19.9.
+    if (before.loudnessDb !== null && after.loudnessDb !== null && Math.abs(before.loudnessDb - 5.22) < 0.05 && Math.abs(after.loudnessDb - 5.25) < 0.05) expect(after.volume).toBeCloseTo(19.9, 0)
+  }, 240_000)
+})

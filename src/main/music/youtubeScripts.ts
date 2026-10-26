@@ -45,7 +45,35 @@ export interface WatchStatus {
   readonly muted: boolean
   /** YouTube's own idle prompt, "Video paused. Continue watching?", is up (#344). */
   readonly prompt: boolean
+  /** The track's `loudnessDb` from the player's response; null when it carries none (#460). */
+  readonly loudnessDb: number | null
 }
+
+/** Reads the player response's `loudnessDb`: `loudnessOf(player)`, null when there is none. */
+const LOUDNESS_READER = `const loudnessOf = (player) => {
+    const response = player && typeof player.getPlayerResponse === 'function' ? player.getPlayerResponse() : null
+    const db = response && response.playerConfig && response.playerConfig.audioConfig ? response.playerConfig.audioConfig.loudnessDb : null
+    return typeof db === 'number' && isFinite(db) ? db : null
+  }`
+
+/** The watch page's element level as the Player carries it into the next song (#460): unrounded, beside the track's loudness. */
+export interface LevelRead {
+  readonly id: string | null
+  readonly ad: boolean
+  /** 0–100, unrounded. */
+  readonly volume: number
+  readonly loudnessDb: number | null
+}
+
+/** Reads `#movie_player video`'s level and its track's loudness; null off a watch page's player. */
+export const LEVEL_SCRIPT = `(() => {
+  /* YT_LEVEL */
+  const player = document.querySelector('#movie_player')
+  const video = player ? player.querySelector('video') : null
+  if (!video) return null
+  ${LOUDNESS_READER}
+  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player) }
+})()`
 
 /** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
 const PROMPT_FINDER = `const continuePrompt = () => Array.from(document.querySelectorAll('yt-confirm-dialog-renderer')).find((dialog) => dialog.getClientRects().length > 0 && /continue watching/i.test(dialog.textContent || '')) || null`
@@ -103,6 +131,7 @@ export const WATCH_SCRIPT = `(() => {
   const data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : null
   const errorNode = player ? player.querySelector('.ytp-error') : null
   ${PROMPT_FINDER}
+  ${LOUDNESS_READER}
   return {
     watch: location.pathname === '/watch',
     id: videoId(),
@@ -119,6 +148,7 @@ export const WATCH_SCRIPT = `(() => {
     volume: video ? Math.round(video.volume * 100) : 0,
     muted: video ? video.muted : false,
     prompt: continuePrompt() !== null,
+    loudnessDb: loudnessOf(player),
   }
 })()`
 
