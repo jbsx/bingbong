@@ -110,26 +110,29 @@ const STUCK_LINES: Readonly<Record<PipelineStatus, string | null>> = {
 /**
  * The hint for an active Command, in parts (#428): the stage spelled out
  * only when the pill beside it shows another state (#331), what the stage
- * is on — the part a long line ellipsizes — and the tail: the Hop past the
- * first, a stuck stage named, and the seconds in this stage, which climb
- * as the honest-hang signal; Stop stays the only escape.
+ * is on — the part a long line ellipsizes first — the stage's words: the
+ * Hop past the first and a stuck stage named, which go next (#462) — and
+ * the seconds in this stage, which climb as the honest-hang signal and are
+ * never cut; Stop stays the only escape.
  */
-export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; tail: string } {
+export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; stage: string | null; seconds: string } {
   const elapsed = Math.max(0, now - progress.startedAt)
   const seconds = Math.floor(elapsed / 1000)
   const threshold = STUCK_STAGE_MS[progress.stage]
   const stuck = threshold !== null && elapsed >= threshold ? STUCK_LINES[progress.stage] : null
   const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
   const detail = progress.detail === undefined || progress.detail === '' ? null : progress.stage === 'thinking' ? `“${progress.detail}”` : progress.detail
+  const words = [hop, stuck].filter((part) => part !== null)
   return {
     named: pillStatus === progress.stage ? '' : `${stageWord(progress)} — `,
     detail,
-    tail: [hop, stuck, `${seconds}s`].filter((part) => part !== null).join(' · '),
+    stage: words.length > 0 ? words.join(' · ') : null,
+    seconds: `${seconds}s`,
   }
 }
 
 /** The hint as one line: {@link runProgressParts} joined. */
 export function describeRunProgress(progress: RunProgress, now: number, pillStatus: CapsuleStatus): string {
-  const { named, detail, tail } = runProgressParts(progress, now, pillStatus)
-  return `${named}${detail !== null ? `${detail} · ` : ''}${tail}`
+  const { named, detail, stage, seconds } = runProgressParts(progress, now, pillStatus)
+  return named + [detail, stage, seconds].filter((part) => part !== null).join(' · ')
 }

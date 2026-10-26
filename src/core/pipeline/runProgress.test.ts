@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from './events'
-import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress, loadingDetail } from './runProgress'
+import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress, loadingDetail, runProgressParts } from './runProgress'
 
 // The Status Capsule names each state once (#331): the pill says the state,
 // so the run hint beside it carries only what the pill does not — the
 // stage's detail, the Hop past the first, and the seconds in this stage
 // (#428).
+
+// The parts the Capsule lays out (#462): on a short line the detail goes
+// first, then the stage's words, and the count never — so it is a part of its own.
+describe('runProgressParts', () => {
+  it('keeps the seconds apart from the stage\'s words, so a short line can lose the words and keep the count', () => {
+    expect(runProgressParts({ stage: 'acting', startedAt: 1_000, detail: 'open youtube.com', hop: 2 }, 7_000, 'acting')).toEqual({ named: '', detail: 'open youtube.com', stage: 'hop 2 · still acting', seconds: '6s' })
+    expect(runProgressParts({ stage: 'speaking', startedAt: 1_000 }, 3_400, 'speaking')).toEqual({ named: '', detail: null, stage: null, seconds: '2s' })
+    expect(runProgressParts({ stage: 'acting', startedAt: 1_000 }, 2_400, 'listening')).toEqual({ named: 'Acting — ', detail: null, stage: null, seconds: '1s' })
+  })
+})
 
 describe('describeRunProgress', () => {
   it('is the stage\'s own seconds alone when the pill already names the stage and there is no detail', () => {
