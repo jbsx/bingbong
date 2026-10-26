@@ -17,7 +17,7 @@ import { resolvePerfLogsDir } from '../src/main/perf/collectPerfRecords.ts'
 const args = process.argv.slice(2)
 const ledgerAt = args.indexOf('--ledger')
 const ledgerDir = ledgerAt >= 0 ? args[ledgerAt + 1] : undefined
-const positional = args.filter((_, index) => index !== ledgerAt && index !== ledgerAt + 1)
+const positional = ledgerAt >= 0 ? args.filter((_, index) => index !== ledgerAt && index !== ledgerAt + 1) : args
 const logsDir = resolvePerfLogsDir(positional, process.env)
 const { lines } = ledgerLines(readLedger(ledgerDir ?? FAILED_LINES_DIR))
 console.log(formatBugCandidates(listBugCandidates(logsDir, lines), logsDir))
