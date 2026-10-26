@@ -6,5 +6,6 @@
   "stage": "stt",
   "happened": "'Title page.' again for 'idle page'; Jev none 0.50",
   "meant": "show the Idle Screen",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#471"
 }

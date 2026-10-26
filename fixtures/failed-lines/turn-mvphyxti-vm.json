@@ -6,5 +6,6 @@
   "stage": "stt",
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on the watch page of Iraada - Niyam (show_idle on the card): the ear heard 'Title page.' for 'Idle page'; Jev read none 0.38 (click-3 0.23) and the Where Ask click-3 'YouTube Home' 0.38, which opened youtube.com and left the playing song's watch page. Hop 1 none 0.50, hop 2 superseded. The dump (utterance-1793033700533-0030) re-heard: batch Scribe 'Title page', Whisper medium.en 'item page'. The ear's 50 keyterms on this page were all Page Terms ('niyam | iraada | tum se tum tak | mix | 3 | youtube | settings | sign | save | leave | turn | barsaat …', 64 yielded, 50 sent), none of the seed lexicon's 220 command terms",
   "meant": "Show the Idle Screen over the pane, the music playing on",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#471"
 }

@@ -6,5 +6,6 @@
   "stage": "turn",
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on the watch page of Iraada - Niyam: the line was cut into 'Back to-' (best guess none, superseded) and 'Page.' (turn-mvphyqdu-vl, Jev none 0.82, Where Ask none 0.84) in the same second; nothing done. The next four lines ('Title page.', 'I don't page.', 'Idle, I-D-L-E, page.') sought the Idle Screen",
   "meant": "Back to the Idle Screen, the music playing on (a guess from the lines after it)",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#471"
 }
