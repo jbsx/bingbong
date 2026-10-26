@@ -202,10 +202,14 @@ far" tells what an op changed. Several media refs each carry their own.
 _Avoid_: capability (for these), control, command (for the op itself)
 
 **Capture**:
-An op a ref carries because of its kind, text or image (`capture-N`): it
-puts the ref's text or image on the Shelf as a file and on the clipboard,
-on any site. The payload an Errand's next step reads; on the Decision
-Model's card too, so "copy this" is one hop.
+An op a ref, a block of text or the page carries because of its kind
+(`capture-N` on a link or an image, `capture-view-N` on a block in view,
+`capture-text-N` on a block off it, `capture-page`). It puts the link's
+address, the image, the block's whole text, or the page's title and
+address on the Shelf as a file and on the clipboard, on any site, and
+says so. Never a control's. Taken once in a Task. It is on the Decision
+Model's card, so "copy this" is one hop, and it is the payload an
+Errand's next step reads.
 _Avoid_: copy op, clipboard op, extract
 
 **Player Switch**:
@@ -265,6 +269,14 @@ so the card the Decision Model gets is the card the gate measured. What
 makes the hop is never cut; of what is further down, the right-clicks
 yield first, then the links, then the blocks, the farthest first.
 _Avoid_: cap, limit, max_len, context window, truncation
+
+**Text Further Up**:
+The blocks of a page's text the view has passed. They are listed on the
+action card under their own heading before Text Further Down and numbered
+with it in page order (`[text-N]`), each with its Show Op and its Capture,
+so what was read on the way down stays something the Decision Model can
+act on. It yields to the Card Budget after the blocks further down.
+_Avoid_: scrolled-past text, history
 
 **Text Further Down**:
 The blocks of a page's text below the view, listed at the end of the
