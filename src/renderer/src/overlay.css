@@ -172,6 +172,16 @@ body,
   background: var(--accentq);
 }
 
+/* The dark quiet grey clears 7:1 on black only (7.01:1), so no wash keeps
+   it there: on the live ear its quiet text steps to the middle grey,
+   9.20:1 on the wash (#448). */
+@media (prefers-color-scheme: dark) {
+  .voice-prompt--listening,
+  .voice-prompt--hearing {
+    --fg3: var(--fg2);
+  }
+}
+
 .voice-orb {
   width: 16px;
   height: 16px;
