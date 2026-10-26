@@ -115,6 +115,7 @@ describe('an app op fired (#420)', () => {
     const state = stateWith({ webZoomPercent: 130 })
     expect(fire('set_web_zoom_percent', state, { rung: 'up-step' }).change).toMatchObject({ settings: { webZoomPercent: 140 } })
     expect(fire('set_web_zoom_percent', state, { rung: 'to', words: 'set the zoom to 150 percent' }).change).toMatchObject({ settings: { webZoomPercent: 150 } })
+    expect(fire('set_web_zoom_percent', state, { rung: 'to', words: 'set the zoom to one hundred and twenty percent' }).change).toMatchObject({ settings: { webZoomPercent: 120 } })
     expect(fire('set_web_zoom_percent', state, { rung: 'up-all' }).change).toMatchObject({ settings: { webZoomPercent: 200 } })
     expect(fire('set_web_zoom_percent', state, { rung: 'to', words: 'zoom in' }).change).toBeNull()
   })

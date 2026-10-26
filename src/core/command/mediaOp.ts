@@ -1,7 +1,7 @@
 import type { DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import { MEDIA_OPS, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
-import { firstNumber } from '../timer/duration'
+import { firstNumber, numberAt, numberWords, unitAfter } from '../timer/duration'
 
 export { AMOUNT_RUNGS, LEVEL_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 
@@ -210,24 +210,35 @@ const UNITS: Readonly<Record<string, number>> = { hour: 3600, hours: 3600, hr: 3
 
 /**
  * The seconds the words name: each number with the unit after it, summed
- * ("1 minute 30 seconds" is 90; "a minute" is one); a number with no unit
- * is seconds. Null when they name none.
+ * ("1 minute 30 seconds" is 90; "a minute" is one; "a minute and a half"
+ * is 90); a number with no unit is seconds. Null when they name none.
  */
 export function secondsInWords(words: string): number | null {
-  const tokens = words.toLowerCase().replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter((token) => token !== '')
+  const tokens = numberWords(words)
   let total: number | null = null
-  let lastUnitAt = -1
-  for (const [index, token] of tokens.entries()) {
-    const unit = UNITS[token]
-    if (unit === undefined) continue
-    // The number is the words between the unit before and this one: up to three, so "twenty five minutes" reads as one.
-    const before = tokens.slice(Math.max(lastUnitAt + 1, index - 3), index)
-    lastUnitAt = index
-    const number = firstNumber(before.join(' ')) ?? (before.at(-1) === 'a' || before.at(-1) === 'an' ? 1 : null)
-    if (number === null) continue
-    total = (total ?? 0) + number * unit
+  let lastUnit: number | null = null
+  let at = 0
+  while (at < tokens.length) {
+    const number = numberAt(tokens, at)
+    if (number === null) {
+      at += 1
+      continue
+    }
+    // The unit right after the number, or one word on ("thirty more seconds") when the number is said, not an article.
+    const unitAt = unitAfter(tokens, number)
+    const reach = UNITS[tokens[unitAt] ?? ''] === undefined && !number.article && numberAt(tokens, unitAt) === null ? unitAt + 1 : unitAt
+    const unit = UNITS[tokens[reach] ?? '']
+    if (unit !== undefined) {
+      total = (total ?? 0) + number.value * unit
+      lastUnit = unit
+      at = reach + 1
+      continue
+    }
+    // "a minute and a half": a part of the unit just named.
+    if (lastUnit !== null && tokens[at - 1] === 'and' && !number.article && number.value < 1) total = (total ?? 0) + number.value * lastUnit
+    at = number.next
   }
-  return total ?? firstNumber(words)
+  return total ?? firstNumber(words, { fractions: true })
 }
 
 /**
@@ -267,16 +278,12 @@ const byNumber = (words: string): number | null => {
   return by === null ? null : firstNumber(by[1]!)
 }
 
-/** The level a speed's words carry: a number (1 is normal, "2x" is double), or normal, double or half; null for none. */
+/** The level a speed's words carry: a number (1 is normal, "2x" is double, "one point five", "half"), or normal or double; null for none. */
 function rateInWords(words: string): number | null {
-  const match = /(\d+(?:\.\d+)?)\s*x?\b/i.exec(words)
-  if (match !== null) {
-    const rate = Number(match[1])
-    if (rate > 0 && rate <= 16) return rate
-  }
+  const rate = firstNumber(words.replace(/(\d)x\b/gi, '$1'), { fractions: true })
+  if (rate !== null && rate > 0 && rate <= 16) return rate
   if (/\bnormal\b/i.test(words)) return 1
   if (/\bdouble\b/i.test(words)) return 2
-  if (/\bhalf\b/i.test(words)) return 0.5
   return null
 }
 

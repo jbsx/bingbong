@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countdownLabel, describeDuration, parseDuration } from './duration'
+import { countdownLabel, describeDuration, firstNumber, parseDuration } from './duration'
 
 const S = 1000
 const M = 60 * S
@@ -30,12 +30,44 @@ describe('parseDuration', () => {
     ['5', 5 * M],
     ['10 mins', 10 * M],
     ['3 hrs', 3 * H],
+    ['one hundred and twenty seconds', 120 * S],
+    ['a hundred minutes', 100 * M],
+    ['three thousand six hundred seconds', H],
+    ['one point five hours', H + 30 * M],
+    ['two and a half minutes', 2 * M + 30 * S],
+    ['three quarters of an hour', 45 * M],
+    ['a quarter of an hour', 15 * M],
+    ['a minute and a quarter', M + 15 * S],
   ])('reads %j', (text, ms) => {
     expect(parseDuration(text)).toBe(ms)
   })
 
   it.each(['', 'pasta', 'five', 'minutes', '5 apples', '25 hours', '0 seconds', '1h30x'])('names no length in %j', (text) => {
     expect(parseDuration(text)).toBeNull()
+  })
+})
+
+describe('firstNumber', () => {
+  it.each([
+    // turn-mvp2v0eu-vc, as heard on the kiosk (#457).
+    ['Set music code to a hundred percent.', 100],
+    ['one hundred percent', 100],
+    ['set the volume to fifty', 50],
+    ['twenty five', 25],
+    ['one hundred and twenty', 120],
+    ['two hundred fifty', 250],
+    ['a thousand', 1000],
+    ['two thousand five hundred', 2500],
+    ['twelve hundred', 1200],
+    ['volume to zero', 0],
+    ['set it to 80%', 80],
+    ['three times', 3],
+  ])('reads %j as %d', (text, number) => {
+    expect(firstNumber(text)).toBe(number)
+  })
+
+  it.each(['', 'turn it up a bit', 'an hour', 'one point five', 'one and a half', 'three quarters', '1.5'])('names no whole number in %j', (text) => {
+    expect(firstNumber(text)).toBeNull()
   })
 })
 
