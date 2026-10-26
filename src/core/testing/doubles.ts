@@ -616,6 +616,13 @@ export class FakeWakeDetector implements WakeWordDetector {
 /** A FakeWakeDetector that can hear a chunk unscored (#435): skipped chunks are kept, in order. */
 export class SkippingFakeWakeDetector extends FakeWakeDetector {
   readonly skipped: Float32Array[] = []
+  loads = 0
+  loadFailWith: Error | null = null
+
+  load(): Promise<void> {
+    this.loads += 1
+    return this.loadFailWith ? Promise.reject(this.loadFailWith) : Promise.resolve()
+  }
 
   skip(chunk: Float32Array): void {
     this.skipped.push(chunk)

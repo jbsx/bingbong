@@ -30,6 +30,13 @@ export interface WakeWordDetector {
    * scored. Absent, the caller scores every chunk.
    */
   skip?(chunk: Float32Array): void
+  /**
+   * Loads what score() needs, ahead of the first one: the ear calls it
+   * when monitoring starts, so a quiet room does not put the load off to
+   * the first sound (#435). Rejects as score() would on the same failure.
+   * Absent, the detector has nothing to load ahead.
+   */
+  load?(): Promise<void>
   /** Clears feature buffers between listening episodes. */
   reset(): void
 }

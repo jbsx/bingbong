@@ -611,6 +611,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       if (!monitor || monitoring) return
       monitoring = true
       monitor.reset()
+      // The wake models load as the ear opens, whatever it hears (#435): the
+      // boot is ready, and the STT preload behind it starts, at boot.
+      monitor.load()
       emitState()
     },
 

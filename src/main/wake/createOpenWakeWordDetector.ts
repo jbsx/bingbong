@@ -10,8 +10,9 @@ import { timeModelLoad } from '../perf/modelLoads.ts'
  * head, all in onnxruntime-node. This is a streaming port of the Python
  * reference (openwakeword utils.py AudioFeatures + model.py Model.predict);
  * see docs/wake-parity.md for the algorithm and the documented deviations.
- * Runtime and models load lazily on first use, so missing model files
- * surface as a rejected score() (the session shows it and drops the ear),
+ * Runtime and models load on load() — the ear calls it when monitoring
+ * starts — or else on the first score, so missing model files surface as
+ * a rejected load() or score() (the session shows it and drops the ear),
  * not a startup crash.
  */
 
@@ -205,6 +206,10 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
         for (const head of WAKE_HEADS) max[head] = Math.max(max[head], scores[head])
       }
       return max
+    },
+
+    async load() {
+      await ensureSessions()
     },
 
     skip(chunk) {

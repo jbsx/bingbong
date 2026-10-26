@@ -318,4 +318,30 @@ describe('openWakeWord detector', () => {
     expect(runtime.heads.abort.feeds).toHaveLength(0)
     expect(runtime.heads.holdOn.feeds).toHaveLength(0)
   })
+
+  it('loads every session on load(), before any chunk is scored, and runs none (#435)', async () => {
+    const runtime = createFakeRuntime()
+    const created: string[] = []
+    const create = runtime.ort.InferenceSession.create
+    runtime.ort.InferenceSession.create = (path: string) => {
+      created.push(path)
+      return create(path)
+    }
+    const detector = createDetector(runtime)
+
+    await detector.load!()
+    await detector.score(new Float32Array(CHUNK))
+
+    expect(created).toEqual(['mels.onnx', 'emb.onnx', 'wake.onnx', 'abort.onnx', 'holdon.onnx'])
+    expect(runtime.melspec.feeds).toHaveLength(1)
+  })
+
+  it('rejects load() on a missing model, as score() would', async () => {
+    const runtime = createFakeRuntime()
+    runtime.ort.InferenceSession.create = () => Promise.reject(new Error('mels.onnx: no such file'))
+    const detector = createDetector(runtime)
+
+    await expect(detector.load!()).rejects.toThrow('no such file')
+    await expect(detector.score(new Float32Array(CHUNK))).rejects.toThrow('no such file')
+  })
 })

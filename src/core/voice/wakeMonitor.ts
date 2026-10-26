@@ -62,6 +62,12 @@ export interface WakeMonitor {
    * Listen, #326): the VAD is then not asked again.
    */
   pushAudio(chunk: Float32Array, scored?: readonly number[]): Promise<void>
+  /**
+   * Loads the detector's models now, not at the first scored chunk (#435):
+   * behind a shut gate that is the first sound, minutes into a quiet boot.
+   * A failure is the ear's error, as a failed score is.
+   */
+  load(): void
   /** Fresh buffers after a listening episode; clears the fired/error latch. */
   reset(): void
 }
@@ -158,7 +164,16 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     }
   }
 
+  function fail(err: unknown): void {
+    latched = 'error'
+    deps.onError(err instanceof Error ? err.message : String(err))
+  }
+
   return {
+    load() {
+      deps.detector.load?.().catch(fail)
+    },
+
     async pushAudio(chunk, scored) {
       if (latched !== null) return
       wakeCarry = concat(wakeCarry, chunk)
@@ -167,8 +182,7 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
         else await scoreVadFrames(chunk)
         await scoreWakeChunks()
       } catch (err) {
-        latched = 'error'
-        deps.onError(err instanceof Error ? err.message : String(err))
+        fail(err)
       }
     },
 

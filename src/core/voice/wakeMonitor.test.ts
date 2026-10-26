@@ -216,6 +216,32 @@ describe('wake monitor', () => {
       expect(harness.wakes).toBe(1)
     })
 
+    it('loads the detector on load(), with no chunk heard (#435)', async () => {
+      const detector = new SkippingFakeWakeDetector([0.9])
+      const harness = createMonitor({ detector })
+
+      harness.monitor.load()
+      await Promise.resolve()
+
+      expect(detector.loads).toBe(1)
+      expect(detector.chunks).toHaveLength(0)
+      expect(harness.errors).toEqual([])
+    })
+
+    it('surfaces a failed load as the ear\'s error, and hears nothing after it', async () => {
+      const detector = new SkippingFakeWakeDetector([0.9])
+      detector.loadFailWith = new Error('wake model missing')
+      const harness = createMonitor({ detector })
+
+      harness.monitor.load()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+      expect(harness.errors).toEqual(['wake model missing'])
+      expect(detector.chunks).toHaveLength(0)
+      expect(detector.skipped).toHaveLength(0)
+    })
+
     it('scores every chunk when the detector cannot skip', async () => {
       const harness = createMonitor({ detector: new FakeWakeDetector([0.9]) })
 

@@ -1,11 +1,12 @@
 import { appendFileSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildAppReport, formatAppReport } from '../src/core/perf/appTelemetry'
 import { QUIT_BOUND_MS } from '../src/main/quitBound'
 import type { PerfSpanRecord } from '../src/core/perf/perfTracer'
+import { encodeUtteranceWav } from '../src/core/voice/utteranceDump'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
 
@@ -86,4 +87,56 @@ describe('lifecycle telemetry e2e (#429)', () => {
     expect(lines.find((line) => line.startsWith('boot ('))).toContain('dashboard-painted')
     expect(lines.find((line) => line.startsWith('quit:'))).toMatch(/^quit: 1 quits, 1 reached exit, 0 runs left no quit \| latest: before-quit \+0ms/)
   })
+})
+
+// The ear in a quiet room (#435): the gate shuts the wake stack until a sound,
+// yet its models load as the ear opens, so `wake-loaded` and `ready` (and the
+// STT preload behind it) land at boot, not at the first sound minutes later.
+describe('boot ready with the ear open on a silent mic (#435)', () => {
+  let harness: Harness | null = null
+  let userDataDir: string
+  let wav: string
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-lifecycle-ear-'))
+    wav = join(userDataDir, 'silence.wav')
+    await writeFile(wav, encodeUtteranceWav(new Float32Array(10 * 16_000)))
+    const models = join(process.cwd(), 'models')
+    harness = await startHarness({
+      userDataDir,
+      wakeFromBootIdle: false,
+      launchArgs: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`],
+      env: {
+        BINGBONG_WAKE_ENGINE: 'node',
+        BINGBONG_VAD_MODEL: join(models, 'silero_vad.onnx'),
+        BINGBONG_WAKE_MELSPEC_MODEL: join(models, 'melspectrogram.onnx'),
+        BINGBONG_WAKE_EMBEDDING_MODEL: join(models, 'embedding_model.onnx'),
+        BINGBONG_WAKE_MODEL: join(models, 'wake', 'bing_bong.onnx'),
+        BINGBONG_WAKE_ABORT_MODEL: join(models, 'wake', 'stop_now.onnx'),
+        BINGBONG_WAKE_HOLD_ON_MODEL: join(models, 'wake', 'hold_on.onnx'),
+      },
+      startupTimeoutMs: 60_000,
+    })
+  }, 90_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('writes wake-loaded and ready within seconds of the start, with no gate-open chunk', async () => {
+    const records = await waitFor(
+      async () => {
+        const all = await appRecords(userDataDir)
+        return milestones(all).includes('ready') ? all : undefined
+      },
+      { timeoutMs: 30_000, intervalMs: 250 },
+    )
+    const since = (m: string): number => Number(records.find((r) => r.stage === 'boot' && r.detail?.milestone === m)?.detail?.sinceStartMs)
+    if (process.env.BINGBONG_QUIT_MEASURE) appendFileSync(process.env.BINGBONG_QUIT_MEASURE, `[ear] wake-loaded ${since('wake-loaded')} ms, ready ${since('ready')} ms\n`)
+    expect(milestones(records)).toEqual(expect.arrayContaining(['wake-loaded', 'ready']))
+    expect(since('wake-loaded')).toBeLessThanOrEqual(since('ready'))
+    // The bound #429 measured before the gate: 5.6–6.8 s on the kiosk; well under it on dev.
+    expect(since('ready')).toBeLessThan(15_000)
+  }, 40_000)
 })

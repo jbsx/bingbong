@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
+import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts, SkippingFakeWakeDetector } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession, type SubmittedCommand } from './voiceSession'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
@@ -587,6 +587,16 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.states).toEqual([{ listening: false, reason: null, monitoring: true, transcribing: false }])
     expect(detector.chunks.length).toBeGreaterThan(0)
     expect(harness.transcriber.audio).toHaveLength(0)
+  })
+
+  it('loads the wake models as monitoring starts, before any audio (#435)', async () => {
+    const detector = new SkippingFakeWakeDetector([0.1])
+    const harness = await createSession({ wake: { detector } })
+
+    harness.session.enableWakeMonitoring()
+
+    expect(detector.loads).toBe(1)
+    expect(detector.chunks).toHaveLength(0)
   })
 
   it('wake detection chimes, barges in on speech, and opens a Hot Listen that stays open after the Utterance', async () => {
