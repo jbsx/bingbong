@@ -12,7 +12,7 @@ import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
-import { CONTINUE_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type WatchStatus } from './youtubeScripts'
+import { CONTINUE_SCRIPT, END_LEAD_S, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
 // queue and the verbs live here. `play <words>` fetches the results with
@@ -168,6 +168,10 @@ export function createPlayer(deps: PlayerDeps): Player {
   let checking = false
   /** The song that ran out with nothing queued, still shown on the card until something else plays (#344). */
   let ended: Song | null = null
+  /** The pane has left the ended song's page: the poll stops reading it (#473) until a verb opens something. */
+  let endedLeft = false
+  /** The Player's own verb paused the song (#473): what tells YouTube's idle pause, answered through "Continue watching?", from ours — the Queue's flag follows the element now, whoever paused it. */
+  let ownPause = false
   /** What the poll last read of the song playing: its channel and progress. */
   let progress: { id: string; channel: string; elapsed: number; duration: number | null } | null = null
   /** The element's volume as last read while not ducked. */
@@ -364,7 +368,10 @@ export function createPlayer(deps: PlayerDeps): Player {
         const was = state.current
         const { queue, next } = advance(state)
         state = queue
-        if (next === null && was !== null) ended = was
+        if (next === null && was !== null) {
+          ended = was
+          endedLeft = false
+        }
         publish()
         if (next === null || !current()) return
         const opened = await open(next, current, was)
@@ -642,7 +649,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** The poll's read of the song playing: its progress for the card, a new page's volume ducked, YouTube's own pause answered. */
   async function readWatch(status: WatchStatus): Promise<void> {
     const song = state.current
-    if (song === null || status.id !== song.id || !status.hasVideo || status.ad) return
+    if (song === null || !showsSong(status, song)) return
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
@@ -655,8 +662,53 @@ export function createPlayer(deps: PlayerDeps): Player {
       heard = { volume, loudnessDb: status.loudnessDb }
     } else if (!status.ducked || status.volume > floorOf(ducked.restore)) await duckElement()
     if (opening && status.elapsed >= CARRIED_S) carrying = null
-    // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes.
-    if (status.paused && !state.paused && status.prompt) await evaluate<boolean>(CONTINUE_SCRIPT)
+    // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes — asked
+    // again every tick it stays up, a page pause adopted meanwhile notwithstanding.
+    const continued = status.paused && !ownPause && status.prompt && (await evaluate<boolean>(CONTINUE_SCRIPT)) === true
+    adoptElementFlags(continued ? { ...status, paused: false } : status)
+  }
+
+  /** The watch page shows this song's video, no ad in it: the read is of the song. */
+  function showsSong(status: WatchStatus, song: Song): boolean {
+    return status.id === song.id && status.hasVideo && !status.ad
+  }
+
+  /**
+   * The element's own `paused` and `loop` are the Queue's (#473): a loop set
+   * from YouTube's menu or a Media Op, a pause from the page's controls, show
+   * on the card whoever made them. An element that has not played yet — its
+   * length unknown, or nothing of it elapsed — is a page still landing (the
+   * autoplay gate, buffering): its pause is not adopted, so the card says
+   * Starting and not Paused.
+   */
+  function adoptElementFlags(status: WatchStatus): void {
+    if (status.loop !== state.loop) state = setLoop(state, status.loop)
+    if (!status.paused) ownPause = false
+    const landing = status.duration === null || status.elapsed <= 0
+    if (landing || status.paused === state.paused) return
+    state = status.paused ? pause(state) : unpause(state)
+  }
+
+  /**
+   * The song that ended, playing again from the page (#473): looped or
+   * resumed there, the element plays on with no Player verb, so it goes back
+   * to being the current song and the read continues. Looping, it never
+   * reaches the end rule, so it simply plays on; unlooped and still in the
+   * end's lead, the rule pauses it again at once, so it has not resumed.
+   * Once the pane has left the song's page the poll stops reading it: the
+   * watch script would otherwise mind videos the Player never started.
+   */
+  function resumeEnded(status: WatchStatus): boolean {
+    const song = ended
+    if (song === null) return false
+    if (!status.watch || status.id !== song.id) {
+      endedLeft = true
+      return false
+    }
+    if (!showsSong(status, song) || status.paused) return false
+    if (!status.loop && status.duration !== null && status.elapsed >= status.duration - END_LEAD_S) return false
+    state = replay(state, song)
+    return true
   }
 
   async function performNow(music: MusicAction, words: string | null, current: () => boolean): Promise<PlayerOutcome> {
@@ -682,7 +734,10 @@ export function createPlayer(deps: PlayerDeps): Player {
         return playSong(back.song, current, `Back to ${quoted(back.song.title)}.`, () => previous(state).queue)
       }
       case 'pause':
-        return onElement({ op: 'pause' }, () => STOPPED_ANSWERS.paused, pause)
+        return onElement({ op: 'pause' }, () => STOPPED_ANSWERS.paused, (queue) => {
+          ownPause = true
+          return pause(queue)
+        })
       case 'unpause': {
         const again = state.current === null ? ended : null
         if (again !== null) return onElement({ op: 'restart' }, () => `Playing ${quoted(again.title)}.`, (queue) => replay(queue, again))
@@ -731,6 +786,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       const [stopped, framed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT), pauseFrames()])
       if ((stopped?.paused ?? 0) + framed === 0) return false
       if (stopped?.youtube === true) {
+        ownPause = true
         state = pause(state)
         publish()
       }
@@ -738,15 +794,17 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async check() {
-      if (checking || state.current === null) return
+      if (checking || (state.current === null && (ended === null || endedLeft))) return
       checking = true
       try {
         const status = await evaluate<WatchStatus>(WATCH_SCRIPT)
-        if (status !== null) hearStay(status)
-        const end = status?.ended ?? null
+        if (status === null) return
+        if (state.current === null && !resumeEnded(status)) return
+        hearStay(status)
+        const end = status.ended
         // An ad plays in the same element: its end is not the song's.
         if (end === null || end.ad || end.id !== state.current?.id) {
-          if (status !== null) await readWatch(status)
+          await readWatch(status)
           return
         }
         advanceInBackground()

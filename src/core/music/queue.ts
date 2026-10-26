@@ -19,8 +19,9 @@ export interface Queue {
   readonly upNext: readonly Song[]
   /** The songs played before it, the last one last: what `previous` returns to. */
   readonly played: readonly Song[]
-  /** The current song loops: the element's `loop` flag, which a new song clears. */
+  /** The current song loops: the element's `loop` flag, which a new song clears; the Player reads it back from the element each poll (#473). */
   readonly loop: boolean
+  /** The element's `paused`, set by the Player's verbs and read back from the element each poll (#473). */
   readonly paused: boolean
 }
 

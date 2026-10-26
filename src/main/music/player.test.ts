@@ -310,6 +310,82 @@ describe('the Player\'s Now Playing (#344)', () => {
     expect(browser.navigations).toHaveLength(1)
   })
 
+  it('follows the element (#473): a loop set on the page alone shows Loop, and a pause from the page shows Paused', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.element = { ...youtube.element, loop: true }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ loop: true, paused: false })
+    expect(player.queue().loop).toBe(true)
+    youtube.element = { ...youtube.element, paused: true, currentTime: 12 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ loop: true, paused: true, ended: false })
+    expect(player.queue().paused).toBe(true)
+    youtube.element = { ...youtube.element, paused: false, loop: false }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ loop: false, paused: false })
+  })
+
+  it('a paused element that has not played yet is a page still landing (#473): the card says Starting, not Paused', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.element = { ...youtube.element, paused: true, duration: null }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ paused: false, durationS: null })
+    // Its length known, nothing of it elapsed: the autoplay gate, not a pause.
+    youtube.element = { ...youtube.element, paused: true, duration: 180, currentTime: 0 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ paused: false, durationS: 180 })
+    youtube.element = { ...youtube.element, currentTime: 3 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ paused: true })
+  })
+
+  it('an ended song playing again from the page (#473) leaves Ended and the bar moves: looping, it plays on with no end heard', async () => {
+    const { browser, youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.endVideo()
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ ended: true, loop: false })
+    // Still paused at its end: ended it stays, the page read each tick.
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ ended: true })
+    youtube.element = { ...youtube.element, paused: false, loop: true, currentTime: 5 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: false, paused: false, loop: true, elapsedS: 5 })
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+    youtube.element = { ...youtube.element, currentTime: 40 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ ended: false, elapsedS: 40 })
+    expect(browser.navigations).toHaveLength(1)
+    expect(youtube.controls).toEqual([])
+  })
+
+  it('an ended song set playing in its last second without loop (#473) is not back: the end rule pauses it again at once', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.endVideo()
+    await player.check()
+    youtube.element = { ...youtube.element, paused: false, loop: false, currentTime: 179.5, duration: 180 }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ ended: true })
+    expect(player.queue().current).toBeNull()
+  })
+
+  it('once the pane leaves the ended song\'s page the poll stops reading it (#473): the watch script minds no video the Player never started', async () => {
+    const { browser, youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.endVideo()
+    await player.check()
+    await browser.navigate(`${WATCH}bbbbbbbbbbb`)
+    await player.check()
+    const read = browser.evaluations.length
+    await player.check()
+    await player.check()
+    expect(browser.evaluations).toHaveLength(read)
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: true })
+  })
+
   it('"show the video" names the ended song too: the watch page is still there', async () => {
     const { youtube, player, perform } = wired()
     await perform({ kind: 'search', place: 'now' }, 'song a')
@@ -692,6 +768,19 @@ describe('YouTube\'s own idle prompt (#344)', () => {
     expect(youtube.continued).toBe(1)
     expect(youtube.element.paused).toBe(false)
     expect(player.queue().paused).toBe(false)
+    expect(player.nowPlaying()?.paused).toBe(false)
+  })
+
+  it('a pause adopted from the page a tick before the prompt shows (#473) is still answered: only the Player\'s own pause is left alone', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.element = { ...youtube.element, paused: true, currentTime: 50 }
+    await player.check()
+    expect(player.nowPlaying()?.paused).toBe(true)
+    youtube.continuePrompt = true
+    await player.check()
+    expect(youtube.continued).toBe(1)
+    expect(youtube.element.paused).toBe(false)
     expect(player.nowPlaying()?.paused).toBe(false)
   })
 

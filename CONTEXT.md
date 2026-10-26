@@ -1414,7 +1414,12 @@ keeps the Queue. It is state no page can hold — what plays next, what
 played before, whether the music carries on at a song's end — which is
 why its walk is the appliance's own and not a page's control (#374,
 2026-10-21). A song queued with nothing playing plays at once. `skip`
-clears the loop, and a pause keeps it. It lives in main and does not
+clears the loop, and a pause keeps it. Whether the song is paused and
+whether it loops are the element's own facts, read back from it on every
+poll (#473): a loop set from YouTube's menu or a Media Op, a pause from
+the page's controls, show on the Now Playing card whoever made them, and
+a song that ended and plays on from the page (looped there) is the
+current song again. It lives in main and does not
 survive a restart, as the Timer does not.
 _Avoid_: playlist, up next (for the whole queue)
 

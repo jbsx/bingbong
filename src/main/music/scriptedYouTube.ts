@@ -39,7 +39,8 @@ export class ScriptedYouTube {
   /** Every control the element took, in order. */
   readonly controls: ElementOp[] = []
   readonly fetched: string[] = []
-  element = { paused: false, loop: false, volume: 100, muted: false, currentTime: 0, duration: 180 }
+  /** The watch page's video element; `duration` null while it does not know its length, as the watch script reports it. */
+  element: { paused: boolean; loop: boolean; volume: number; muted: boolean; currentTime: number; duration: number | null } = { paused: false, loop: false, volume: 100, muted: false, currentTime: 0, duration: 180 }
   /** The page's own media elements beside YouTube's player — any site's (#376). */
   pageMedia: { paused: boolean }[] = []
   /** How often an idle `stop` paused what plays on the page (#376). */

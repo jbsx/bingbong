@@ -91,7 +91,8 @@ export const LEVEL_SCRIPT = `(() => {
 const PROMPT_FINDER = `const continuePrompt = () => Array.from(document.querySelectorAll('yt-confirm-dialog-renderer')).find((dialog) => dialog.getClientRects().length > 0 && /continue watching/i.test(dialog.textContent || '')) || null`
 
 /** How long before a song's end it is paused (s): `timeupdate` comes about every quarter second. */
-const END_LEAD_S = 1
+/** How far before its end a song is paused and its end heard (s): a playing element this close to the end is one the end rule is about to pause. */
+export const END_LEAD_S = 1
 
 /**
  * Reads the watch page, and hears its video's end. Listeners on the
