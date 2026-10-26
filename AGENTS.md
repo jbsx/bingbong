@@ -169,6 +169,31 @@ Effort breaks ties only. The ranked list and the method are in
 and every audit order names the scenario it serves, its yield, its state
 with dated evidence, and what the one change does to it.
 
+### UI
+
+The person is predicting when the wait ends and what it ends with. The
+UI's job is to keep that prediction updateable. Four words carry it:
+
+- **Receipt**: every input shows the words heard before anything is
+  done, within 100 ms.
+- **Narrated wait**: a wait names its stage and object, counts its
+  seconds from the work itself, shows partial results, and ends in a
+  spoken outcome; a cold start is a wait.
+- **Glance surface**: the screen is read from 2 m on a 21-inch panel.
+  Status type is 65 px and up, and what cannot be read from the chair
+  is said aloud. Its first job is to show whether speaking now will be
+  heard.
+- **Spoken handle**: every live thing carries a visible name the person
+  can say, and no two live things answer the same words; what voice
+  cannot reach is named as such, aloud, with where it is.
+
+The ten principles, each with its reason and the numbers behind it, are
+in `docs/agents/ui.md`. A change that adds a wait, a state, a word on
+screen or a sentence spoken is checked against them before commit, and
+the completion summary names the principles it met and any it bends
+with the reason. Thresholds in them are measured (`pnpm perf:report`,
+the kiosk logs), never guessed; a guessed one is marked so in the code.
+
 ### Triage labels
 
 Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
