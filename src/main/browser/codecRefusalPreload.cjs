@@ -3,7 +3,8 @@
 // the adblock scriptlets' preload is: the pane is sandboxed. It runs in
 // every frame — an embedded player asks too — before the document's first
 // script, asks main for this machine's refusal synchronously, and runs it
-// in the page's main world.
+// in the page's main world, after the media-types watch the playback record
+// names a page's codec by (src/main/perf/playbackScript.ts).
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- a sandboxed preload has only require
 const { ipcRenderer, webFrame } = require('electron')
 

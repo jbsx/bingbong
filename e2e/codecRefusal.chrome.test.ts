@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { codecRefusalScript } from '../src/core/browser/hardwareCodecs.ts'
+import { CODEC_PROBE_HUNG, codecProbeScript, codecRefusalScript } from '../src/core/browser/hardwareCodecs.ts'
 import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // A codec the GPU cannot decode is not offered (#425): with AV1 refused, a
@@ -49,5 +49,37 @@ describe.skipIf(!canDriveChrome)('a codec the GPU cannot decode is not offered (
     expect(after.VP9).toEqual(before.VP9)
     expect(after.H264).toEqual(before.H264)
     expect(after.OPUS).toEqual(before.OPUS)
+  })
+})
+
+describe.skipIf(!canDriveChrome)('the codec probe script always settles (#425, 2026-10-26)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures({ '/blank': '<body></body>' }, 'bingbong-codec-probe-chrome-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it('answers one boolean per family from this Chrome’s own mediaCapabilities', async () => {
+    await fixtures.open('/blank')
+    const answer = (await fixtures.chrome.evaluate(codecProbeScript(2_000))) as Record<string, unknown>
+    expect(Object.keys(answer).sort()).toEqual(['av1', 'h264', 'hevc', 'vp8', 'vp9'])
+    for (const value of Object.values(answer)) expect(typeof value).toBe('boolean')
+  })
+
+  it('answers hung for a family whose decodingInfo never settles, inside its bound', async () => {
+    await fixtures.open('/blank')
+    await fixtures.chrome.evaluate(`(() => {
+      const decodingInfo = MediaCapabilities.prototype.decodingInfo
+      MediaCapabilities.prototype.decodingInfo = function (config) {
+        return config.video.contentType.includes('vp09') ? new Promise(() => {}) : decodingInfo.call(this, config)
+      }
+    })()`)
+    const started = Date.now()
+    const answer = (await fixtures.chrome.evaluate(codecProbeScript(300))) as Record<string, unknown>
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(answer.vp9).toBe(CODEC_PROBE_HUNG)
+    expect(typeof answer.h264).toBe('boolean')
   })
 })

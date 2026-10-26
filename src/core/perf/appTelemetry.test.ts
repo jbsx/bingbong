@@ -58,8 +58,9 @@ describe('buildAppReport', () => {
       app('run', { version: '0.1.4', machine: null, kiosk: false }),
       app('cpu', { total: 20, byType: { Tab: 15, GPU: 5 }, load1: 1 }),
       app('cpu', { total: 200, byType: { Tab: 150, GPU: 50 }, load1: 3 }),
-      play({}),
-      play({ startMs: 4_000, stalls: 2, stallMs: 3_000 }),
+      play({ codec: 'vp09.00.51.08 / opus' }),
+      play({ startMs: 4_000, stalls: 2, stallMs: 3_000, codec: 'av01.0.08M.08 / opus' }),
+      // A record from before the codec was kept names none.
       play({ startMs: null, droppedFrames: null, totalFrames: null }),
     ]
     const report = buildAppReport(records)
@@ -68,11 +69,11 @@ describe('buildAppReport', () => {
       { version: '0.1.4', machine: null, kiosk: false, count: 1 },
     ])
     expect(report.cpu).toEqual({ samples: 2, p50: 20, p95: 200, max: 200, byTypeP50: { GPU: 5, Tab: 15 } })
-    expect(report.playback).toEqual({ count: 3, neverPlayed: 1, startP50: 800, startP95: 4_000, stalls: 2, stallMs: 3_000, droppedFrames: 20, totalFrames: 2_000 })
+    expect(report.playback).toEqual({ count: 3, neverPlayed: 1, startP50: 800, startP95: 4_000, stalls: 2, stallMs: 3_000, droppedFrames: 20, totalFrames: 2_000, codecs: { vp09: 1, opus: 2, av01: 1 } })
     expect(formatAppReport(report)).toEqual([
       'runs: 0.1.3 on kiosk (kiosk) ×2, 0.1.4 on unnamed ×1',
       'cpu (% of one core, 2 samples): p50 20% p95 200% max 200% | p50 by process GPU 5%, Tab 15%',
-      'playback: 3 played (1 never started) | start p50 800ms p95 4000ms | stalls 2 for 3000ms | dropped 20/2000 frames (1%)',
+      'playback: 3 played (1 never started) | start p50 800ms p95 4000ms | stalls 2 for 3000ms | dropped 20/2000 frames (1%) | codecs vp09 ×1, opus ×2, av01 ×1',
     ])
   })
 

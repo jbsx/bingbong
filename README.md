@@ -306,7 +306,8 @@ The run's first STT is marked `cold`, and `wake-to-transcript` counts its blank
 transcripts (`blips`). Beside the turns, under the id `app`, the log holds
 the run's stamp (build, machine, kiosk, CPU), a CPU sample of every process
 every 15 s, and one `playback` record per piece of media the pane played:
-start time, stalls, dropped frames, picture height. The report prints them
+start time, stalls, dropped frames, picture height, and the codecs the page
+asked Media Source for (`unknown` when it named none). The report prints them
 as `runs:`, `cpu` and `playback:` lines.
 
 `BINGBONG_AUDIO_DUMP=1` writes every detected utterance to `audio-dumps/`

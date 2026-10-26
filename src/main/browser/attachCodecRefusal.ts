@@ -1,5 +1,7 @@
 import { ipcMain, type IpcMainEvent, type Session, type WebContents } from 'electron'
-import { CODEC_PROBES, CODEC_REFUSAL_CHANNEL, codecProbeScript, codecRefusalScript, isCodecProbeResult, refusedCodecs, type CodecFamily } from '../../core/browser/hardwareCodecs'
+import { CODEC_PROBES, CODEC_REFUSAL_CHANNEL, codecProbeLine, codecProbeScript, codecRefusalScript, refusedCodecs, runCodecProbe, type CodecFamily, type CodecProbeEvent } from '../../core/browser/hardwareCodecs'
+import { systemClock } from '../../core/ports/clock'
+import { MEDIA_TYPES_SCRIPT } from '../perf/playbackScript'
 import { reportFault } from '../../core/trace/fault'
 import codecRefusalPreloadPath from './codecRefusalPreload.cjs?asset'
 
@@ -7,7 +9,12 @@ import codecRefusalPreloadPath from './codecRefusalPreload.cjs?asset'
 // hardwareCodecs): the GPU is asked once, in the pane's blank start page,
 // which families it decodes; every frame of the partition then asks here
 // before its first script and is handed the refusal. A frame that asks
-// before the answer is in is refused nothing.
+// before the answer is in is refused nothing. The probe always says what
+// happened (2026-10-26: on the kiosk it said nothing for two boots): its
+// answer, or the step that did not settle within its bound, as a journal
+// line and a fault. Every frame is also handed the media-types watch, which
+// lets the playback record name the codec a page chose (by kind: what it
+// asked Media Source for).
 
 /** The e2e's stand-in for the GPU (Xvfb has none): the families it decodes, comma-separated, in place of the probe. */
 export const GPU_CODECS_ENV = 'BINGBONG_GPU_CODECS'
@@ -23,26 +30,42 @@ export function attachCodecRefusal(paneSession: Session, probe: WebContents, env
   const preload = paneSession.registerPreloadScript({ type: 'frame', filePath: codecRefusalPreloadPath })
   // The reply must always be set, or the frame's renderer waits on it.
   const onAsk = (event: IpcMainEvent): void => {
-    event.returnValue = event.sender.session === paneSession ? script : ''
+    event.returnValue = event.sender.session === paneSession ? `${MEDIA_TYPES_SCRIPT};\n${script}` : ''
   }
   ipcMain.on(CODEC_REFUSAL_CHANNEL, onAsk)
 
-  const ask = async (): Promise<void> => {
-    try {
-      const standIn = env[GPU_CODECS_ENV]
-      const inHardware: unknown = standIn !== undefined ? standInAnswer(standIn) : await probe.executeJavaScript(codecProbeScript())
-      if (!isCodecProbeResult(inHardware)) throw new Error(`unreadable probe: ${JSON.stringify(inHardware)}`)
-      const refused = refusedCodecs(inHardware)
-      script = refused.length > 0 ? codecRefusalScript(refused) : ''
-      const decoded = Object.entries(inHardware).flatMap(([family, yes]) => (yes ? [family] : []))
-      console.log(`[codecs] decoded on the GPU: ${decoded.join(', ') || 'none'}; refused to pages: ${refused.join(', ') || 'none'}`)
-    } catch (error) {
-      // No answer refuses nothing: every codec stays offered, as before.
-      reportFault('browser.attachCodecRefusal.probe', error)
-    }
+  const settle = (event: CodecProbeEvent): void => {
+    console.log(codecProbeLine(event))
+    if (event.kind === 'answer') script = event.refused.length > 0 ? codecRefusalScript(event.refused) : ''
+    // No answer refuses nothing: every codec stays offered, as before.
+    else reportFault('browser.attachCodecRefusal.probe', new Error(`${event.step}: ${event.message}`))
   }
-  if (probe.isLoading()) probe.once('did-finish-load', () => void ask())
-  else void ask()
+  const standIn = env[GPU_CODECS_ENV]
+  if (standIn !== undefined) {
+    const inHardware = standInAnswer(standIn)
+    settle({ kind: 'answer', inHardware, refused: refusedCodecs(inHardware), ms: 0 })
+  } else {
+    runCodecProbe(
+      {
+        // A load that fails or is cut short still stops loading: either edge lets the probe ask.
+        loaded: () =>
+          probe.isLoading()
+            ? new Promise<void>((resolve) => {
+                const done = (): void => {
+                  probe.removeListener('did-finish-load', done)
+                  probe.removeListener('did-stop-loading', done)
+                  resolve()
+                }
+                probe.on('did-finish-load', done)
+                probe.on('did-stop-loading', done)
+              })
+            : Promise.resolve(),
+        evaluate: () => probe.executeJavaScript(codecProbeScript()),
+        clock: systemClock,
+      },
+      settle,
+    )
+  }
 
   return () => {
     ipcMain.removeListener(CODEC_REFUSAL_CHANNEL, onAsk)

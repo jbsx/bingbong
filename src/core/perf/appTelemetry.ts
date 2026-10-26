@@ -106,6 +106,13 @@ export interface PlaybackRecord {
   totalFrames: number | null
   /** The picture's height; null for audio. */
   height: number | null
+  /**
+   * The codecs the page asked Media Source for (`vp09.00.51.08 / opus`), or
+   * the `<source>` type's; 'unknown' when neither named one, as for media
+   * set up before the watch ran. Absent on records written before #425's
+   * 2026-10-26 change.
+   */
+  codec?: string
   /** Why the record was closed: its source changed, the page left, or it ended. */
   closed: 'changed' | 'left' | 'ended'
 }
@@ -122,6 +129,8 @@ export interface AppReport {
     stallMs: number
     droppedFrames: number
     totalFrames: number
+    /** How many records named each codec, by its leading part (`vp09`, `av01`, `opus`, `unknown`). */
+    codecs: Record<string, number>
   } | null
   /** Boot, model loads, quit and the steady state (#429). */
   lifecycle: LifecycleReport
@@ -188,7 +197,20 @@ function playbackReport(plays: readonly PlaybackRecord[]): AppReport['playback']
     stallMs: sum('stallMs'),
     droppedFrames: sum('droppedFrames'),
     totalFrames: sum('totalFrames'),
+    codecs: codecTally(plays),
   }
+}
+
+function codecTally(plays: readonly PlaybackRecord[]): Record<string, number> {
+  const tally: Record<string, number> = {}
+  for (const play of plays) {
+    if (typeof play.codec !== 'string') continue
+    for (const codec of play.codec.split(' / ')) {
+      const lead = codec.split('.')[0]
+      tally[lead] = (tally[lead] ?? 0) + 1
+    }
+  }
+  return tally
 }
 
 export function formatAppReport(report: AppReport): string[] {
@@ -205,7 +227,9 @@ export function formatAppReport(report: AppReport): string[] {
     const p = report.playback
     const start = p.startP50 === null || p.startP95 === null ? 'never started' : `start p50 ${formatMs(p.startP50)} p95 ${formatMs(p.startP95)}`
     const frames = p.totalFrames > 0 ? ` | dropped ${p.droppedFrames}/${p.totalFrames} frames (${round1((100 * p.droppedFrames) / p.totalFrames)}%)` : ''
-    lines.push(`playback: ${p.count} played (${p.neverPlayed} never started) | ${start} | stalls ${p.stalls} for ${formatMs(p.stallMs)}${frames}`)
+    const tally = Object.entries(p.codecs)
+    const codecs = tally.length > 0 ? ` | codecs ${tally.map(([codec, count]) => `${codec} ×${count}`).join(', ')}` : ''
+    lines.push(`playback: ${p.count} played (${p.neverPlayed} never started) | ${start} | stalls ${p.stalls} for ${formatMs(p.stallMs)}${frames}${codecs}`)
   }
   lines.push(...formatLifecycleReport(report.lifecycle))
   return lines
