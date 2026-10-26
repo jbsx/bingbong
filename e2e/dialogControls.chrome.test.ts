@@ -24,6 +24,7 @@ const PAGE_BODY = `<header><form role="search"><input type="search" aria-label="
 const ADBLOCK_DIALOG = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50">
   <div id="box" style="position:relative;margin:10% auto;width:600px;background:#fff">
     <span class="zw3zih" tabindex="0" style="cursor:pointer;position:absolute;top:0;right:0;width:16px;height:56px">×</span>
+    <span id="icon-close" tabindex="0" aria-label="Close" style="cursor:pointer;position:absolute;top:0;right:24px;width:16px;height:16px"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 1L11 11M11 1L1 11" stroke="#000"/></svg></span>
     <p>Looks like your ad blocker is on.</p>
     <p>We rely on ads to keep creating quality content for you to enjoy for free.</p>
     <button class="_1kssuc" tabindex="0">Disable</button>
@@ -116,15 +117,17 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
 
   const dialogRefs = (snapshot: PageSnapshot) => snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => [ref.kind, ref.label])
 
-  it('makes a tabindex-only element in the dialog layer a button ref, and leaves one on the page out', async () => {
+  it('makes a textless tabindex-only element in the dialog layer a button ref, leaves one with text of its own to the text pieces (#476), and leaves one on the page out', async () => {
     const snapshot = await collect('/adblock')
     expect(snapshot.dialogOpen).toBe(true)
     // The span inside the button is that button's own text, as any weak cue inside a ref a click takes whole.
     expect(dialogRefs(snapshot)).toEqual([
-      ['button', '×'],
+      ['button', 'Close'],
       ['button', 'Disable'],
       ['button', 'Inside a button'],
     ])
+    // The × with its own text is prose made focusable, as far as the markup says: a piece of the dialog's text a click still lands on.
+    expect(texts(snapshot)).toContain('×')
     expect(snapshot.refs.map((ref) => ref.label)).not.toContain('Page tab span')
   })
 
@@ -132,7 +135,7 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     await fixtures.open('/adblock')
     const snapshot = buildPageSnapshot(await collected({ commandLineApi: true }))
     expect(dialogRefs(snapshot)).toEqual([
-      ['button', '×'],
+      ['button', 'Close'],
       ['button', 'Disable'],
       ['button', 'Continue without supporting us'],
       ['button', 'Inside a button'],
@@ -166,8 +169,8 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
   it("collects a frame in the top's open dialog as that layer: its controls below the frame's own fold, and its tabindex-only ones, reach the dialog's refs", async () => {
     await fixtures.open('/sourcepoint')
     const merged = mergeFrames(await collected(), [await inFrame()])
+    // "Close the wall" has text of its own and a tabindex alone: a text piece, not a ref (#476).
     expect(dialogRefs(buildPageSnapshot(merged.page))).toEqual([
-      ['button', 'Close the wall'],
       ['button', 'Manage options'],
       ['button', 'Reject & Pay'],
       ['button', 'Accept All & Continue'],
@@ -258,29 +261,28 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     await fixtures.open('/adblock')
     const snapshot = buildPageSnapshot(await collected({ commandLineApi: true }))
     expect(snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => [ref.label, ref.foundBy])).toEqual([
-      ['×', 'tabindex'],
+      ['Close', 'tabindex'],
       ['Disable', undefined],
       ['Continue without supporting us', 'listener'],
       ['Inside a button', undefined],
     ])
-    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === '×')!)).toContain('focusable, not marked as a control')
+    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Close')!)).toContain('focusable, not marked as a control')
     expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Continue without supporting us')!)).toContain('has a click listener, not marked as a control')
     expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Disable')!)).not.toContain('not marked as a control')
   })
 
-  it("lists a framed wall's focusable prose with the fact on its line, never as a plain button (#476), and keeps the fact through the merge", async () => {
+  it("leaves a framed wall's focusable prose off the refs (#476) and offers it as the dialog's text pieces, by its frame; the <button>s stay, with nothing on their lines", async () => {
     await fixtures.open('/sp-prose')
     const merged = mergeFrames(await collected(), [await inFrame()])
     const refs = buildPageSnapshot(merged.page).refs.filter((ref) => ref.layer === 'dialog')
     expect(refs.map((ref) => [ref.kind, ref.label, ref.foundBy])).toEqual([
-      ['button', 'Personalised advertising', 'tabindex'],
-      ['button', 'Accept personalised advertising and all cookies', 'tabindex'],
-      ['button', 'We use cookies and similar technologies to support this site.', 'tabindex'],
       ['button', 'Accept all', undefined],
       ['button', 'Reject all and subscribe', undefined],
     ])
-    expect(formatRefLine(refs[1]!)).toMatch(/^\[\d+\] button "Accept personalised advertising and all cookies" in 127\.0\.0\.1 focusable, not marked as a control \(dialog\)$/)
-    expect(formatRefLine(refs[3]!)).toMatch(/^\[\d+\] button "Accept all" in 127\.0\.0\.1 \(dialog\)$/)
+    expect(formatRefLine(refs[0]!)).toMatch(/^\[\d+\] button "Accept all" in 127\.0\.0\.1 \(dialog\)$/)
+    // The frame's own text pieces, as the controller asks them once the merge puts the frame in the dialog (the test above): the prose is among them.
+    const pieces = await fixtures.chrome.evaluate<string[]>(`document.querySelector('iframe').contentWindow.eval('window.__bingbongDialogTexts().map((piece) => piece.text)')`)
+    expect(pieces).toEqual(['Personalised advertising', 'Accept personalised advertising and all cookies', 'We use cookies and similar technologies to support this site.'])
   })
 
   it("Tier-1's consent dismissal clicks the wall's <button> ahead of the focusable prose carrying the same words (#476), and the dialog reads closed", async () => {

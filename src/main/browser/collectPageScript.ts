@@ -521,6 +521,22 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     return all
   }
+  // An element's own text (#416): its text nodes and the inline tags folded
+  // into them, never a child block's. What the dialog text pieces are made
+  // of, and what tells focusable prose from a close with no words (#476).
+  const FOLDED = new Set(['ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE', 'DATA', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR'])
+  const NEVER_TEXT = 'svg, math, script, style, noscript, template, textarea, select'
+  const ownText = (el) =>
+    Array.from(el.childNodes)
+      .map((node) => {
+        if (node.nodeType === Node.TEXT_NODE) return node.data
+        if (node.nodeType !== Node.ELEMENT_NODE) return ''
+        const tag = tagOf(node).toUpperCase()
+        return tag === 'BR' ? ' ' : FOLDED.has(tag) ? renderedText(node) : ' '
+      })
+      .join('')
+      .replace(/\\s+/g, ' ')
+      .trim()
   const collectElements = (dialogRoot) => {
     const listened = listenedUnder(dialogRoot)
     // A frame with no dialog of its own may sit in the top's (#414, ADR
@@ -546,6 +562,15 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       const layerCue = own === 'tabindex' || (own === null && heard)
       const cue = (dialog || layerUnknown) && layerCue ? 'weak' : own
       if (!marked && cue === null) continue
+      // Prose made focusable for screen readers is no control (#476):
+      // inside the layer, an element a tabindex alone found, with text of
+      // its own, is left to the dialog text pieces (#416), where a click
+      // still lands on it. Sourcepoint's walls make every paragraph a
+      // <p tabindex="0">, the one carrying the accept's words ahead of the
+      // button; listed as a button it drew the consent rule and Jev, and a
+      // click on it did nothing. A textless one — an icon close — stays a
+      // ref, as does any element with a click listener of its own.
+      if (!marked && (dialog || layerUnknown) && own === 'tabindex' && !heard && ownText(el) !== '') continue
       // How the layer's cue found it (#476): the fact rides the ref, so the
       // card and the consent rule tell focusable prose from a <button>. A
       // listener is the nearer fact to a control when it has both.
@@ -1092,19 +1117,6 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // by, replaced by every read as the ref registry is by every collect.
   // The most a Choice could offer beside Escape: the Card Budget, not a count, is their bound.
   const MAX_DIALOG_TEXTS = 254
-  const FOLDED = new Set(['ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE', 'DATA', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR'])
-  const NEVER_TEXT = 'svg, math, script, style, noscript, template, textarea, select'
-  const ownText = (el) =>
-    Array.from(el.childNodes)
-      .map((node) => {
-        if (node.nodeType === Node.TEXT_NODE) return node.data
-        if (node.nodeType !== Node.ELEMENT_NODE) return ''
-        const tag = tagOf(node).toUpperCase()
-        return tag === 'BR' ? ' ' : FOLDED.has(tag) ? renderedText(node) : ' '
-      })
-      .join('')
-      .replace(/\\s+/g, ' ')
-      .trim()
   const refSet = new Set(collected)
   const dialogTextsIn = (textLayer) => {
     const dialogTextNodes = []

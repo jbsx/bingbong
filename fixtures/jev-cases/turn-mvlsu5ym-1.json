@@ -6,7 +6,7 @@
   "expect": [
     {
       "question": "dismiss",
-      "label": "ref-1|ref-3"
+      "label": "popup-2|ref-2"
     },
     {
       "question": "outcome",
@@ -14,15 +14,14 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to a web browser: \"when is diwali this year\"\nThis is step 2 of the task. Done so far: scroll until \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 \" is in view (the page changed)\nPages visited: https://publicholidays.co.uk/diwali/\nPage: https://publicholidays.co.uk/diwali/ — \"Diwali 2026, 2027 and 2028\"\nFull screen: off\nA dialog is open: \"Looks like your ad blocker is on. × We rely on ads to keep creating quality content for you to enjoy for free. Please support our site by disabling your ad blocker. DISABLE Continue without supporting us\"\nRefs (number, kind, label, address, states):\n[1] button \"×\"\n[2] button \"DISABLE\"\n[3] button \"Continue without supporting us\" role=paragraph\nLinks further down the page (name, address):\n[link-1] link \"\" https://publicholidays.co.uk/\n[link-2] link \"Chinese\" https://publicholidays.co.uk/zh/\n[link-3] link \"French\" https://publicholidays.co.uk/fr/\n[link-4] link \"German\" https://publicholidays.co.uk/de/\n[link-5] link \"Terms and Conditions\" https://publicholidays.co.uk/terms-conditions\n[link-6] link \"Privacy Policy\" https://publicholidays.co.uk/privacy-policy\n[link-7] link \"About Us\" https://publicholidays.co.uk/about/\n[link-8] link \"Contact Us\" https://publicholidays.co.uk/contact/\nText further down the page, not on screen yet (number, text):\n[text-1] heading \"Diwali 2026, 2027 and 2028\"\n[text-2] \"⌂\"\n[text-3] \"The Hindu religious holiday of Diwali, also called Deepavali or the “Festival of Lights”, is not an official public holiday in the United Kingdom. But it is has nonetheless grown in significance in the UK as the number of Indian immigrants has increased over the years. Today, there are private and p\"\n[text-4] \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 October in 2027.\"\n[text-5] table row \"Year | Date | Day | Holiday\"\n[text-6] table row \"2026 | 8 Nov | Sun | Diwali\"\n[text-7] table row \"2027 | 29 Oct | Fri | Diwali\"\n[text-8] table row \"2028 | 17 Oct | Tue | Diwali\"\n[text-9] table row \"Please scroll down to end of page for previous years' dates.\"\n[text-10] \"Diwali is always celebrated between mid-October and mid-November in the western calendar, depending upon the lunar cycle each year. During the Festival of Lights, many people of South Asian descent light traditional lanterns at night and attend special Hindu services.\"\n[text-11] \"The Festival of Lights is a colourful and happy celebration. Families prepare their homes and themselves for the special festivities that symbolise the victory of spiritual goodness and the lifting of spiritual darkness. Fireworks displays are set off to drive away evil, oil lamps are lit, flower ga\"\n[text-12] \"The centre of UK Diwali celebrations is London, which has a large Hindu population. Trafalgar Square sees tens of thousands of attendees each year. The streets are brightly lit for the Festival of Lights, and they are also lined with food stalls selling South Asian cuisine, craft stations, and henna\"\n[text-13] heading \"Previous Years\"\n[text-14] table row \"2025 | 21 Oct | Tue | Diwali\"\n[text-15] table row \"2024 | 1 Nov | Fri | Diwali\"\n[text-16] list item \"Other Languages\"\n[text-17] \"© 2026 Public Holidays Global Pty Ltd ABN 53 608 843 885 Terms and Conditions | Privacy Policy | About Us | Contact Us\"",
+    "state": "The user spoke to a web browser: \"when is diwali this year\"\nThis is step 2 of the task. Done so far: scroll until \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 \" is in view (the page changed)\nPages visited: https://publicholidays.co.uk/diwali/\nPage: https://publicholidays.co.uk/diwali/ — \"Diwali 2026, 2027 and 2028\"\nFull screen: off\nA dialog is open: \"Looks like your ad blocker is on. × We rely on ads to keep creating quality content for you to enjoy for free. Please support our site by disabling your ad blocker. DISABLE Continue without supporting us\"\nRefs (number, kind, label, address, states):\n[1] button \"DISABLE\"\n[2] button \"Continue without supporting us\" role=paragraph has a click listener, not marked as a control\nLinks further down the page (name, address):\n[link-1] link \"\" https://publicholidays.co.uk/\n[link-2] link \"Chinese\" https://publicholidays.co.uk/zh/\n[link-3] link \"French\" https://publicholidays.co.uk/fr/\n[link-4] link \"German\" https://publicholidays.co.uk/de/\n[link-5] link \"Terms and Conditions\" https://publicholidays.co.uk/terms-conditions\n[link-6] link \"Privacy Policy\" https://publicholidays.co.uk/privacy-policy\n[link-7] link \"About Us\" https://publicholidays.co.uk/about/\n[link-8] link \"Contact Us\" https://publicholidays.co.uk/contact/\nText further down the page, not on screen yet (number, text):\n[text-1] heading \"Diwali 2026, 2027 and 2028\"\n[text-2] \"⌂\"\n[text-3] \"The Hindu religious holiday of Diwali, also called Deepavali or the “Festival of Lights”, is not an official public holiday in the United Kingdom. But it is has nonetheless grown in significance in the UK as the number of Indian immigrants has increased over the years. Today, there are private and p\"\n[text-4] \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 October in 2027.\"\n[text-5] table row \"Year | Date | Day | Holiday\"\n[text-6] table row \"2026 | 8 Nov | Sun | Diwali\"\n[text-7] table row \"2027 | 29 Oct | Fri | Diwali\"\n[text-8] table row \"2028 | 17 Oct | Tue | Diwali\"\n[text-9] table row \"Please scroll down to end of page for previous years' dates.\"\n[text-10] \"Diwali is always celebrated between mid-October and mid-November in the western calendar, depending upon the lunar cycle each year. During the Festival of Lights, many people of South Asian descent light traditional lanterns at night and attend special Hindu services.\"\n[text-11] \"The Festival of Lights is a colourful and happy celebration. Families prepare their homes and themselves for the special festivities that symbolise the victory of spiritual goodness and the lifting of spiritual darkness. Fireworks displays are set off to drive away evil, oil lamps are lit, flower ga\"\n[text-12] \"The centre of UK Diwali celebrations is London, which has a large Hindu population. Trafalgar Square sees tens of thousands of attendees each year. The streets are brightly lit for the Festival of Lights, and they are also lined with food stalls selling South Asian cuisine, craft stations, and henna\"\n[text-13] heading \"Previous Years\"\n[text-14] table row \"2025 | 21 Oct | Tue | Diwali\"\n[text-15] table row \"2024 | 1 Nov | Fri | Diwali\"\n[text-16] list item \"Other Languages\"\n[text-17] \"© 2026 Public Holidays Global Pty Ltd ABN 53 608 843 885 Terms and Conditions | Privacy Policy | About Us | Contact Us\"",
     "questions": {
       "action": {
         "type": "choice",
         "instructions": "Which one action comes next for the user's words, given Done so far and the page now? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
         "options": {
-          "click-1": "click [1] button \"×\"",
-          "click-2": "click [2] button \"DISABLE\"",
-          "click-3": "click [3] button \"Continue without supporting us\" role=paragraph",
+          "click-1": "click [1] button \"DISABLE\"",
+          "click-2": "click [2] button \"Continue without supporting us\" role=paragraph has a click listener, not marked as a control",
           "open-1": "open result link \"\" https://publicholidays.co.uk/",
           "open-2": "open result link \"Chinese\" https://publicholidays.co.uk/zh/",
           "open-3": "open result link \"French\" https://publicholidays.co.uk/fr/",
@@ -33,7 +32,6 @@
           "open-8": "open result link \"Contact Us\" https://publicholidays.co.uk/contact/",
           "menu-1": "right-click [1] to open its menu",
           "menu-2": "right-click [2] to open its menu",
-          "menu-3": "right-click [3] to open its menu",
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
           "show-1": "scroll until [text-1] heading \"Diwali 2026, 2027 and 2028\" is in view",
@@ -150,12 +148,12 @@
         "instructions": "A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that does what the pop-up asks of you, such as sign in, sign up, subscribe, accept, agree, allow or install. Only one that leaves without doing it. Choose escape when no control closes it and the Escape key should be tried. Some of the pop-up's text is offered too, where a control may not have been listed as one.",
         "options": {
           "escape": "no control closes it: press the Escape key",
-          "ref-1": "button \"×\"",
-          "ref-2": "button \"DISABLE\"",
-          "ref-3": "button \"Continue without supporting us\" role=paragraph",
+          "ref-1": "button \"DISABLE\"",
+          "ref-2": "button \"Continue without supporting us\" role=paragraph has a click listener, not marked as a control",
           "popup-1": "the text \"Looks like your ad blocker is on.\" in the pop-up, not listed as a control: a click lands on it",
-          "popup-2": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
-          "popup-3": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it"
+          "popup-2": "the text \"×\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-3": "the text \"We rely on ads to keep creating quality content for you to enjoy for free.\" in the pop-up, not listed as a control: a click lands on it",
+          "popup-4": "the text \"Please support our site by disabling your ad blocker.\" in the pop-up, not listed as a control: a click lands on it"
         }
       }
     }
