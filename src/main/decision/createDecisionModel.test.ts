@@ -101,6 +101,14 @@ describe('createDecisionModel', () => {
     })
   })
 
+  it('reads a scripted label ending in `*` as the first option it begins, so a live page\'s ref is named by kind (#459)', async () => {
+    const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: { pick: { type: 'choice', choice: 'p*', confidence: 0.8 }, any: ANSWERS.any } }]) })
+    expect(await decision?.ask({ state: 's', questions: QUESTIONS })).toMatchObject({
+      status: 'answered',
+      answers: { pick: { choice: 'p1', probabilities: { p1: 0.8, p2: 0 } } },
+    })
+  })
+
   it('serves an entry with `when` only to an ask whose state carries those words, in place of the next in order', async () => {
     const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: JSON.stringify([{ when: 'play fixture song', answers: ANSWERS }]) })
     expect(await decision?.ask({ state: 'A cookie consent notice', questions: QUESTIONS })).toMatchObject({ status: 'unavailable', reason: 'failed' })

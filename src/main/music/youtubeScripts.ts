@@ -9,7 +9,7 @@
 // every playing media element on the page, YouTube's player among them, by
 // kind and in the top frame only (#376).
 
-import { PAGE_MEDIA_JS, PAUSE_PLAYING_JS } from '../browser/pageMediaScript'
+import { DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
 /** What the results script yields: the page's `ytInitialData` as JSON, or null when it carries none. */
 export const RESULTS_SCRIPT = `(() => {
@@ -40,9 +40,11 @@ export interface WatchStatus {
   readonly duration: number | null
   readonly paused: boolean
   readonly loop: boolean
-  /** 0–100. */
+  /** 0–100, the element's own: the floor while ducked. */
   readonly volume: number
   readonly muted: boolean
+  /** The element carries a duck's mark (#459); a fresh element after a landing does not. */
+  readonly ducked: boolean
   /** YouTube's own idle prompt, "Video paused. Continue watching?", is up (#344). */
   readonly prompt: boolean
   /** The track's `loudnessDb` from the player's response; null when it carries none (#460). */
@@ -63,7 +65,10 @@ const LOUDNESS_READER = `const loudnessOf = (player) => {
   }`
 
 /** The watch page's element level as the Player carries it into the next song (#460): unrounded, beside the track's loudness and YouTube's own level. */
-export type LevelRead = Pick<WatchStatus, 'id' | 'ad' | 'volume' | 'loudnessDb' | 'playerVolume'>
+export type LevelRead = Pick<WatchStatus, 'id' | 'ad' | 'volume' | 'loudnessDb' | 'playerVolume'> & {
+  /** The level, 0–100, a duck's mark on the element puts back (#459); null with no mark. */
+  readonly restore: number | null
+}
 
 /**
  * Reads `#movie_player video`'s level, unrounded, with its track's
@@ -76,7 +81,8 @@ export const LEVEL_SCRIPT = `(() => {
   const video = player ? player.querySelector('video') : null
   if (!video) return null
   ${LOUDNESS_READER}
-  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player), playerVolume: playerVolumeOf(player) }
+  const mark = video.${DUCK_MARK}
+  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player), playerVolume: playerVolumeOf(player), restore: mark ? mark.restore * 100 : null }
 })()`
 
 /** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
@@ -151,6 +157,7 @@ export const WATCH_SCRIPT = `(() => {
     loop: video ? video.loop : false,
     volume: video ? Math.round(video.volume * 100) : 0,
     muted: video ? video.muted : false,
+    ducked: video ? Boolean(video.${DUCK_MARK}) : false,
     prompt: continuePrompt() !== null,
     loudnessDb: loudnessOf(player),
     playerVolume: playerVolumeOf(player),
@@ -175,18 +182,36 @@ export const CONTINUE_SCRIPT = `(() => {
   return true
 })()`
 
+/** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */
+export interface DuckHeld {
+  readonly restore: number
+  readonly share: number
+}
+
 /** What a control does to the element. */
 export type ElementOp =
   | { readonly op: 'play' }
   | { readonly op: 'pause' }
   | { readonly op: 'loop'; readonly on: boolean }
   | { readonly op: 'restart' }
-  /** Volume to this, 0–100 — the element heard at `heard` instead while ducked (#344). */
-  | { readonly op: 'volume'; readonly to: number; readonly heard?: number }
-  /** The element's volume alone, 0–100, YouTube's remembered volume left as it is: the duck and its restore (#344). */
-  | { readonly op: 'level'; readonly to: number }
-  /** Volume by this much, -100–100. */
-  | { readonly op: 'nudge'; readonly by: number }
+  /** Volume to this, 0–100 — under a duck, the volume put back (#459); `duck` marks an element no duck has marked yet first. */
+  | { readonly op: 'volume'; readonly to: number; readonly duck?: DuckHeld }
+  /**
+   * The duck (#344, #459): the element marked with the volume it puts back
+   * — its own mark's if it has one, else `restore` (0–100) — and dropped to
+   * `share` of it. YouTube's remembered volume is left as it is.
+   */
+  | { readonly op: 'duck'; readonly restore: number; readonly share: number }
+  /**
+   * The element's volume alone, 0–100, YouTube's remembered volume left as
+   * it is: the level carried into a new song (#460). Under a duck the mark
+   * takes it (#459), `duck` marking an element no duck has marked yet.
+   */
+  | { readonly op: 'level'; readonly to: number; readonly duck?: DuckHeld }
+  /** The duck let go: the mark's volume put back on the element, else `to` (0–100) on an element no duck marked. */
+  | { readonly op: 'unduck'; readonly to: number }
+  /** Volume by this much, -100–100, from the volume heard (#459); `duck` as for `volume`. */
+  | { readonly op: 'nudge'; readonly by: number; readonly duck?: DuckHeld }
   | { readonly op: 'mute'; readonly on: boolean }
   /** The element as it is, nothing changed (#362): what `show` names when the Player holds no song. */
   | { readonly op: 'read' }
@@ -199,9 +224,11 @@ export interface ElementState {
   readonly title: string
   readonly paused: boolean
   readonly loop: boolean
-  /** 0–100. */
+  /** 0–100, as heard once no duck holds it (#459): under a duck, the volume put back. */
   readonly volume: number
   readonly muted: boolean
+  /** A duck's mark is on the element (#459). */
+  readonly ducked: boolean
 }
 
 /** How far a control reaches: YouTube's player alone, or the page's own media too (#362). */
@@ -221,24 +248,37 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   /* YT_CONTROL */
   const player = document.querySelector('#movie_player')
   const video = (player ? player.querySelector('video') : null) || ${reach === 'page' ? PAGE_MEDIA_JS : 'null'}
-  if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false }
+  if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false, ducked: false }
   let changed = op.op !== 'read'
+  const heard = ${HEARD_VOLUME_FN}
+  const setHeard = ${SET_HEARD_VOLUME_FN}
+  // YouTube's player is told first, as it sets the element itself; then the element, at its floor under a duck (#459).
   const setVolume = (to) => {
     const level = Math.max(0, Math.min(100, Math.round(to)))
-    video.volume = level / 100
     if (player && typeof player.setVolume === 'function') player.setVolume(level)
+    setHeard(video, level / 100)
   }
+  // A volume under a duck the poll has not marked on this element yet: marked first, so the level set is the one put back.
+  if (op.duck && !video.${DUCK_MARK}) video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.duck.restore)) / 100, share: op.duck.share }
   switch (op.op) {
     case 'play': video.play().catch(() => {}); break
     case 'pause': video.pause(); break
     case 'loop': video.loop = op.on; break
     case 'restart': video.currentTime = 0; video.play().catch(() => {}); break
-    case 'volume':
-      setVolume(op.to)
-      if (op.heard !== undefined) video.volume = op.heard / 100
+    case 'volume': setVolume(op.to); break
+    case 'level': setHeard(video, Math.max(0, Math.min(100, op.to)) / 100); break
+    case 'duck': {
+      const mark = video.${DUCK_MARK} || (video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.restore)) / 100, share: op.share })
+      video.volume = Math.round(mark.restore * 100 * mark.share) / 100
       break
-    case 'level': video.volume = Math.max(0, Math.min(100, op.to)) / 100; break
-    case 'nudge': setVolume(video.volume * 100 + op.by); break
+    }
+    case 'unduck': {
+      const mark = video.${DUCK_MARK}
+      delete video.${DUCK_MARK}
+      video.volume = mark ? mark.restore : Math.max(0, Math.min(100, op.to)) / 100
+      break
+    }
+    case 'nudge': setVolume(heard(video) * 100 + op.by); break
     case 'mute':
       video.muted = op.on
       if (player && typeof player.mute === 'function' && typeof player.unMute === 'function') op.on ? player.mute() : player.unMute()
@@ -251,8 +291,9 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
     title: ((data && data.title) || video.getAttribute('title') || video.getAttribute('aria-label') || document.title.replace(/ - YouTube$/, '')).trim(),
     paused: op.op === 'play' || op.op === 'restart' ? false : video.paused,
     loop: video.loop,
-    volume: Math.round(video.volume * 100),
+    volume: Math.round(heard(video) * 100),
     muted: video.muted,
+    ducked: Boolean(video.${DUCK_MARK}),
   }
 })(${JSON.stringify(op)})`
 }

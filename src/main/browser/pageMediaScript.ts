@@ -9,12 +9,35 @@
 const MEDIA_SELECTOR = "'video, audio'"
 
 /**
+ * The Duck Mark (#459, CONTEXT.md Ducking): the property a duck leaves on
+ * the element it lowered, `{ restore, share }` — the volume (0–1) the duck
+ * puts back and the floor's share of it. While it is there the element
+ * plays at the floor, and the volume the person is reckoned to hear is
+ * the one put back: what the card shows, what a volume op moves from and
+ * sets, and what the release puts back. Read and written by kind, on any
+ * element, so the collect, a Media Op and the Player's controls agree.
+ */
+export const DUCK_MARK = '__bingbongDuck'
+
+/** A JS function source `(el) => 0–1`: the element's volume as heard once no duck holds it — the level a duck puts back, else its own. */
+export const HEARD_VOLUME_FN = `((el) => el.${DUCK_MARK} ? el.${DUCK_MARK}.restore : el.volume)`
+
+/** A JS function source `(el, level)` setting a 0–1 volume: under a duck, the level put back, the element left at that level's floor. */
+export const SET_HEARD_VOLUME_FN = `((el, level) => {
+  const duck = el.${DUCK_MARK}
+  if (!duck) { el.volume = level; return }
+  duck.restore = level
+  el.volume = Math.round(level * 100 * duck.share) / 100
+})`
+
+/**
  * A JS function source `(el) => facts` reading a media element's own facts
  * (#372, ADR 0080) — the `MediaFacts` shape the collect carries on each
  * media ref and a Media Op reads before and after it acts, so the ref
  * line and the op's outcome tell the same facts. An Infinity duration
  * travels as null. Captions are the showing text track's language; a
  * track hidden with none showing is told apart (#389), as it says nothing.
+ * The volume is the one heard once no duck holds it (#459), never the floor.
  */
 export const MEDIA_FACTS_FN = `((el) => {
   const tracks = el.textTracks ? Array.from(el.textTracks) : []
@@ -25,7 +48,7 @@ export const MEDIA_FACTS_FN = `((el) => {
     ended: el.ended,
     currentTime: el.currentTime,
     duration: Number.isFinite(el.duration) ? el.duration : null,
-    volume: el.volume,
+    volume: ${HEARD_VOLUME_FN}(el),
     muted: el.muted,
     loop: el.loop,
     rate: el.playbackRate,

@@ -5,12 +5,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { cli, refOf } from './cliSupport'
 import { waitFor } from './waitFor'
+import { decisionScript, readingOf } from './scriptedJev'
 
 // Validation gate from the spec: "CDP snapshot + click reliability on YouTube
 // specifically". Network- and region-dependent, so it only runs when asked:
 //   BINGBONG_YOUTUBE_E2E=1 pnpm test:e2e
 const YOUTUBE_HOME = 'https://www.youtube.com/'
 const YOUTUBE_RESULTS = 'https://www.youtube.com/results?search_query=mechanical+keyboard'
+/** The song of the kiosk's 2026-10-26 volume lines (#459), and the line said over it. */
+const DUCK_SONG_LINE = 'play tum se tum tak niyam'
+const DUCK_VOLUME_LINE = 'turn the music up'
 
 async function readRefLines(harness: Harness): Promise<string[]> {
   const since = harness.cliMark()
@@ -104,7 +108,13 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
   let screenshotPath: string
 
   beforeAll(async () => {
-    harness = await startHarness({ launchArgs: ['--browser-cli'], pipeStdio: true })
+    harness = await startHarness({
+      // It plays a real song (#459): muted, as every test run is.
+      launchArgs: ['--browser-cli', '--mute-audio'],
+      pipeStdio: true,
+      // The duck's lines (#459) are Jev's: `play` the Appliance Verb, the volume the watch page's own media ref, whichever number it has.
+      env: decisionScript(readingOf(DUCK_SONG_LINE), readingOf(DUCK_VOLUME_LINE, 'volume-*', { amount: 'up-step' })),
+    })
     await harness.waitForCliOutput(/bingbong browser harness/)
     screenshotPath = join(await mkdtemp(join(tmpdir(), 'bingbong-yt-')), 'gate.jpg')
   })
@@ -219,6 +229,34 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
       { timeoutMs: 15000, intervalMs: 250 },
     )
   })
+
+  it('a volume line under the duck on the real watch page is read from the level put back, and the release keeps the level set (#459)', async () => {
+    expect(await cli(harness, DUCK_SONG_LINE, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)).toMatch(/^playing: id=/)
+    const video = `document.querySelector('#movie_player video')`
+    // Past any ad: the song itself playing in YouTube's player.
+    await waitFor(
+      async () => ((await harness.paneEval<boolean>(`!!${video} && !${video}.paused && !document.querySelector('#movie_player').classList.contains('ad-showing')`)) ? true : undefined),
+      { timeoutMs: 90_000, intervalMs: 500 },
+    )
+    const element = (): Promise<number> => harness.paneEval<number>(`Math.round(${video}.volume * 100)`)
+    await harness.paneEval(`${video}.volume = 0.6`)
+    // The Player's poll reads the level heard within its second.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // A ringing Timer holds the duck (#344), as the ear does for a spoken line.
+    expect(await cli(harness, 'timer 1s', /^(timer|error:)/)).toMatch(/^timer/)
+    await waitFor(async () => ((await element()) === 9 ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+
+    expect(await cli(harness, DUCK_VOLUME_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume 60% → 70%$/)
+    // YouTube holds the floor under the duck: the element stays at the new level's.
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    expect(await element()).toBeLessThanOrEqual(11)
+
+    expect(await cli(harness, 'timer off', /^(timer off|error:)/)).toMatch(/^timer off/)
+    await waitFor(async () => ((await element()) === 70 ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    // And the level holds on the real page once the duck is gone.
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    expect(await element()).toBe(70)
+  }, 150_000)
 
   it('captures a real screenshot of youtube', async () => {
     await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^saved screenshot to ${screenshotPath} \\(\\d+ bytes\\)$`))

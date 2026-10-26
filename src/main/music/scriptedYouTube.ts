@@ -48,6 +48,8 @@ export class ScriptedYouTube {
   playerVolume = 100
   /** Video id → its response's `loudnessDb` (#460): a page opens at `playerVolume` × its loudness factor; none is a factor of 1. */
   readonly loudness = new Map<string, number>()
+  /** The duck's mark on the element (#459): the volume (0–100) it puts back and the floor's share; a new page's element has none. */
+  duckMark: { restore: number; share: number } | null = null
   adShowing = false
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
@@ -89,6 +91,7 @@ export class ScriptedYouTube {
     if (url !== this.shownUrl) {
       this.shownUrl = url
       this.element = { ...this.element, paused: false, loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
+      this.duckMark = null
     }
     if (expression.includes('/* YT_RESULTS */')) {
       const data = URL.canParse(url) ? this.results.get(new URL(url).searchParams.get('search_query') ?? '') : undefined
@@ -111,7 +114,7 @@ export class ScriptedYouTube {
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return null
-    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
+    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume, restore: this.duckMark?.restore ?? null }
   }
 
   private watchStatus(): WatchStatus {
@@ -120,7 +123,7 @@ export class ScriptedYouTube {
     const ended = this.ended
     this.ended = null
     const element = this.element
-    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
+    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
   }
@@ -148,8 +151,9 @@ export class ScriptedYouTube {
     this.controls.push(op)
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
-    if (watch === undefined || watch.fails !== undefined) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false }
+    if (watch === undefined || watch.fails !== undefined) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false, ducked: false }
     let changed = true
+    if ((op.op === 'volume' || op.op === 'nudge' || op.op === 'level') && op.duck !== undefined) this.duckMark ??= { restore: Math.max(0, Math.min(100, op.duck.restore)), share: op.duck.share }
     const element = this.element
     switch (op.op) {
       case 'play':
@@ -164,14 +168,23 @@ export class ScriptedYouTube {
         break
       case 'volume':
         this.playerVolume = op.to
-        this.element = { ...element, volume: op.heard ?? op.to }
+        this.setHeard(Math.round(op.to))
         break
       case 'level':
-        this.element = { ...element, volume: op.to }
+        this.setHeard(op.to)
+        break
+      case 'duck': {
+        const mark = (this.duckMark ??= { restore: Math.max(0, Math.min(100, op.restore)), share: op.share })
+        this.element = { ...element, volume: Math.round(mark.restore * mark.share) }
+        break
+      }
+      case 'unduck':
+        this.element = { ...element, volume: this.duckMark?.restore ?? op.to }
+        this.duckMark = null
         break
       case 'nudge':
-        this.playerVolume = Math.max(0, Math.min(100, element.volume + op.by))
-        this.element = { ...element, volume: this.playerVolume }
+        this.playerVolume = Math.max(0, Math.min(100, Math.round(this.heard() + op.by)))
+        this.setHeard(this.playerVolume)
         break
       case 'mute':
         this.element = { ...element, muted: op.on }
@@ -180,7 +193,24 @@ export class ScriptedYouTube {
         changed = false
         break
     }
-    const { paused, loop, volume, muted } = this.element
-    return { found: true, changed, title: watch.title, paused, loop, volume, muted }
+    const { paused, loop, muted } = this.element
+    return { found: true, changed, title: watch.title, paused, loop, volume: this.heard(), muted, ducked: this.duckMark !== null }
+  }
+
+  /** The volume heard once no duck holds the element (#459): the mark's, else the element's own. */
+  heard(): number {
+    return this.duckMark?.restore ?? this.element.volume
+  }
+
+  /** A volume set on the element as the page scripts set it (#459): under a duck the mark takes it, the element left at its floor — a Media Op's own set, too. */
+  setHeard(to: number): void {
+    // Clamped, not rounded: a level carried into a new song is set unrounded (#460), as the page sets it.
+    const level = Math.max(0, Math.min(100, to))
+    if (this.duckMark === null) {
+      this.element = { ...this.element, volume: level }
+      return
+    }
+    this.duckMark.restore = level
+    this.element = { ...this.element, volume: Math.round(level * this.duckMark.share) }
   }
 }

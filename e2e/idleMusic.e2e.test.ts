@@ -56,7 +56,10 @@ describe('idle screen e2e: music over the Idle Screen', () => {
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
       // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Appliance Verb, and "loop the song" as the video's `loop-1`.
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop-1')) },
+      env: {
+        BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
+        ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop-1'), readingOf('turn the music up', 'volume-1', { amount: 'up-step' })),
+      },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     await waitFor(async () => ((await idleShown()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
@@ -111,6 +114,26 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'media', mediaOp: { op: 'loop' }, jevAsked: true })
     expect(await harness.paneEval<boolean>(`document.querySelector('#movie_player video').loop`)).toBe(true)
     expect(await idleShown()).toBe(true)
+  }, 30_000)
+
+  it('a volume line under the duck is read from the level put back, its op sets that level, and the release keeps it (#459)', async () => {
+    const element = (): Promise<number> => harness.paneEval<number>(`Math.round(document.querySelector('#movie_player video').volume * 100)`)
+    await harness.paneEval(`document.querySelector('#movie_player video').volume = 0.6`)
+    // The poll reads the level heard within its second.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // A ringing Timer holds the duck (#344), as the ear does for a spoken line: the card is collected under it.
+    expect(await cli(harness, 'timer 1s', /^(timer|error:)/)).toMatch(/^timer/)
+    await waitFor(async () => ((await element()) === 9 ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+
+    expect(await cli(harness, 'turn the music up', /^(volume \[\d+\]: |error:|No response)/)).toBe('volume [1]: volume 60% → 70%')
+    const asks = await logLines<{ state: string }>('asks-')
+    // The card read the level the duck puts back, never the floor.
+    expect(asks.filter((record) => record.state.includes('"turn the music up"')).at(-1)!.state).toMatch(/\[1\] media .* volume 60% /)
+    // The duck holds still: the element plays at the new level's floor.
+    expect(await element()).toBeLessThanOrEqual(11)
+
+    expect(await cli(harness, 'timer off', /^(timer off|error:)/)).toMatch(/^timer off/)
+    await waitFor(async () => ((await element()) === 70 ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
   }, 30_000)
 
   it('the card’s controls submit `pause`, `play`, `previous` and `skip`, and the Idle Screen stays up through every tap (#365)', async () => {

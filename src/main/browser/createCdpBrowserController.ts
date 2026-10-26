@@ -56,7 +56,7 @@ import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } from '../../core/browser/scrollOp'
 import type { DialogText, TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
-import { MEDIA_FACTS_FN } from './pageMediaScript'
+import { HEARD_VOLUME_FN, MEDIA_FACTS_FN, SET_HEARD_VOLUME_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
@@ -2254,7 +2254,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       const media = Array.from(document.querySelectorAll('video, audio'))
       const active = media.find((el) => !el.paused) || media[0]
       if (!active) return null
-      return { paused: active.paused, currentTime: active.currentTime, volume: active.volume }
+      return { paused: active.paused, currentTime: active.currentTime, volume: ${HEARD_VOLUME_FN}(active) }
     })()`)
   }
 
@@ -2292,7 +2292,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
         case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
         case 'restart': el.currentTime = start; el.play().catch(() => {}); break
-        case 'volume': el.volume = Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100; break
+        // Under a duck (#459) the level put back is set, the element left at its floor until the duck lets go.
+        case 'volume': ${SET_HEARD_VOLUME_FN}(el, Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100); break
         case 'mute':
         case 'unmute': el.muted = op.op === 'mute'; break
         case 'loop':

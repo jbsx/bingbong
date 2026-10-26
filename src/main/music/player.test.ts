@@ -370,6 +370,42 @@ describe('the Player\'s Ducking (#344)', () => {
     expect(youtube.element.volume).toBe(100)
   })
 
+  it('a Media Op under the duck sets the level put back, so the release keeps it and the next duck marks it (#459)', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'volume', to: 55 })
+    // The four kiosk lines of 2026-10-26: up a little, up a little, up a step, to 50 — each read from the level heard.
+    for (const up of [5, 5, 10, null]) {
+      await player.duck(true)
+      // What the card reads meanwhile is the level put back, never the floor.
+      const read = youtube.heard()
+      expect(youtube.element.volume).toBe(Math.round(read * 0.15))
+      const set = up === null ? 50 : read + up
+      youtube.setHeard(set)
+      expect(youtube.element.volume).toBe(Math.round(set * 0.15))
+      await player.duck(false)
+      expect(youtube.element.volume).toBe(set)
+    }
+    expect(youtube.element.volume).toBe(50)
+    await player.duck(true)
+    expect(youtube.heard()).toBe(50)
+    expect(youtube.element.volume).toBe(8)
+  })
+
+  it('a volume verb on an element the poll has not marked yet marks it first, so the release keeps the verb\'s level (#459)', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'volume', to: 60 })
+    await player.duck(true)
+    // A fresh element, unmarked, at YouTube's level.
+    youtube.duckMark = null
+    youtube.element = { ...youtube.element, volume: 60 }
+    expect((await perform({ kind: 'quieter' })).answer).toBe('Volume 50.')
+    expect(youtube.element.volume).toBe(8)
+    await player.duck(false)
+    expect(youtube.element.volume).toBe(50)
+  })
+
   it('with nothing playing, ducking touches no page', async () => {
     const { browser, player } = wired()
     await player.duck(true)
@@ -390,10 +426,22 @@ describe('the level heard carries into the next song (#460)', () => {
   const AF = loudnessFactor(5.22)
   const BF = loudnessFactor(5.25)
 
-  /** A `volume` Media Op (ADR 0080, #408): the element alone, YouTube's player never told. */
-  const mediaOp = (youtube: ScriptedYouTube, to: number): void => {
-    youtube.element = { ...youtube.element, volume: to }
-  }
+  /** A `volume` Media Op (ADR 0080, #408): the element alone, YouTube's player never told — under a duck, its mark (#459). */
+  const mediaOp = (youtube: ScriptedYouTube, to: number): void => youtube.setHeard(to)
+
+  it('a Media Op\'s 20 under the duck, then `skip`, carries 20 matched into the next song, heard once the duck lets go (#459)', async () => {
+    const { youtube, player, perform } = loud()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await player.duck(true)
+    mediaOp(youtube, 20)
+    await perform({ kind: 'skip' })
+    // The new song plays at the duck's floor of the carried level, marked with that level.
+    expect(youtube.heard()).toBeCloseTo((20 / AF) * BF, 1)
+    expect(youtube.element.volume).toBe(3)
+    await player.duck(false)
+    expect(youtube.element.volume).toBeCloseTo(19.93, 1)
+  })
 
   it('a Media Op\'s 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s, about 19.9', async () => {
     const { youtube, perform } = loud()

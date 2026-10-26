@@ -22,6 +22,11 @@ rewritten as `whereQuestions` words them. It expects the opener as the top
 choice, with no floor: the runner fires the Where Ask's best reading at any
 probability.
 
+A Duck case (#459), named `<turnId>-duck`, is a spoken line's ask whose
+card was collected under the #344 duck: its media ref's line rewritten to
+the level the duck puts back, as the card has read it since #459, in
+place of the floor the logged card showed.
+
 - `pnpm jev:candidates` lists the logged asks a misfire or overrun signal
   pointed at.
 - `pnpm jev:case <turnId> --expect action=click-27 [outcome=yes>=0.7 action!=click-21 …]` writes

@@ -50,7 +50,8 @@ function parseScript(raw: string): { entries: ScriptEntry[] } | { error: string 
  * A script's answers with each Choice's probabilities filled in: the
  * chosen label at its confidence, every other option at 0 unless the
  * script gives it one — so a script names a label alone, never every ref
- * and span of a page it cannot know.
+ * and span of a page it cannot know. A label ending in `*` is the first
+ * option it begins (`volume-*`): a live page's ref, by kind (#459).
  */
 function withChoicesFilled(questions: DecisionQuestions, raw: unknown): unknown {
   if (typeof raw !== 'object' || raw === null) return raw
@@ -60,8 +61,9 @@ function withChoicesFilled(questions: DecisionQuestions, raw: unknown): unknown 
     if (question.type !== 'choice' || typeof answer !== 'object' || answer === null) continue
     const { choice, confidence, probabilities } = answer as { choice?: unknown; confidence?: unknown; probabilities?: unknown }
     const given = typeof probabilities === 'object' && probabilities !== null ? probabilities : {}
-    const chosen = typeof choice === 'string' ? { [choice]: confidence } : {}
-    filled[key] = { ...answer, probabilities: { ...Object.fromEntries(Object.keys(question.options).map((label) => [label, 0])), ...chosen, ...given } }
+    const label = typeof choice === 'string' && choice.endsWith('*') ? (Object.keys(question.options).find((option) => option.startsWith(choice.slice(0, -1))) ?? choice) : choice
+    const chosen = typeof label === 'string' ? { [label]: confidence } : {}
+    filled[key] = { ...answer, ...(typeof label === 'string' ? { choice: label } : {}), probabilities: { ...Object.fromEntries(Object.keys(question.options).map((label) => [label, 0])), ...chosen, ...given } }
   }
   return filled
 }

@@ -30,7 +30,10 @@ import { CONTINUE_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_
 // YouTube's own "Continue watching?" pause, which the Player never made.
 // Ducking (#344) drops the element's volume to a floor while the ear is
 // open or a line plays, YouTube's remembered volume left alone, and puts
-// back the volume it had — or the one a `volume` verb set meanwhile.
+// back the volume it had — or the one a `volume` set meanwhile, by a verb
+// here or a Media Op on the card. The duck marks the element with the
+// volume it puts back (#459, `DUCK_MARK`): the card reads that, every
+// volume set moves it, and the release puts back whatever it holds.
 // The level heard carries into the next song (#460): YouTube opens each
 // at its remembered level × the track's loudness factor, so a level a
 // Media Op set on the element alone would be lost; the Player matches the
@@ -135,11 +138,10 @@ const LEVEL_TOLERANCE = 0.5
 type HeardLevel = Pick<LevelRead, 'volume' | 'loudnessDb'>
 
 /** The element plays at YouTube's own level — its remembered level × the track's loudness factor — not one set on the element alone (#460). */
-const youTubesOwn = (read: LevelRead): boolean =>
+const youTubesOwn = (read: Pick<LevelRead, 'volume' | 'playerVolume' | 'loudnessDb'>): boolean =>
   read.playerVolume !== null && Math.abs(read.volume - read.playerVolume * loudnessFactor(read.loudnessDb)) <= LEVEL_TOLERANCE
 
 const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
-const clampVolume = (volume: number): number => Math.max(0, Math.min(100, Math.round(volume)))
 
 const quoted = (title: string): string => `“${title}”`
 
@@ -161,7 +163,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   let knownVolume: number | null = null
   /** Whether the element was muted when last read or set (#365). */
   let muted = false
-  /** While ducked: the volume the duck puts back. */
+  /** While ducked: the volume the duck puts back, as the element's mark last told it — a fresh element is marked with it. */
   let ducked: { restore: number } | null = null
   /**
    * The level last heard on the Player's song and its track's loudness
@@ -296,7 +298,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     const read = await evaluate<LevelRead>(LEVEL_SCRIPT)
     if (read === null || read.id !== leaving.id || read.ad) return
     if (carrying?.id === leaving.id && ducked === null && youTubesOwn(read)) return
-    heard = { volume: ducked?.restore ?? read.volume, loudnessDb: read.loudnessDb }
+    // Under a duck, the level its mark puts back — a Media Op's set meanwhile too (#459) — else the one held.
+    heard = { volume: read.restore ?? ducked?.restore ?? read.volume, loudnessDb: read.loudnessDb }
   }
 
   /**
@@ -305,14 +308,18 @@ export function createPlayer(deps: PlayerDeps): Player {
    * while ducked, the duck then putting it back. Whether the read let it:
    * not off this song's page, nor over an ad.
    */
-  async function carry(read: LevelRead | null): Promise<boolean> {
+  async function carry(read: Pick<LevelRead, 'id' | 'ad' | 'volume' | 'loudnessDb'> | null): Promise<boolean> {
     const to = carrying
     if (to === null || read === null || read.id !== to.id || read.ad) return false
     const level = matchedLevel(to.from.volume, to.from.loudnessDb, read.loudnessDb)
     knownVolume = level
-    if (ducked !== null) ducked = { restore: level }
-    const want = ducked !== null ? floorOf(level) : level
-    if (Math.abs(read.volume - want) > LEVEL_TOLERANCE) await control({ op: 'level', to: want })
+    if (ducked === null) {
+      if (Math.abs(read.volume - level) > LEVEL_TOLERANCE) await control({ op: 'level', to: level })
+      return true
+    }
+    // Under a duck the element's mark takes the level (#459), marked first if it carries none: heard at the floor, put back on release.
+    ducked = { restore: level }
+    await control({ op: 'level', to: level, duck: { restore: level, share: DUCK_SHARE } })
     return true
   }
 
@@ -331,7 +338,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     // A page opened starts at YouTube's remembered volume: the level heard on the last song at once (#460), else
     // down to the duck's floor while ducked (#344). Over an ad, the poll carries it once the song itself plays.
     const carried = landed === true && carrying !== null && (await carry(await evaluate<LevelRead>(LEVEL_SCRIPT)))
-    if (landed === true && !carried && ducked !== null) await control({ op: 'level', to: floorOf(ducked.restore) })
+    if (landed === true && !carried && ducked !== null) await duckElement()
     return landed === 'superseded' ? 'superseded' : landed === true ? 'opened' : 'failed'
   }
 
@@ -551,7 +558,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function onElement(op: ElementOp, answer: (element: ElementState) => string, then: (queue: Queue) => Queue = (queue) => queue): Promise<PlayerOutcome> {
     const element = await control(op)
     if (element === null || !element.found) return { result: 'no video on the page', answer: 'Nothing is playing.', failure: true }
-    if (ducked === null) knownVolume = element.volume
+    heardVolume(element)
     // A level the person set (#460): YouTube's own from here, never the carried one put back over it.
     if (op.op === 'volume' || op.op === 'nudge') carrying = null
     muted = element.muted
@@ -559,14 +566,28 @@ export function createPlayer(deps: PlayerDeps): Player {
     return { result: `${op.op}: paused=${element.paused} loop=${element.loop} volume=${element.volume} muted=${element.muted}`, answer: answer(element) }
   }
 
-  const volumeAnswer = (element: ElementState): string => `Volume ${element.volume}.`
+  /** The volume an element answered with, as heard: the one known while not ducked, the one the duck puts back while its mark is on the element. */
+  function heardVolume(element: ElementState): void {
+    if (ducked === null) knownVolume = element.volume
+    else if (element.ducked) ducked = { restore: element.volume }
+  }
 
-  /** A volume verb while ducked: the volume put back afterwards is the one set, the element heard at its floor meanwhile. */
-  async function setDuckedVolume(to: number): Promise<PlayerOutcome> {
-    const level = clampVolume(to)
-    const outcome = await onElement({ op: 'volume', to: level, heard: floorOf(level) }, () => `Volume ${level}.`)
-    if (outcome.failure !== true && ducked !== null) ducked = { restore: level }
-    return outcome
+  /**
+   * A volume verb. Under a duck the element's mark takes it (#459) — an
+   * element the poll has not marked yet is marked in the same evaluate —
+   * so the answer names the level put back, and the element stays at that
+   * level's floor.
+   */
+  function onVolume(op: Extract<ElementOp, { op: 'volume' | 'nudge' }>): Promise<PlayerOutcome> {
+    const held = ducked === null ? {} : { duck: { restore: ducked.restore, share: DUCK_SHARE } }
+    return onElement({ ...op, ...held }, (element) => `Volume ${element.volume}.`)
+  }
+
+  /** The element dropped to the floor and marked with the volume the duck puts back: its own mark's, else the one held here. */
+  async function duckElement(): Promise<void> {
+    if (ducked === null) return
+    const element = await control({ op: 'duck', restore: ducked.restore, share: DUCK_SHARE })
+    if (element !== null && element.found) heardVolume(element)
   }
 
   async function setDuck(on: boolean): Promise<void> {
@@ -574,7 +595,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (!on) {
       const { restore } = ducked!
       ducked = null
-      await control({ op: 'level', to: restore })
+      // The mark's volume — what a volume op set meanwhile — or, on an element no duck marked, the one held.
+      const element = await control({ op: 'unduck', to: restore })
+      if (element !== null && element.found) knownVolume = element.volume
       return
     }
     // Nothing playing: nothing to duck, and no page is touched.
@@ -584,7 +607,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (restore === null) return
     knownVolume = restore
     ducked = { restore }
-    await control({ op: 'level', to: floorOf(restore) })
+    await duckElement()
   }
 
   /** The poll's read of the song playing: its progress for the card, a new page's volume ducked, YouTube's own pause answered. */
@@ -599,7 +622,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     else if (ducked === null) {
       knownVolume = status.volume
       heard = { volume: status.volume, loudnessDb: status.loudnessDb }
-    } else if (status.volume > floorOf(ducked.restore)) await control({ op: 'level', to: floorOf(ducked.restore) })
+    } else if (!status.ducked || status.volume > floorOf(ducked.restore)) await duckElement()
     if (opening && status.elapsed >= CARRIED_S) carrying = null
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes.
     if (status.paused && !state.paused && status.prompt) await evaluate<boolean>(CONTINUE_SCRIPT)
@@ -643,11 +666,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       case 'restart':
         return onElement({ op: 'restart' }, () => 'Restarted.', unpause)
       case 'volume':
-        return ducked !== null ? setDuckedVolume(music.to) : onElement({ op: 'volume', to: music.to }, volumeAnswer)
+        return onVolume({ op: 'volume', to: music.to })
       case 'louder':
-        return ducked !== null ? setDuckedVolume(ducked.restore + VOLUME_STEP) : onElement({ op: 'nudge', by: VOLUME_STEP }, volumeAnswer)
+        return onVolume({ op: 'nudge', by: VOLUME_STEP })
       case 'quieter':
-        return ducked !== null ? setDuckedVolume(ducked.restore - VOLUME_STEP) : onElement({ op: 'nudge', by: -VOLUME_STEP }, volumeAnswer)
+        return onVolume({ op: 'nudge', by: -VOLUME_STEP })
       case 'mute':
         return onElement({ op: 'mute', on: music.on }, () => (music.on ? 'Muted.' : 'Unmuted.'))
       case 'show': {
