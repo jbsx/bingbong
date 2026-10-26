@@ -1885,7 +1885,7 @@ _Avoid_: engine normalisation, redirect
 
 **Blocker**:
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
-login walls, paywalls, age gates, file-select dialogs. Detected mechanically
+login walls, paywalls, age gates. Detected mechanically
 — in code, at navigation and at read — then escalated; never auto-cleared
 (the Consent Dialog is the one exception). A landing on one is not escape
 from a Search Loop: the content is behind it.
@@ -1911,6 +1911,15 @@ _Avoid_: paywall, auth error
 Handing a Blocker from the agent to the user via a spoken ask — the fallback
 when no automatic path exists. Not a Tier Escalation, which raises a Run's
 Effort Tier.
+
+**Shelf**:
+The files an upload may be offered: those in `bingbong_downloads` (downloads
+and screenshots) and in the upload folder Settings names, each folder read
+flat, never the folders inside it. Only these files' names go to the
+decision host. When a page opens its file chooser, Jev is asked which Shelf
+file the words mean; that file is set on the field and nothing is sent
+(#424, ADR 0092).
+_Avoid_: downloads folder, file picker
 
 ### Hardware
 
