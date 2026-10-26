@@ -147,6 +147,8 @@ async function createSession(overrides?: {
         push: (frame: Float32Array) => baseTranscriber.push(frame),
         onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
         cancel: () => baseTranscriber.cancel(),
+        pauseReached: (pcm: Float32Array) => baseTranscriber.pauseReached(pcm),
+        pauseEnded: () => baseTranscriber.pauseEnded(),
         finish: async (pcm: Float32Array) => {
           clock.advance(overrides.perf?.sttMs ?? 1_500)
           return baseTranscriber.finish(pcm)
@@ -828,6 +830,50 @@ describe('voice session — perf spans (#27)', () => {
 
     const end = harness.perf.find((record) => record.stage === 'end-of-speech')
     expect(end).toMatchObject({ durMs: DEFAULTS.turnCheckFrames * 32 + 900, detail: { endedBy: 'turn' } })
+  })
+
+  it('tells the transcriber the pause is reached before the Endpoint, with the audio the Endpoint then carries (#443)', async () => {
+    const transcriber = new FakeTranscriber(['go'])
+    const harness = await createSession({ transcriber, turn: { score: async () => 0.92 } })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    // The hotkey's listen is single-shot: it closes (cancel) after the line.
+    expect(transcriber.events.filter((event) => event !== 'push')).toEqual(['begin', 'pause', 'finish', 'cancel'])
+    expect(transcriber.pausedAudio[0]!.length).toBe(transcriber.audio[0]!.length)
+    expect(harness.commands).toEqual(['go'])
+  })
+
+  it('an endpoint-to-words span: from the last speech frame, through the pause and the turn check, to the words (#443)', async () => {
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['go']),
+      perf: { sttMs: 120 },
+      turn: {
+        score: async () => {
+          harness.clock.advance(85)
+          return 0.92
+        },
+      },
+    })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.find((record) => record.stage === 'endpoint-to-words')).toMatchObject({
+      durMs: DEFAULTS.turnCheckFrames * 32 + 85 + 120,
+      detail: { endedBy: 'turn', atPause: true },
+    })
+    expect(harness.perf.find((record) => record.stage === 'stt')!.detail).toMatchObject({ atPause: true, pauseDecodes: 1 })
+  })
+
+  it("a pause the turn read unfinished is not the Endpoint's audio: the stt span says the final decoded afresh (#443)", async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {}, turn: { score: async () => 0.1 } })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.find((record) => record.stage === 'stt')!.detail).toMatchObject({ endedBy: 'cap', atPause: false, pauseDecodes: 1 })
   })
 
   it('an end-of-speech span at the pause cap is the pause alone', async () => {

@@ -133,6 +133,14 @@ export interface EndpointerDeps {
   turn?: TurnDetector
   /** Monotonic ms for timing the check; defaults to Date.now. */
   now?: () => number
+  /**
+   * The pause is reached (#443): called once per pause, just before the turn
+   * check is asked, with the audio the Endpoint carries if the verdict is
+   * finished — so the final decode can start beside the check.
+   */
+  onPause?: (pcm: Float32Array) => void
+  /** Speech came back after a pause that was reported (#443): the audio at that pause is no longer the Endpoint's. */
+  onPauseEnd?: () => void
 }
 
 export interface UtteranceEndpointer {
@@ -163,6 +171,8 @@ interface InFlightState {
   totalMs: number
   /** The last turn check this utterance made (#357). */
   turn?: TurnCheckResult
+  /** A pause was reported since the last speech frame (#443). */
+  paused?: boolean
 }
 
 interface SpeakingState extends InFlightState {
@@ -209,13 +219,26 @@ export function createUtteranceEndpointer(
   // Bumped by reset(): a turn check that resolves after it decides nothing.
   let epoch = 0
 
+  /** The frames an Endpoint hands the transcriber: the trailing silence trimmed, unless the hard cap cut speech. */
+  function endFrames(inFlight: InFlightState, truncated: boolean): Float32Array[] {
+    if (truncated) return inFlight.pcm
+    const trimmed = Math.max(Math.min(tailFrames, inFlight.silenceRun), inFlight.silenceRun - trailingFrames)
+    return inFlight.pcm.slice(0, inFlight.pcm.length - trimmed)
+  }
+
+  /** Speech is back in the utterance: a reported pause has ended (#443). */
+  function speechBack(inFlight: InFlightState): void {
+    if (!inFlight.paused) return
+    inFlight.paused = false
+    deps.onPauseEnd?.()
+  }
+
   function emit(inFlight: InFlightState, endedBy: UtteranceEnd['endedBy'], silenceAtFire: number): UtteranceEnd | null {
     const speechFrames = inFlight.speechFrames
     state = { kind: 'waiting', ring: [], speechRun: 0 }
     if (speechFrames * VAD_FRAME_MS < config.minSpeechMs) return null
     const truncated = endedBy === 'max'
-    const trimmed = Math.max(Math.min(tailFrames, inFlight.silenceRun), inFlight.silenceRun - trailingFrames)
-    const pcmFrames = truncated ? inFlight.pcm : inFlight.pcm.slice(0, inFlight.pcm.length - trimmed)
+    const pcmFrames = endFrames(inFlight, truncated)
     return {
       pcm: concat(pcmFrames),
       speechMs: speechFrames * VAD_FRAME_MS,
@@ -278,6 +301,7 @@ export function createUtteranceEndpointer(
         if (isSpeech) {
           state.speechFrames += 1
           state.silenceRun = 0
+          speechBack(state)
           return null
         }
         state.silenceRun += 1
@@ -286,6 +310,11 @@ export function createUtteranceEndpointer(
         if (deps.turn && state.silenceRun === config.turnCheckFrames) {
           const speaking = state
           const asked = epoch
+          // The final decode can start now, beside the check (#443): with no hold, a finished verdict's Endpoint carries exactly this audio.
+          if (deps.onPause) {
+            speaking.paused = true
+            deps.onPause(concat(endFrames(speaking, false)))
+          }
           const result = await checkTurn(speaking, deps.turn)
           if (asked !== epoch || state !== speaking) return null
           speaking.turn = result
@@ -300,6 +329,7 @@ export function createUtteranceEndpointer(
           if (state.speechRun >= config.startFrames) {
             // Confirmed resumption inside the window — the same utterance
             // continues, pause and all.
+            speechBack(state)
             state = {
               kind: 'speaking',
               pcm: state.pcm,

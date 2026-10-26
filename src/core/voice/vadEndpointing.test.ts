@@ -498,6 +498,62 @@ describe('the turn check (#357)', () => {
     expect(utterances[0].silenceMs).toBe(defaults.turnCheckFrames * 32)
   })
 
+  it("says the pause is reached before the check is asked, with the audio a finished verdict's Endpoint carries (#443)", async () => {
+    const events: string[] = []
+    const paused: Float32Array[] = []
+    const turn: TurnDetector = {
+      async score() {
+        events.push('check')
+        return 0.9
+      },
+    }
+    const { pushProbs } = endpointerWith(undefined, {
+      turn,
+      onPause: (pcm) => {
+        events.push('pause')
+        paused.push(pcm)
+      },
+    })
+
+    const utterances = await pushProbs([...run(SILENCE, 10), ...run(SPEECH, SPOKEN), ...run(SILENCE, defaults.turnCheckFrames)])
+
+    expect(events).toEqual(['pause', 'check'])
+    // 6 frames of pre-roll, the rest of the speech, the pause less its 64 ms tail trim.
+    const frames = 192 / 32 + SPOKEN - defaults.startFrames + defaults.turnCheckFrames - 2
+    expect(paused[0].length).toBe(frames * SAMPLES)
+    expect(utterances[0].pcm.length).toBe(paused[0].length)
+  })
+
+  it('says the pause ended when speech comes back after an unfinished verdict, once per pause (#443)', async () => {
+    const events: string[] = []
+    const { pushProbs } = endpointerWith(undefined, {
+      turn: scriptedTurn([0.1, 0.9]),
+      onPause: () => events.push('pause'),
+      onPauseEnd: () => events.push('end'),
+    })
+
+    const utterances = await pushProbs([
+      ...run(SPEECH, SPOKEN),
+      ...run(SILENCE, 3), // a breath short of the pause: no check, nothing to end
+      ...run(SPEECH, 2),
+      ...run(SILENCE, 20),
+      ...run(SPEECH, 5),
+      ...run(SILENCE, defaults.turnCheckFrames),
+    ])
+
+    expect(events).toEqual(['pause', 'end', 'pause'])
+    expect(utterances).toHaveLength(1)
+  })
+
+  it('without a turn detector no pause is reported (#443)', async () => {
+    const events: string[] = []
+    const { pushProbs } = endpointerWith(undefined, { onPause: () => events.push('pause') })
+
+    await pushProbs([...run(SPEECH, SPOKEN), ...run(SILENCE, defaults.endFrames)])
+
+    expect(events).toEqual([])
+  })
+
   it('hands the transcriber at most the trailing silence the 700 ms Endpoint left it', async () => {
     const { pushProbs } = endpointerWith()
 

@@ -149,7 +149,22 @@ export interface VoiceSession {
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
-  const endpointerDeps = { ...(deps.turn ? { turn: deps.turn } : {}), now: () => deps.clock.now() }
+  const endpointerDeps = {
+    ...(deps.turn ? { turn: deps.turn } : {}),
+    now: () => deps.clock.now(),
+    // The final decodes beside the turn check (#443); the app's own voice is never decoded.
+    onPause: (pcm: Float32Array) => {
+      if (muted) return
+      pauseDecodes += 1
+      pauseSamples = pcm.length
+      deps.transcriber.pauseReached?.(pcm)
+    },
+    onPauseEnd: () => {
+      if (muted) return
+      pauseSamples = null
+      deps.transcriber.pauseEnded?.()
+    },
+  }
   let endpointer = createUtteranceEndpointer(appliedEndpointerConfig, endpointerDeps)
 
   /**
@@ -205,6 +220,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // The utterance in capture is the app's own voice (#326): a line was
   // playing when it started, or started under it. Dropped at its Endpoint.
   let muted = false
+  // The Utterance in capture's pauses (#443): how many decoded at a pause, and the audio length of the one standing (null when speech came back after it).
+  let pauseDecodes = 0
+  let pauseSamples: number | null = null
 
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
 
@@ -454,6 +472,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           stopSilenceClock()
           // A line is playing: this is the app's own voice — not transcribed, dropped at its Endpoint (#326).
           muted = speaking()
+          pauseDecodes = 0
+          pauseSamples = null
           if (!muted) {
             deps.transcriber.begin()
             // Speech started (#324): the page is collected in parallel with it, and the screen says the ear has it (#441).
@@ -509,12 +529,17 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     const endpointAt = tracer ? tracer.now() : null
     const cold = decoded === 0 && !prepared
     decoded += 1
+    // The final is the decode the pause started (#443) when the Endpoint carries that pause's audio: the transcriber reads it by the same test
+    // (the STT thread also decodes afresh when Page Terms landed between the pause and here, which this does not see).
+    const atPause = pauseSamples === utterance.pcm.length
+    const endOfSpeechMs = utterance.silenceMs + (utterance.endedBy === 'turn' ? (utterance.turn?.scoreMs ?? 0) : 0)
     const recordStt = (extra?: Record<string, unknown>): void => {
       if (!tracer || turnId === null || endpointAt === null) return
       // The log is advisory; never fail an utterance over bookkeeping (the
       // same guard every other perf call site gives its tracer).
       try {
-        tracer.span(turnId, 'stt', tracer.now() - endpointAt, {
+        const sttMs = tracer.now() - endpointAt
+        tracer.span(turnId, 'stt', sttMs, {
           // Which engine transcribed (#358): Parakeet's and Moonshine's spans read apart in perf:report.
           ...(deps.transcriber.engine !== undefined ? { engine: deps.transcriber.engine } : {}),
           speechMs: utterance.speechMs,
@@ -531,10 +556,14 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
               }
             : {}),
           ...(cold ? { cold: true } : {}),
+          // How many decodes this Utterance started at a pause (#443) — every one but the final's is spent — and whether the final was one of them.
+          ...(deps.turn ? { pauseDecodes, atPause } : {}),
           ...extra,
         })
         // End of speech to the Endpoint: the pause, and the turn check that read it — audio queues behind the check, so it adds.
-        tracer.span(turnId, 'end-of-speech', utterance.silenceMs + (utterance.endedBy === 'turn' ? (utterance.turn?.scoreMs ?? 0) : 0), { endedBy: utterance.endedBy })
+        tracer.span(turnId, 'end-of-speech', endOfSpeechMs, { endedBy: utterance.endedBy })
+        // The whole gap the owner waits through before the words (#443): the last speech frame to the transcript the runner is handed.
+        if (extra?.error === undefined) tracer.span(turnId, 'endpoint-to-words', endOfSpeechMs + sttMs, { endedBy: utterance.endedBy, atPause })
       } catch (error) {
         reportFault('voice.voiceSession.sttSpan', error)
         // swallowed — see above

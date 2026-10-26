@@ -56,12 +56,28 @@ export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcri
    * the final pass waits out any in-flight partial instead of racing it.
    */
   let passes: Promise<void> = Promise.resolve()
+  /** The pause is reached and speech has not come back (#443): no partial starts. */
+  let paused = false
+  /** The decode started at the pause (#443), for a finish() over the same audio in the same capture. */
+  let atPause: { gen: number; samples: number; words: Promise<string> } | null = null
 
   function resetCapture(): void {
     frames = []
     accumulated = 0
     lastPartialSamples = 0
     partialActive = false
+    paused = false
+    atPause = null
+  }
+
+  /** One decode on the serialized chain; its result is the caller's, its failure never breaks the chain. */
+  function queuePass(pcm: Float32Array): Promise<string> {
+    const pass = passes.then(() => deps.decodePass(pcm))
+    passes = pass.then(
+      () => undefined,
+      () => undefined,
+    )
+    return pass
   }
 
   function schedulePartial(gen: number): void {
@@ -86,7 +102,9 @@ export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcri
       partialActive = false
       // Speech kept growing while this pass ran: roll straight into the
       // next. A pass falling due mid-run is never queued behind it (#358).
-      if (accumulated - lastPartialSamples >= partialStrideSamples) schedulePartial(gen)
+      // Past the pause the audio is trailing silence, and a partial over it
+      // could only hold up the final (#443).
+      if (!paused && accumulated - lastPartialSamples >= partialStrideSamples) schedulePartial(gen)
     })
   }
 
@@ -102,6 +120,7 @@ export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcri
       frames.push(frame)
       accumulated += frame.length
       if (
+        !paused &&
         !partialActive &&
         accumulated >= partialMinSamples &&
         accumulated - lastPartialSamples >= partialStrideSamples
@@ -121,15 +140,23 @@ export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcri
       if (pcm.length === 0) return Promise.resolve('')
       // The capture ends here: in-flight partials run out but never emit;
       // the final pass is the submitted transcript over the complete
-      // utterance (pre-roll and endpoint frame included).
+      // utterance (pre-roll and endpoint frame included). The audio is a
+      // prefix of the capture, so the same length is the same audio: the
+      // decode the pause started is that final (#443).
+      const early = atPause !== null && atPause.gen === generation && atPause.samples === pcm.length ? atPause.words : null
       generation += 1
       resetCapture()
-      const pass = passes.then(() => deps.decodePass(pcm))
-      passes = pass.then(
-        () => undefined,
-        () => undefined,
-      )
-      return pass
+      return early ?? queuePass(pcm)
+    },
+
+    pauseReached(pcm: Float32Array) {
+      paused = true
+      atPause = { gen: generation, samples: pcm.length, words: queuePass(pcm) }
+    },
+
+    pauseEnded() {
+      paused = false
+      atPause = null
     },
 
     cancel() {

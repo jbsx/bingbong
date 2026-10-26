@@ -33,6 +33,15 @@ export interface Transcriber {
   /** Drops an in-flight capture without transcribing (disarm, blip discard). */
   cancel(): void
   /**
+   * The pause is reached (#443): decode this audio now, beside the turn
+   * check, as the likely final; a finish() over audio of the same length in
+   * this capture resolves its words without a second pass. No partial starts
+   * from here until pauseEnded(). Absent for engines with no partials.
+   */
+  pauseReached?(pcm: Float32Array): void
+  /** Speech came back after the pause (#443): its decode is not the final, and partials roll again. */
+  pauseEnded?(): void
+  /**
    * Loads the engine's sessions ahead of the first finish() (#430), so the
    * first line after a boot pays no load; a failure rejects and the next
    * pass retries. Absent for engines with nothing to load.

@@ -18,6 +18,8 @@ type ToStt =
   | { type: 'begin' }
   | { type: 'push'; frame: Float32Array }
   | { type: 'cancel' }
+  | { type: 'pause'; pcm: Float32Array }
+  | { type: 'pauseEnd' }
   | { type: 'finish'; id: number; pcm: Float32Array }
   | { type: 'prepare'; id: number }
   | { type: 'bias'; bias: ChainBias | null }
@@ -34,6 +36,8 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
   const waiting = new Map<number, { resolve(text: string): void; reject(error: Error): void }>()
   let seq = 0
   let sent = bias()
+  // The bias the pause's decode ran with (#443); undefined while no pause decode stands.
+  let pauseBias: ChainBias | null | undefined
   worker.postMessage({ type: 'init', config, bias: sent } satisfies ToStt)
   const syncBias = (): void => {
     const now = bias()
@@ -71,6 +75,7 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
     engine: config.sttEngine,
     begin: () => {
       syncBias()
+      pauseBias = undefined
       worker.postMessage({ type: 'begin' } satisfies ToStt)
     },
     push: (frame) => worker.postMessage({ type: 'push', frame } satisfies ToStt),
@@ -82,9 +87,24 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
     },
     finish: (pcm) => {
       syncBias()
+      // Page Terms that landed after the pause decoded under other bias: that decode is not this final (#443).
+      if (pauseBias !== undefined && pauseBias !== sent) worker.postMessage({ type: 'pauseEnd' } satisfies ToStt)
+      pauseBias = undefined
       return ask((id) => ({ type: 'finish', id, pcm }))
     },
-    cancel: () => worker.postMessage({ type: 'cancel' } satisfies ToStt),
+    cancel: () => {
+      pauseBias = undefined
+      worker.postMessage({ type: 'cancel' } satisfies ToStt)
+    },
+    pauseReached: (pcm) => {
+      syncBias()
+      pauseBias = sent
+      worker.postMessage({ type: 'pause', pcm } satisfies ToStt)
+    },
+    pauseEnded: () => {
+      pauseBias = undefined
+      worker.postMessage({ type: 'pauseEnd' } satisfies ToStt)
+    },
     prepare: async () => {
       await ask((id) => ({ type: 'prepare', id }))
     },
@@ -117,6 +137,8 @@ if (parentPort !== null && (workerData as { sttThread?: boolean } | null)?.sttTh
     else if (message.type === 'begin') transcriber.begin()
     else if (message.type === 'push') transcriber.push(message.frame)
     else if (message.type === 'cancel') transcriber.cancel()
+    else if (message.type === 'pause') transcriber.pauseReached?.(message.pcm)
+    else if (message.type === 'pauseEnd') transcriber.pauseEnded?.()
     else if (message.type === 'finish') reply(message.id, transcriber.finish(message.pcm))
     else reply(message.id, (transcriber.prepare?.() ?? Promise.resolve()).then(() => ''))
   })

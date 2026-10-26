@@ -561,6 +561,18 @@ export class FakeTranscriber implements Transcriber {
   cancel(): void {
     this.events.push('cancel')
   }
+
+  /** The audio of every pause the session reported (#443). */
+  readonly pausedAudio: Float32Array[] = []
+
+  pauseReached(pcm: Float32Array): void {
+    this.pausedAudio.push(pcm)
+    this.events.push('pause')
+  }
+
+  pauseEnded(): void {
+    this.events.push('pause-end')
+  }
 }
 
 /**

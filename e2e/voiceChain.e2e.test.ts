@@ -172,12 +172,16 @@ function percentile(values: number[], p: number): number | null {
   return Math.round(sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]! * 10) / 10
 }
 
-/** The perf log's voice numbers: the `stt` spans, the turn check, end of speech, model loads, and each cpu sample's loop and lag. */
+/** The perf log's voice numbers: the `stt` spans, the turn check, end of speech, endpoint to words, model loads, and each cpu sample's loop and lag. */
 function voiceNumbers(records: PerfSpanRecord[]): Record<string, unknown> {
   const stt = records.filter((r) => r.stage === 'stt')
   const warm = stt.filter((r) => r.detail?.cold !== true)
   const turn = stt.map((r) => r.detail?.turnScoreMs).filter((v): v is number => typeof v === 'number')
   const eos = records.filter((r) => r.stage === 'end-of-speech').map((r) => r.durMs)
+  const words = records.filter((r) => r.stage === 'endpoint-to-words').map((r) => r.durMs)
+  const eosByTurn = new Map(records.filter((r) => r.stage === 'end-of-speech').map((r) => [r.turnId, r.durMs]))
+  const summed = stt.filter((r) => r.detail?.error === undefined && eosByTurn.has(r.turnId)).map((r) => r.durMs + eosByTurn.get(r.turnId)!)
+  const pauseDecodes = stt.map((r) => r.detail?.pauseDecodes).filter((v): v is number => typeof v === 'number')
   const cpu = records.filter((r) => r.stage === 'cpu').map((r) => r.detail as Record<string, unknown>)
   const loops = cpu.map((d) => d.loop as { p50: number; p99: number; max: number } | undefined).filter((l) => l !== undefined)
   const lags = cpu.map((d) => d.vadLag as { p50: number; max: number } | null | undefined).filter((l): l is { p50: number; max: number } => l != null)
@@ -187,6 +191,11 @@ function voiceNumbers(records: PerfSpanRecord[]): Record<string, unknown> {
     sttWarm: { p50: percentile(warm.map((r) => r.durMs), 50), p95: percentile(warm.map((r) => r.durMs), 95), max: percentile(warm.map((r) => r.durMs), 100) },
     turnScoreMs: { n: turn.length, p50: percentile(turn, 50), p95: percentile(turn, 95), max: percentile(turn, 100) },
     endOfSpeech: { p50: percentile(eos, 50), p95: percentile(eos, 95) },
+    // The last speech frame to the words (#443); the decodes started at a pause, and how many finals were one.
+    endpointToWords: { n: words.length, p50: percentile(words, 50), p95: percentile(words, 95) },
+    // The same gap off end-of-speech + stt by turn, so a build without the span reads alike.
+    endOfSpeechPlusStt: { p50: percentile(summed, 50), p95: percentile(summed, 95) },
+    pauseDecodes: { total: pauseDecodes.reduce((sum, n) => sum + n, 0), finalsAtPause: stt.filter((r) => r.detail?.atPause === true).length },
     loop: { p50: percentile(loops.map((l) => l.p50), 50), p99: percentile(loops.map((l) => l.p99), 50), p99Max: percentile(loops.map((l) => l.p99), 100), max: percentile(loops.map((l) => l.max), 100) },
     vadLag: { p50: percentile(lags.map((l) => l.p50), 50), max: percentile(lags.map((l) => l.max), 100) },
     modelLoads: records.filter((r) => r.stage === 'model-load').map((r) => ({ model: r.detail?.model, durMs: Math.round(r.durMs), sinceStartMs: r.detail?.sinceStartMs })),

@@ -25,6 +25,9 @@
 // The decode is biased toward the Seed Lexicon as the app's is; set
 // BINGBONG_STT_BIAS="Linus Tech Tips,Elon Musk" to add those as Page
 // Terms (ADR 0077), standing in for the names a page would have shown.
+// Set BINGBONG_STT_AT_PAUSE=<ms> to replay the final the way #443 runs it:
+// the decode starts at the pause, the Endpoint comes <ms> later (the turn
+// check's time), and finish() over the same audio takes that decode's words.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -54,6 +57,7 @@ const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier
 // without a .ts extension, which this type-stripping runtime cannot follow.
 const seedLexicon = [...readFileSync(new URL('../src/main/moonshine/biasLexicon.ts', import.meta.url), 'utf8').matchAll(/^\s+'([^']+)',$/gm)].map((match) => match[1]!)
 const pageTerms = (process.env.BINGBONG_STT_BIAS ?? '').split(',').map((term) => term.trim()).filter((term) => term !== '')
+const atPauseMs = process.env.BINGBONG_STT_AT_PAUSE === undefined ? null : Number(process.env.BINGBONG_STT_AT_PAUSE)
 const biasPhrases: BiasInput = pageTerms.length === 0 ? seedLexicon : [{ phrases: seedLexicon }, { phrases: pageTerms, boost: PAGE_TERMS_BOOST }]
 
 function wavFiles(dir: string): string[] {
@@ -106,7 +110,7 @@ async function shippedEngine(): Promise<Transcriber> {
   })
 }
 const transcriber = await shippedEngine()
-console.log(`engine ${sttModel}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
+console.log(`engine ${sttModel}${atPauseMs !== null ? `; final decoded at the pause, the Endpoint ${atPauseMs} ms later` : ''}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
 
 /** Real-time-paced push: partials overlap speech the way they do live. */
 async function replay(file: string): Promise<ReplayRow> {
@@ -118,6 +122,11 @@ async function replay(file: string): Promise<ReplayRow> {
     const wait = due - performance.now()
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
     transcriber.push(pcm.subarray(offset, offset + VAD_FRAME_SAMPLES))
+  }
+  // The pause (#443): the final's decode starts here, and the turn check runs beside it.
+  if (atPauseMs !== null) {
+    transcriber.pauseReached?.(pcm)
+    await new Promise((resolve) => setTimeout(resolve, atPauseMs))
   }
   // The endpoint just fired: this is the stt span's measure — drain of any
   // in-flight partial, then the final full-utterance pass.
