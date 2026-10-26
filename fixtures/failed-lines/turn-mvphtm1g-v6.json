@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, Idle Screen up over the watch page of Tum Se Tum Tak - Niyam: Mammoth answered 429 (rate limit exceeded); best guess none, ended unavailable. Third of three (turn-mvpht6rm-v4, turn-mvphtcud-v5)",
   "meant": "Bring the pane back over the Idle Screen, the music playing on",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#477"
 }

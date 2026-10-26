@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Typed on about:blank on d81cb568 (#400 verification): the action call timed out at 3001 ms on Mammoth and the line read as not a command. The same line on about:blank timed out at 3001 ms in an earlier run too (logs removed)",
   "meant": "Search the whole question on the web and land on its results",
-  "log": "decision-1792763610725-1.jsonl"
+  "log": "decision-1792763610725-1.jsonl",
+  "claimedBy": "#477"
 }

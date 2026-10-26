@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "Step 5 of 'Search Linus Decs': after type (the partial's 'lines tactic'), submit, a Clear click that left the value, and a re-type that appended ('lines tacticLinus Decs'), the hop-4 read timed out at 1502 ms on Mammoth; the Task died with the garbled words in the box and nothing said",
   "meant": "Submit the search for the words meant (Linus Tech Tips)",
-  "log": "decision-1792691664816-1.jsonl"
+  "log": "decision-1792691664816-1.jsonl",
+  "claimedBy": "#477"
 }

@@ -6,5 +6,6 @@
   "stage": "stt",
   "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the promo's watch page: Parakeet's partial heard 'Wait, Dum Seek' (final 'Play tum se tum tak bai niyum.'); Mammoth read the partial complete (noul 0.74) and the Early Fire paused the promo (pause-10 0.46), 161 ms before the Endpoint",
   "meant": "Play Tum Se Tum Tak by Niyam (JTRDwh0BHG4)",
-  "log": "decision-1793017798599-1.jsonl"
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#477"
 }

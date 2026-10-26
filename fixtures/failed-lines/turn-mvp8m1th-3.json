@@ -6,5 +6,6 @@
   "stage": "stt",
   "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet's partial heard 'Nope.' (final 'Loop this song.'); Mammoth read the partial complete (noul 0.93) and the Early Fire clicked ref 38, YouTube's 'Leave history off' button (click-38 0.68), 280 ms before the Endpoint. Hop 1 read loop-10 0.95 but was superseded by the next line",
   "meant": "Put the song on loop, nothing clicked",
-  "log": "decision-1793017798599-1.jsonl"
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#477"
 }
