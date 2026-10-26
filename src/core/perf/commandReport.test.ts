@@ -149,7 +149,7 @@ describe('formatCommandReport', () => {
       'model         tokens  count    p50    p95',
       'jev-1.14.0  no count      1  220ms  220ms',
       '',
-      'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | local match 1, jev 1, best guess 0 | misfires 1 (back 1) | names matched 0',
+      'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | fell over 0 | local match 1, jev 1, best guess 0 | misfires 1 (back 1) | names matched 0',
       'early fire: 0 of 2 spoken (0%) | jev calls per spoken utterance 0.50 (0 on partials)',
     ])
   })
@@ -183,7 +183,7 @@ describe('formatCommandReport', () => {
       'model         tokens  count    p50    p95',
       'jev-1.14.0  no count      1  220ms  220ms',
       '',
-      'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
+      'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | fell over 0 | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
       'early fire: 2 of 4 spoken (50%), lead p50 300ms p95 500ms | jev calls per spoken utterance 1.00 (3 on partials)',
     ])
   })
@@ -272,7 +272,7 @@ describe('formatCommandReport', () => {
     expect(report.jevRefused).toEqual({ 422: 1 })
     expect(report.fellOver).toEqual({ count: 0, answered: 0 })
     expect(report.jevInputTokens).toEqual({ p50: 9000, max: 15000 })
-    expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain('jev refused 1 (422 1) | input tokens p50 9000 max 15000')
+    expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain('jev refused 1 (422 1) | fell over 0 | input tokens p50 9000 max 15000')
   })
 
   it('bands each model\'s answered latency by the host\'s token count, the answers without one apart and a refusal nowhere (#440)', () => {

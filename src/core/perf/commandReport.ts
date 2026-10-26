@@ -259,13 +259,12 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       }
       // A refusal is counted per attempt once the record names them (#477); a record before that names one host's.
       const attempts = record.jev?.attempts
-      if (attempts !== undefined) {
-        for (const attempt of attempts) if (attempt.outcome === 'http' && typeof attempt.httpStatus === 'number') report.jevRefused[attempt.httpStatus] = (report.jevRefused[attempt.httpStatus] ?? 0) + 1
-        if (attempts.length > 1) {
-          report.fellOver.count += 1
-          if (attempts[attempts.length - 1]!.outcome === 'answered') report.fellOver.answered += 1
-        }
-      } else if (record.jev !== undefined && 'httpStatus' in record.jev && typeof record.jev.httpStatus === 'number') report.jevRefused[record.jev.httpStatus] = (report.jevRefused[record.jev.httpStatus] ?? 0) + 1
+      const refusals = attempts !== undefined ? attempts.filter((attempt) => attempt.outcome === 'http') : record.jev !== undefined && 'httpStatus' in record.jev ? [record.jev] : []
+      for (const refusal of refusals) if (typeof refusal.httpStatus === 'number') report.jevRefused[refusal.httpStatus] = (report.jevRefused[refusal.httpStatus] ?? 0) + 1
+      if (attempts !== undefined && attempts.length > 1) {
+        report.fellOver.count += 1
+        if (attempts[attempts.length - 1]!.outcome === 'answered') report.fellOver.answered += 1
+      }
       const counted = record.jev !== undefined && 'inputTokens' in record.jev && typeof record.jev.inputTokens === 'number' ? record.jev.inputTokens : undefined
       if (counted !== undefined) tokens.push(counted)
       // Only an answer's latency is banded: a refusal or a timeout says nothing of what its card cost.
@@ -313,9 +312,9 @@ function refusedText(refused: Record<number, number>): string {
   return ` | jev refused ${total} (${byStatus.map(([status, count]) => `${status} ${count}`).join(', ')})`
 }
 
-/** The asks that fell over (#477): ` | fell over 3 (answered by a fallback 2)`; nothing when none did. */
+/** The asks that fell over to a Fallback Host (#477), always printed beside the refusals: ` | fell over 3 (answered by a fallback 2)`, ` | fell over 0` when none did. */
 function fellOverText(fell: { count: number; answered: number }): string {
-  return fell.count === 0 ? '' : ` | fell over ${fell.count} (answered by a fallback ${fell.answered})`
+  return fell.count === 0 ? ' | fell over 0' : ` | fell over ${fell.count} (answered by a fallback ${fell.answered})`
 }
 
 function percent(part: number, whole: number): string {

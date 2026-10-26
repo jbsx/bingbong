@@ -2646,7 +2646,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Command or an abort supersedes every Step still to come. The first
    * Step's record names the ask that split the line.
    */
-  async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null, extra: Partial<DecisionRecord>): Promise<StepEnd | null> {
+  async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null): Promise<StepEnd | null> {
     const done: string[] = []
     for (let index = 0; index < words.length; index += 1) {
       if (line.submission !== submitted) return null
@@ -2660,7 +2660,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const heard = await read(stepTurnId, words[index]!, first ? pending : null, line.source === 'spoken', { split: false, step, ...(first ? { askId: `${turnId}-step1` } : {}) })
       if (reading?.turnId === stepTurnId) reading = null
       const split = first && whole.ask !== undefined && whole.jev !== undefined && 'confidence' in whole.jev ? { split: { ask: whole.ask, jev: whole.jev, steps: words, line: line.text } } : {}
-      const end = await runStep(line, stepTurnId, words[index]!, heard, first ? { ...extra, ...split } : {}, { measured: first, step, taskId: turnId })
+      const end = await runStep(line, stepTurnId, words[index]!, heard, first ? split : {}, { measured: first, step, taskId: turnId })
       if (!stepDone(end)) {
         stopSteps(line, turnId, end, index + 2, words.length)
         // What the Steps before it did goes to an Errand with it, when the line is handed over (#467).
@@ -3005,7 +3005,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending, {}) : await runStep(line, turnId, trimmed, heard, {}, { measured: true })
+        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, trimmed, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
         if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: trimmed, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }

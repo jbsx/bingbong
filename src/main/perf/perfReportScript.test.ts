@@ -109,7 +109,7 @@ describe.skipIf(!stripsTypes)('perf:report script', () => {
     expect(stdout).toMatch(/^open\s+2\s+420ms\s+610ms\s+610ms$/m)
     expect(stdout).toMatch(/^click\s+1\s+180ms\s+180ms\s+180ms$/m)
     expect(stdout).toContain(
-      'decisions: 3 commands | jev asked 1 (33%), answered 1, latency p50 230ms p95 230ms | local match 2, jev 1, best guess 0 | misfires 1 (back 1)',
+      'decisions: 3 commands | jev asked 1 (33%), answered 1, latency p50 230ms p95 230ms | fell over 0 | local match 2, jev 1, best guess 0 | misfires 1 (back 1)',
     )
   })
 

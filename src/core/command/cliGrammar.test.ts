@@ -25,6 +25,8 @@ describe('parseCliCommand', () => {
     it('parses the line as given first: a typed line that matched before keeps its reading, full stop and all', () => {
       expect(parseCliCommand('type 5 hello.')).toEqual({ ok: true, command: { type: 'type', ref: 5, text: 'hello.' } })
       expect(parseCliCommand('navigate example.com.')).toEqual({ ok: true, command: { type: 'navigate', input: 'example.com.' } })
+      // The ear's capitalised head reaches the grammar only on the second parse, so its full stop is the ear's and goes.
+      expect(parseCliCommand('Type 5 hello.')).toEqual({ ok: true, command: { type: 'type', ref: 5, text: 'hello' } })
     })
 
     it('keeps the error the words as given earned when the line fails both ways', () => {

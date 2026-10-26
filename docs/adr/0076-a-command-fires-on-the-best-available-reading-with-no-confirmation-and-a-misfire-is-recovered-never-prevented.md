@@ -59,8 +59,7 @@ moment one exists:
 - else Jev's top Choice, acted on at any confidence, refused only when
   Jev reads the Utterance as no Command for the page;
 - as an Early Fire on a partial transcript once the words so far are a
-  Local Match line (#477; until then, once they read as a complete
-  Command), the Endpoint then only closing the Utterance;
+  Local Match line, the Endpoint then only closing the Utterance;
 - at the Endpoint otherwise, released 300 ms into silence with no merge
   hold, so a pause mid-sentence makes two Commands;
 - with the browser's pacing sleeps removed and typing inserted whole.
@@ -90,10 +89,6 @@ machine; the Hardware Floor waits.
 - Misfires will happen and are the design working, not failing. The
   Misfire log is the dataset the accuracy work starts from.
 - Bot detection gets likelier on sites that read human pacing; accepted.
-- Jev is asked once per hop, at the Endpoint (#477; under increment 2 it
-  was asked up to a few times per Utterance under Early Fire), at $0.042
-  per million input tokens: cents a day. The rate cap in the TypeSafe
-  console is the limit to watch, not the bill.
 - Every later lever (Hot Listen, persistent Piper, Early Fire) is measured
   against the plain loop's Reaction distribution before it stays.
 - The Decision Model is pinned to `jev-1.14.0`, not the `jev-1.13.0` the

@@ -79,12 +79,10 @@ const DECISION_FALLBACK_TIMEOUT_ENV_KEY = `${DECISION_ENV_PREFIX}_FALLBACK_TIMEO
  * the smallest host's (ADR 0088); where the docs and the replay disagree,
  * the smaller wins. The Mark Ask's capture is scaled so its long edge is
  * at most this before it is sent; the marks keep their size relative to
- * the image.
+ * the image. The same docs refuse a side under 280 px; a capture that
+ * narrow is not padded, and its line ends as it did.
  */
 export const DECISION_IMAGE_LONG_EDGE_PX = 1568
-
-/** The short side the same docs refuse under: a capture scaled to the long edge with a side under this is still refused (280 px), noted, not padded. */
-export const DECISION_IMAGE_SHORT_EDGE_MIN_PX = 280
 
 /**
  * The size an image is sent at (#477): as it is when its long edge is
