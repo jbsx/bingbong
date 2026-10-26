@@ -65,6 +65,15 @@ The longest silence an Utterance survives whatever the Turn Check says —
 2 s by default, the Setting that was the endpoint delay.
 _Avoid_: endpoint delay, silence timeout
 
+**Cloud Ear**:
+ElevenLabs Scribe v2 Realtime as the STT engine, on a bounded trial (ADR
+0019 as amended, #463, the read in #469). One socket per Utterance; its
+partials feed the Hearing phase; a fault, or no committed words within 1.5 s
+of the Endpoint, hands the same Utterance to Parakeet, which stays loaded
+behind it. Its seconds per day are tallied as fired a Command or fired
+nothing.
+_Avoid_: cloud STT tier, hybrid ear, router
+
 **Barge-in**:
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
 speech. The Abort Head is the one bare-speech exception.
