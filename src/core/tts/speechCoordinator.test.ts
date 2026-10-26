@@ -77,28 +77,19 @@ class FakePlayer implements AudioStreamPlayer {
   }
 }
 
-function recordingDucker(events: string[]) {
-  return {
-    duck: () => events.push('duck'),
-    restore: () => events.push('restore'),
-  }
-}
-
 /** Flush the microtask queue so deferred synth/playback continuations have run. */
 function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve))
 }
 
 describe('speech coordinator', () => {
-  it('ducks page audio, speaks, then restores in order', async () => {
-    const events: string[] = []
+  it('speaks, and resolves once the line has played', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const tts = createSpeechCoordinator({ synth, player })
 
     const outcome = tts.speak('hello')
     await flush()
-    expect(events).toEqual(['duck'])
     expect(synth.texts).toEqual(['hello'])
 
     synth.finishNext()
@@ -108,14 +99,12 @@ describe('speech coordinator', () => {
 
     player.streams[0]!.finish()
     expect(await outcome).toEqual({ ok: true })
-    expect(events).toEqual(['duck', 'restore'])
   })
 
   it('hands the first sentence to playback before the second has been synthesized, through one stream (AC2)', async () => {
-    const events: string[] = []
     const synth = new FakeSynth()
     const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const tts = createSpeechCoordinator({ synth, player })
     const first = new Uint8Array([1])
     const second = new Uint8Array([2])
     const third = new Uint8Array([3])
@@ -141,8 +130,6 @@ describe('speech coordinator', () => {
 
     player.streams[0]!.finish()
     expect(await outcome).toEqual({ ok: true })
-    // Page audio ducks once for the whole text, not per sentence.
-    expect(events).toEqual(['duck', 'restore'])
   })
 
   it('stop() during the second sentence ends playback and discards the third (AC2)', async () => {
@@ -269,17 +256,15 @@ describe('speech coordinator', () => {
     expect(player.streams).toHaveLength(0)
   })
 
-  it('restores page audio and reports the error when synthesis fails', async () => {
-    const events: string[] = []
+  it('reports the error when synthesis fails', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const tts = createSpeechCoordinator({ synth, player })
 
     const outcome = tts.speak('hello')
     synth.failNext('piper binary not found')
 
     expect(await outcome).toEqual({ ok: false, error: 'piper binary not found' })
-    expect(events).toEqual(['duck', 'restore'])
     expect(player.streams).toHaveLength(0)
   })
 
@@ -300,11 +285,10 @@ describe('speech coordinator', () => {
     expect(await outcome).toEqual({ ok: false, error: 'piper died' })
   })
 
-  it('restores page audio and reports the error when playback fails', async () => {
-    const events: string[] = []
+  it('reports the error when playback fails', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const tts = createSpeechCoordinator({ synth, player })
 
     const outcome = tts.speak('hello')
     synth.finishNext()
@@ -312,41 +296,15 @@ describe('speech coordinator', () => {
     player.streams[0]!.fail('aplay died')
 
     expect(await outcome).toEqual({ ok: false, error: 'aplay died' })
-    expect(events).toEqual(['duck', 'restore'])
-  })
-
-  it('keeps page audio ducked when a new speak starts as a stopped one unwinds', async () => {
-    const events: string[] = []
-    const synth = new FakeSynth()
-    const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
-
-    const first = tts.speak('one')
-    synth.finishNext()
-    await flush()
-    tts.stop()
-    await first
-
-    const second = tts.speak('two')
-    synth.finishNext()
-    await flush()
-    // One duck for each speak; the first restore must not un-duck the second.
-    expect(events.filter((e) => e === 'restore')).toHaveLength(1)
-
-    player.streams[1]!.finish()
-    await second
-    expect(events).toEqual(['duck', 'restore', 'duck', 'restore'])
   })
 
   it('a blank text speaks nothing and resolves ok', async () => {
-    const events: string[] = []
     const synth = new FakeSynth()
     const player = new FakePlayer()
-    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const tts = createSpeechCoordinator({ synth, player })
 
     expect(await tts.speak('   ')).toEqual({ ok: true })
     expect(synth.texts).toEqual([])
-    expect(events).toEqual([])
   })
 
   it('stop() with nothing playing is a safe no-op', () => {

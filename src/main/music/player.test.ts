@@ -517,6 +517,25 @@ describe('the level heard carries into the next song (#460)', () => {
     expect(youtube.element.volume).toBe(70)
   })
 
+  it('a song that opens on an ad under the duck, marked by the pane\'s duck at YouTube\'s own level, still takes the matched level (#461)', async () => {
+    const { youtube, player, perform } = loud()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    mediaOp(youtube, 20)
+    await player.check()
+    await player.duck(true)
+    // The pane's duck reaches the new page first: its element marked with the level YouTube opened it at, an ad's.
+    youtube.paneDuck = 0.15
+    youtube.adShowing = true
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    expect(youtube.heard()).toBeCloseTo(100 * BF, 1)
+    youtube.adShowing = false
+    await player.check()
+    expect(youtube.heard()).toBeCloseTo(19.93, 1)
+    expect(youtube.element.volume).toBe(3)
+    await player.duck(false)
+    expect(youtube.element.volume).toBeCloseTo(19.93, 1)
+  })
+
   it('a song opened while ducked gets the floor of the matched level, and the duck lets go to it', async () => {
     const { youtube, player, perform } = loud()
     await perform({ kind: 'search', place: 'now' }, 'song a')

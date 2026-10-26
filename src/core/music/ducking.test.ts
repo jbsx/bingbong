@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createDucking } from './ducking'
+import { createDucking, duckInTurn } from './ducking'
 import type { VoiceState } from '../voice/ipcChannels'
 
 // Ducking (#344, CONTEXT.md Voice): the music drops under the ear, a
@@ -51,5 +51,50 @@ describe('Ducking', () => {
     expect(calls).toEqual([true])
     ducking.hold('ring', false)
     expect(calls).toEqual([true, false])
+  })
+})
+
+describe('the Player and the pane, ducked as one (#461)', () => {
+  /** A duck that resolves only when told: what ran, in order, and the ones still held open. */
+  function deferred(name: string, log: string[]) {
+    const waiting: (() => void)[] = []
+    const duck = (on: boolean): Promise<void> => {
+      log.push(`${name} ${on ? 'down' : 'up'}`)
+      return new Promise((resolve) => waiting.push(() => { log.push(`${name} ${on ? 'down' : 'up'} done`); resolve() }))
+    }
+    return { duck, settle: () => waiting.splice(0).forEach((resolve) => resolve()) }
+  }
+
+  it('both lower at once; the release puts the Player\'s song back before the pane lets go of the rest', async () => {
+    const log: string[] = []
+    const player = deferred('player', log)
+    const pane = deferred('pane', log)
+    const duck = duckInTurn(player.duck, pane.duck)
+    duck(true)
+    duck(false)
+    await Promise.resolve()
+    expect(log).toEqual(['player down', 'pane down'])
+    player.settle()
+    pane.settle()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(log.slice(4)).toEqual(['player up'])
+    player.settle()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(log.slice(5)).toEqual(['player up done', 'pane up'])
+  })
+
+  it('a duck that fails leaves the next one to run', async () => {
+    const calls: string[] = []
+    const duck = duckInTurn(
+      async (on) => {
+        calls.push(`player ${on}`)
+        if (on) throw new Error('page gone')
+      },
+      async (on) => void calls.push(`pane ${on}`),
+    )
+    duck(true)
+    duck(false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).toEqual(['player true', 'pane true', 'player false', 'pane false'])
   })
 })

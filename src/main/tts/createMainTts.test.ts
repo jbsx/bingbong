@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { WebContents } from 'electron'
 import { createMainTts } from './createMainTts'
 
-const DEAD_PANE = { isDestroyed: () => true } as unknown as WebContents
 const INSTALL = { piperDir: '/nonexistent/piper', voicesDir: '/nonexistent/voices', release: null }
 
 describe('createMainTts', () => {
   it('resolves a failed line as an outcome, never a throw, when piper cannot run', async () => {
     const tts = createMainTts({
       config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', install: INSTALL },
-      pane: DEAD_PANE,
       getVoiceId: () => 'test',
     })
 
@@ -20,7 +17,6 @@ describe('createMainTts', () => {
     let installs = 0
     const tts = createMainTts({
       config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', install: INSTALL },
-      pane: DEAD_PANE,
       getVoiceId: () => 'test',
       ready: () => {
         installs += 1

@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { WebContents } from 'electron'
 import type { Server } from 'node:http'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
 import { createCdpBrowserController, type PageFrame } from '../src/main/browser/createCdpBrowserController.ts'
 import { FRAME_PAUSE_ALL_JS } from '../src/main/browser/pageMediaScript.ts'
-import { createPaneAudioDucker } from '../src/main/tts/createPaneAudioDucker.ts'
-import { DUCK_FACTOR } from '../src/core/tts/duckVolumes.ts'
+import { createPaneDuck, type DuckedPane } from '../src/main/music/createPaneDuck.ts'
+import { DUCK_SHARE } from '../src/core/music/ducking.ts'
 import type { BrowserController } from '../src/core/ports/browser.ts'
 import type { PageSnapshot } from '../src/core/browser/snapshot.ts'
 import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrome } from './headlessChrome.ts'
@@ -19,7 +18,7 @@ import { silentWav } from './fixtureServer.ts'
 // auto-attached target CDP hands over for it (the ADR's fallback shape),
 // which is the one way a bare Chrome offers. The collect lists both, a
 // media op pauses the video, a click lands on the button, an idle stop
-// pauses the video, and the ducker lowers it.
+// pauses the video, and the duck lowers it.
 //
 // It needs a Chrome and a global WebSocket (Node ≥ 22); without either it is
 // skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
@@ -150,19 +149,18 @@ describe.skipIf(!canDriveChrome)('a cross-origin frame in a real Chrome (#377)',
     expect(await inFrame<boolean>(`document.querySelector('video').paused`)).toBe(true)
   })
 
-  it("lowers the frame's video while speech plays and puts it back after", async () => {
-    // The pane as the ducker sees it: the top over CDP, and the frame below it in its own context.
-    const top = { executeJavaScript: (script: string) => chrome.evaluate(script) }
-    const embed = { executeJavaScript: (script: string) => inFrame(script) }
-    const pane = { isDestroyed: () => false, executeJavaScript: top.executeJavaScript, mainFrame: { framesInSubtree: [] as unknown[] } }
-    pane.mainFrame.framesInSubtree = [pane.mainFrame, embed]
-    const ducker = createPaneAudioDucker(pane as unknown as WebContents)
+  it("lowers the frame's playing video while the duck holds and puts it back after (#461)", async () => {
+    await inFrame(`document.querySelector('video').play().then(() => true)`)
+    // The pane as the duck reaches it: the top over CDP, and the frame below it in its own context.
+    const top = { detached: false, executeJavaScript: (script: string) => chrome.evaluate(script) }
+    const embed = { detached: false, executeJavaScript: (script: string) => inFrame(script) }
+    const pane = { isDestroyed: () => false, on: () => pane, off: () => pane, mainFrame: { framesInSubtree: [top, embed] } }
+    const duck = createPaneDuck(pane as unknown as DuckedPane)
 
-    ducker.duck()
-    expect(await until(async () => (await inFrame<number>(`document.querySelector('video').volume`)) < 1 && true, 'the duck')).toBe(true)
-    expect(await inFrame<number>(`document.querySelector('video').volume`)).toBeCloseTo(DUCK_FACTOR)
+    await duck.set(true)
+    expect(await inFrame<number>(`document.querySelector('video').volume`)).toBeCloseTo(DUCK_SHARE)
 
-    ducker.restore()
-    await until(async () => (await inFrame<number>(`document.querySelector('video').volume`)) === 1, 'the restore')
+    await duck.set(false)
+    expect(await inFrame<number>(`document.querySelector('video').volume`)).toBe(1)
   })
 })

@@ -91,7 +91,8 @@ import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
-import { createDucking } from '../core/music/ducking'
+import { createDucking, duckInTurn } from '../core/music/ducking'
+import { createPaneDuck } from './music/createPaneDuck'
 import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
@@ -578,15 +579,17 @@ async function createWindow(): Promise<BrowserWindow> {
   const speakingGate = createSpeakingGate(
     createMainTts({
       config: piperConfig,
-      pane: pane.view.webContents,
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
       prefetch: true,
       ready: piperReady,
     }),
   )
-  // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
-  const ducking = createDucking((on) => void music.player.duck(on))
+  // Ducking (#344, #461): every media element playing in the pane — the Player's
+  // song or a page's own — drops under the ear, a spoken line and a ringing Timer.
+  const paneDuck = createPaneDuck(pane.view.webContents)
+  onWindowClosed(win, paneDuck.detach)
+  const ducking = createDucking(duckInTurn(music.player.duck, paneDuck.set))
   onWindowClosed(win, speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
   onWindowClosed(win, timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
   attachDownloadRouter(pane.session, {

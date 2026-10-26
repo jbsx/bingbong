@@ -73,9 +73,9 @@ speech. The Abort Head is the one bare-speech exception.
 The music dropping under the voice (#344): while the ear is open — from a
 wake, a push-to-talk or a Hot Listen's next speech until that Utterance
 ends, its Command fired or the line dropped — while a line is spoken and
-while the Timer rings, main sets the playing video's volume to 15 % of
-what it was, low but never silent, and puts it back when the last of them
-lets go. YouTube's own remembered volume is never told the floor, and a
+while the Timer rings, main sets every media element playing in the
+pane, the Player's song or a page's own, to 15 % of its level, low but
+never silent, and puts it back when the last of them lets go. YouTube's own remembered volume is never told the floor, and a
 `volume` spoken meanwhile, by the Player's verb or a Media Op, sets the
 volume put back. The card shows the level the duck will put back, never
 the floor (#459). The system's volume is never touched, and the music is

@@ -50,6 +50,8 @@ export class ScriptedYouTube {
   readonly loudness = new Map<string, number>()
   /** The duck's mark on the element (#459): the volume (0–100) it puts back and the floor's share; a new page's element has none. */
   duckMark: { restore: number; share: number } | null = null
+  /** The pane's duck (#461), its floor's share while it holds: it reaches a new page's element before the Player does. */
+  paneDuck: number | null = null
   adShowing = false
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
@@ -92,6 +94,11 @@ export class ScriptedYouTube {
       this.shownUrl = url
       this.element = { ...this.element, paused: false, loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
       this.duckMark = null
+      // The pane's duck holds (#461): a new page's element is marked at the level it opened at before the Player reads it.
+      if (this.paneDuck !== null) {
+        this.duckMark = { restore: this.element.volume, share: this.paneDuck }
+        this.element = { ...this.element, volume: Math.round(this.element.volume * this.paneDuck) }
+      }
     }
     if (expression.includes('/* YT_RESULTS */')) {
       const data = URL.canParse(url) ? this.results.get(new URL(url).searchParams.get('search_query') ?? '') : undefined
@@ -123,7 +130,7 @@ export class ScriptedYouTube {
     const ended = this.ended
     this.ended = null
     const element = this.element
-    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
+    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
   }

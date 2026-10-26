@@ -45,6 +45,8 @@ export interface WatchStatus {
   readonly muted: boolean
   /** The element carries a duck's mark (#459); a fresh element after a landing does not. */
   readonly ducked: boolean
+  /** The level, 0–100, the mark puts back, unrounded; null with no mark — the Player's, or the pane's (#461). */
+  readonly restore: number | null
   /** YouTube's own idle prompt, "Video paused. Continue watching?", is up (#344). */
   readonly prompt: boolean
   /** The track's `loudnessDb` from the player's response; null when it carries none (#460). */
@@ -158,6 +160,7 @@ export const WATCH_SCRIPT = `(() => {
     volume: video ? Math.round(video.volume * 100) : 0,
     muted: video ? video.muted : false,
     ducked: video ? Boolean(video.${DUCK_MARK}) : false,
+    restore: video && video.${DUCK_MARK} ? video.${DUCK_MARK}.restore * 100 : null,
     prompt: continuePrompt() !== null,
     loudnessDb: loudnessOf(player),
     playerVolume: playerVolumeOf(player),

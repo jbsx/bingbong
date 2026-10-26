@@ -61,6 +61,65 @@ export const MEDIA_FACTS_FN = `((el) => {
   }
 })`
 
+/**
+ * The duck held on a document (#461): the floor's share while the pane is
+ * ducked, absent when it is not. Its listeners read it when a media event
+ * comes, so a document ducked once keeps them, and a release ends them.
+ */
+export const DUCK_HOLD = '__bingbongDuckHold'
+
+/**
+ * A JS expression ducking every media element playing in its document
+ * (#461, CONTEXT.md Ducking), by kind, on any site: each is marked with
+ * its own level and dropped to `share` of it. A muted or paused element is
+ * left alone, and one already marked keeps its mark — the Player's song
+ * the Player marked, or one a frame's earlier duck reached. While the hold
+ * stands, an element that starts playing drops to its floor too, and a
+ * marked one the page raises goes back to its floor, the level put back
+ * kept. Yields how many it lowered.
+ */
+export function duckAllScript(share: number): string {
+  return `(() => {
+  /* DUCK_ALL */
+  const floorOf = (mark) => Math.round(mark.restore * 100 * mark.share) / 100
+  const floor = (el) => { el.volume = floorOf(el.${DUCK_MARK}) }
+  const lower = (el) => {
+    const hold = window.${DUCK_HOLD}
+    if (!hold || el.${DUCK_MARK} || el.paused || el.ended || el.muted) return false
+    el.${DUCK_MARK} = { restore: el.volume, share: hold.share }
+    floor(el)
+    return true
+  }
+  if (!window.__bingbongDuckHeard) {
+    window.__bingbongDuckHeard = true
+    const media = (event) => event.target instanceof HTMLMediaElement ? event.target : null
+    for (const type of ['play', 'playing']) window.addEventListener(type, (event) => { const el = media(event); if (el) lower(el) }, true)
+    window.addEventListener('volumechange', (event) => {
+      const el = media(event)
+      if (!el || !window.${DUCK_HOLD} || !el.${DUCK_MARK}) return
+      if (el.volume > floorOf(el.${DUCK_MARK}) + 0.005) floor(el)
+    }, true)
+  }
+  window.${DUCK_HOLD} = { share: ${share} }
+  return Array.from(document.querySelectorAll(${MEDIA_SELECTOR})).filter(lower).length
+})()`
+}
+
+/** A JS expression letting go of the duck in its document (#461): the hold ended, every marked element given back the level its mark holds. Yields how many. */
+export const UNDUCK_ALL_JS = `(() => {
+  /* UNDUCK_ALL */
+  window.${DUCK_HOLD} = null
+  let restored = 0
+  for (const el of document.querySelectorAll(${MEDIA_SELECTOR})) {
+    const mark = el.${DUCK_MARK}
+    if (!mark) continue
+    delete el.${DUCK_MARK}
+    el.volume = mark.restore
+    restored += 1
+  }
+  return restored
+})()`
+
 /** A JS expression yielding the page's media element, or null. */
 export const PAGE_MEDIA_JS = `(() => {
   const media = Array.from(document.querySelectorAll(${MEDIA_SELECTOR}))

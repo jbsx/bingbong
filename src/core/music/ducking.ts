@@ -5,7 +5,9 @@ import type { VoiceState } from '../voice/ipcChannels'
 // when the last of them lets go. The ear holds from the listen opening (a
 // wake, a push-to-talk, a Hot Listen) to its Utterance's end — the Command
 // fired or the line dropped; speech starting again inside a Hot Listen
-// holds it again. The Player does the ducking; this only decides when.
+// holds it again. The Player and the pane do the ducking (#461): every
+// media element playing in the pane, not the Player's song alone; this
+// only decides when.
 
 export type DuckReason = 'ear' | 'speech' | 'ring'
 
@@ -48,5 +50,27 @@ export function createDucking(duck: (on: boolean) => void): Ducking {
     utteranceEnded() {
       set('ear', false)
     },
+  }
+}
+
+/** The duck's floor, as a share of the level it puts back: low, never silent, so what plays is heard still there (#344). */
+export const DUCK_SHARE = 0.15
+
+/**
+ * The Player's duck and the pane's as one (#461), each resolving when its
+ * elements have it: both lower at once, and a release waits for the duck
+ * before it. The Player lets go first — its song is put back from its
+ * own mark — and then the pane gives every other marked element its
+ * level; the other way round, the Player would find its mark gone and put
+ * back the level it held, over one a Media Op set meanwhile (#459).
+ */
+export function duckInTurn(player: (on: boolean) => Promise<void>, pane: (on: boolean) => Promise<void>): (on: boolean) => void {
+  let turn: Promise<void> = Promise.resolve()
+  const settle = (duck: Promise<void>): Promise<void> => duck.catch(() => {})
+  return (on) => {
+    turn = turn.then(async () => {
+      if (on) await Promise.all([settle(player(true)), settle(pane(true))])
+      else await settle(player(false)).then(() => settle(pane(false)))
+    })
   }
 }

@@ -11,6 +11,7 @@ import { WithheldResourceError, type BrowserCustody } from '../../core/browser/u
 import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
+import { DUCK_SHARE } from '../../core/music/ducking'
 import { CONTINUE_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
@@ -33,7 +34,9 @@ import { CONTINUE_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_
 // back the volume it had — or the one a `volume` set meanwhile, by a verb
 // here or a Media Op on the card. The duck marks the element with the
 // volume it puts back (#459, `DUCK_MARK`): the card reads that, every
-// volume set moves it, and the release puts back whatever it holds.
+// volume set moves it, and the release puts back whatever it holds. The
+// pane's duck (#461) lowers every other playing element beside it, and
+// may mark the song's element first — the Player keeps a mark it finds.
 // The level heard carries into the next song (#460): YouTube opens each
 // at its remembered level × the track's loudness factor, so a level a
 // Media Op set on the element alone would be lost; the Player matches the
@@ -133,9 +136,6 @@ const RESULTS_READS = 8
 const RESULTS_READ_MS = 250
 /** How much `louder` and `quieter` move the volume. */
 const VOLUME_STEP = 10
-/** The duck's floor, as a share of the volume it puts back: low, never silent, so the song is heard still there (#344). */
-const DUCK_SHARE = 0.15
-
 /** How far into a newly opened song (s) its carried level is put back over YouTube's own (#460). */
 const CARRIED_S = 1
 /** How near two levels (0–100) are the same: a watch read rounds to a whole one. */
@@ -642,8 +642,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
-    // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since.
-    if (opening && youTubesOwn(status)) await carry(status)
+    // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since —
+    // on the element, or in a mark the pane's duck put on it at the level YouTube opened it at (#461).
+    if (opening && (youTubesOwn(status) || (status.restore !== null && youTubesOwn({ ...status, volume: status.restore })))) await carry(status)
     else if (ducked === null) {
       knownVolume = status.volume
       heard = { volume: status.volume, loudnessDb: status.loudnessDb }

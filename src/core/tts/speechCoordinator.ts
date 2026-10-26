@@ -1,4 +1,4 @@
-import type { AudioDucker, AudioStream, AudioStreamPlayer, SpeakOptions, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
+import type { AudioStream, AudioStreamPlayer, SpeakOptions, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { splitSentences } from './sentences'
@@ -6,7 +6,6 @@ import { splitSentences } from './sentences'
 export interface SpeechCoordinatorDeps {
   synth: SpeechSynthesizer
   player: AudioStreamPlayer
-  ducker?: AudioDucker
   /**
    * Optional perf tracer (#31, #327): each spoken text keyed to a turn id
    * records a `tts-synthesis` span per sentence (piper rendering, with the
@@ -31,14 +30,15 @@ interface QueuedSpeak {
  * so speech never overlaps, and each is spoken sentence by sentence (#327)
  * — the first sentence is handed to playback as soon as it is synthesized,
  * the next is synthesized while it plays, and all of them play through one
- * playback stream, so there is no start gap between them. Page audio ducks
- * for the whole text. stop() (barge-in, a later Command) kills the stream
- * and drops the queue; a sentence still being synthesized is discarded and
- * the ones after it are never synthesized. A text stopped mid-flight
- * resolves `{ ok: true }` — being interrupted is normal, not an error.
+ * playback stream, so there is no start gap between them. stop() (barge-in,
+ * a later Command) kills the stream and drops the queue; a sentence still
+ * being synthesized is discarded and the ones after it are never
+ * synthesized. A text stopped mid-flight resolves `{ ok: true }` — being
+ * interrupted is normal, not an error. The pane's media ducks under the
+ * line through the Ducking gate (#461), not here.
  */
 export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker {
-  const { synth, player, ducker, tracer } = deps
+  const { synth, player, tracer } = deps
   const queue: QueuedSpeak[] = []
   let pumping = false
   // Barge-in epoch: sentences from before the latest stop() never reach playback.
@@ -102,7 +102,6 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     const sentences = splitSentences(item.text)
     if (sentences.length === 0) return { ok: true }
     const { turnId } = item.options
-    ducker?.duck()
     let stream: AudioStream | null = null
     let playStart: number | undefined
     let failure: string | null = null
@@ -145,7 +144,6 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
       if (current === stream) current = null
-      ducker?.restore()
     }
   }
 

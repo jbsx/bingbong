@@ -55,12 +55,6 @@ export interface AudioStreamPlayer {
   open(options?: { onFirstSample?: () => void }): AudioStream
 }
 
-/** Lowers page audio while the assistant talks and restores the prior level after. */
-export interface AudioDucker {
-  duck(): void
-  restore(): void
-}
-
 /** Answers "is anything being said right now" — the mic takes no Utterance while a line plays (#326). */
 export interface TtsIdle {
   /** Whether a text is being synthesized or played now: true from its first sentence to its last (#327), so the mic takes no Utterance while piper plays (#326). */
