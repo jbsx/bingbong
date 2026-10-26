@@ -1,4 +1,5 @@
 import type { BrowserPaneState } from './paneState'
+import { reportFault } from '../trace/fault.ts'
 
 // The Last Page (CONTEXT.md): the page the pane last showed, kept across a
 // restart so the Idle Screen can name it and `resume` can reopen it. Nothing
@@ -97,7 +98,8 @@ function pathWords(url: URL): string {
   const segments = url.pathname.split('/').map((segment) => {
     try {
       return decodeURIComponent(segment)
-    } catch {
+    } catch (error) {
+      reportFault('browser.lastPage.pathWords', error)
       return segment
     }
   })
