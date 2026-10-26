@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Set music code to a hundred percent.' for '… volume …', but Jev read through it: volume-10 0.95 with amount 'to' 0.75, right. volumeLevel's 'to' takes firstNumber(words), which drops 'a' and reads 'hundred' as no number (and 'one hundred' as 1), so the level was null, the op never fired and the Task ended terminal with nothing done. The mishear did not fail the line; the number in words did (the same class as turn-mvm67q4j-5's 'one point five')",
   "meant": "Set the music volume to 100%",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#457"
+  "claimedBy": "#457",
+  "fixedBy": "8a74c2b6",
+  "case": "volumeLevel sets \"Set music code to a hundred percent.\" to 100"
 }
