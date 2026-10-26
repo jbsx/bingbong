@@ -9,7 +9,7 @@ import { mediaOpAnswer } from './mediaOp'
 import { scrollOpOfVerb } from './scrollOp'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
-import { withNextLine } from './tryLine'
+import { TRY_LINES, withNextLine } from './tryLine'
 
 // The Answer a Command leaves in the Feed (#333): exactly one per Command,
 // written from facts the Command and the page already hold — never by a
@@ -71,20 +71,20 @@ function actionWords(label: string): string {
  * "help" otherwise.
  */
 function noResponseReason(facts: NoResponseFacts): { why: string; next: string } {
-  if (facts.grammarError !== null) return { why: facts.grammarError, next: 'help' }
-  if (!facts.jevAsked) return { why: "Those words aren't a command I know.", next: 'help' }
+  if (facts.grammarError !== null) return { why: facts.grammarError, next: TRY_LINES.help }
+  if (!facts.jevAsked) return { why: "Those words aren't a command I know.", next: TRY_LINES.help }
   const jev = facts.jev
-  if (jev !== undefined && 'reason' in jev) return { why: UNREAD[jev.reason], next: 'help' }
+  if (jev !== undefined && 'reason' in jev) return { why: UNREAD[jev.reason], next: TRY_LINES.help }
   const top = topAction(jev)
-  const unfit = (action: string): { why: string; next: string } => ({ why: `The words read as “${actionWords(action)}”, but nothing on this page fits it.`, next: 'read' })
+  const unfit = (action: string): { why: string; next: string } => ({ why: `The words read as “${actionWords(action)}”, but nothing on this page fits it.`, next: TRY_LINES.read })
   // An unsure click on a Textless Ref asked again with the marked page (#382): the page showed no control for it.
-  if (facts.marked !== undefined && facts.where === undefined) return { why: `The words read as “${actionWords(top)}”, but no control on this page is sure to be it.`, next: 'read' }
+  if (facts.marked !== undefined && facts.where === undefined) return { why: `The words read as “${actionWords(top)}”, but no control on this page is sure to be it.`, next: TRY_LINES.read }
   const where = facts.where
-  if (where === undefined) return top === 'none' ? { why: "Those words aren't a command.", next: 'help' } : unfit(top)
+  if (where === undefined) return top === 'none' ? { why: "Those words aren't a command.", next: TRY_LINES.help } : unfit(top)
   // After a Where Ask (#379, ADR 0082), the second look's reading: the first read none.
-  if ('reason' in where) return { why: UNREAD[where.reason], next: 'help' }
+  if ('reason' in where) return { why: UNREAD[where.reason], next: TRY_LINES.help }
   const found = topAction(where)
-  return found === 'none' ? { why: 'Nothing on this page fits the words.', next: 'read' } : unfit(found)
+  return found === 'none' ? { why: 'Nothing on this page fits the words.', next: TRY_LINES.read } : unfit(found)
 }
 
 /** The action card label a reading gave the most probability; `none` when it gave none. */
