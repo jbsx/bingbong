@@ -76,8 +76,10 @@ ends, its Command fired or the line dropped — while a line is spoken and
 while the Timer rings, main sets the playing video's volume to 15 % of
 what it was, low but never silent, and puts it back when the last of them
 lets go. YouTube's own remembered volume is never told the floor, and a
-`volume` verb spoken meanwhile sets the volume put back. The system's
-volume is never touched, and the music is never paused for it.
+`volume` spoken meanwhile, by the Player's verb or a Media Op, sets the
+volume put back. The card shows the level the duck will put back, never
+the floor (#459). The system's volume is never touched, and the music is
+never paused for it.
 _Avoid_: muting, auto-pause
 
 **Abort Head**:
