@@ -35,6 +35,24 @@ export interface ReactionReport {
   firstSound: ReactionStats | null
   /** The Reactions that say when they fired, split there: the read and the ask, then the action's own wait; null when none says. */
   split: { toFire: ReactionStats; afterFire: ReactionStats } | null
+  /**
+   * The Reaction by how its line was read (#440): `local match` when no
+   * ask was made, else the turn's last ask as `jev <model>` when it
+   * answered (whatever then fired, a dismissal too) or `unanswered <model>`;
+   * a row's `verb` is that reading. Count-descending; a span with
+   * no decision record of its turn counts in none.
+   */
+  byReading: ReactionStats[]
+}
+
+/** One model's calls in one band of the host's input-token count (#440). */
+export interface TokenBandStats {
+  model: string
+  /** `< 1.5k`, `1.5–3k`, `3–6k`, `6k+`, or `no count` for calls the host gave no count for. */
+  band: string
+  count: number
+  p50: number
+  p95: number
 }
 
 export interface DecisionReport {
@@ -51,6 +69,8 @@ export interface DecisionReport {
   jevRefused: Record<number, number>
   /** The hosts' own token counts over the answered calls that carry one (#406, ADR 0088); null when none does. */
   jevInputTokens: { p50: number; max: number } | null
+  /** Every answered call's latency by model, then by token band (#440): models by call count, bands smallest first, `no count` last. */
+  jevLatencyByTokens: TokenBandStats[]
   misfires: number
   /** Misfires by the signal that recorded them. */
   misfiresBySignal: Partial<Record<MisfireSignal, number>>
@@ -91,7 +111,30 @@ function verbOf(record: PerfSpanRecord): string {
   return record.detail?.effect === 'spoken' ? `${named} (spoken)` : named
 }
 
-export function buildReactionReport(records: readonly PerfSpanRecord[]): ReactionReport {
+/** Each turn's reading (#440): its last ask by model, `jev` when it answered and `unanswered` when not, else `local match`. */
+function readingsByTurn(decisions: readonly CommandLogRecord[]): Map<string, string> {
+  const readings = new Map<string, string>()
+  for (const record of decisions) {
+    if (record.type !== 'decision') continue
+    if (record.jevAsked && record.jev !== undefined) readings.set(record.turnId, `${'reason' in record.jev ? 'unanswered' : 'jev'} ${record.jev.model}`)
+    else if (!readings.has(record.turnId)) readings.set(record.turnId, 'local match')
+  }
+  return readings
+}
+
+function groupStats(groups: ReadonlyMap<string, number[]>): ReactionStats[] {
+  return [...groups.entries()].map(([name, durations]) => statsOf(name, durations)).sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb))
+}
+
+function pushTo<K>(groups: Map<K, number[]>, key: K, value: number): void {
+  const values = groups.get(key)
+  if (values === undefined) groups.set(key, [value])
+  else values.push(value)
+}
+
+export function buildReactionReport(records: readonly PerfSpanRecord[], decisions: readonly CommandLogRecord[] = []): ReactionReport {
+  const readings = readingsByTurn(decisions)
+  const byReading = new Map<string, number[]>()
   const all: number[] = []
   const early: number[] = []
   const endpoint: number[] = []
@@ -109,20 +152,37 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
       afterFire.push(Math.max(0, record.durMs - firedMs))
     }
     ;(record.detail?.earlyFire === true ? early : endpoint).push(record.durMs)
-    const verb = verbOf(record)
-    const durations = byVerb.get(verb)
-    if (durations === undefined) byVerb.set(verb, [record.durMs])
-    else durations.push(record.durMs)
+    pushTo(byVerb, verbOf(record), record.durMs)
+    const reading = readings.get(record.turnId)
+    if (reading !== undefined) pushTo(byReading, reading, record.durMs)
   }
   return {
     overall: all.length === 0 ? null : statsOf('all', all),
-    byVerb: [...byVerb.entries()]
-      .map(([verb, durations]) => statsOf(verb, durations))
-      .sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb)),
+    byVerb: groupStats(byVerb),
+    byReading: groupStats(byReading),
     byFire: { early: early.length === 0 ? null : statsOf('early', early), endpoint: endpoint.length === 0 ? null : statsOf('endpoint', endpoint) },
     firstSound: firstSound.length === 0 ? null : statsOf(FIRST_SOUND_STAGE, firstSound),
     split: toFire.length === 0 ? null : { toFire: statsOf('Endpoint to fire', toFire), afterFire: statsOf('fire to effect', afterFire) },
   }
+}
+
+/**
+ * The input-token bands an answered call's latency is read in (#440): the
+ * bands #440's audit drew, where Mammoth's p50 doubled past 6k.
+ */
+const TOKEN_BANDS: readonly { name: string; below: number }[] = [
+  { name: '< 1.5k', below: 1500 },
+  { name: '1.5–3k', below: 3000 },
+  { name: '3–6k', below: 6000 },
+  { name: '6k+', below: Infinity },
+]
+
+/** The band of the answered calls the host gave no count for, after every counted one. */
+const NO_COUNT_BAND = TOKEN_BANDS.length
+
+/** The index of the band a token count falls in; `NO_COUNT_BAND` when there is none. */
+function tokenBandOf(tokens: number | undefined): number {
+  return tokens === undefined || !Number.isFinite(tokens) ? NO_COUNT_BAND : TOKEN_BANDS.findIndex((band) => tokens < band.below)
 }
 
 function percentiles(values: readonly number[]): { p50: number; p95: number } | null {
@@ -140,6 +200,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     jevLatency: null,
     jevRefused: {},
     jevInputTokens: null,
+    jevLatencyByTokens: [],
     misfires: 0,
     misfiresBySignal: {},
     names: { page: 0, learned: 0 },
@@ -148,6 +209,8 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     picks: { remembered: 0, searched: 0 },
   }
   const latencies: number[] = []
+  /** Each model's latencies by token band index (`TOKEN_BANDS`). */
+  const byModel = new Map<string, Map<number, number[]>>()
   const tokens: number[] = []
   const leads: number[] = []
   /** Each Task's hop count, by its id and, in a line read as Steps, its Step. */
@@ -185,12 +248,28 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     if (record.jevAsked) {
       report.jevAsked += 1
       if (record.reading === 'jev') report.jevAnswered += 1
-      if (record.jev !== undefined && Number.isFinite(record.jev.latencyMs)) latencies.push(record.jev.latencyMs)
+      if (record.jev !== undefined && Number.isFinite(record.jev.latencyMs)) {
+        latencies.push(record.jev.latencyMs)
+      }
       if (record.jev !== undefined && 'httpStatus' in record.jev && typeof record.jev.httpStatus === 'number') report.jevRefused[record.jev.httpStatus] = (report.jevRefused[record.jev.httpStatus] ?? 0) + 1
-      if (record.jev !== undefined && 'inputTokens' in record.jev && typeof record.jev.inputTokens === 'number') tokens.push(record.jev.inputTokens)
+      const counted = record.jev !== undefined && 'inputTokens' in record.jev && typeof record.jev.inputTokens === 'number' ? record.jev.inputTokens : undefined
+      if (counted !== undefined) tokens.push(counted)
+      // Only an answer's latency is banded: a refusal or a timeout says nothing of what its card cost.
+      if (record.jev !== undefined && !('reason' in record.jev) && Number.isFinite(record.jev.latencyMs)) {
+        if (!byModel.has(record.jev.model)) byModel.set(record.jev.model, new Map())
+        pushTo(byModel.get(record.jev.model)!, tokenBandOf(counted), record.jev.latencyMs)
+      }
     }
   }
   report.jevLatency = percentiles(latencies)
+  report.jevLatencyByTokens = [...byModel.entries()]
+    .map(([model, bands]) => ({ model, bands, calls: [...bands.values()].reduce((n, values) => n + values.length, 0) }))
+    .sort((a, b) => b.calls - a.calls || a.model.localeCompare(b.model))
+    .flatMap(({ model, bands }) =>
+      [...bands.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([band, values]) => ({ model, band: TOKEN_BANDS[band]?.name ?? 'no count', count: values.length, ...percentiles(values)! })),
+    )
   const sortedTokens = [...tokens].sort((a, b) => a - b)
   report.jevInputTokens = sortedTokens.length === 0 ? null : { p50: nearestRankPercentile(sortedTokens, 50), max: sortedTokens.at(-1)! }
   report.earlyFire.lead = percentiles(leads)
@@ -246,9 +325,23 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
       lines.push('', 'reaction split:')
       lines.push(...table(['part', 'count', 'p50', 'p95', 'max'], [reaction.split.toFire, reaction.split.afterFire].map(rowOf)))
     }
+    if (reaction.byReading.length > 0) {
+      lines.push('', 'reaction by reading:')
+      lines.push(...table(['reading', 'count', 'p50', 'p95', 'max'], reaction.byReading.map(rowOf)))
+    }
   }
   if (decisions.commands > 0 || decisions.misfires > 0) {
     if (lines.length > 0) lines.push('')
+    if (decisions.jevLatencyByTokens.length > 0) {
+      lines.push('jev latency by input tokens:')
+      lines.push(
+        ...table(
+          ['model', 'tokens', 'count', 'p50', 'p95'],
+          decisions.jevLatencyByTokens.map((s) => [s.model, s.band, String(s.count), formatMs(s.p50), formatMs(s.p95)]),
+        ),
+        '',
+      )
+    }
     const { readings } = decisions
     const jev =
       decisions.jevAsked === 0

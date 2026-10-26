@@ -229,7 +229,7 @@ export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: reado
     turnsWithSummary: summaryTurns.size,
     turnsWithoutSummary,
     mismatches,
-    reaction: buildReactionReport(records),
+    reaction: buildReactionReport(records, decisions),
     decisions: buildDecisionReport(decisions),
     endpoints: buildEndpointReport(records),
     app: buildAppReport(all),

@@ -303,7 +303,10 @@ branch, the Reaction p50/p95 per Command verb with the decision log beside it;
 the sub-spans inside browser actions are on by default (`BINGBONG_BROWSER_SUBSPANS=0` turns them off); see
 `docs/stt-latency.md` and `docs/moonshine-ab.md` for measured results.
 Each Reaction also says when it fired (`firedMs`: the page read and the ask,
-apart from the action's own wait), the report prints that split, and each
+apart from the action's own wait), and the report prints that split. It also
+prints the Reaction by how the line was read (the Local Match, or the ask by
+model) and each model's answered-ask latency by the host's input-token count.
+Each
 Utterance gets an `end-of-speech` span (the pause plus the Smart Turn check).
 The run's first STT is marked `cold`, and `wake-to-transcript` counts its blank
 transcripts (`blips`). Beside the turns, under the id `app`, the log holds
