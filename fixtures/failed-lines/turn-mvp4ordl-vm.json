@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp4ordl-vm",
+  "transcript": "Go to Idle Screen.",
+  "at": 1793011392489,
+  "source": "spoken",
+  "stage": "missing_option",
+  "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: repeat of 'Go to Idle Screen.' 16 s later: none again, nothing done. Same class as turn-mvp4of28-vl",
+  "meant": "Bring the Idle Screen back over the pane, the music playing on",
+  "log": "decision-1793008066207-1.jsonl"
+}

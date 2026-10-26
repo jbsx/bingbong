@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp2v0eu-vc",
+  "transcript": "Set music code to a hundred percent.",
+  "at": 1793008325063,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Set music code to a hundred percent.' for '… volume …'; Jev read none on a card offering the ref's volume op (volume 70%), ended terminal with nothing done",
+  "meant": "Set the music volume to 100%",
+  "log": "decision-1793008066207-1.jsonl"
+}
