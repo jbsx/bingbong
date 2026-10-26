@@ -84,7 +84,12 @@
   --rainq: #5f7894;
   --jaishq: #4f8790;
   --barunq: #8d6d82;
-  /* Radii and shadows. */
+  /* Radii and shadows: every corner is one of these or 0 (#455, guarded by
+     styleTokens.test.ts). A bar whose old radius was half its height takes
+     --radius-sm, which the browser clamps to the same round end; a 1–3 px
+     corner on a mark or a square takes 0, unseen from the chair. Guess: the
+     10 px small music thumb took --radius-sm, not --radius; the shot settles
+     it. */
   --radius-sm: 8px;
   --radius: 12px;
   --radius-md: 16px;
@@ -93,6 +98,7 @@
   --shadow: 0 1px 2px rgba(16, 22, 34, 0.06);
   --shadow-pop: 0 8px 24px rgba(16, 22, 34, 0.12);
   --focus-ring: 0 0 0 3px rgba(180, 82, 31, 0.22);
+  --font-sans: InterVariable, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --tb-h: 104px; /* the Toolbar: the capsule's 65 px state word and its frame (#436) */
   /* The Peek Card's ground: the solid panel, a breath see-through. */
@@ -253,7 +259,7 @@ body,
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family: InterVariable, system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* The shell (ADR 0078, #453): the Toolbar band, the pane edge to edge under
@@ -356,7 +362,7 @@ body {
   overflow: hidden;
   padding: 0 32px 0 28px;
   border: 1px solid var(--hair);
-  border-radius: 44px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
 }
 
@@ -381,7 +387,7 @@ body {
   bottom: 5px;
   height: 3px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--track);
 }
 
@@ -455,7 +461,7 @@ body {
   --status-color: var(--fgh);
   width: 20px;
   height: 20px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .status-pill--cancelled {
@@ -537,7 +543,7 @@ body {
 .voice-wave i {
   width: 3px;
   height: 100%;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--accent);
   transform-origin: center;
   animation: voice-wave 900ms ease-in-out infinite;
@@ -695,7 +701,7 @@ body {
   height: 48px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--fg2);
   line-height: 1;
@@ -754,7 +760,7 @@ body {
   height: 48px;
   padding: 0 52px 0 22px;
   border: 1px solid var(--hair);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--fgh);
   font: inherit;
@@ -817,7 +823,7 @@ body {
   bottom: 0;
   height: 3px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .chrome-loading-bar::before {
@@ -826,7 +832,7 @@ body {
   top: 0;
   bottom: 0;
   width: 40%;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--accent);
   animation: chrome-loading-bar 1.4s ease-in-out infinite;
 }
@@ -1262,7 +1268,7 @@ details.feed-entry {
   margin: 6px 0 0;
   padding: 8px 12px;
   border-left: 2px solid var(--fail);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
@@ -1292,7 +1298,7 @@ details.feed-entry {
 .feed-markdown h5,
 .feed-markdown h6 {
   margin: 0.6em 0 6px;
-  font-size: 1em;
+  font-size: inherit;
   font-weight: 600;
   line-height: 1.25;
   color: inherit;
@@ -1331,10 +1337,10 @@ details.feed-entry {
 
 .feed-markdown :not(pre) > code {
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--code-bg);
   font-family: var(--font-mono);
-  font-size: 1em;
+  font-size: inherit;
 }
 
 /* Code wraps: a glanceable panel must never hide lines off its right
@@ -1426,7 +1432,7 @@ details.feed-entry {
   flex: 1;
   height: 3px;
   margin-left: 6px;
-  border-radius: 2px;
+  border-radius: 0;
   background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 40% 100%, var(--accentq);
   animation: feed-run-bar 1.4s ease-in-out infinite alternate;
 }
@@ -1672,7 +1678,7 @@ details.feed-entry {
   top: 12px;
   bottom: 12px;
   width: 3px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--fgh);
 }
 
@@ -1897,7 +1903,7 @@ details[open] > .settings-summary::before {
   height: 22px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(16, 22, 34, 0.28);
+  box-shadow: var(--shadow-pop);
   transition: translate 160ms ease;
 }
 
@@ -1974,7 +1980,7 @@ details[open] > .settings-summary::before {
   border: 1px solid var(--hair2);
   border-radius: var(--radius);
   background: var(--surface-solid);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-pop);
 }
 
 .city-picker-option {
@@ -1982,7 +1988,7 @@ details[open] > .settings-summary::before {
   align-items: baseline;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: calc(var(--radius) - 4px);
+  border-radius: var(--radius-sm);
   font-size: var(--type-s);
   color: var(--fgh);
   cursor: pointer;
@@ -2070,7 +2076,7 @@ details[open] > .settings-summary::before {
 .settings-env-row input {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .settings-env-row input.settings-env-key {
@@ -2082,7 +2088,7 @@ details[open] > .settings-summary::before {
 }
 
 .settings-section[aria-label='environment'] .settings-field:not(:has(.settings-env-key)) .settings-label {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: var(--type-s);
   overflow-wrap: anywhere;
 }
@@ -2122,7 +2128,7 @@ details[open] > .settings-summary::before {
   height: 48px;
   padding: 0 24px;
   border: 1px solid var(--hair2);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--fgh);
   font: inherit;
@@ -2290,7 +2296,7 @@ details[open] > .settings-summary::before {
 .idle-col--left > .idle-home {
   overflow: hidden;
   border: 1px solid var(--hair);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -2655,9 +2661,9 @@ button.idle-line {
   flex-direction: column;
   width: min(1000px, 100%);
   border: 1px solid var(--hair2);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: var(--surface-solid);
-  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-pop);
   color: var(--fg);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'cv11' 1;
@@ -2813,7 +2819,7 @@ button.idle-line {
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--raise2);
   color: var(--fg2);
   cursor: pointer;
@@ -2823,7 +2829,7 @@ button.idle-line {
 .idle-music-card--small .idle-music-thumb {
   width: 160px;
   height: 90px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .idle-music-thumb img {
@@ -2962,7 +2968,7 @@ button.idle-line {
   position: relative;
   flex: 1 1 auto;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--track);
 }
 
@@ -3003,7 +3009,7 @@ button.idle-line {
   height: 48px;
   padding: 0;
   border: 1px solid var(--hair2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
   cursor: pointer;
@@ -3063,7 +3069,7 @@ button.idle-line {
 }
 
 .idle-last-page-mark img {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .idle-last-page-title {
@@ -3096,7 +3102,7 @@ button.idle-line {
   height: 30px;
   padding: 0 4px 0 12px;
   border: 1px solid var(--hair);
-  border-radius: 15px;
+  border-radius: var(--radius);
   color: var(--fg2);
 }
 
@@ -3316,20 +3322,20 @@ button.idle-line {
 }
 
 .usage-figure-pct {
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 600;
   color: var(--fg2);
 }
 
 .usage-figure--lead .usage-figure-pct {
-  font-size: 40px;
+  font-size: var(--type-l);
   line-height: 1.05;
 }
 
 /* Many providers: the figures beside their rings step down, the plan under the name. */
 .usage-rings[data-providers='4'] .usage-figure--lead .usage-figure-pct,
 .usage-rings[data-providers='5'] .usage-figure--lead .usage-figure-pct {
-  font-size: 24px;
+  font-size: var(--type-m);
 }
 
 .usage-rings[data-providers='4'] .usage-ring-plan,
@@ -3456,8 +3462,8 @@ button.idle-line {
 .usage-last {
   position: absolute;
   left: 4px;
-  font-family: InterVariable, system-ui, sans-serif;
-  font-size: 40px;
+  font-family: var(--font-sans);
+  font-size: var(--type-l);
   font-weight: 600;
   line-height: 1;
   color: var(--usage-tone);
@@ -3469,7 +3475,7 @@ button.idle-line {
 }
 
 .usage-chart[data-lines='4'] .usage-last {
-  font-size: 24px;
+  font-size: var(--type-m);
 }
 
 .usage-chart[data-lines='4'] .usage-chart-legend {
@@ -3514,7 +3520,7 @@ button.idle-line {
   width: auto;
   height: auto;
   padding: 26px 32px;
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   gap: 26px;
 }
 
@@ -3663,7 +3669,7 @@ button.idle-line {
   position: relative;
   flex: 1 1 auto;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--from), var(--to));
   opacity: 0.8;
 }
@@ -3674,7 +3680,7 @@ button.idle-line {
   width: 3px;
   height: 18px;
   margin-left: -1.5px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--fg);
 }
 
@@ -3694,7 +3700,7 @@ button.idle-line {
   left: 0;
   right: 0;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--track);
 }
 
@@ -3702,7 +3708,7 @@ button.idle-line {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--wx-sun) 35%, transparent);
 }
 
@@ -3721,7 +3727,7 @@ button.idle-line {
   width: 3px;
   height: 18px;
   margin-left: -1.5px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--fg);
 }
 
@@ -3843,7 +3849,7 @@ button.idle-line {
 }
 
 .wx-hours-chart .wx-temp-label {
-  font-family: InterVariable, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--type-m);
   font-weight: 600;
 }
@@ -3899,7 +3905,7 @@ button.idle-line {
   position: absolute;
   top: 9px;
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--from), var(--to));
 }
 
@@ -3990,7 +3996,7 @@ button.idle-line {
   flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--ok);
 }
 
@@ -4050,7 +4056,7 @@ button.idle-line {
   position: absolute;
   inset: 4px 12px;
   z-index: -1;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--fgh);
 }
 
@@ -4229,11 +4235,11 @@ button.idle-line {
 }
 
 .weight-card-line .weight-card-kg {
-  font-size: 40px;
+  font-size: var(--type-l);
 }
 
 .weight-card-line .weight-card-change {
-  font-size: 24px;
+  font-size: var(--type-m);
   text-align: right;
 }
 
@@ -4374,7 +4380,7 @@ button.idle-line {
   position: relative;
   height: 5px;
   margin-top: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
@@ -4553,7 +4559,7 @@ button.idle-line {
   position: relative;
   min-width: 2.4em;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -4575,7 +4581,7 @@ button.idle-line {
 }
 
 .weight-chart--compact .weight-chart-y {
-  font-size: 1rem;
+  font-size: var(--type-s);
 }
 
 .weight-chart-area {
@@ -4899,7 +4905,7 @@ button.idle-line {
   padding: 14px 32px;
   border-top: 1px solid var(--hair);
   border-bottom: 1px solid var(--hair);
-  font-family: InterVariable, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -4948,7 +4954,7 @@ button.idle-line {
   border-radius: var(--radius-pill);
   background: none;
   color: var(--fgh);
-  font-family: InterVariable, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--type-s);
   cursor: pointer;
 }
@@ -4978,7 +4984,7 @@ button.idle-line {
 }
 
 .weight-table .settings-term-remove {
-  font-family: InterVariable, system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .weight-actions {

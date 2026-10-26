@@ -108,7 +108,7 @@ body,
   content: '';
   width: 4px;
   height: 48px;
-  border-radius: 2px;
+  border-radius: 0;
   background: transparent;
   transition: background 120ms ease;
 }
@@ -136,7 +136,7 @@ body,
   height: 44px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--fg2);
   line-height: 1;
@@ -277,7 +277,7 @@ body,
   height: 36px;
   margin-left: 3px;
   vertical-align: -6px;
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--accent);
   animation: voice-caret 1s steps(1) infinite;
 }
@@ -360,7 +360,7 @@ body,
   height: 48px;
   padding: 0 22px;
   border: 1px solid var(--accent);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--onaccent);
   font: inherit;
@@ -399,7 +399,7 @@ body,
   height: 48px;
   padding: 0 22px;
   border: 1px solid color-mix(in srgb, var(--fail) 55%, transparent);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--fail) 12%, transparent);
   color: var(--fail);
   font: inherit;
@@ -416,7 +416,7 @@ body,
 .panel-stop-mark {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--fail);
 }
 
@@ -493,6 +493,6 @@ body,
 
 /* On the panel's narrower top, the figure steps down so it holds one line. */
 .overlay-chrome--open .weighin-popup-kg {
-  font-size: 40px;
+  font-size: var(--type-l);
 }
 
