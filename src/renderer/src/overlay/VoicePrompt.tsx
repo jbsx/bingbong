@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { VoicePartialEvent, VoiceState } from '../../../core/voice/ipcChannels'
 import { PAUSE_CAP_MS_DEFAULT } from '../../../core/settings/settings'
-import { EAR_FAILED_LINE, REST_HINT } from '../../../core/voice/voiceHint'
+import { EAR_FAILED_LINE } from '../../../core/voice/voiceHint'
 import { earPhase, partialSpans, quietLine, wordlessLine } from '../../../core/voice/voicePrompt'
 import { EarWait, PILL_LABELS, VoiceWave } from '../AssistantPanel'
 import { useSettings } from '../useSettings'
@@ -61,14 +61,6 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
   // A wait (#442): the ear loading, a line it holds, or the words being read, named with its seconds.
   const waiting = phase === 'starting' || phase === 'transcribing'
   const words = live ? (partial?.text ?? '') : ''
-  const placeholder =
-    phase === 'starting'
-      ? 'Not hearing yet — type a command'
-      : phase !== 'rest' || runActive || ear === 'failed'
-        ? 'Type a command'
-        : earOff
-          ? 'Microphone off — type a command'
-          : REST_HINT
 
   return (
     <div className={`voice-prompt voice-prompt--${phase}${live ? ' live-tint' : ''}`}>
@@ -106,7 +98,8 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
       ) : null}
       <div className="prompt-row">
         {phase === 'rest' ? <span className={`voice-orb${earOff ? ' voice-orb--off' : ''}`} aria-hidden="true" /> : null}
-        <PromptBar placeholder={placeholder} />
+        {/* One placeholder in every state (#455): the rest hint lives in the Capsule and on the empty Feed, and at 24 px it is cut at the default panel width. */}
+        <PromptBar placeholder="Type a command" />
         {/* Stop's slot is held while nothing runs (#438): Run never moves when Stop appears. */}
         {runActive ? (
           <button type="button" className="panel-stop" onClick={() => void window.bingbong.assistant.abort()} aria-label="Stop active command">

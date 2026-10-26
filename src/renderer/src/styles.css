@@ -2768,13 +2768,12 @@ button.idle-line {
 }
 
 .idle-voice-state {
-  font-family: var(--font-mono);
-  /* The ear's state is the line's status item (#436): 65 px, as at rest. */
+  /* The ear's state is the line's status item (#436): 65 px, as at rest, in the Capsule's words and face (#455, ui.md 9). */
+  font-family: var(--font-sans);
   font-size: var(--type-xl);
   line-height: 80px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--accent);
 }
 

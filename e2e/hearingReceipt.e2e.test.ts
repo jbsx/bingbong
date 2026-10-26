@@ -83,7 +83,8 @@ describe('the hearing receipt (#441)', () => {
       console.log(`[hearing receipt] Idle Screen: span ${span.durMs.toFixed(1)} ms, paint ${(paintMs - onset).toFixed(1)} ms after onset`)
       expect(span.durMs).toBeLessThan(BAR_MS)
       expect(paintMs - onset).toBeLessThan(BAR_MS)
-      expect(await harness.dashboardEval<string>(`document.querySelector('.idle-voice-said')?.textContent ?? ''`)).toBe('…')
+      // The receipt is the line itself turning: "say a command" gone, the said-line empty under "Listening…" (#455, as the Voice Prompt's since #454).
+      expect(await harness.dashboardEval<string>(`document.querySelector('.idle-voice-said')?.textContent ?? ''`)).toBe('')
       shoot('41-idle-hearing')
     } finally {
       await harness.quit()

@@ -24,7 +24,7 @@ import type { UsageState } from './useUsage'
 import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
-import { EarWait, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
+import { EarWait, PILL_LABELS, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import type { RunProgress } from '../../core/pipeline/runProgress'
 import { GlobeIcon } from './WeatherIcon'
@@ -179,19 +179,19 @@ export interface IdleVoice {
   since?: number
 }
 
-// Hearing keeps the pill's word (#441): the said-line's "…" is what changes when speech starts.
-const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off' | 'failed'>, string> = { starting: 'Starting', listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
+// The Capsule's own words (#455, ui.md 9): one state, one word. Hearing keeps the pill's word (#441): the said-line emptying is what changes when speech starts.
+const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off' | 'failed'>, string> = { starting: PILL_LABELS.starting, listening: PILL_LABELS.listening, hearing: PILL_LABELS.listening, transcribing: PILL_LABELS.transcribing }
 
 /**
  * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb and the
  * hint, saying the ear's real state in the Status Capsule's word — waiting
  * for the wake word, the orb and the hint with the waveform still;
- * `LISTENING` with the waveform live and the live words only while an
- * Utterance is taken — "…" from the frame speech starts until the first
- * partial (#441); `TRANSCRIBING` while its words are read, with their
- * seconds (#442); with the microphone off, it says so. While the ear
- * cannot hear yet it is `STARTING`, the ear loading and its seconds, and
- * never invites speech; a line it took before it can read is `STARTING`
+ * "Listening…" with the waveform live and the live words only while an
+ * Utterance is taken — an empty line from the frame speech starts until the
+ * first partial (#441, #455); "Transcribing…" while its words are read, with
+ * their seconds (#442); with the microphone off, it says so. While the ear
+ * cannot hear yet it is "Starting…", the ear loading and its seconds, and
+ * never invites speech; a line it took before it can read is "Starting…"
  * too, with its words (#442). A wait draws no waveform: the line's room
  * goes to its seconds. A load that failed ends the wait (#447): what did
  * not start and what to do, set as "Microphone off" is, the count gone.
@@ -215,7 +215,7 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
           <EarWait phase={phase} voice={{ ...voice, partial: voice.lastWords ?? voice.partial }} />
         </span>
       ) : taking ? (
-        <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? wordlessLine(phase) : `“${voice.partial}…”`}</span>
+        <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? (phase === 'listening' ? wordlessLine(phase) : '') : `“${voice.partial}…”`}</span>
       ) : (
         <>
           <span className="idle-voice-hint">

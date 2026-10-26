@@ -346,7 +346,7 @@ async function walkTheShell(run: Run): Promise<void> {
   await harness.ensurePanelOpen()
   await shoot(run, '07-feed-empty')
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.feed-empty')?.textContent ?? ''`), `${run.theme} 07-feed-empty: the Feed's rest hint`).toBe(REST_HINT)
-  expect.soft(await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.placeholder ?? ''`), `${run.theme} 07-feed-empty: the Prompt Bar's rest hint`).toBe(REST_HINT)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.placeholder ?? ''`), `${run.theme} 07-feed-empty: the Prompt Bar's one placeholder (#455)`).toBe('Type a command')
   await command(run, `navigate ${fixture.url('/story')}`)
   await shoot(run, '08-page-loaded')
   await command(run, 'read')
@@ -586,7 +586,7 @@ async function walkTheEarWaits(run: Run): Promise<void> {
   await shoot(run, '33-ear-starting-capsule')
   await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
   await shown(onDashboard, '.idle-voice--starting', 'ear-starting-idle')
-  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line never says Bing Bong while the ear cannot hear').toMatch(/^loading the ear · \d+sStarting$/)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line never says Bing Bong while the ear cannot hear').toMatch(/^loading the ear · \d+sStarting…$/)
   await shoot(run, '34-ear-starting-idle')
 
   // The ear hears: from here the mic's frames play the script over the Idle Screen, which stays up through
@@ -595,7 +595,7 @@ async function walkTheEarWaits(run: Run): Promise<void> {
   await shown(onDashboard, '.idle-voice--listening, .idle-voice--hearing', 'woken', 30_000)
   await shown(onDashboard, '.idle-voice--starting', 'held')
   await sleep(2_200)
-  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'a held line is the ear still starting, its words and its count climbing').toMatch(/^“what about” · [2-9]sStarting$/)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'a held line is the ear still starting, its words and its count climbing').toMatch(/^“what about” · [2-9]sStarting…$/)
   await shoot(run, '35-ear-held-idle')
   // Read once the transcriber is in; the Hot Listen listens again.
   await shown(onDashboard, '.idle-voice--listening', 'listening-again', 30_000)
@@ -604,7 +604,7 @@ async function walkTheEarWaits(run: Run): Promise<void> {
   // the Capsule and the Voice Prompt, each with the words and their count.
   await shown(onDashboard, '.idle-voice--transcribing', 'transcribing-idle', 30_000)
   await sleep(2_200)
-  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line carries the words being read and their seconds').toMatch(/^“zorblax the quux” · [2-9]sTranscribing$/)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line carries the words being read and their seconds').toMatch(/^“zorblax the quux” · [2-9]sTranscribing…$/)
   await shoot(run, '36-transcribing-idle')
   await harness.clickDashboardElement('.idle-date')
   await shown(onDashboard, '.voice-hint--transcribing', 'transcribing-capsule')
