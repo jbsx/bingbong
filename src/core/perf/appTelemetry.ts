@@ -26,7 +26,13 @@ export interface RunStamp {
   electron: string
 }
 
-/** One process as the sampler sees it: its kind and its share of one core since the last sample. */
+/**
+ * One process as the sampler sees it: its kind and its CPU share since the last
+ * sample, as Electron's `percentCPUUsage` gives it — percent of ALL the
+ * machine's logical CPUs (Electron divides by the CPU count), not of one core:
+ * on the kiosk's 4 CPUs a process `top` shows at 19 % reads 4.7. The run stamp's
+ * `cpus` converts.
+ */
 export interface ProcessCpu {
   /** Its kind, or the surface it renders (`dashboard`, `pane`) when the sampler knows it (#429). */
   type: string
@@ -52,7 +58,7 @@ export interface SampleExtras {
   vadLag?: LagSummary | null
 }
 
-/** One CPU sample: every process's share summed, and by kind, in percent of one core. */
+/** One CPU sample: every process's share summed, and by kind, in percent of all the machine's CPUs (see ProcessCpu). */
 export interface CpuSample {
   total: number
   byType: Record<string, number>
@@ -119,7 +125,15 @@ export interface PlaybackRecord {
 
 export interface AppReport {
   runs: { version: string; machine: string | null; kiosk: boolean; count: number }[]
-  cpu: { samples: number; p50: number; p95: number; max: number; byTypeP50: Record<string, number> } | null
+  cpu: {
+    samples: number
+    p50: number
+    p95: number
+    max: number
+    byTypeP50: Record<string, number>
+    /** The logical CPUs the shares are of, when every run stamp in the logs names the same count; else null. */
+    cpus: number | null
+  } | null
   playback: {
     count: number
     neverPlayed: number
@@ -145,6 +159,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
   const totals: number[] = []
   const byType = new Map<string, number[]>()
   const plays: PlaybackRecord[] = []
+  const cpuCounts = new Set<number | null>()
   for (const record of records) {
     if (!isAppRecord(record) || record.detail === undefined) continue
     const detail = record.detail
@@ -152,6 +167,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
       const version = typeof detail.version === 'string' ? detail.version : '?'
       const machine = typeof detail.machine === 'string' ? detail.machine : null
       const kiosk = detail.kiosk === true
+      cpuCounts.add(typeof detail.cpus === 'number' ? detail.cpus : null)
       const key = `${version}|${machine}|${kiosk}`
       const run = runs.get(key) ?? { version, machine, kiosk, count: 0 }
       run.count += 1
@@ -171,17 +187,17 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
       plays.push(detail as unknown as PlaybackRecord)
     }
   }
-  return { runs: [...runs.values()], cpu: cpuReport(totals, byType), playback: playbackReport(plays), lifecycle: buildLifecycleReport(records) }
+  return { runs: [...runs.values()], cpu: cpuReport(totals, byType, cpuCounts.size === 1 ? [...cpuCounts][0] : null), playback: playbackReport(plays), lifecycle: buildLifecycleReport(records) }
 }
 
-function cpuReport(totals: number[], byType: Map<string, number[]>): AppReport['cpu'] {
+function cpuReport(totals: number[], byType: Map<string, number[]>, cpus: number | null): AppReport['cpu'] {
   if (totals.length === 0) return null
   const sorted = [...totals].sort((a, b) => a - b)
   const byTypeP50: Record<string, number> = {}
   for (const [type, samples] of [...byType.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     byTypeP50[type] = nearestRankPercentile([...samples].sort((a, b) => a - b), 50)
   }
-  return { samples: sorted.length, p50: nearestRankPercentile(sorted, 50), p95: nearestRankPercentile(sorted, 95), max: sorted[sorted.length - 1], byTypeP50 }
+  return { samples: sorted.length, p50: nearestRankPercentile(sorted, 50), p95: nearestRankPercentile(sorted, 95), max: sorted[sorted.length - 1], byTypeP50, cpus }
 }
 
 function playbackReport(plays: readonly PlaybackRecord[]): AppReport['playback'] {
@@ -221,7 +237,8 @@ export function formatAppReport(report: AppReport): string[] {
   }
   if (report.cpu !== null) {
     const types = Object.entries(report.cpu.byTypeP50).map(([type, p50]) => `${type} ${p50}%`)
-    lines.push(`cpu (% of one core, ${report.cpu.samples} samples): p50 ${report.cpu.p50}% p95 ${report.cpu.p95}% max ${report.cpu.max}% | p50 by process ${types.join(', ')}`)
+    const of = report.cpu.cpus === null ? 'all CPUs' : `all ${report.cpu.cpus} CPUs, × ${report.cpu.cpus} for one core`
+    lines.push(`cpu (% of ${of}, ${report.cpu.samples} samples): p50 ${report.cpu.p50}% p95 ${report.cpu.p95}% max ${report.cpu.max}% | p50 by process ${types.join(', ')}`)
   }
   if (report.playback !== null) {
     const p = report.playback

@@ -167,6 +167,6 @@ describe('buildLifecycleReport', () => {
 
   it('rides the app report: nothing printed when the log holds none of it', () => {
     const report = buildAppReport([app('cpu', { total: 20, byType: { Tab: 20 }, load1: 0 })])
-    expect(formatAppReport(report)).toEqual(['cpu (% of one core, 1 samples): p50 20% p95 20% max 20% | p50 by process Tab 20%'])
+    expect(formatAppReport(report)).toEqual(['cpu (% of all CPUs, 1 samples): p50 20% p95 20% max 20% | p50 by process Tab 20%'])
   })
 })
