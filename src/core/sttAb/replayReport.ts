@@ -90,6 +90,49 @@ export function formatLabelScore(rows: ReplayRow[], labels: Readonly<Record<stri
   return lines.join('\n')
 }
 
+/** A ledger `stt` line's clip (#463): the names that were misheard, written as meant. */
+export interface LedgerNames {
+  names: readonly string[]
+  /** The ledger line's turn id. */
+  ledger: string
+}
+
+/** Letters and digits only, no spaces: "Tumse" and "Tum Se" are one name heard. */
+function squashed(text: string): string {
+  return wordsOf(text).join('')
+}
+
+/**
+ * The ear's pass bar (#463, grill ruling 5): of the ledger's `stt` clips
+ * that have a dump, the ones whose meant names were all heard.
+ */
+export function formatNameScore(rows: ReplayRow[], ledger: Readonly<Record<string, LedgerNames>>): string {
+  const scored = rows
+    .filter((row) => Object.hasOwn(ledger, row.file))
+    .map((row) => {
+      const { names, ledger: turn } = ledger[row.file]!
+      const heard = squashed(row.transcript)
+      return { row, names, turn, right: names.every((name) => heard.includes(squashed(name))) }
+    })
+  const fileWidth = Math.max(0, ...scored.map(({ row }) => row.file.length))
+  const lines = scored.map(({ row, names, turn, right }) => `${pad(row.file, fileWidth)}  ${right ? 'right' : 'wrong'}  ${names.join(', ')}  ${turn}${right ? '' : `  ← ${row.transcript}`}`)
+  lines.push('', `ledger names right ${scored.filter(({ right }) => right).length} of ${scored.length}`)
+  return lines.join('\n')
+}
+
+/** Two engines over the clips no label covers (#463, grill ruling 4): scored on agreement only. */
+export function formatAgreement(rows: ReplayRow[], other: readonly ReplayRow[], labels: Readonly<Record<string, string>>): string {
+  const theirs = new Map(other.map((row) => [row.file, row.transcript]))
+  const compared = rows
+    .filter((row) => !Object.hasOwn(labels, row.file) && theirs.has(row.file))
+    .map((row) => ({ row, other: theirs.get(row.file)!, apart: wordErrors(theirs.get(row.file)!, row.transcript) }))
+  const fileWidth = Math.max(0, ...compared.map(({ row }) => row.file.length))
+  const lines = compared.filter(({ apart }) => apart > 0).map(({ row, other: heard, apart }) => `${pad(row.file, fileWidth)}  ${apart}  ${row.transcript}  ≠ ${heard}`)
+  const apart = compared.reduce((sum, each) => sum + each.apart, 0)
+  lines.push('', `unlabelled ${compared.length} | engines agree on ${compared.filter((each) => each.apart === 0).length} of ${compared.length} | words apart ${apart}`)
+  return lines.join('\n')
+}
+
 function formatSpeech(row: ReplayRow): string {
   return `${(row.speechMs / 1000).toFixed(1)}s`
 }

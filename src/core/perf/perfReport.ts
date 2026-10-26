@@ -44,6 +44,8 @@ export interface PerfReport {
   decisions: DecisionReport
   /** What fired each Endpoint (#357), from the stt spans that say; null when none do. */
   endpoints: EndpointReport | null
+  /** The stt span by the engine that heard (#463), in the order first seen; empty when no span names one. */
+  sttEngines: SttEngineStats[]
   /** The app's own records: the runs' builds and machines, CPU samples, playback. */
   app: AppReport
 }
@@ -61,6 +63,21 @@ export interface EndpointReport {
   /** Ms the turn checks took; null when none was asked. */
   turnCheckP50: number | null
   turnCheckP95: number | null
+}
+
+/**
+ * One engine's `stt` spans (#463): the warm ones' percentiles and the cold
+ * ones apart, so the cloud ear's socket and Parakeet's model load read
+ * side by side. A cloud line Parakeet heard for is `elevenlabs→parakeet`.
+ */
+export interface SttEngineStats {
+  engine: string
+  /** Warm spans. */
+  count: number
+  p50: number | null
+  p95: number | null
+  cold: number
+  coldP50: number | null
 }
 
 export interface ReportContext {
@@ -99,6 +116,39 @@ function buildEndpointReport(records: readonly PerfSpanRecord[]): EndpointReport
     report.turnCheckP95 = nearestRankPercentile(sorted, 95)
   }
   return report
+}
+
+/** The stt spans by engine (#463); a span that failed or names no engine is not counted. */
+function buildSttEngines(records: readonly PerfSpanRecord[]): SttEngineStats[] {
+  const byEngine = new Map<string, { warm: number[]; cold: number[] }>()
+  for (const record of records) {
+    const detail = record.detail
+    if (record.stage !== 'stt' || detail === undefined || typeof detail.engine !== 'string' || detail.error !== undefined) continue
+    const engine = typeof detail.sentMs === 'number' && detail.engine !== 'elevenlabs' ? `elevenlabs→${detail.engine}` : detail.engine
+    const spans = byEngine.get(engine) ?? { warm: [], cold: [] }
+    ;(detail.cold === true ? spans.cold : spans.warm).push(record.durMs)
+    byEngine.set(engine, spans)
+  }
+  return [...byEngine.entries()].map(([engine, { warm, cold }]) => {
+    const w = [...warm].sort((a, b) => a - b)
+    const c = [...cold].sort((a, b) => a - b)
+    return {
+      engine,
+      count: w.length,
+      p50: w.length > 0 ? nearestRankPercentile(w, 50) : null,
+      p95: w.length > 0 ? nearestRankPercentile(w, 95) : null,
+      cold: c.length,
+      coldP50: c.length > 0 ? nearestRankPercentile(c, 50) : null,
+    }
+  })
+}
+
+function formatSttEngineLine(engines: readonly SttEngineStats[]): string {
+  const one = (stats: SttEngineStats): string => {
+    const warm = stats.p50 === null || stats.p95 === null ? `${stats.engine} 0` : `${stats.engine} ${stats.count} p50 ${formatMs(stats.p50)} p95 ${formatMs(stats.p95)}`
+    return stats.coldP50 === null ? warm : `${warm}, cold ${stats.cold} p50 ${formatMs(stats.coldP50)}`
+  }
+  return `stt by engine: ${engines.map(one).join(' | ')}`
 }
 
 function formatEndpointLine(endpoints: EndpointReport): string {
@@ -232,6 +282,7 @@ export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: reado
     reaction: buildReactionReport(records, decisions),
     decisions: buildDecisionReport(decisions),
     endpoints: buildEndpointReport(records),
+    sttEngines: buildSttEngines(records),
     app: buildAppReport(all),
   }
 }
@@ -289,6 +340,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
     }
   }
   if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
+  if (report.sttEngines.length > 0) lines.push(formatSttEngineLine(report.sttEngines))
   lines.push(...formatAppReport(report.app))
   appendCommandLines(lines, report, context)
   return lines.join('\n')

@@ -2,6 +2,8 @@
 export interface Transcriber {
   /** The engine behind the port ('parakeet', 'moonshine', …), named on the `stt` perf span (#358). */
   readonly engine?: string
+  /** Audio the last final sent off this machine, in ms (#463): the cloud ear's usage. Absent for a local engine. */
+  readonly sentMs?: number
   /**
    * Streaming transcription (#40): the voice session begins a capture when
    * speech starts and pushes utterance frames as they arrive, so a streaming
@@ -10,8 +12,19 @@ export interface Transcriber {
    * — their begin/push/cancel are no-ops and the partial stream stays silent.
    */
 
-  /** Speech detected: a new utterance capture starts. */
-  begin(): void
+  /**
+   * Speech detected: a new utterance capture starts. `preRoll` is the audio
+   * kept before the trigger frame (#463): an engine that hears only what it
+   * is sent (the cloud ear) sends it first, so the first syllable survives;
+   * an engine that decodes finish()'s PCM ignores it.
+   */
+  begin(preRoll?: Float32Array): void
+  /**
+   * The listen opened (wake word or hotkey, #463): an engine with a
+   * connection to make makes it now, while the owner starts to speak.
+   * Absent for engines with nothing to open.
+   */
+  listenOpened?(): void
   /**
    * One 512-sample 16 kHz frame of the in-flight utterance, in order, from
    * the speech-start trigger on. Pre-roll before the trigger and the frame

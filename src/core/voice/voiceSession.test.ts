@@ -142,8 +142,13 @@ async function createSession(overrides?: {
   const pendingStt: { resolve: (text: string) => void }[] = []
   const transcriber = overrides?.perf
     ? {
-        engine: baseTranscriber.engine,
-        begin: () => baseTranscriber.begin(),
+        get engine() {
+          return baseTranscriber.engine
+        },
+        get sentMs() {
+          return baseTranscriber.sentMs
+        },
+        begin: (preRoll?: Float32Array) => baseTranscriber.begin(preRoll),
         push: (frame: Float32Array) => baseTranscriber.push(frame),
         onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
         cancel: () => baseTranscriber.cancel(),
@@ -895,6 +900,15 @@ describe('voice session — perf spans (#27)', () => {
     expect(stt!.detail?.engine).toBe('parakeet')
   })
 
+  it('carries the audio the cloud ear sent in the stt detail (#463)', async () => {
+    const harness = await createSession({ transcriber: Object.assign(new FakeTranscriber(['go']), { engine: 'elevenlabs', sentMs: 1_250 }), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.find((record) => record.stage === 'stt')!.detail).toMatchObject({ engine: 'elevenlabs', sentMs: 1_250 })
+  })
+
   it('carries the turn check that fired the Endpoint in the stt detail (#357)', async () => {
     const harness = await createSession({
       transcriber: new FakeTranscriber(['go']),
@@ -1093,6 +1107,25 @@ describe('voice session — streaming transcriber port (#40)', () => {
     expect(harness.transcriber.audio).toHaveLength(1)
     expect(harness.transcriber.audio[0]).toHaveLength((8 + 20) * 512) // pre-roll + speech + at most 20 frames of tail (#357)
     expect(harness.commands).toEqual(['open youtube'])
+  })
+
+  it('hands begin the pre-roll before the trigger frame, so an engine hearing only what it is sent keeps the first syllable (#463)', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    // startFrames 3: frames 1–2 are the pre-roll, frame 3 the trigger, pushed.
+    expect(harness.transcriber.preRolls).toHaveLength(1)
+    expect(harness.transcriber.preRolls[0]).toHaveLength(2 * 512)
+  })
+
+  it('tells the engine the listen opened, once per activation (#463)', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    harness.session.arm()
+    expect(harness.transcriber.listensOpened).toBe(1)
   })
 
   it('discards the capture when the endpointer drops a blip — no finish ever runs', async () => {

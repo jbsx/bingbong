@@ -6,6 +6,8 @@
 // same choices the dashboard's own ⚙ Metrics panel offers, kept here
 // because the dashboard keeps its own in that browser's storage.
 
+import type { EarDay } from './earTally'
+
 export type FetchJson = (url: string) => Promise<unknown>
 
 /** How much history the chart spans: the dashboard's own default view. */
@@ -42,6 +44,8 @@ export interface UsageSnapshot {
   updatedAt: number
   /** Every provider the dashboard reports, in its order. */
   providers: UsageProviderReport[]
+  /** The ear's own tally of the day by engine (#463): local, not the dashboard's. */
+  ear?: Readonly<Record<string, EarDay>>
 }
 
 /** One provider's choices: the dashboard's per-card show, gauge and chart controls. */

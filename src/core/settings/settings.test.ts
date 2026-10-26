@@ -169,6 +169,7 @@ describe('sanitizeSettings', () => {
 
   it('keeps an explicit STT engine and defaults everything else to Parakeet (#358)', () => {
     expect(sanitizeSettings({ sttEngine: 'parakeet' }).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttEngine: 'elevenlabs' }).sttEngine).toBe('elevenlabs')
     expect(sanitizeSettings({ sttEngine: 'medium' }).sttEngine).toBe('medium')
     expect(sanitizeSettings({ sttEngine: 'small' }).sttEngine).toBe('small')
     expect(sanitizeSettings({ sttEngine: 'base' }).sttEngine).toBe('base')

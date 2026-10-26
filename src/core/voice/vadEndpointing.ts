@@ -154,6 +154,11 @@ export interface UtteranceEndpointer {
   reset(): void
   /** True when no utterance is in flight — swapping config here loses at most pre-roll. */
   isIdle(): boolean
+  /**
+   * The audio in flight before the latest frame (#463): at speech start, the
+   * pre-roll kept ahead of the trigger frame. Empty when none is in flight.
+   */
+  preRoll(): Float32Array
 }
 
 interface WaitingState {
@@ -357,6 +362,9 @@ export function createUtteranceEndpointer(
       state = { kind: 'waiting', ring: [], speechRun: 0 }
     },
 
+    preRoll() {
+      return state.kind === 'waiting' ? new Float32Array(0) : concat(state.pcm.slice(0, -1))
+    },
     isIdle() {
       return state.kind === 'waiting'
     },

@@ -315,6 +315,8 @@ function EnvironmentSection() {
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
   const [error, setError] = useState('')
+  // The chosen cloud ear with no key (#463): Parakeet hears, said here beside the keys, as the host checks say theirs.
+  const [earFindings, setEarFindings] = useState<readonly HostFinding[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -324,6 +326,12 @@ function EnvironmentSection() {
         if (!cancelled) setFile(view)
       })
       .catch((cause: unknown) => reportRendererFault('settings.envFile', cause))
+    window.bingbong.settings
+      .hostChecks()
+      .then((found) => {
+        if (!cancelled) setEarFindings(found.filter((finding) => finding.check === 'ear'))
+      })
+      .catch((cause: unknown) => reportRendererFault('settings.hostChecks', cause))
     return () => {
       cancelled = true
     }
@@ -366,6 +374,11 @@ function EnvironmentSection() {
       <p className="settings-note">
         The keys and routing in the app&apos;s <code>.env</code>. A change is written to the file at once, its comments kept. The decision model and the news writer read it from the next command; voice, wake word and speech read it at the next start.
       </p>
+      {earFindings.map((finding) => (
+        <p key={finding.check} className="settings-note settings-host-missing">
+          {finding.message}
+        </p>
+      ))}
       <span className="settings-card-row settings-env-open">
         <button type="button" className="settings-button" onClick={() => void open()}>
           Open in editor
@@ -471,7 +484,7 @@ function HostSection() {
     window.bingbong.settings
       .hostChecks()
       .then((found) => {
-        if (!cancelled) setFindings(found)
+        if (!cancelled) setFindings(found.filter((finding) => finding.check !== 'ear'))
       })
       .catch((cause: unknown) => reportRendererFault('settings.hostChecks', cause))
     return () => {
@@ -944,6 +957,7 @@ export function SettingsPage({
               onChange={(event) => setDraft({ ...draft, sttEngine: asSttModel(event.target.value) })}
             >
               <option value="parakeet">Parakeet — default, most accurate, ~660 MB download</option>
+              <option value="elevenlabs">ElevenLabs — cloud, on trial; Parakeet hears when it cannot</option>
               <option value="medium">Moonshine Medium — lighter, ~380 MB download</option>
               <option value="small">Moonshine Small — lighter, fits the 4 GB hardware floor</option>
               <option value="base">Moonshine Base — lightest, lowest accuracy</option>
@@ -951,7 +965,8 @@ export function SettingsPage({
           </Field>
           <p className="settings-note">
             Parakeet hears best. The Moonshine models are lighter, for a machine too slow for it.
-            Each loads the next time the app starts.
+            ElevenLabs hears in the cloud with the ELEVENLABS_API_KEY under Environment, Parakeet
+            loaded behind it. Each loads the next time the app starts.
           </p>
           <Field label="TTS voice">
             <select

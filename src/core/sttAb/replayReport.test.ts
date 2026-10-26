@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatLabelScore, formatReplayReport, wordErrors, type ReplayRow } from './replayReport'
+import { formatAgreement, formatLabelScore, formatNameScore, formatReplayReport, wordErrors, type ReplayRow } from './replayReport'
 
 // The #35 replay report: one row per replayed utterance dump (file, speech
 // duration, endpoint→transcript wall time, transcript) plus the p50/p95/max
@@ -67,5 +67,44 @@ describe('formatLabelScore (#456)', () => {
     expect(out).toContain('jfk.wav     2  and so my fellow americans ask not  ← And so my fellow Americans.')
     expect(out).not.toContain('beckett.wav')
     expect(out).toContain('labelled 2 of 4 | word errors 2 of 12 | exact 1 of 2')
+  })
+})
+
+describe('formatNameScore (#463)', () => {
+  it('counts a ledger clip right only when every meant name is heard, spacing aside', () => {
+    const rows: ReplayRow[] = [
+      { file: 'kanye.wav', speechMs: 2_000, ms: 400, transcript: 'Play Highs and Lows by Kanye West.' },
+      { file: 'niyam.wav', speechMs: 2_000, ms: 400, transcript: 'Play Tumse Tum Tak by Neon.' },
+      { file: 'loop.wav', speechMs: 1_000, ms: 400, transcript: 'Loop this song.' },
+    ]
+    const out = formatNameScore(rows, {
+      'kanye.wav': { names: ['kanye west'], ledger: 'turn-a' },
+      'niyam.wav': { names: ['tum se tum tak', 'niyam'], ledger: 'turn-b' },
+      'loop.wav': { names: ['loop'], ledger: 'turn-c' },
+      'absent.wav': { names: ['gurgaon'], ledger: 'turn-d' },
+    })
+    expect(out).toContain('kanye.wav  right  kanye west  turn-a')
+    expect(out).toContain('niyam.wav  wrong  tum se tum tak, niyam  turn-b  ← Play Tumse Tum Tak by Neon.')
+    expect(out).toContain('ledger names right 2 of 3')
+    expect(out).not.toContain('absent.wav')
+  })
+})
+
+describe('formatAgreement (#463)', () => {
+  it('compares two engines on the clips no label covers', () => {
+    const mine: ReplayRow[] = [
+      { file: 'a.wav', speechMs: 1_000, ms: 1, transcript: 'Mm-hmm.' },
+      { file: 'b.wav', speechMs: 1_000, ms: 1, transcript: 'Open the side panel' },
+      { file: 'c.wav', speechMs: 1_000, ms: 1, transcript: 'labelled' },
+    ]
+    const theirs: ReplayRow[] = [
+      { file: 'a.wav', speechMs: 1_000, ms: 1, transcript: 'mm hmm' },
+      { file: 'b.wav', speechMs: 1_000, ms: 1, transcript: 'Hope side banner.' },
+      { file: 'c.wav', speechMs: 1_000, ms: 1, transcript: 'other' },
+    ]
+    const out = formatAgreement(mine, theirs, { 'c.wav': 'labelled' })
+    expect(out).toContain('b.wav  3  Open the side panel  ≠ Hope side banner.')
+    expect(out).not.toContain('c.wav')
+    expect(out).toContain('unlabelled 2 | engines agree on 1 of 2 | words apart 3')
   })
 })

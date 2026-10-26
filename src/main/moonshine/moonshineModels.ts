@@ -67,7 +67,7 @@ export const MOONSHINE_SMALL_FILES = [
 ] as const
 
 /** The Moonshine tiers — the lighter engines once Parakeet became the default (#358). */
-export type MoonshineTier = Exclude<SttModel, 'parakeet'>
+export type MoonshineTier = Exclude<SttModel, 'parakeet' | 'elevenlabs'>
 
 export interface MoonshineTierSpec {
   dir: string

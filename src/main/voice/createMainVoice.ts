@@ -8,6 +8,10 @@ import { createScriptedVad } from './createScriptedVad'
 import { createScriptedTranscriber } from './createScriptedTranscriber'
 import { createScriptedTurn } from './createScriptedTurn'
 import { createSmartTurn } from './createSmartTurn'
+import { createElevenLabsTranscriber } from '../elevenlabs/createElevenLabsTranscriber'
+import { cloudKeyterms } from '../../core/voice/cloudKeyterms'
+import { BIAS_LEXICON } from '../moonshine/biasLexicon'
+import { reportFault } from '../../core/trace/fault'
 
 export interface MainVoice {
   vad: VadScorer
@@ -37,12 +41,29 @@ export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () =
   return { vad, transcriber, turn }
 }
 
-/** The STT engine alone, by config: the scripted double, Parakeet, or a Moonshine tier. */
+/** The Seed Lexicon as a set, for telling Learned Terms from it in the cloud ear's keyterms (#463). */
+const SEED = new Set(BIAS_LEXICON)
+
+/**
+ * The STT engine alone, by config: the cloud ear (#463) with the local
+ * engine behind it, the scripted double, Parakeet, or a Moonshine tier.
+ */
 export function createMainVoiceTranscriber(config: VoiceConfig, getBiasPhrases?: () => BiasInput): Transcriber {
+  if (config.sttEngine === 'elevenlabs' && config.elevenLabs !== undefined) {
+    const { elevenLabs } = config
+    return createElevenLabsTranscriber({
+      apiKey: elevenLabs.apiKey,
+      ...(elevenLabs.url !== undefined ? { url: elevenLabs.url } : {}),
+      keyterms: () => cloudKeyterms(getBiasPhrases?.() ?? BIAS_LEXICON, SEED),
+      // Parakeet stays loaded behind the cloud (grill ruling 9); the scripted double stands in for it in e2e.
+      fallback: createMainVoiceTranscriber({ ...config, sttEngine: 'parakeet' }, getBiasPhrases),
+      onFault: (error) => reportFault('voice.ear.cloud', error),
+    })
+  }
   const bias = getBiasPhrases ? { getBiasPhrases } : {}
   return config.sttScript
     ? createScriptedTranscriber(config.sttScript, config.sttLoadMs)
-    : config.sttEngine === 'parakeet'
+    : config.sttEngine === 'parakeet' || config.sttEngine === 'elevenlabs'
       ? createMainParakeetTranscriber({ modelsDir: config.modelsDir, ...bias })
       : createMainMoonshineTranscriber({ modelsDir: config.modelsDir, tier: config.sttEngine, ...bias })
 }

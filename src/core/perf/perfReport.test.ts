@@ -174,6 +174,28 @@ describe('buildPerfReport', () => {
     expect(report.endpoints).toEqual({ turn: 2, cap: 2, capUnfinished: 1, capFailed: 1, max: 1, turnCheckP50: 40, turnCheckP95: 60 }) // nearest rank over 3, 40, 50, 60
   })
 
+  it('splits the stt span by the engine that heard, warm and cold apart, the cloud ear fallen back to Parakeet its own row (#463)', () => {
+    const stt = (turnId: string, durMs: number, detail: Record<string, unknown>): PerfSpanRecord => ({ ...span(turnId, 'stt', durMs), detail })
+    const report = buildPerfReport([
+      stt('t1', 200, { engine: 'parakeet' }),
+      stt('t2', 300, { engine: 'parakeet' }),
+      stt('t3', 6_800, { engine: 'parakeet', cold: true }),
+      stt('t4', 400, { engine: 'elevenlabs', sentMs: 1_200 }),
+      stt('t5', 1_900, { engine: 'parakeet', sentMs: 900 }),
+      stt('t6', 100, { engine: 'elevenlabs', sentMs: 800, error: 'x' }),
+      span('t7', 'stt', 100),
+    ])
+
+    expect(report.sttEngines).toEqual([
+      { engine: 'parakeet', count: 2, p50: 200, p95: 300, cold: 1, coldP50: 6_800 },
+      { engine: 'elevenlabs', count: 1, p50: 400, p95: 400, cold: 0, coldP50: null },
+      { engine: 'elevenlabs→parakeet', count: 1, p50: 1_900, p95: 1_900, cold: 0, coldP50: null },
+    ])
+    expect(formatPerfReport(report, { logsDir: '/l', fileCount: 1, skippedLines: 0 }).split('\n')).toContain(
+      'stt by engine: parakeet 2 p50 200ms p95 300ms, cold 1 p50 6800ms | elevenlabs 1 p50 400ms p95 400ms | elevenlabs→parakeet 1 p50 1900ms p95 1900ms',
+    )
+  })
+
   it('returns an empty report for an empty log', () => {
     const report = buildPerfReport([])
 

@@ -46,10 +46,12 @@ export type Appearance = 'system' | 'light' | 'dark'
 /**
  * STT engine (#358): Parakeet TDT 0.6B is the default; the Moonshine tiers
  * (#63) are the lighter engines for a machine too slow for it — Small, then
- * Base, with Medium between Small and Parakeet. The engine applies when the
- * transcriber is constructed — a restart.
+ * Base, with Medium between Small and Parakeet. ElevenLabs is the cloud ear
+ * on trial (#463, ADR 0019 as amended): Scribe v2 Realtime, with Parakeet
+ * loaded behind it. The engine applies when the transcriber is constructed
+ * — a restart.
  */
-export type SttModel = 'parakeet' | 'base' | 'small' | 'medium'
+export type SttModel = 'parakeet' | 'elevenlabs' | 'base' | 'small' | 'medium'
 
 export interface AppSettings {
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
@@ -200,7 +202,7 @@ function asWebZoomPercent(value: unknown, fallback: number): number {
 
 /** Any explicit engine passes through; anything else falls back to Parakeet. */
 export function asSttModel(value: unknown): SttModel {
-  return value === 'base' || value === 'small' || value === 'medium' ? value : 'parakeet'
+  return value === 'elevenlabs' || value === 'base' || value === 'small' || value === 'medium' ? value : 'parakeet'
 }
 
 /**

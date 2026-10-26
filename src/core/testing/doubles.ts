@@ -525,13 +525,24 @@ export class FakeTranscriber implements Transcriber {
   rejectWith: Error | null = null
   /** The engine name the `stt` span carries; unset like a fake that names none. */
   engine?: string
+  /** The audio the last final sent off the machine (#463); unset like a local engine. */
+  sentMs?: number
+  /** The pre-roll each begin() was handed (#463). */
+  readonly preRolls: (Float32Array | undefined)[] = []
+  /** How many listens opened (#463). */
+  listensOpened = 0
 
   constructor(script: string[] = []) {
     this.queue = [...script]
   }
 
-  begin(): void {
+  begin(preRoll?: Float32Array): void {
+    this.preRolls.push(preRoll)
     this.events.push('begin')
+  }
+
+  listenOpened(): void {
+    this.listensOpened += 1
   }
 
   push(frame: Float32Array): void {

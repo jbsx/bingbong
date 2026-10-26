@@ -15,7 +15,8 @@ import type { VoiceConfig } from './voiceConfig'
 
 type ToStt =
   | { type: 'init'; config: VoiceConfig; bias: ChainBias | null }
-  | { type: 'begin' }
+  | { type: 'begin'; preRoll?: Float32Array }
+  | { type: 'listen' }
   | { type: 'push'; frame: Float32Array }
   | { type: 'cancel' }
   | { type: 'pause'; pcm: Float32Array }
@@ -26,7 +27,7 @@ type ToStt =
 
 type FromStt =
   | { type: 'partial'; text: string }
-  | { type: 'done'; id: number; text?: string; error?: string }
+  | { type: 'done'; id: number; text?: string; error?: string; engine?: string; sentMs?: number }
   | { type: 'relay'; message: FromVoiceChain }
 
 /** The voice process's side: a Transcriber whose engine runs on the STT thread. */
@@ -36,6 +37,9 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
   const waiting = new Map<number, { resolve(text: string): void; reject(error: Error): void }>()
   let seq = 0
   let sent = bias()
+  // Which engine heard the last final, and the audio it sent (#463): the cloud ear's fallback says Parakeet.
+  let heardBy: string = config.sttEngine
+  let sentMs: number | undefined
   // The bias the pause's decode ran with (#443); undefined while no pause decode stands.
   let pauseBias: ChainBias | null | undefined
   worker.postMessage({ type: 'init', config, bias: sent } satisfies ToStt)
@@ -51,6 +55,10 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
     else {
       const waiter = waiting.get(message.id)
       waiting.delete(message.id)
+      if (message.engine !== undefined) {
+        heardBy = message.engine
+        sentMs = message.sentMs
+      }
       if (message.error !== undefined) waiter?.reject(new Error(message.error))
       else waiter?.resolve(message.text ?? '')
     }
@@ -72,11 +80,20 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
     return done
   }
   return {
-    engine: config.sttEngine,
-    begin: () => {
+    get engine() {
+      return heardBy
+    },
+    get sentMs() {
+      return sentMs
+    },
+    listenOpened: () => {
+      syncBias()
+      worker.postMessage({ type: 'listen' } satisfies ToStt)
+    },
+    begin: (preRoll) => {
       syncBias()
       pauseBias = undefined
-      worker.postMessage({ type: 'begin' } satisfies ToStt)
+      worker.postMessage({ type: 'begin', ...(preRoll !== undefined ? { preRoll } : {}) } satisfies ToStt)
     },
     push: (frame) => worker.postMessage({ type: 'push', frame } satisfies ToStt),
     onPartial(listener) {
@@ -119,10 +136,14 @@ if (parentPort !== null && (workerData as { sttThread?: boolean } | null)?.sttTh
   setModelLoadSink((load) => post({ type: 'relay', message: { type: 'modelLoad', load: relayedLoad(load) } }))
   let bias: ChainBias | null = null
   let transcriber: Transcriber | null = null
-  const reply = (id: number, work: Promise<string>): void => {
+  const reply = (id: number, work: Promise<string>, final = false): void => {
+    const heard = (): { engine?: string; sentMs?: number } => (!final ? {} : {
+      ...(transcriber?.engine !== undefined ? { engine: transcriber.engine } : {}),
+      ...(transcriber?.sentMs !== undefined ? { sentMs: transcriber.sentMs } : {}),
+    })
     work.then(
-      (text) => post({ type: 'done', id, text }),
-      (error: unknown) => post({ type: 'done', id, error: error instanceof Error ? error.message : String(error) }),
+      (text) => post({ type: 'done', id, text, ...heard() }),
+      (error: unknown) => post({ type: 'done', id, error: error instanceof Error ? error.message : String(error), ...heard() }),
     )
   }
   port.on('message', (message: ToStt) => {
@@ -134,12 +155,13 @@ if (parentPort !== null && (workerData as { sttThread?: boolean } | null)?.sttTh
     }
     if (transcriber === null) return
     if (message.type === 'bias') bias = message.bias
-    else if (message.type === 'begin') transcriber.begin()
+    else if (message.type === 'begin') transcriber.begin(message.preRoll)
+    else if (message.type === 'listen') transcriber.listenOpened?.()
     else if (message.type === 'push') transcriber.push(message.frame)
     else if (message.type === 'cancel') transcriber.cancel()
     else if (message.type === 'pause') transcriber.pauseReached?.(message.pcm)
     else if (message.type === 'pauseEnd') transcriber.pauseEnded?.()
-    else if (message.type === 'finish') reply(message.id, transcriber.finish(message.pcm))
+    else if (message.type === 'finish') reply(message.id, transcriber.finish(message.pcm), true)
     else reply(message.id, (transcriber.prepare?.() ?? Promise.resolve()).then(() => ''))
   })
 }

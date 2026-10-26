@@ -13,6 +13,7 @@ import { EAR_FAILED, EAR_FAILED_MORE, REST_HINT_MORE, REST_HINT_SAY, REST_HINT_W
 import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
 import type { EarLoading } from '../../core/voice/ipcChannels'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
+import { earLine } from '../../core/usage/earTally'
 import type { WeighIn } from '../../core/scale/weighIns'
 import { defaultWeightSettings, type WeightSettings } from '../../core/scale/weightSettings'
 import { NowPlayingCard } from './NowPlayingCard'
@@ -623,7 +624,7 @@ export function IdleScreen({
         return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={layout.form} /> : null
       case 'usage':
         return usage.status === 'ready' && usageViews.length > 0 ? (
-          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} format={timeFormat} {...layout} />
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} format={timeFormat} ear={earLine(usage.snapshot.ear ?? {})} {...layout} />
         ) : (
           <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
         )

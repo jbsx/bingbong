@@ -3501,6 +3501,16 @@ button.idle-line {
   color: var(--warn);
 }
 
+/* The cloud ear's day (#463): one line under the rings, the card's own words' size; --fg2 holds 7:1 on the dark ground. */
+.usage-ear {
+  display: block;
+  padding: 0 28px 12px;
+  font-size: var(--type-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+  text-align: center;
+}
+
 .usage-card-foot {
   padding: 0 28px 16px;
   font-family: var(--font-mono);

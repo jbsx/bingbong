@@ -32,9 +32,20 @@
 // seed in place of the shipped one: the other arm of a lexicon tie (#456).
 // Dumps labelled with what was said are scored against it: the labels file
 // is BINGBONG_STT_LABELS, else fixtures/stt-labels/audio-dumps-2026-10.json
-// when it exists (#456).
+// when it exists (#456). A label naming a ledger `stt` line (`ledger`,
+// `names`) is scored on those names too: the cloud ear's pass bar (#463).
+// BINGBONG_STT_MODEL=elevenlabs replays through ElevenLabs Scribe v2
+// Realtime (#463) — the key from ELEVENLABS_API_KEY, e.g.
+// `node --env-file=<root>/.env scripts/replay-stt.ts`; the same bias, cut
+// to keyterms as the app cuts them, and no Parakeet behind it: a cloud
+// fault is printed as the row's transcript; BINGBONG_STT_COMMIT_MS=<ms>
+// waits that long for the commit instead of the app's 1.5 s, so a late
+// commit's words are scored and its lateness read off the row's time.
+// Set BINGBONG_STT_ROWS=<file>
+// to keep a run's rows, and BINGBONG_STT_AGREE=<file> to compare this run
+// with a kept one on the clips no label covers (grill ruling 4).
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -43,7 +54,7 @@ import { performance } from 'node:perf_hooks'
 import type { SttModel } from '../src/core/settings/settings.ts'
 import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
 import { WAKE_DUMP_PREFIX } from '../src/core/voice/utteranceDump.ts'
-import { formatLabelScore, formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
+import { formatAgreement, formatLabelScore, formatNameScore, formatReplayReport, type LedgerNames, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
 import { VAD_FRAME_SAMPLES, VAD_FRAME_MS } from '../src/core/voice/vadEndpointing.ts'
 import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
 import { createMoonshineTranscriber, type BiasInput } from '../src/main/moonshine/createMoonshineTranscriber.ts'
@@ -53,13 +64,15 @@ import { parseParakeetVocab } from '../src/core/parakeet/parakeetVocab.ts'
 import { createParakeetTranscriber } from '../src/main/parakeet/createParakeetTranscriber.ts'
 import { ensureParakeetModels } from '../src/main/parakeet/parakeetModels.ts'
 import type { Transcriber } from '../src/core/ports/stt.ts'
+import { cloudKeyterms } from '../src/core/voice/cloudKeyterms.ts'
+import { createElevenLabsTranscriber } from '../src/main/elevenlabs/createElevenLabsTranscriber.ts'
 
 const dumpsDir = process.argv[2] ?? join(homedir(), '.config/bingbong/audio-dumps')
 const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
 // Parsed inline: importing the settings sanitizer would pull the
 // extensionless main-tree module graph into Node's type-stripping runtime.
 const envTier = process.env.BINGBONG_STT_MODEL
-const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'parakeet'
+const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' || envTier === 'elevenlabs' ? envTier : 'parakeet'
 // The Seed Lexicon as the app builds it (#456): its command half is read
 // off the command tables, whose imports carry no .ts extension — this
 // type-stripping runtime follows them through a resolve hook that tries
@@ -78,9 +91,11 @@ const { BIAS_LEXICON } = (await import('../src/main/moonshine/biasLexicon.ts')) 
 const seedFile = process.env.BINGBONG_STT_SEED
 const seedLexicon: readonly string[] = seedFile === undefined ? BIAS_LEXICON : (JSON.parse(readFileSync(seedFile, 'utf8')) as string[])
 const labelsFile = process.env.BINGBONG_STT_LABELS ?? fileURLToPath(new URL('../fixtures/stt-labels/audio-dumps-2026-10.json', import.meta.url))
-const labels: Record<string, string> = existsSync(labelsFile)
-  ? Object.fromEntries(Object.entries((JSON.parse(readFileSync(labelsFile, 'utf8')) as { labels: Record<string, { said: string }> }).labels).map(([file, label]) => [file, label.said]))
-  : {}
+const labelEntries = existsSync(labelsFile) ? Object.entries((JSON.parse(readFileSync(labelsFile, 'utf8')) as { labels: Record<string, { said: string; ledger?: string; names?: string[] }> }).labels) : []
+const labels: Record<string, string> = Object.fromEntries(labelEntries.map(([file, label]) => [file, label.said]))
+const ledgerNames: Record<string, LedgerNames> = Object.fromEntries(
+  labelEntries.flatMap(([file, label]) => (label.ledger !== undefined && label.names !== undefined ? [[file, { ledger: label.ledger, names: label.names }]] : [])),
+)
 const pageTerms = (process.env.BINGBONG_STT_BIAS ?? '').split(',').map((term) => term.trim()).filter((term) => term !== '')
 const atPauseMs = process.env.BINGBONG_STT_AT_PAUSE === undefined ? null : Number(process.env.BINGBONG_STT_AT_PAUSE)
 const biasPhrases: BiasInput = pageTerms.length === 0 ? seedLexicon : [{ phrases: seedLexicon }, { phrases: pageTerms, boost: PAGE_TERMS_BOOST }]
@@ -110,6 +125,18 @@ if (files.length === 0) {
 // createMainMoonshineTranscriber (which stay off this script's
 // type-stripping runtime graph).
 async function shippedEngine(): Promise<Transcriber> {
+  if (sttModel === 'elevenlabs') {
+    const apiKey = process.env.ELEVENLABS_API_KEY?.trim() ?? ''
+    if (apiKey === '') {
+      console.error('ELEVENLABS_API_KEY is unset: run with node --env-file=<root>/.env')
+      process.exit(1)
+    }
+    const keyterms = cloudKeyterms(biasPhrases, new Set(seedLexicon))
+    console.log(`keyterms (${keyterms.length}): ${keyterms.join(' | ')}`)
+    // The wait for the commit: the app's 1.5 s unless BINGBONG_STT_COMMIT_MS says otherwise, so the ear's words and its lateness read apart.
+    const commitMs = Number(process.env.BINGBONG_STT_COMMIT_MS)
+    return createElevenLabsTranscriber({ apiKey, keyterms: () => keyterms, ...(Number.isFinite(commitMs) && commitMs > 0 ? { commitTimeoutMs: commitMs } : {}) })
+  }
   if (sttModel === 'parakeet') {
     const parakeet = await ensureParakeetModels(modelsDir, fsMoonshineStore)
     for (const name of parakeet.fetched) console.log(`fetched ${name}`)
@@ -156,7 +183,7 @@ async function replay(file: string): Promise<ReplayRow> {
   // The endpoint just fired: this is the stt span's measure — drain of any
   // in-flight partial, then the final full-utterance pass.
   const endpoint = performance.now()
-  const transcript = (await transcriber.finish(pcm)).trim()
+  const transcript = (await transcriber.finish(pcm).catch((error: unknown) => `<fault: ${error instanceof Error ? error.message : String(error)}>`)).trim()
   const ms = performance.now() - endpoint
   // maxRSS is in KiB and never falls: the peak of the run so far.
   const peakRssMb = Math.round(process.resourceUsage().maxRSS / 1024)
@@ -172,3 +199,15 @@ if (Object.keys(labels).length > 0) {
   console.log(`scored against ${labelsFile}:`)
   console.log(formatLabelScore(rows, labels))
 }
+if (Object.keys(ledgerNames).length > 0) {
+  console.log()
+  console.log(formatNameScore(rows, ledgerNames))
+}
+const agreeFile = process.env.BINGBONG_STT_AGREE
+if (agreeFile !== undefined) {
+  console.log()
+  console.log(`against ${agreeFile}:`)
+  console.log(formatAgreement(rows, JSON.parse(readFileSync(agreeFile, 'utf8')) as ReplayRow[], labels))
+}
+const rowsFile = process.env.BINGBONG_STT_ROWS
+if (rowsFile !== undefined) writeFileSync(rowsFile, JSON.stringify(rows, null, 1))

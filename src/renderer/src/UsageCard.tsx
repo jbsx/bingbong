@@ -325,6 +325,7 @@ export function UsageCard({
   form,
   compact = false,
   format = 'system',
+  ear = null,
 }: {
   providers: readonly UsageView[]
   updatedAt: number
@@ -332,10 +333,13 @@ export function UsageCard({
   form: 'full' | 'small'
   compact?: boolean
   format?: TimeFormat
+  /** The cloud ear's day (#463), one line beside the providers; null on a day it heard nothing. */
+  ear?: string | null
 }) {
   return (
     <section className={`idle-card usage-card usage-card--${form}`} aria-label="AI usage">
       <Rings providers={providers} now={now} compact={compact} />
+      {ear !== null ? <span className="usage-ear">{ear}</span> : null}
       {form === 'full' ? (
         <UsageChart providers={providers} updatedAt={updatedAt} now={now} format={format} />
       ) : (

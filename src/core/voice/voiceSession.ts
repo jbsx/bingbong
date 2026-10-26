@@ -386,6 +386,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     listenBlips = 0
     resetEndpointer()
     deps.vad.reset()
+    // An engine with a connection to make makes it now, while the owner starts to speak (#463).
+    deps.transcriber.listenOpened?.()
     emitState()
   }
 
@@ -475,7 +477,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           pauseDecodes = 0
           pauseSamples = null
           if (!muted) {
-            deps.transcriber.begin()
+            // The pre-roll rides along (#463): an engine that hears only what it is sent keeps the first syllable.
+            deps.transcriber.begin(endpointer.preRoll())
             // Speech started (#324): the page is collected in parallel with it, and the screen says the ear has it (#441).
             deps.onSpeechStart?.()
             setHearing(true)
@@ -542,6 +545,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         tracer.span(turnId, 'stt', sttMs, {
           // Which engine transcribed (#358): Parakeet's and Moonshine's spans read apart in perf:report.
           ...(deps.transcriber.engine !== undefined ? { engine: deps.transcriber.engine } : {}),
+          // The audio the cloud ear sent (#463): the Usage card's tally, the fallback's lines included.
+          ...(deps.transcriber.sentMs !== undefined ? { sentMs: deps.transcriber.sentMs } : {}),
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
           truncated: utterance.truncated,

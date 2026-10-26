@@ -47,3 +47,25 @@ describe('resolveVoiceConfig', () => {
     expect(resolveVoiceConfig({}, DIRS, 'base').sttEngine).toBe('base')
   })
 })
+
+describe('resolveVoiceConfig — the cloud ear (#463)', () => {
+  it('arms ElevenLabs with the key from the env, and a stand-in endpoint when one is named', () => {
+    const config = resolveVoiceConfig({ ELEVENLABS_API_KEY: ' sk_1 ', BINGBONG_ELEVENLABS_URL: 'ws://127.0.0.1:9/rt' }, DIRS, 'elevenlabs')
+    expect(config.sttEngine).toBe('elevenlabs')
+    expect(config.elevenLabs).toEqual({ apiKey: 'sk_1', url: 'ws://127.0.0.1:9/rt' })
+    expect(config.earUnarmed).toBeUndefined()
+  })
+
+  it('lets Parakeet hear when ElevenLabs is chosen with no key, and says why', () => {
+    const config = resolveVoiceConfig({ ELEVENLABS_API_KEY: '' }, DIRS, 'elevenlabs')
+    expect(config.sttEngine).toBe('parakeet')
+    expect(config.elevenLabs).toBeUndefined()
+    expect(config.earUnarmed).toContain('ELEVENLABS_API_KEY')
+  })
+
+  it('takes the engine from BINGBONG_STT_ENGINE over the setting, and ignores a name it does not know', () => {
+    expect(resolveVoiceConfig({ BINGBONG_STT_ENGINE: 'elevenlabs', ELEVENLABS_API_KEY: 'k' }, DIRS, 'parakeet').sttEngine).toBe('elevenlabs')
+    expect(resolveVoiceConfig({ BINGBONG_STT_ENGINE: 'parakeet' }, DIRS, 'elevenlabs').sttEngine).toBe('parakeet')
+    expect(resolveVoiceConfig({ BINGBONG_STT_ENGINE: 'whisper' }, DIRS, 'small').sttEngine).toBe('small')
+  })
+})

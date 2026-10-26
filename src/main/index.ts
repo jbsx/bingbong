@@ -29,6 +29,8 @@ import { attachAbortHotkey, attachCommandRunnerToWindow, registerCommandRunnerIp
 import { createCommandRunner, type CommandRunner } from './run/commandRunner'
 import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
 import { createDecisionLogSink } from './run/decisionLogSink'
+import type { CommandLogRecord } from '../core/command/decisionRecord'
+import { createEarTallyStore } from './usage/earTallyStore'
 import { createFlagKeeper } from './logs/flagKeeper'
 import { createAskLogSink } from './run/askLogSink'
 import { createFaultLogSink } from './logs/faultLogSink'
@@ -51,6 +53,7 @@ import { loadEnvFile, resolveEnvFilePath, type EnvFileHome } from './envFile'
 import { resolveAppDirs } from './appDirs'
 import { checkThisHost } from './hostChecks'
 import { registerHostChecksIpc } from './settings/attachHostChecks'
+import type { HostFinding } from '../core/settings/hostFindings'
 import { attachNightDim, type NightDimGlue } from './nightDim/attachNightDim'
 import { attachUpdater, exitsAfterInstall, type Updater } from './update/attachUpdater'
 import { ensurePiper, fsPiperInstallDeps } from './tts/piperInstall'
@@ -207,7 +210,17 @@ const appDirs = resolveAppDirs({ isPackaged: app.isPackaged, appPath: app.getApp
 // Every failure the app swallows through `reportFault` goes to the fault log (#397).
 const logsDir = join(app.getPath('userData'), 'logs')
 setFaultSink(createFaultLogSink(logsDir))
-const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
+// The ear's usage tally (#463): every `stt` span tallies the seconds its engine heard, the decision log settles whether the line fired.
+const earTally = createEarTallyStore(join(app.getPath('userData'), 'ear-tally.json'))
+const perfSink = createJsonlPerfSink(logsDir)
+const perfTracer = createPerfTracer({
+  sink: {
+    write(record) {
+      perfSink.write(record)
+      earTally.heard(record)
+    },
+  },
+})
 // The quit step by step (#429), registered before every other quit hook so
 // its events come first; each record is on disk the moment it happens, so a
 // quit that hangs or is killed still says how far it got. Electron turns a
@@ -235,7 +248,13 @@ app.on('before-quit', () => {
 app.on('will-quit', () => quitTrace.event('will-quit'))
 app.on('quit', () => quitTrace.event('quit'))
 process.on('exit', () => quitTrace.event('exit'))
-const decisionLog = createDecisionLogSink(logsDir)
+const decisionSink = createDecisionLogSink(logsDir)
+const decisionLog = {
+  write(record: CommandLogRecord) {
+    decisionSink.write(record)
+    earTally.decided({ type: record.type, turnId: record.turnId, ...(record.type === 'decision' ? { verb: record.verb } : {}) })
+  },
+}
 const askLog = createAskLogSink(logsDir)
 // A Flag (#421) keeps its Task's records and the pane's shot under logs/flags/, past the purge.
 const flagKeeper = createFlagKeeper(logsDir)
@@ -287,6 +306,9 @@ for (const finding of hostFindings) reportFault(`app.hostChecks.${finding.check}
 // doubles ride the same seam for e2e. The STT tier is the settings snapshot
 // at startup (#63).
 const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('userData'), bundledModelsDir: appDirs.bundledModelsDir }, settingsStore.get().sttEngine)
+// The cloud ear chosen with no key (#463): Parakeet hears, and Settings › Environment says why, as the host checks say theirs.
+const earFindings: HostFinding[] = voiceConfig.earUnarmed !== undefined ? [{ check: 'ear', message: voiceConfig.earUnarmed }] : []
+for (const finding of earFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
 // openWakeWord ONNX stack; the Python sidecar is the config-only fallback
@@ -768,9 +790,9 @@ app.whenReady().then(async () => {
       envFileValues = values
     },
   })
-  registerHostChecksIpc(hostFindings)
+  registerHostChecksIpc([...hostFindings, ...earFindings])
   nightDim = attachNightDim({ quitIsFromApp, settings: settingsStore, idleUp: () => [...idleWindows.values()].some((shown) => shown.up), userDataDir: app.getPath('userData'), env: process.env })
-  registerUsageIpc(() => settingsStore.get().usageDashboard.url)
+  registerUsageIpc(() => settingsStore.get().usageDashboard.url, (at) => earTally.day(at))
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The Log Bucket (#418): on a machine that names itself, the logs dir is
   // copied to R2 every five minutes. Read once at boot; a settings change
