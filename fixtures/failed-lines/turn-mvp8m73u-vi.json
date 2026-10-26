@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp8m73u-vi",
+  "transcript": "Loop L O O D song.",
+  "at": 1793017993712,
+  "source": "spoken",
+  "stage": "player",
+  "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Jev read through 'Loop L O O D song.' to loop-10 0.94 and the op settled, but the next card 8 s later (turn-mvp8mdeu-vj, 0:27) read ref 10 'loop off' again; the owner said loop a third time (turn-mvp8mdeu-vj, loop-10 0.99), with no card after it to show whether it held",
+  "meant": "Loop on, and the card saying so",
+  "log": "decision-1793017798599-1.jsonl"
+}

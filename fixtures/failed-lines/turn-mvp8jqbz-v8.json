@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp8jqbz-v8",
+  "transcript": "Play Tum See Tum Tuck by Neom",
+  "at": 1793017877265,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the promo's watch page: 'Play Tum See Tum Tuck by Neom' read play-10 0.64 (play on the promo already playing) over play 0.22; nothing changed. Second line of the turn-mvp8itd3-v3 shape",
+  "meant": "A new play search for Niyam's song",
+  "log": "decision-1793017798599-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp8ka5g-vc",
+  "transcript": "Play tum se tum takbai niyum.",
+  "at": 1793017902470,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the promo's watch page (paused by turn-mvp8k4v2-2): 'Play tum se tum takbai niyum.' read play-10 0.83 (unpause the promo) over play 0.04; the promo played on. Third line of the turn-mvp8itd3-v3 shape",
+  "meant": "A new play search for Niyam's song",
+  "log": "decision-1793017798599-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp8jvw4-v9",
+  "transcript": "Play",
+  "at": 1793017882033,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the promo's watch page: 'Play' (512 ms of speech) was ended at a 192 ms pause, Smart Turn 'finished' 0.92, and the Local Match fired play (unpause) in 381 ms; the rest of the line arrived 1 s later as its own Utterance 'Doom Sei' (turn-mvp8jwsh-va), which Jev and the Where Ask read none",
+  "meant": "One Utterance, 'Play Tum Se Tum Tak by Niyam', a play search",
+  "log": "decision-1793017798599-1.jsonl"
+}

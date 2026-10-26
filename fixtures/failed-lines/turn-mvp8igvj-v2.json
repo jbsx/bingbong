@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvp8igvj-v2",
+  "transcript": "Play Tum See Tum Tuck by Neon",
+  "at": 1793017817059,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26: Parakeet heard 'Niyam' as 'Neon'; the Name Match repaired 'Tum See Tum Tuck' from a Learned Term but left 'by Neon', and the Player searched 'tum se tum tak by Neon' and played M9gfi_Uc4LI, a TV-serial promo ('Tumm Se Tumm Tak NEW PROMO 20th October 2026'). Same class as turn-mvnz0z5j-1 ('Bai Diamo')",
+  "meant": "Play Tum Se Tum Tak by Niyam (JTRDwh0BHG4)",
+  "log": "decision-1793017798599-1.jsonl"
+}
