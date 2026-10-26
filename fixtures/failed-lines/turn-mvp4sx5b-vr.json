@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: third 'Go to Idle Screen.' 3 min later: none (action 0.24, then 0.58 on the Where Ask), nothing done. Flagged by the owner (no hint); the shot shows the video full screen",
   "meant": "Bring the Idle Screen back over the pane, the music playing on",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#458"
+  "claimedBy": "#458",
+  "fixedBy": "a56508fe",
+  "case": "turn-mvp4sx5b-vr"
 }

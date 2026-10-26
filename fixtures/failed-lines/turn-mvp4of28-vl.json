@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam, the video shown full screen over the Idle Screen: 'Go to Idle Screen' read none (action 0.24), the Where Ask none, ended terminal with nothing done or said. 'show the video' exists (musicWords, jevReading show); no verb or appliance option brings the Idle Screen back",
   "meant": "Bring the Idle Screen back over the pane, the music playing on",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#458"
+  "claimedBy": "#458",
+  "fixedBy": "a56508fe",
+  "case": "turn-mvp4of28-vl"
 }
