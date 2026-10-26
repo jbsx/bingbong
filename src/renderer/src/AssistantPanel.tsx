@@ -133,13 +133,20 @@ export function RunHint({ progress, status }: { progress: RunProgress; status: O
   }, [])
   const parts = runProgressParts(progress, now, status)
 
+  // The order of loss on a short line (#462): the detail, then the stage's words; the seconds never.
   return (
     <span className="run-hint" role="status">
-      {parts.named !== '' ? <span className="run-hint-tail">{parts.named}</span> : null}
+      {parts.named !== '' ? <span className="run-hint-stage">{parts.named}</span> : null}
       {parts.detail !== null ? <span className="run-hint-detail">{parts.detail}</span> : null}
+      {parts.stage !== null ? (
+        <span className="run-hint-stage">
+          {parts.detail !== null ? ' · ' : ''}
+          {parts.stage}
+        </span>
+      ) : null}
       <span className="run-hint-tail">
-        {parts.detail !== null ? ' · ' : ''}
-        {parts.tail}
+        {parts.detail !== null || parts.stage !== null ? ' · ' : ''}
+        {parts.seconds}
       </span>
     </span>
   )

@@ -469,28 +469,19 @@ body {
 }
 
 /* The live run's stage detail and climbing seconds (#43, #428): the honest
-   "still alive" signal. A long detail ellipsizes; the seconds stay. */
+   "still alive" signal, in the Capsule's own face — one sentence, one
+   typeface (#462). On a short line the detail goes first, then the stage's
+   words; the seconds never. */
 .run-hint {
   display: flex;
   min-width: 0;
   overflow: hidden;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--type-xl);
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.run-hint-detail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.run-hint-tail {
-  flex: none;
-  white-space: pre;
 }
 
 /* The ear's wait (#442): its words ellipsize on a short line, its seconds
@@ -502,6 +493,9 @@ body {
   vertical-align: bottom;
 }
 
+/* A wait's words, the ear's or a run's: they ellipsize so its count need not. */
+.run-hint-detail,
+.run-hint-stage,
 .ear-wait-object {
   min-width: 0;
   overflow: hidden;
@@ -509,6 +503,20 @@ body {
   white-space: nowrap;
 }
 
+/* The detail takes only the room the stage's words and the seconds leave,
+   and no more than its own words: so it gives way wholly before they do. */
+.run-hint-detail {
+  flex: 1 1 0;
+  max-width: max-content;
+}
+
+/* The stage's words keep their leading separator. */
+.run-hint-stage {
+  white-space: pre;
+}
+
+/* A wait's seconds: never cut, never shrunk. */
+.run-hint-tail,
 .ear-wait-tail {
   flex: none;
   white-space: pre;
