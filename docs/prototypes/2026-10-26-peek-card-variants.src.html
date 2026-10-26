@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Peek Card Variants</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* PROTOTYPE, throwaway. Today's Peek Card and four variants of it on the real dashboard shot of 2026-10-26 (the story
+   fixture in the pane, the Feed Panel collapsed), the same scripted spoken turn as the Idle Turn prototype (#474) played
+   over them. Single dark look: the kiosk's own. */
+:root {
+  color-scheme: dark;
+  --bg: #000; --fg: #fff; --fgh: #fff; --fg2: #bdbdbd; --fg3: #959595; --hair: #3a3a3a; --hair2: #555;
+  --accent: #ffac82; --accent-soft: #ffd2b4; --accentq: rgba(255,172,130,0.14);
+  --ok: #81ffbc; --fail-text: #ffd9d3; --fail: #ff7a66; --idle: #959595;
+  --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --type-s: 16px; --type-m: 24px; --type-l: 40px; --type-xl: 65px;
+  --tool: #1b1d22; --tool-fg: #e8e8e8; --tool-accent: #7fd0ff;
+}
+html, body { height: 100%; }
+body { margin: 0; background: #0b0c0e; color: var(--fg); font-family: var(--font-sans); overflow-x: hidden; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0; box-sizing: border-box; }
+.wrap { display: flex; flex-direction: column; min-height: 100%; gap: 10px; padding-block: 10px 0; box-sizing: border-box; }
+.head { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; color: var(--tool-fg); font-size: 14px; }
+.head h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+.head .q { color: #a9adb6; }
+.viewport { position: relative; width: 100%; flex: 1 1 auto; min-height: 240px; display: flex; align-items: flex-start; justify-content: center; }
+.screen { position: relative; width: 1920px; height: 1080px; transform-origin: top left; background: #0a0a0a url(DASH_SHOT_URI) 0 0 / 1920px 1080px no-repeat; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2d33; }
+.layer { position: absolute; inset: 0; pointer-events: none; }
+.card { position: absolute; box-sizing: border-box; background: var(--bg); border: 1px solid var(--hair2); color: var(--fg); }
+.xl { font-size: var(--type-xl); font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
+.l { font-size: var(--type-l); font-weight: 500; line-height: 1.2; }
+.m { font-size: var(--type-m); font-weight: 500; line-height: 1.2; }
+.s { font-size: var(--type-s); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.acc { color: var(--accent); } .q2 { color: var(--fg2); } .q3 { color: var(--fg3); } .fail { color: var(--fail-text); } .ok { color: var(--ok); }
+.wrapt { white-space: normal; overflow-wrap: anywhere; }
+.ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.orb { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%); box-shadow: 0 0 0 6px var(--accentq); flex: none; }
+.wave { display: inline-flex; gap: 3px; align-items: center; height: 32px; }
+.wave i { display: block; width: 4px; height: 32px; background: var(--accent); border-radius: 2px; transform: scaleY(0.35); }
+.wave.live i { animation: bob 0.9s ease-in-out infinite; }
+.wave.live i:nth-child(2) { animation-delay: 0.15s } .wave.live i:nth-child(3) { animation-delay: 0.3s } .wave.live i:nth-child(4) { animation-delay: 0.45s } .wave.live i:nth-child(5) { animation-delay: 0.6s } .wave.live i:nth-child(6) { animation-delay: 0.75s }
+@keyframes bob { 0%,100% { transform: scaleY(0.35) } 50% { transform: scaleY(1) } }
+@media (prefers-reduced-motion: reduce) { .wave.live i { animation: none; transform: scaleY(0.7) } }
+.sec { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent); }
+.hint { position: absolute; font-size: var(--type-m); font-weight: 500; color: var(--fg3); white-space: nowrap; }
+.note { position: absolute; font: 13px/1.3 var(--font-mono); color: #8fb6cf; background: rgba(0,0,0,0.7); border: 1px dashed #3d5a6e; padding: 4px 8px; border-radius: 4px; max-width: 420px; white-space: normal; }
+
+/* the rail: six equal cells over one track */
+.rail { position: relative; }
+.rail .track, .rail .fill { position: absolute; top: 6px; height: 2px; left: calc(100% / 12); }
+.rail .track { right: calc(100% / 12); background: var(--hair2); }
+.rail .cells { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); }
+.rail .cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.rail .dot { width: 14px; height: 14px; border-radius: 50%; }
+/* the history: fixed rows on one grid */
+.hist { display: flex; flex-direction: column; gap: 4px; }
+.hrow { display: grid; grid-template-columns: 72px 190px minmax(0, 1fr); gap: 0 20px; align-items: baseline; height: 36px; }
+
+/* controls */
+.bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--tool); color: var(--tool-fg); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.bar button, .bar select { font: inherit; background: #2a2d34; color: var(--tool-fg); border: 1px solid #3a3e47; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.bar button:focus-visible, .bar select:focus-visible, .switch button:focus-visible { outline: 2px solid var(--tool-accent); outline-offset: 2px; }
+.bar input[type=range] { flex: 1 1 200px; min-width: 120px; accent-color: var(--tool-accent); }
+.bar .t { font-family: var(--font-mono); min-width: 5ch; }
+.events { display: flex; flex-wrap: wrap; gap: 6px; }
+.events button { padding: 3px 8px; font-size: 12px; font-family: var(--font-mono); }
+.events button.now { border-color: var(--tool-accent); color: var(--tool-accent); }
+.state { background: var(--tool); color: #c6cad2; border-radius: 10px; padding: 10px 14px; font: 12px/1.5 var(--font-mono); white-space: pre-wrap; }
+.state summary { cursor: pointer; font-family: var(--font-sans); font-size: 14px; color: var(--tool-fg); }
+.switch { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: #f3f4f7; color: #111; border-radius: 999px; padding: 8px 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.6); z-index: 20; font-size: 14px; max-width: calc(100vw - 32px); }
+.switch button { font: inherit; border: 0; background: #111; color: #fff; border-radius: 999px; width: 34px; height: 34px; cursor: pointer; }
+.switch .lab { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.switch .lab small { font-weight: 400; color: #555; }
+.legend { color: #a9adb6; font-size: 13px; line-height: 1.45; max-width: 80ch; padding-bottom: 80px; }
+.legend b { color: var(--tool-fg); }
+.legend ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head"><h1>Peek Card Variants</h1><span class="q">Prototype, throwaway. A spoken line on the dashboard with the Feed Panel collapsed, every step drawn as it arrives. Today's card first, then four variants; ← → to switch, space to play.</span></div>
+  <div class="viewport"><div class="screen" id="screen"><div class="layer" id="layer"></div></div></div>
+  <div class="bar">
+    <button id="play" type="button">Play</button>
+    <button id="restart" type="button">Restart</button>
+    <label>Line <select id="scenario"><option value="play">“play the latest mkbhd video”</option><option value="read">“read” (a long Answer)</option><option value="fail">“turn it up” with nothing playing</option><option value="timer">“set a timer for five minutes”</option></select></label>
+    <label>Speed <select id="speed"><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select></label>
+    <input id="scrub" type="range" min="0" max="32000" step="50" value="0" aria-label="time">
+    <span class="t" id="clock">0.0s</span>
+    <div class="events" id="events"></div>
+  </div>
+  <details class="state"><summary>State at this moment (what the variant is drawn from)</summary><div id="state"></div></details>
+  <div class="legend" id="legend"></div>
+</div>
+<div class="switch"><button id="prev" type="button" aria-label="previous variant">←</button><span class="lab" id="lab"></span><button id="next" type="button" aria-label="next variant">→</button></div>
+
+<script>
+// ---------- the scripted turn (the #474 prototype's, with the raw line today's card echoes and a long Answer) ----------
+// times in ms from the wake word. Shapes follow the real seams: voice state (listening/hearing/transcribing, partial, lastWords),
+// the `heard` IPC (final transcript), then pipeline `status` thinking/acting/loading/speaking with detail/word, `command` (the reading), `speak`, `display`, `done`.
+const LONG_READ = 'The lighthouse. The keeper climbed the stairs. The lamp was cold. He lit it before dark. The wind came up from the south and the glass shook in its frame, and below him the boats were turning for home one by one.'
+const SCENARIOS = {
+  play: { label: 'play the latest mkbhd video', steps: [
+    [0,    'listen'],
+    [600,  'hearing'],
+    [1100, 'partial', 'play'],
+    [1500, 'partial', 'play the latest'],
+    [2100, 'partial', 'play the latest mkbhd'],
+    [2500, 'partial', 'play the latest mkbhd video'],
+    [3300, 'endpoint'],
+    [4400, 'heard', 'Play the latest MKBHD video'],
+    [4400, 'thinking', 'reading the page'],
+    [6600, 'thinking', 'asking'],
+    [8200, 'reading', { word: 'Searching', object: 'YouTube for the latest MKBHD video', action: 'play · the latest MKBHD video', raw: 'play the latest MKBHD video' }],
+    [8200, 'acting'],
+    [9400, 'loading', 'youtube.com'],
+    [11800, 'speaking', 'Playing iPhone 17 Pro review by Marques Brownlee'],
+    [14600, 'done', 'done'],
+  ]},
+  read: { label: 'read', steps: [
+    [0,    'listen'],
+    [500,  'hearing'],
+    [900,  'partial', 'read'],
+    [1500, 'endpoint'],
+    [2300, 'heard', 'Read'],
+    [2300, 'thinking', 'grammar'],
+    [2400, 'reading', { word: 'Reading', object: 'the page', action: 'read', raw: 'read' }],
+    [2400, 'acting'],
+    [3100, 'speaking', LONG_READ],
+    [15000, 'done', 'done'],
+  ]},
+  fail: { label: 'turn it up', steps: [
+    [0,    'listen'],
+    [500,  'hearing'],
+    [900,  'partial', 'turn'],
+    [1300, 'partial', 'turn it up'],
+    [2000, 'endpoint'],
+    [2900, 'heard', 'Turn it up'],
+    [2900, 'thinking', 'reading the page'],
+    [3800, 'thinking', 'asking'],
+    [5200, 'reading', { word: 'Speaking', object: '', action: 'none · nothing is playing', raw: 'turn it up' }],
+    [5200, 'speaking', 'Nothing is playing. Say play and a song.', true],
+    [8200, 'done', 'failed'],
+  ]},
+  timer: { label: 'set a timer for five minutes', steps: [
+    [0,    'listen'],
+    [500,  'hearing'],
+    [1000, 'partial', 'set a timer'],
+    [1600, 'partial', 'set a timer for five'],
+    [2000, 'partial', 'set a timer for five minutes'],
+    [2700, 'endpoint'],
+    [3500, 'heard', 'Set a timer for five minutes'],
+    [3500, 'thinking', 'grammar'],
+    [3600, 'reading', { word: 'Setting', object: 'a 5 minute timer', action: 'timer 5m', raw: 'timer 5m' }],
+    [3600, 'acting'],
+    [3800, 'speaking', 'Timer set, 5 minutes'],
+    [5600, 'done', 'done'],
+  ]},
+}
+
+function stateAt(sc, t) {
+  const s = { t, ear: 'rest', partial: '', lastWords: '', earSince: 0, heard: null, heardAt: 0, stage: null, stageSince: 0, detail: '', word: '', reading: null, said: null, saidFailure: false, outcome: null, doneAt: 0, log: [] }
+  for (const step of sc.steps) {
+    const [at, kind, a, b] = step
+    if (at > t) break
+    const push = (label, text, cls) => s.log.push({ at, label, text, cls })
+    switch (kind) {
+      case 'listen': s.ear = 'listening'; s.earSince = at; push('Listening', 'say a command', 'q3'); break
+      case 'hearing': s.ear = 'hearing'; s.earSince = at; break
+      case 'partial': s.partial = a; if (s.log.at(-1)?.label === 'Listening') s.log.pop(); push('Listening', '“' + a + '…”'); break
+      case 'endpoint': s.ear = 'transcribing'; s.earSince = at; s.lastWords = s.partial; s.partial = ''; push('Transcribing', '“' + s.lastWords + '”', 'q2'); break
+      case 'heard': s.ear = 'rest'; s.heard = a; s.heardAt = at; push('Heard', '“' + a + '”'); break
+      case 'thinking': if (s.stage !== 'thinking') { s.stageSince = at } s.stage = 'thinking'; s.detail = a; push('Thinking', a, 'q2'); break
+      case 'reading': s.reading = a; push('Read as', a.action); break
+      case 'acting': s.stage = 'acting'; s.stageSince = at; s.word = s.reading.word; s.detail = s.reading.object; push(s.reading.word, s.reading.object); break
+      case 'loading': s.stage = 'loading'; s.stageSince = at; s.detail = a; push('Loading', a, 'q2'); break
+      case 'speaking': s.stage = 'speaking'; s.stageSince = at; s.said = a; s.saidFailure = !!b; s.detail = a; push('Speaking', a, b ? 'fail' : ''); break
+      case 'done': s.stage = 'done'; s.outcome = a; s.doneAt = at; push(a === 'done' ? 'Done' : 'Failed', '', a === 'done' ? 'ok' : 'fail'); break
+    }
+  }
+  return s
+}
+const secs = (since, t) => Math.max(0, Math.floor((t - since) / 1000)) + 's'
+const STAGE_WORD = { thinking: 'Thinking…', acting: 'Acting…', loading: 'Loading…', speaking: 'Speaking…' }
+const stageWord = (s) => s.stage === 'acting' ? s.word + '…' : STAGE_WORD[s.stage] ?? ''
+const EAR_WORD = { listening: 'Listening…', hearing: 'Listening…', transcribing: 'Transcribing…' }
+const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+const HOLD_MS = 15000 // the Peek Card's own rule (#470): gone 15 s after the later of done and the last spoken
+const over = (s) => s.stage === 'done' && s.t - s.doneAt > HOLD_MS
+const idle = (s) => s.ear === 'rest' && s.stage === null
+
+// geometry of the shot: toolbar 0..76; the pane x 16..1904, y 76..1060 (rounded); the collapsed edge tab at the right edge, y 490..690.
+const PANE = { x: 16, y: 76, w: 1888, h: 984 }
+const box = (x, y, w, h, extra = '') => `position:absolute;left:${x}px;top:${y}px;width:${w}px;${h ? 'height:' + h + 'px;' : ''}${extra}`
+
+// ---------- shared pieces, one geometry for every state ----------
+const STATIONS = ['Heard', 'Thinking', 'Acting', 'Loading', 'Speaking', 'Done']
+function reachedOf(s) { return s.stage === 'done' ? 6 : s.stage === 'speaking' ? 5 : s.stage === 'loading' ? 4 : s.stage === 'acting' ? 3 : s.stage === 'thinking' ? 2 : s.heard ? 1 : 0 }
+const endColour = (s) => s.stage === 'done' ? (s.outcome === 'done' ? 'var(--ok)' : 'var(--fail)') : 'var(--accent)'
+
+function rail(s) {
+  const act = reachedOf(s) - 1
+  const cells = STATIONS.map((n, i) => {
+    const on = i === act, past = i < act
+    const col = on ? endColour(s) : past ? 'var(--fg2)' : 'var(--hair2)'
+    return `<div class="cell"><span class="dot" style="background:${col};${on ? 'box-shadow:0 0 0 6px var(--accentq)' : ''}"></span><span class="m" style="color:${on ? 'var(--fg)' : past ? 'var(--fg2)' : 'var(--fg3)'};font-weight:${on ? 600 : 500}">${n}</span></div>`
+  }).join('')
+  const fill = act <= 0 ? 0 : act / 5
+  return `<div class="rail"><div class="track"></div><div class="fill" style="width:calc((100% - 100% / 6) * ${fill});background:var(--fg2)"></div><div class="cells">${cells}</div></div>`
+}
+
+// the stage word at a fixed left; the live mark (waveform or seconds) pinned right
+function stageParts(s) {
+  let word, wordCol = 'var(--accent)', mark = ''
+  if (s.ear !== 'rest') { word = EAR_WORD[s.ear]; mark = s.ear === 'transcribing' ? `<span class="sec xl">${secs(s.earSince, s.t)}</span>` : '<span class="wave live"><i></i><i></i><i></i><i></i><i></i><i></i></span>' }
+  else if (s.stage === 'done') { word = s.outcome === 'done' ? 'Done' : 'Failed'; wordCol = endColour(s); mark = `<span class="xl mono q3">${(s.doneAt / 1000).toFixed(1)}s</span>` }
+  else { word = stageWord(s); mark = `<span class="sec xl">${secs(s.stageSince, s.t)}</span>` }
+  return { word, wordCol, mark }
+}
+function stageRow(s, h = 80) {
+  const p = stageParts(s)
+  return `<div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;height:${h}px"><span class="xl ell" style="color:${p.wordCol}">${p.word}</span><span style="justify-self:end">${p.mark}</span></div>`
+}
+// the words of the moment: the partial, the last words, the heard line, the object, the host, the sentence, the Answer
+function wordsOf(s) {
+  if (s.ear !== 'rest') return { text: s.ear === 'transcribing' ? '“' + s.lastWords + '”' : s.partial ? '“' + s.partial + '…”' : (s.ear === 'hearing' ? '…' : 'say a command'), cls: s.partial || s.lastWords ? '' : 'q3' }
+  if (s.stage === 'done') return { text: s.said ?? '', cls: s.saidFailure ? 'fail' : '' }
+  return { text: s.stage === 'speaking' ? s.said : s.stage === 'thinking' ? '“' + s.heard + '”' : s.detail, cls: '' }
+}
+// n lines reserved at 40 px; a longer text is cut at the last line's end with a fade — the Feed holds the rest (a fork, see the legend)
+function wordsRow(s, lines = 2, extra = '') {
+  const w = wordsOf(s)
+  const h = lines * 48
+  return `<div class="l wrapt ${w.cls}" style="height:${h}px;line-height:48px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${lines};${extra}">${esc(w.text)}</div>`
+}
+// the history: n fixed rows, oldest first, the newest in white, older in grey; empty rows stay blank
+function history(s, n, cols = '72px 190px minmax(0, 1fr)') {
+  const items = s.log.slice(-n)
+  const rows = []
+  for (let i = 0; i < n; i++) {
+    const e = items[i]
+    if (!e) { rows.push('<div class="hrow"></div>'); continue }
+    const last = i === items.length - 1
+    const tc = e.cls === 'fail' ? 'fail' : e.cls === 'ok' ? 'ok' : last ? '' : 'q2'
+    rows.push(`<div class="hrow" style="grid-template-columns:${cols}"><span class="mono s q3" style="text-align:right">${(e.at / 1000).toFixed(1)}s</span><span class="m ell" style="color:${last ? 'var(--fg)' : 'var(--fg3)'};font-weight:${last ? 600 : 500}">${esc(e.label)}</span><span class="m ell ${tc}">${esc(e.text)}</span></div>`)
+  }
+  return `<div class="hist">${rows.join('')}</div>`
+}
+const hint = (right, bottom) => `<span class="hint" style="right:${right}px;bottom:${bottom}px">open the feed ›</span>`
+
+// ---------- T: Today ----------
+// The card as it is (PeekCard.tsx, styles.css .peek-card): 640×124 bottom-centre, from the `command` event only. Live: the raw
+// line at 24 px ellipsized, the stage's enum in 16 px mono. Answer: the mark's colour and the text at 24 px, two lines clamped.
+function variantT(s) {
+  if (over(s) || !s.reading) return ''
+  const W = 640, H = 124, X = (1920 - W) / 2, Y = PANE.y + PANE.h - 40 - H
+  let orb, body
+  if (s.stage !== 'done') {
+    orb = '<span class="orb" style="box-shadow:0 0 0 6px var(--accentq);margin-top:0"></span>'
+    body = `<p class="m ell" style="margin:0;font-weight:500;line-height:1.2">${esc(s.reading.raw)}</p><p class="mono s acc" style="margin:0">${s.stage ?? 'working'}</p>`
+  } else {
+    const failed = s.outcome !== 'done'
+    orb = `<span class="orb" style="background:${failed ? 'var(--fail)' : 'var(--ok)'};box-shadow:none"></span>`
+    body = `<p class="m ${failed ? 'fail' : ''}" style="margin:0;font-weight:500;line-height:1.3;font-style:${s.saidFailure || !failed ? 'italic' : 'normal'};display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">${esc(s.said ?? 'Done.')}</p>`
+  }
+  return `<div class="card" style="${box(X, Y, W, H, 'border-radius:20px;padding:18px 24px;display:flex;align-items:center;gap:16px')}">${orb}<div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">${body}</div><span class="s" style="color:var(--fg3);flex:none">open ›</span></div>
+  <div class="note" style="left:${X}px;top:${Y - 150}px">before the reading (listening, transcribing, thinking) there is no card: the toolbar capsule carries it, ellipsized. The live face has two lines, the answer one: the text jumps between them.</div>`
+}
+
+// ---------- A: Strip ----------
+// A band the pane's width, docked to its bottom edge. The rail across the top, the stage word and its seconds, two lines for the
+// words. No history: the Feed is one tap away. Covers the bottom 300 px of the page and nothing else.
+function variantA(s) {
+  if (over(s) || idle(s)) return ''
+  const H = 300, X = PANE.x, Y = PANE.y + PANE.h - H, W = PANE.w
+  return `<div class="card" style="${box(X, Y, W, H, 'border-width:1px 0 0 0;padding:24px 48px 24px;display:grid;grid-template-rows:auto 80px 96px;row-gap:12px')}">
+    ${rail(s)}
+    ${stageRow(s)}
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:end">${wordsRow(s, 2)}<span class="hint" style="position:static;justify-self:end">open the feed ›</span></div>
+  </div>`
+}
+
+// ---------- B: Dock ----------
+// The Turn Card (#474, E) itself, on the dashboard: bottom-centre, no scrim, the history cut to four rows. Every step of the turn
+// on the one surface; covers the middle 1240 px of the page's lower half.
+function variantB(s) {
+  if (over(s) || idle(s)) return ''
+  const W = 1240, H = 560, X = (1920 - W) / 2, Y = PANE.y + PANE.h - 24 - H
+  return `<div class="card" style="${box(X, Y, W, H, 'border-radius:24px;padding:36px 48px;display:grid;grid-template-rows:auto 80px 96px auto;row-gap:20px')}">
+    ${rail(s)}
+    ${stageRow(s)}
+    ${wordsRow(s, 2)}
+    <div style="border-top:1px solid var(--hair2);padding-top:16px;position:relative">${history(s, 4, '72px 190px minmax(0, 1fr)')}</div>
+    ${hint(48, 28)}
+  </div>`
+}
+
+// ---------- C: Column ----------
+// A column in the panel's own footprint at the right edge, the pane's full height. The rail runs down it and is the history: one
+// fixed row per station — Listening, Heard, Thinking, Acting, Loading, Speaking, Done — each with its clock and its text. Above
+// it the stage word at 65 px, the seconds on their own line, three lines for the words. The page keeps its left 1300 px; a tap
+// opens the panel in the same place.
+const C_STATIONS = ['Listening', 'Heard', 'Thinking', 'Acting', 'Loading', 'Speaking', 'Done']
+function variantC(s) {
+  if (over(s) || idle(s)) return ''
+  const W = 600, X = PANE.x + PANE.w - W, Y = PANE.y, H = PANE.h
+  const p = stageParts(s)
+  // which station is live, and what each station's row says (its newest log line)
+  const act = s.ear !== 'rest' ? 0 : reachedOf(s)
+  const textFor = (i) => {
+    const name = C_STATIONS[i]
+    const want = name === 'Listening' ? ['Listening', 'Transcribing'] : name === 'Acting' ? [s.reading?.word, 'Read as'] : [name]
+    const e = [...s.log].reverse().find((l) => want.includes(l.label))
+    return e ?? null
+  }
+  const rows = C_STATIONS.map((name, i) => {
+    const e = textFor(i)
+    // a station the turn skipped (no Loading for a timer) is never "past": it stays unlit
+    const on = i === act, past = i < act && e !== null
+    const col = on ? (name === 'Done' ? endColour(s) : 'var(--accent)') : past ? 'var(--fg2)' : 'var(--hair2)'
+    const label = name === 'Acting' && s.reading && (past || on) ? s.reading.word : name
+    const clock = e ? `<span class="mono s q3">${(e.at / 1000).toFixed(1)}s</span>` : ''
+    const text = e ? `<span class="m ell ${e.cls === 'fail' ? 'fail' : e.cls === 'ok' ? 'ok' : on ? '' : 'q2'}" style="grid-column:2/4">${esc(name === 'Done' && e.label !== 'Done' && e.label !== 'Failed' ? '' : e.text)}</span>` : ''
+    return `<div style="display:grid;grid-template-columns:34px minmax(0,1fr) 60px;grid-template-rows:30px 30px;align-items:center;column-gap:12px;height:64px;position:relative">
+      <span style="width:14px;height:14px;border-radius:50%;background:${col};${on ? 'box-shadow:0 0 0 6px var(--accentq)' : ''};justify-self:center;grid-row:1"></span>
+      <span class="m ell" style="grid-row:1;color:${on ? 'var(--fg)' : past ? 'var(--fg2)' : 'var(--fg3)'};font-weight:${on ? 600 : 500}">${esc(label)}</span>
+      <span style="grid-row:1;justify-self:end">${clock}</span>
+      <span style="grid-row:2;grid-column:1"></span>${text}
+    </div>`
+  }).join('')
+  const track = `<div style="position:absolute;left:${32 + 17 - 1}px;top:${32 + 80 + 16 + 56 + 16 + 144 + 16 + 12 + 15}px;height:${6 * 64}px;width:2px;background:var(--hair2)"></div>`
+  return `<div class="card" style="${box(X, Y, W, H, 'border-width:0 0 0 1px;padding:32px 32px 32px 32px;display:grid;grid-template-rows:80px 56px 144px auto;row-gap:16px')}">
+    ${track}
+    <span class="xl ell" style="color:${p.wordCol};align-self:baseline">${p.word}</span>
+    <div style="display:flex;align-items:center;height:56px">${p.mark.replace('class="sec xl"', 'class="sec l"').replace('class="xl mono q3"', 'class="l mono q3"')}</div>
+    ${wordsRow(s, 3)}
+    <div style="position:relative;padding-top:12px;display:flex;flex-direction:column;gap:0">${rows}</div>
+    ${hint(32, 28)}
+  </div>`
+}
+
+// ---------- D: Ledger strip ----------
+// Strip A with the history beside the words: the rail across the top, then two columns — the stage word, its seconds and two
+// lines of words on the left; five history rows on the right. All the data of B in a band 340 px tall across the pane's bottom.
+function variantD(s) {
+  if (over(s) || idle(s)) return ''
+  const H = 340, X = PANE.x, Y = PANE.y + PANE.h - H, W = PANE.w
+  return `<div class="card" style="${box(X, Y, W, H, 'border-width:1px 0 0 0;padding:24px 48px;display:grid;grid-template-rows:auto minmax(0,1fr);row-gap:16px')}">
+    ${rail(s)}
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 760px;column-gap:48px;align-items:start">
+      <div style="display:grid;grid-template-rows:80px 96px 30px;row-gap:6px">${stageRow(s)}${wordsRow(s, 2)}<span class="hint" style="position:static">open the feed ›</span></div>
+      <div style="border-left:1px solid var(--hair2);padding-left:32px;position:relative;height:212px">${history(s, 5, '60px 170px minmax(0, 1fr)')}</div>
+    </div>
+  </div>`
+}
+
+const VARIANTS = [
+  { key: 'T', name: 'Today', render: variantT, legend: '<b>T · Today.</b> The card as built: 640×124 px at the bottom, from the <code>command</code> event only, so Listening, Transcribing and Thinking are not on it (the toolbar capsule has them, cut). Live: the raw line (<code>navigate http://…</code>) at 24 px, ellipsized, and the stage enum in 16 px mono (<code>acting</code>) — three words for one stage across the capsule, the card and the Feed. No seconds, no object, no heard words, so a slow line and a stuck one look the same. The answer: a green or red dot carries the outcome alone; the heard words are gone; two lines clamped. Two lines then one: the text jumps. From 2 m the whole card is a sliver at body size.<ul><li>ui.md 1: no receipt of the words heard</li><li>ui.md 2: no stage object, no seconds</li><li>ui.md 5: 24 px and 16 px type, status not at 65 px</li><li>ui.md 8: the dot\'s colour alone says done or failed</li><li>ui.md 9: <code>acting</code> / Acting… / Opening for one state</li><li>#474\'s rule: the geometry moves between faces</li></ul>' },
+  { key: 'A', name: 'Strip', render: variantA, legend: '<b>A · Strip.</b> A band the pane\'s width, docked to its bottom edge, from the wake to 15 s after the answer. The rail across the top, the stage word at 65 px at a fixed left with the waveform or the seconds pinned right, two lines at 40 px for the words of the moment (the partial, the heard line, the action\'s object, the host, the sentence, the Answer). No history: the Feed is one tap away and the strip says so. Fixes 1, 2, 5, 8, 9 and the jump; it does not show the steps already gone. Covers the page\'s bottom 300 px, the least of the four.' },
+  { key: 'B', name: 'Dock', render: variantB, legend: '<b>B · Dock.</b> The Turn Card the owner picked for the Idle Screen (#474, E), put on the dashboard: bottom-centre, no scrim, the history cut from six rows to four. One design for both screens, every step on it. Costs the page\'s lower half in the middle 1240 px, so a video playing in the pane is covered while the turn runs and for 15 s after; a tap clears it.' },
+  { key: 'C', name: 'Column', render: variantC, legend: '<b>C · Column.</b> A column 600 px wide in the Feed Panel\'s own footprint at the right edge, the pane\'s full height. The rail runs down it and is the history: one fixed row per station (Listening, Heard, Thinking, the action\'s word, Loading, Speaking, Done), each with its clock and its own words, so nothing is drawn twice. Above it the stage word at 65 px, the seconds on their own line, three lines for the words. The page keeps its left 1300 px, and the tap opens the panel in the very place the column stood. Narrow: a long Answer runs to three lines of 40 px and is cut there.' },
+  { key: 'D', name: 'Ledger strip', render: variantD, legend: '<b>D · Ledger strip.</b> Strip A with the history beside the words: the rail across the top, then the stage word, its seconds and two lines of words on the left and five history rows on the right. All of B\'s data in a band 340 px tall across the pane\'s bottom: the page keeps its top two thirds. The history column is 760 px, so its rows ellipsize sooner than B\'s.' },
+]
+
+// ---------- player ----------
+const screen = document.getElementById('screen'), layer = document.getElementById('layer')
+const scrub = document.getElementById('scrub'), clock = document.getElementById('clock'), stateEl = document.getElementById('state'), legend = document.getElementById('legend'), lab = document.getElementById('lab'), eventsEl = document.getElementById('events')
+let vi = Math.max(0, VARIANTS.findIndex((v) => v.key === (location.hash.replace('#', '') || 'T')))
+let sc = SCENARIOS.play, t = 0, playing = false, last = 0
+function fit() { const w = screen.parentElement.clientWidth; screen.style.transform = `scale(${w / 1920})`; screen.parentElement.style.height = `${(w / 1920) * 1080}px` }
+addEventListener('resize', fit); fit()
+function draw() {
+  const s = stateAt(sc, t)
+  layer.innerHTML = VARIANTS[vi].render(s)
+  clock.textContent = (t / 1000).toFixed(1) + 's'
+  scrub.value = String(t)
+  stateEl.textContent = JSON.stringify({ ...s, log: s.log.map((e) => `${(e.at / 1000).toFixed(1)}s ${e.label}: ${e.text}`) }, null, 1)
+  lab.innerHTML = `${VARIANTS[vi].key} · ${VARIANTS[vi].name} <small>(${vi + 1}/${VARIANTS.length})</small>`
+  legend.innerHTML = VARIANTS[vi].legend
+  for (const b of eventsEl.children) b.classList.toggle('now', Number(b.dataset.at) <= t)
+  location.hash = VARIANTS[vi].key
+}
+function events() {
+  eventsEl.innerHTML = ''
+  for (const [at, kind, a] of sc.steps) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.at = String(at)
+    b.textContent = `${(at / 1000).toFixed(1)} ${kind}${typeof a === 'string' ? ' ' + a.slice(0, 14) : ''}`
+    b.addEventListener('click', () => { t = at + 50; playing = false; draw() })
+    eventsEl.appendChild(b)
+  }
+}
+function tick(now) {
+  if (playing) { t = Math.min(32000, t + (now - last) * Number(document.getElementById('speed').value)); if (t >= 32000) playing = false; draw() }
+  last = now
+  requestAnimationFrame(tick)
+}
+requestAnimationFrame((now) => { last = now; tick(now) })
+document.getElementById('play').addEventListener('click', () => { if (t >= 32000) t = 0; playing = !playing })
+document.getElementById('restart').addEventListener('click', () => { t = 0; playing = true; draw() })
+document.getElementById('scenario').addEventListener('change', (e) => { sc = SCENARIOS[e.target.value]; t = 0; playing = false; events(); draw() })
+scrub.addEventListener('input', () => { t = Number(scrub.value); playing = false; draw() })
+document.getElementById('prev').addEventListener('click', () => { vi = (vi + VARIANTS.length - 1) % VARIANTS.length; draw() })
+document.getElementById('next').addEventListener('click', () => { vi = (vi + 1) % VARIANTS.length; draw() })
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return
+  if (e.key === 'ArrowLeft') { vi = (vi + VARIANTS.length - 1) % VARIANTS.length; draw() }
+  if (e.key === 'ArrowRight') { vi = (vi + 1) % VARIANTS.length; draw() }
+  if (e.key === ' ') { e.preventDefault(); playing = !playing }
+})
+const qp = new URLSearchParams(location.search); if (qp.get('line')) { sc = SCENARIOS[qp.get('line')]; document.getElementById('scenario').value = qp.get('line') } events(); t = Number(qp.get('t') ?? 9500); draw()
+</script>
+</body>
+</html>
