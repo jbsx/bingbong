@@ -14,7 +14,17 @@ Amended by #426: the kiosk window keeps the OS frame (fullscreen hides it)
 and is opaque on the theme's ground; only the windowed window is
 frameless. On X11 under a compositor a frameless window takes a 32-bit ARGB
 visual whatever `transparent` says, so the compositor blended the whole
-kiosk screen.
+kiosk screen. `transparent: false` alone (8c71b2e0) left the kiosk at
+depth 32. Measured with `xwininfo` on a minimal Electron 43.4.0 under Xvfb:
+without a compositor every option set gives depth 24; under picom a framed
+opaque window gives 24, and a frameless one gives 32 even with
+`transparent: false`, `hasShadow: false` or `--disable-transparent-visuals`.
+On the kiosk (dcd25761) the window went from depth 32 to 24. CPU was a tie:
+under Xvfb the renderer read 1.1–1.2 % before and 1.0–1.4 % after; on the
+kiosk Xorg read 4.9 → 5.1, picom 3.3 → 3.5 and the renderer 7.6 → 8.8 % of
+one core, all within one 60 s sample's noise. The frame is kept for the
+correct visual, not for a measured saving; the owner's feel read is the
+open confirmation.
 
 ## Context
 

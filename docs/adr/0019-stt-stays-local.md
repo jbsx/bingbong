@@ -84,3 +84,11 @@ Moonshine.
   then." The 2 s p95 gate above still names the Floor, but this default
   ships without it. If the Floor turns out too slow, the candidate is
   `parakeet-tdt_ctc-110m` or a Moonshine tier.
+
+## Amendment 2026-10-26 — Parakeet loads at boot, off the main thread (#430)
+
+Parakeet's sessions were created at the first line's `finish()`, on
+Electron's main thread, so the first line after a boot took 6.8–7.8 s on the
+kiosk. They now load once boot is `ready`, on the STT engine's own thread in
+the voice process (ADR 0093): `stt-loaded` at 11.5 s on the kiosk, and the
+first line is warm.

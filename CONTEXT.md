@@ -1463,7 +1463,8 @@ refused outright rather than queued — a later Run's and a new Session's
 included — and it reports no page at all in place of the stale one. Reuse
 resumes only once the action is observed to end, so Answer availability and
 safe reuse are separate boundaries: a Run can finish while its resource stays
-withheld, and one whose action never ends stays withheld.
+withheld, and one whose action never ends stays withheld. A reader refused
+waits for `settled()`; it does not poll.
 _Avoid_: locked tab, busy browser, browser lock
 
 **Browsing Custody**:

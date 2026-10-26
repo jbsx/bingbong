@@ -203,3 +203,50 @@ Considered:
   again and undoes the saving.
 - **Parking at Task start.** This costs every Task from the Idle Screen
   up to 300 ms, or gives it a first read of a half-built page.
+
+## Amendment 2026-10-26 — a codec the GPU cannot decode is refused to every page, and the probe that decides it always settles (#425)
+
+Same grill as the amendment above. On the kiosk the HD 630 decodes VP9
+(profiles 0 and 2), H.264, HEVC and VP8 in hardware (iHD; `vainfo`) and not
+AV1, and YouTube served AV1 (`av01.0.00M.08`), so every song was decoded on
+the CPU. Electron 43 already enables `AcceleratedVideoDecodeLinuxGL`; the
+switch is now named in `src/main/index.ts` so an upgrade cannot drop it, and
+`kiosk-install.sh` installs the iHD driver and `vainfo`.
+
+**A codec family the GPU cannot decode is refused to every page in every
+frame, while the GPU decodes any other** (`src/core/browser/hardwareCodecs.ts`).
+At startup the GPU is asked once, in the pane's blank page, which families
+it decodes (`mediaCapabilities` `powerEfficient`, the browser's own fact).
+Then `MediaSource.isTypeSupported`, `canPlayType` and
+`mediaCapabilities.decodingInfo` say no to each family it does not decode,
+and the site serves one it does. The refusal runs before a page's first
+script, through a frame preload on the browse partition (the adblock
+scriptlets' pattern). The pane takes `nodeIntegrationInSubFrames` so an
+embedded player is refused too, with no Node in any frame. A machine that
+decodes nothing in hardware refuses nothing. This is by kind: every codec,
+every site, every frame. On live YouTube in the app, AV1 offered served
+`av01.0.04M.08`; AV1 refused served `vp09.00.51.08`.
+
+**The probe always settles, within a bound.** It answers
+`[codecs] decoded on the GPU: …; refused to pages: … (probe N ms)`, or
+reports `probe unsettled at <step>` with a `browser.attachCodecRefusal.probe`
+fault naming the step: `load` (5 s), `evaluate` (10 s), or `decodingInfo`
+(5 s per family, naming those that never answered). On an unsettled step
+nothing is refused, and a late answer still arms the refusal. **The 5 s is
+a guess**: the dev PC settles in about 150 ms and the kiosk in 0.9–1.7 s. A
+kiosk `unsettled` line followed by a late answer would settle it.
+
+**The settle is a boot milestone**, `codecs-answer` or `codecs-unsettled`,
+in the perf log, so `pnpm perf:report`'s `boot` line shows it however the
+journal is read (ADR 0090, amendment 2026-10-26). It reads p50 3419 ms on
+the kiosk.
+
+**The `playback` record names the codec the page asked Media Source for**:
+`addSourceBuffer`, and `changeType` when the page switches (e.g.
+`vp09.00.51.08 / opus`), else the `<source>` type's codecs, else `unknown`.
+The element itself names no codec. The watch rides the same frame preload,
+and `perf:report` tallies `codecs vp09 ×n, av01 ×n`.
+
+Kiosk, 2026-10-26: every boot since the refusal landed prints
+`refused to pages: av1`. The probe had never been silent; `journalctl -u`
+hid it.
