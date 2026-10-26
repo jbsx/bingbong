@@ -140,8 +140,11 @@ export function skyOf(code: number): WeatherSky {
 /**
  * The hue scale's stops, in °C: the temperature palette weather displays
  * share — blue below freezing, cyan and teal through the single digits,
- * green in the mid-teens, yellow at twenty, orange in the high twenties,
- * red past thirty-five. Piecewise, so a mild day's hours still differ.
+ * green in the mid-teens, yellow at twenty, amber from the mid-twenties.
+ * Piecewise, so a mild day's hours still differ. The heat stops at amber,
+ * short of the accent's peach and the failure's coral (#437): a data hue
+ * never sits in either's band, so each keeps one meaning; the number beside
+ * it says how hot.
  */
 const HUE_STOPS: readonly (readonly [number, number])[] = [
   [-10, 230],
@@ -150,9 +153,8 @@ const HUE_STOPS: readonly (readonly [number, number])[] = [
   [10, 165],
   [15, 120],
   [20, 60],
-  [25, 38],
-  [30, 18],
-  [35, 0],
+  [25, 44],
+  [35, 36],
 ]
 
 /**

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { colourFloor } from './colourFloor'
 import { decisionScript, readingOf } from './scriptedJev'
 import { startUsageStandIn, type UsageStandIn, PROVIDERS } from './usageStandIn'
 import { waitFor } from './waitFor'
@@ -204,6 +205,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
+    expect(await harness.dashboardEval<string[]>(colourFloor(true))).toEqual([])
   })
 
   it('grows to fill a window larger than the appliance’s display, edge to edge rather than framed in empty ground', async () => {
@@ -369,6 +371,8 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     const geometry = await screenGeometry()
     expect(geometry.overflowing, `${name} ${scheme}`).toEqual([])
     expect(geometry.smallestText, `${name} ${scheme}`).toBeGreaterThanOrEqual(16)
+    // The colour floor (#437), read in dark, where the shot leaves the screen.
+    expect(await harness.dashboardEval<string[]>(colourFloor(true)), `${name} ${scheme}`).toEqual([])
   }
 
   async function shoot(name: string, scheme: 'dark' | 'light' = 'dark', size = { width: 1920, height: 1080 }): Promise<void> {

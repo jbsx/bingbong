@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { headlineAnswerId, type FeedEntry } from '../../core/feed/feedProjection'
 import { describeProgress, moveOf } from '../../core/pipeline/taskProgress'
+import { REST_HINT } from '../../core/voice/voiceHint'
 import { ChromeIcon } from './ChromeIcon'
 import { FeedMarkdown } from './FeedMarkdown'
 
@@ -260,7 +261,7 @@ export function ActivityFeed({
         {headerActions ? <span className="feed-header-actions">{headerActions}</span> : null}
       </div>
       <div className="feed-list" ref={listRef} aria-live="polite">
-        {entries.length === 0 ? <p className="feed-empty">Say or type a command to begin.</p> : null}
+        {entries.length === 0 ? <p className="feed-empty">{REST_HINT}</p> : null}
         {foldRuns(entries).map((item) =>
           item.item === 'run' ? (
             <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />

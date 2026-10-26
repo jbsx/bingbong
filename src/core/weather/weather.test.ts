@@ -264,15 +264,17 @@ describe('skyOf', () => {
 })
 
 describe('temperatureHue', () => {
-  it('runs from blue in the cold through teal, green and yellow to red in the heat, the same in both units', () => {
+  it('runs from blue in the cold through teal and green to yellow and amber in the heat, the same in both units', () => {
     expect(temperatureHue(-15, 'metric')).toBe(230)
     expect(temperatureHue(-10, 'metric')).toBe(230)
     expect(temperatureHue(0, 'metric')).toBe(215)
     expect(temperatureHue(10, 'metric')).toBe(165)
     expect(temperatureHue(12.5, 'metric')).toBe(143)
     expect(temperatureHue(20, 'metric')).toBe(60)
-    expect(temperatureHue(35, 'metric')).toBe(0)
-    expect(temperatureHue(40, 'metric')).toBe(0)
+    expect(temperatureHue(35, 'metric')).toBe(36)
+    expect(temperatureHue(40, 'metric')).toBe(36)
+    // The heat stops short of the accent's peach (20°) and the failure's coral (6°), so each keeps one meaning (#437).
+    for (let celsius = -20; celsius <= 45; celsius += 0.5) expect(temperatureHue(celsius, 'metric')).toBeGreaterThan(34)
     // A mild day's hours still differ: 9°, 14° and 18° are three hues apart.
     expect(temperatureHue(9, 'metric')).toBeGreaterThan(temperatureHue(14, 'metric') + 25)
     expect(temperatureHue(14, 'metric')).toBeGreaterThan(temperatureHue(18, 'metric') + 25)

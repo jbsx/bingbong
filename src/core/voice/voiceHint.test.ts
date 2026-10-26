@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { voiceHint } from './voiceHint'
+import { REST_HINT, voiceHint } from './voiceHint'
 
 // The Status Capsule's voice hint (#331; the rule is in voiceHint.ts).
 
@@ -23,11 +23,9 @@ describe('voiceHint', () => {
     expect(voiceHint({ ...quiet, listening: true, partial: 'open you' })).toEqual({ kind: 'listening', text: '“open you…”' })
   })
 
-  it('names the wake phrase and the hotkey while only the wake word listens', () => {
-    expect(voiceHint({ ...quiet, monitoring: true })).toEqual({
-      kind: 'monitoring',
-      text: 'say “Bing Bong” or press Ctrl+Space',
-    })
+  it('says the one rest hint while only the wake word listens — the Idle Screen, the Prompt and the Feed say it too (#437)', () => {
+    expect(REST_HINT).toBe('Say “Bing Bong” or start typing')
+    expect(voiceHint({ ...quiet, monitoring: true })).toEqual({ kind: 'monitoring', text: REST_HINT })
   })
 
   it('is empty with the mic closed', () => {

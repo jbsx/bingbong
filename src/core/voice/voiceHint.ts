@@ -8,6 +8,16 @@
 
 import { wordlessLine } from './voicePrompt'
 
+/**
+ * The rest hint (#437, principle 9): one wording for the same state on every
+ * surface — the Idle Screen's voice line, the capsule, the Voice Prompt's
+ * field and the empty Feed. Ctrl+Space is named in Settings, not here.
+ */
+export const REST_HINT_SAY = 'Say'
+export const REST_HINT_WAKE = '“Bing Bong”'
+export const REST_HINT_MORE = 'or start typing'
+export const REST_HINT = `${REST_HINT_SAY} ${REST_HINT_WAKE} ${REST_HINT_MORE}`
+
 export interface VoiceHintInput {
   transcribing: boolean
   listening: boolean
@@ -30,6 +40,6 @@ export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolea
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
   }
   if (options.result != null && options.result !== '') return { kind: 'result', text: options.result }
-  if (voice.monitoring) return { kind: 'monitoring', text: 'say “Bing Bong” or press Ctrl+Space' }
+  if (voice.monitoring) return { kind: 'monitoring', text: REST_HINT }
   return null
 }

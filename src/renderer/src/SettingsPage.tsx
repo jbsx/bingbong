@@ -885,6 +885,7 @@ export function SettingsPage({
               onChange={(event) => setDraft({ ...draft, wakeWordThreshold: Number(event.target.value) })}
             />
           </Field>
+          <p className="settings-note">Ctrl+Space opens the microphone for a command without the wake word.</p>
           <Field label={`Pause cap — ${(draft.pauseCapMs / 1000).toFixed(1)} s`}>
             <input
               type="range"
@@ -1024,6 +1025,7 @@ export function SettingsPage({
             />
             <button
               type="button"
+              className="settings-button"
               onClick={() => {
                 void window.bingbong.settings
                   .pickFolder()

@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { REST_HINT } from '../src/core/voice/voiceHint'
+import { colourFloor } from './colourFloor'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
@@ -24,7 +26,10 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // round-6 shots, into BINGBONG_STATE_SHOT_DIR (default a temp folder). In
 // every state the app's own surfaces must set no text under 16 px, clip or
 // overflow none of it, and in dark stand on the pure black ground — the
-// page in the pane is not ours and is not read. It runs in every `pnpm test:e2e` — the owner's
+// page in the pane is not ours and is not read — and hold the colour floor
+// (#437, `colourFloor.ts`): 7:1 in dark, two typefaces, the accent only on
+// what is live while nothing runs, no colour in the accent's or the
+// failure's hue but those two. It runs in every `pnpm test:e2e` — the owner's
 // ruling (2026-10-20): the e2e is the source of truth, no screenshot is
 // reviewed by hand — on an X screen of its own at the appliance's size, since
 // the suite's is a desk's; `pnpm shot:states` runs it alone.
@@ -177,8 +182,8 @@ async function close(run: Run): Promise<void> {
 /** The Calendar's stand-in source (re-read on every ask): empty until a state fills it. */
 const calendarFile = (userDataDir: string): string => join(userDataDir, 'calendar.json')
 
-/** The whole screen as it shows, and what breaks the floor on each of the app's surfaces in it. */
-async function shoot(run: Run, state: string): Promise<void> {
+/** The whole screen as it shows, and what breaks the floor on each of the app's surfaces in it; `rest` while nothing runs, no Utterance is taken and no Weigh-in is live. */
+async function shoot(run: Run, state: string, rest = true): Promise<void> {
   await sleep(500)
   mkdirSync(OUT, { recursive: true })
   onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.theme}-${state}.png`)}'`)
@@ -189,12 +194,16 @@ async function shoot(run: Run, state: string): Promise<void> {
   ]
   for (const [surface, evaluate] of surfaces) {
     // A surface that cannot be read is a failure too: the guard never passes on what it did not check.
-    for (const issue of await evaluate(CHECK_SCRIPT).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
+    for (const script of [CHECK_SCRIPT, colourFloor(rest)]) {
+      for (const issue of await evaluate(script).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
+    }
   }
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
   const riding = await run.harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open .weighin-popup')`).catch(() => false)
   if (!riding && (await run.harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup')`).catch(() => false))) {
-    for (const issue of await run.harness.weighInEval<string[]>(CHECK_SCRIPT).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`weigh-in: ${issue}`)
+    for (const script of [CHECK_SCRIPT, colourFloor(rest)]) {
+      for (const issue of await run.harness.weighInEval<string[]>(script).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`weigh-in: ${issue}`)
+    }
   }
   run.issues.set(state, found)
 }
@@ -225,8 +234,12 @@ async function expectNextLine(run: Run, state: string): Promise<void> {
 async function walkTheShell(run: Run): Promise<void> {
   const { harness, fixture } = run
   await shoot(run, '06-awake')
+  // One wording for the rest state on every surface (#437, principle 9): the capsule, the empty Feed, the Prompt Bar.
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.voice-hint--monitoring')?.textContent ?? ''`), `${run.theme} 06-awake: the capsule's rest hint`).toBe(REST_HINT)
   await harness.ensurePanelOpen()
   await shoot(run, '07-feed-empty')
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.feed-empty')?.textContent ?? ''`), `${run.theme} 07-feed-empty: the Feed's rest hint`).toBe(REST_HINT)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.placeholder ?? ''`), `${run.theme} 07-feed-empty: the Prompt Bar's rest hint`).toBe(REST_HINT)
   await command(run, `navigate ${fixture.url('/story')}`)
   await shoot(run, '08-page-loaded')
   await command(run, 'read')
@@ -258,7 +271,7 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '15-docked')
   await command(run, `navigate ${fixture.url('/held-response')}`, false)
   await sleep(2500)
-  await shoot(run, '16-loading')
+  await shoot(run, '16-loading', false)
   // The wait names its stage and host in the Feed's words (#438), never the raw line.
   const waiting = await harness.dashboardEval<string>(`document.querySelector('.toolbar .status-capsule')?.textContent ?? ''`)
   expect.soft(waiting, `${run.theme} 16-loading: the capsule names the stage and host`).toMatch(/^(Opening|Loading)…127\.0\.0\.1 · \d+s/)
@@ -333,7 +346,7 @@ async function walkTheShell(run: Run): Promise<void> {
   // A Weigh-in over the pane, in its own view.
   await writeFile(join(run.userDataDir, 'scale-frames.txt'), STEPPING_ON, 'utf8')
   await waitFor(async () => ((await harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup--live')`).catch(() => false)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 50 })
-  await shoot(run, '02-weighin-live')
+  await shoot(run, '02-weighin-live', false)
   await waitFor(async () => ((await harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup--settled')`).catch(() => false)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 50 })
   await shoot(run, '03-weighin-settled')
 }
@@ -366,6 +379,7 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
   await idle()
   await shown('.idle-music-card--full.idle-music-card--playing')
   await shoot(run, '26-idle-music-playing')
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`), `${run.theme} 26-idle-music-playing: the Idle Screen's rest hint`).toBe(REST_HINT)
   await submit('pause')
   await shown('.idle-music-card--full.idle-music-card--paused')
   await shoot(run, '26-idle-music-paused')
@@ -402,7 +416,7 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
   await feed(12)
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 })
   // LISTENING held to the glance floor (#436) as soon as it shows, before any words come.
-  await shoot(run, '29-listening')
+  await shoot(run, '29-listening', false)
   await waitFor(
     async () => {
       await feed(2)
@@ -413,10 +427,10 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
     await shoot(run, 'no-term')
     throw error
   })
-  await shoot(run, '30-listening')
+  await shoot(run, '30-listening', false)
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   await sleep(900)
-  await shoot(run, '31-listening-collapsed')
+  await shoot(run, '31-listening-collapsed', false)
 }
 
 function expectClean(run: Run): void {

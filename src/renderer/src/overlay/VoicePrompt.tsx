@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { VoicePartialEvent, VoiceState } from '../../../core/voice/ipcChannels'
 import { PAUSE_CAP_MS_DEFAULT } from '../../../core/settings/settings'
+import { REST_HINT } from '../../../core/voice/voiceHint'
 import { earPhase, partialSpans, quietLine, wordlessLine } from '../../../core/voice/voicePrompt'
 import { VoiceWave } from '../AssistantPanel'
 import { useSettings } from '../useSettings'
@@ -43,7 +44,7 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
   const words = phase === 'rest' ? '' : (partial?.text ?? '')
   const live = phase === 'listening' || phase === 'hearing'
   const placeholder =
-    phase !== 'rest' ? quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT) : runActive ? 'Type a command' : earOff ? 'Microphone off — type a command' : 'Say “Bing Bong” or type a command'
+    phase !== 'rest' ? quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT) : runActive ? 'Type a command' : earOff ? 'Microphone off — type a command' : REST_HINT
 
   return (
     <div className={`voice-prompt voice-prompt--${phase}`}>

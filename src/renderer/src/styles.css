@@ -70,10 +70,10 @@
   /* Data colours: what they measure, not what state the app is in. */
   --rain: #1f6fc4;
   --codex: #6a4fd8;
-  --claude: #d4553b;
+  --claude: #5f8f1d; /* off the accent's and the failure's hue (#437) */
   --kaggle: #b07400;
   --down: #1d8f53;
-  --up: #c0640f;
+  --up: #8a6d00;
   --jaish: #12808f;
   --barun: #a84a90;
   /* Their quiet forms, for the second rank of a chart or a list. */
@@ -110,7 +110,7 @@
   --wx-snow: #2a9bd0;
   --wx-bolt: #c97a00;
   --wx-bolt-fill: rgba(201, 122, 0, 0.3);
-  --wx-sunset: #d9582e;
+  --wx-sunset: #b87600;
   --wx-sat: 72%;
   --wx-light: 42%;
   /* The AI usage card's provider tones. */
@@ -136,7 +136,8 @@
 
 /* The dark set — F1 Headline at full contrast: a pure black ground, every
    colour at its full brightness, text in three opaque steps (white, #bdbdbd,
-   #858585), hairlines and tracks opaque greys that hold on black. */
+   #959595: the quietest clears 7:1 on black, docs/agents/ui.md principle 5,
+   #437), hairlines and tracks opaque greys that hold on black. */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -144,7 +145,7 @@
     --fg: #fff;
     --fgh: #fff;
     --fg2: #bdbdbd;
-    --fg3: #858585;
+    --fg3: #959595;
     --hair: #3a3a3a;
     --hair2: #555;
     --track: #2b2b2b;
@@ -160,15 +161,15 @@
     --ok: #81ffbc;
     --fail: #ff7a6b;
     --warn: #ffc463;
-    --idle: #858585;
+    --idle: #959595;
     --fail-text: #ffd9d3;
     --scrim: rgba(0, 0, 0, 0.55);
     --rain: #84c1ff;
     --codex: #af9cff;
-    --claude: #ff8f74;
+    --claude: #b8f27c;
     --kaggle: #ffce6d;
     --down: #81ffbc;
-    --up: #ffae65;
+    --up: #ffd166;
     --jaish: #77edff;
     --barun: #ffa6e7;
     --codexq: #c9c1ff;
@@ -190,12 +191,17 @@
     --wx-snow: #64d2ff;
     --wx-bolt: #ff9f0a;
     --wx-bolt-fill: rgba(255, 159, 10, 0.3);
-    --wx-sunset: #ff7a4d;
+    --wx-sunset: #ffb340;
     --wx-sat: 100%;
     --wx-light: 71%;
     --usage-glm: #8f5bff;
     --usage-grok: #3affdc;
     --code-bg: rgba(255, 255, 255, 0.05);
+  }
+
+  /* The words heard stand on the black ground inside their outline, where the quiet action under them clears 7:1 (#437). */
+  :root .feed-bubble {
+    background: transparent;
   }
 
   /* At full contrast nothing is veiled: the bars draw at full strength, the orb without its halo. */
@@ -218,12 +224,21 @@
   box-sizing: border-box;
 }
 
-/* A control takes the app's type, never the browser's 13.3 px (#437, which owns this rule; #436 needs it for the ladder). */
+/* A control takes the app's type and colour, never the browser's 13.3 px Arial (#437, which owns this rule; #436 needs it for the ladder). */
 button,
 input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
+}
+
+/* Code is set in the app's mono, never the browser's generic one: two typefaces (principle 7, #437). */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
 }
 
 html {
@@ -560,7 +575,7 @@ body {
 }
 
 .toolbar-timer .chrome-icon {
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .toolbar-timer .toolbar-widget-text {
@@ -570,9 +585,9 @@ body {
 }
 
 .toolbar-timer--ringing {
-  border-color: var(--accent-edge);
-  background: var(--accentq);
-  color: var(--accent);
+  border-color: var(--hair2);
+  background: var(--raise2);
+  color: var(--fgh);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1100,10 +1115,11 @@ details.feed-entry {
   color: var(--fg3);
 }
 
-/* A Task's later hops (#336): one quiet line each under the words, greyed
-   where the Task was abandoned, in the failure colour where a hop met a wall. */
+/* A Task's later hops (#336): one quiet line each under the words, struck
+   through where the Task was abandoned (a fade would drop the quiet layer
+   under 7:1, #437), in the failure colour where a hop met a wall. */
 .feed-bubble .feed-action--muted {
-  opacity: 0.55;
+  text-decoration: line-through;
 }
 
 .feed-bubble .feed-action--failed {
@@ -1692,11 +1708,11 @@ details.feed-entry {
   bottom: 12px;
   width: 3px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--fgh);
 }
 
 .settings-index-link[aria-current='true'] .settings-index-number {
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .settings-scroll {
@@ -1883,7 +1899,7 @@ details[open] > .settings-summary::before {
 .settings-field input[type='range'] {
   width: 100%;
   max-width: 560px;
-  accent-color: var(--accent);
+  accent-color: var(--fgh);
 }
 
 /* Every on/off setting is a switch: a pill track and a knob that slides to
@@ -1922,13 +1938,14 @@ details[open] > .settings-summary::before {
 
 .settings-field input[type='checkbox']:checked,
 .settings-page input[type='checkbox']:checked {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--fgh);
+  background: var(--fgh);
 }
 
 .settings-field input[type='checkbox']:checked::before,
 .settings-page input[type='checkbox']:checked::before {
   translate: 20px 0;
+  background: var(--bg);
 }
 
 .settings-field input[type='checkbox']:focus-visible,
@@ -2391,7 +2408,6 @@ details[open] > .settings-summary::before {
 .idle-clock-colon {
   position: relative;
   top: -0.06em;
-  color: var(--accent);
 }
 
 /* The seconds and a 12-hour clock's "pm": small beside the minutes, on their baseline, so the figures keep the clock's size. */
@@ -2479,7 +2495,7 @@ details[open] > .settings-summary::before {
   margin: 0;
   font-weight: 500;
   letter-spacing: -0.045em;
-  color: var(--accent);
+  color: var(--fgh);
   white-space: nowrap;
 }
 
@@ -2501,7 +2517,7 @@ details[open] > .settings-summary::before {
 
 .idle-timer-kicker b {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .idle-timer-ends {
@@ -2520,7 +2536,7 @@ details[open] > .settings-summary::before {
 
 .idle-timer-arc {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--fgh);
   stroke-width: 3.5;
   stroke-linecap: round;
 }
@@ -2700,7 +2716,7 @@ button.idle-line {
   gap: 6px;
   margin: 0;
   padding: 28px 40px;
-  box-shadow: inset 6px 0 0 var(--accent);
+  box-shadow: inset 6px 0 0 var(--fg3);
   font-size: var(--type-m);
   line-height: 1.3;
 }
@@ -3039,7 +3055,7 @@ button.idle-line {
 /* Up Next: today's next entry. */
 .idle-upnext-when {
   font-family: var(--font-mono);
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .idle-upnext-title {
@@ -3116,8 +3132,8 @@ button.idle-line {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--onaccent);
+  background: var(--fgh);
+  color: var(--bg);
   font-size: var(--type-s);
   line-height: 1;
 }
@@ -3141,9 +3157,9 @@ button.idle-line {
 .usage-tone--grok { --usage-tone: var(--usage-grok); }
 .usage-tone--kaggle { --usage-tone: var(--usage-kaggle); }
 
-/* A provider the dashboard has no color for takes the accent, as it does there. */
+/* A provider the dashboard has no color for takes the quiet grey: the accent is for what is live (#437). */
 :where(.usage-ring-item, .usage-legend, .usage-line, .usage-fill, .usage-end, .usage-last) {
-  --usage-tone: var(--accent);
+  --usage-tone: var(--fg2);
 }
 
 .usage-rings {
@@ -3955,7 +3971,7 @@ button.idle-line {
   font-weight: 600;
   line-height: 0.86;
   letter-spacing: -0.035em;
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .idle-cal-words {
@@ -4020,7 +4036,7 @@ button.idle-line {
 
 .idle-cal-weekday--today {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--fgh);
 }
 
 .idle-cal-week {
@@ -4037,12 +4053,12 @@ button.idle-line {
 }
 
 .idle-cal-day--outside {
-  color: var(--hair2);
+  color: var(--fg3);
 }
 
 .idle-cal-day--today {
   font-weight: 600;
-  color: var(--onaccent);
+  color: var(--bg);
 }
 
 .idle-cal-day--today::before {
@@ -4051,7 +4067,7 @@ button.idle-line {
   inset: 4px 12px;
   z-index: -1;
   border-radius: 3px;
-  background: var(--accent);
+  background: var(--fgh);
 }
 
 .idle-cal-dot {
@@ -4070,7 +4086,7 @@ button.idle-line {
 }
 
 .idle-cal-day--today .idle-cal-dot {
-  background: var(--onaccent);
+  background: var(--bg);
 }
 
 /* The month's entries still to come, under the weeks. */
@@ -4532,7 +4548,7 @@ button.idle-line {
   justify-self: center;
   width: 24px;
   height: 24px;
-  accent-color: var(--accent);
+  accent-color: var(--fgh);
 }
 
 /* ---- the weight charts: the card's trend and the Weight page's figures ----
@@ -4842,8 +4858,8 @@ button.idle-line {
 }
 
 .weight-range--on {
-  background: var(--accent);
-  color: var(--onaccent);
+  background: var(--fgh);
+  color: var(--bg);
   font-weight: 600;
 }
 

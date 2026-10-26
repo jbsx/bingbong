@@ -9,6 +9,7 @@ import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } from '../../core/idle/timeFormat'
 import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
+import { REST_HINT_MORE, REST_HINT_SAY, REST_HINT_WAKE } from '../../core/voice/voiceHint'
 import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
@@ -198,9 +199,9 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
       ) : (
         <>
           <span className="idle-voice-hint">
-            Say <span className="idle-voice-word">“Bing Bong”</span>
+            {REST_HINT_SAY} <span className="idle-voice-word">{REST_HINT_WAKE}</span>
           </span>{' '}
-          <span className="idle-voice-more">or start typing</span>
+          <span className="idle-voice-more">{REST_HINT_MORE}</span>
         </>
       )}
       {phase !== 'off' ? (
