@@ -29,7 +29,9 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // page in the pane is not ours and is not read — and hold the colour floor
 // (#437, `colourFloor.ts`): 7:1 in dark, two typefaces, the accent only on
 // what is live while nothing runs, no colour in the accent's or the
-// failure's hue but those two. It runs in every `pnpm test:e2e` — the owner's
+// failure's hue but those two; and on the dashboard the Toolbar's controls
+// share the band's centre and the pane is flat and edge to edge (#453,
+// SHELL_SCRIPT). It runs in every `pnpm test:e2e` — the owner's
 // ruling (2026-10-20): the e2e is the source of truth, no screenshot is
 // reviewed by hand — on an X screen of its own at the appliance's size, since
 // the suite's is a desk's; `pnpm shot:states` runs it alone.
@@ -106,8 +108,8 @@ const CHECK_SCRIPT = `(() => {
     if (!el.closest('[data-display]')) sizes.add(style.fontSize + ' ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
-    // The live words and the kept result in the capsule (#331, #436), a stage's long detail beside its seconds (#428), and the words an ear's wait is on beside its seconds (#442), ellipsize by design: the clips allowed.
-    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .ear-wait-object')) issues.push('clipped across: ' + name(el))
+    // The live words and the kept result in the capsule (#331, #436), a stage's long detail beside its seconds (#428), the words an ear's wait is on beside its seconds (#442), and a long address after its host (#453), ellipsize by design: the clips allowed.
+    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .ear-wait-object, .url-display')) issues.push('clipped across: ' + name(el))
     if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
@@ -145,6 +147,45 @@ const FEED_CHECK = `(() => {
     const style = getComputedStyle(el)
     if (parseFloat(style.fontSize) < 16) issues.push('Feed text under 16 px (' + style.fontSize + '): ' + name(el))
     if (!style.fontFamily.startsWith('InterVariable')) issues.push('Feed text not in Inter (' + style.fontFamily + '): ' + name(el))
+  }
+  return issues
+})()`
+
+/**
+ * The shell's grid and frame (#453), on the dashboard while the Toolbar is up: every Toolbar control's vertical
+ * centre within 1 px of the band's, and the pane flat and edge to edge — from x=0 to the window's right edge (or
+ * the docked panel's left), down to the window's foot — with no element around it painting a border, a radius,
+ * an outline or a shadow. The band's own bottom hairline is the pane's only edge, and it is the band's.
+ */
+const SHELL_SCRIPT = `(() => {
+  const issues = []
+  const band = document.querySelector('.toolbar')
+  if (band === null) return issues
+  const middle = (box) => (box.top + box.bottom) / 2
+  const centre = middle(band.getBoundingClientRect())
+  for (const el of band.querySelectorAll('.status-capsule, .toolbar-widget, .chrome-button, .url-form')) {
+    const box = el.getBoundingClientRect()
+    if (box.width <= 1) continue
+    const off = middle(box) - centre
+    if (Math.abs(off) > 1) issues.push('off the band centre by ' + off.toFixed(1) + ' px: ' + el.className.split(' ').slice(0, 2).join('.') + ' ' + (el.getAttribute('aria-label') ?? ''))
+  }
+  const viewport = document.querySelector('.browser-viewport')
+  if (viewport === null) return issues
+  const pane = viewport.getBoundingClientRect()
+  const docked = document.querySelector('.feed-slot--docked:not(.feed-slot--collapsed):not(.feed-slot--peek):not(.feed-slot--hidden)')
+  const right = docked === null ? innerWidth : docked.getBoundingClientRect().left
+  if (Math.abs(pane.left) > 0.5) issues.push('pane not at the left edge: ' + pane.left)
+  if (Math.abs(pane.right - right) > 0.5) issues.push('pane not to the right edge (' + pane.right + ', want ' + right + ')')
+  if (Math.abs(pane.bottom - innerHeight) > 0.5) issues.push('pane not to the foot (' + pane.bottom + ', want ' + innerHeight + ')')
+  if (Math.abs(pane.top - band.getBoundingClientRect().bottom) > 0.5) issues.push('pane not under the band (' + pane.top + ')')
+  for (let el = viewport; el !== null && el !== document.body; el = el.parentElement) {
+    const style = getComputedStyle(el)
+    const painted = ['Top', 'Right', 'Bottom', 'Left'].filter((side) => parseFloat(style['border' + side + 'Width']) > 0 && style['border' + side + 'Style'] !== 'none')
+    if (painted.length > 0) issues.push('a border around the pane (' + painted.join(', ') + '): ' + (el.className || el.tagName))
+    if (parseFloat(style.borderTopLeftRadius) > 0 || parseFloat(style.borderBottomRightRadius) > 0) issues.push('a radius around the pane: ' + (el.className || el.tagName))
+    if (style.boxShadow !== 'none') issues.push('a shadow around the pane: ' + (el.className || el.tagName))
+    if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) issues.push('an outline around the pane: ' + (el.className || el.tagName))
+    if (el !== viewport && el.matches('.dashboard-browsing, .browser-pane') && ['Top', 'Right', 'Bottom', 'Left'].some((side) => parseFloat(style['padding' + side]) > 0)) issues.push('an inset around the pane: ' + el.className)
   }
   return issues
 })()`
@@ -256,6 +297,7 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
   }
   for (const [surface, evaluate] of surfaces) await read(surface, evaluate)
   for (const issue of await run.harness.overlayEval<string[]>(FEED_CHECK).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`panel: ${issue}`)
+  for (const issue of await run.harness.dashboardEval<string[]>(SHELL_SCRIPT).catch((error: unknown) => [`shell not read: ${String(error)}`])) found.push(`dashboard: ${issue}`)
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
   const riding = await run.harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open .weighin-popup')`).catch(() => false)
   if (!riding && (await run.harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup')`).catch(() => false))) {
