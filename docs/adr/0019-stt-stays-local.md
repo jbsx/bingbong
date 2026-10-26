@@ -92,3 +92,41 @@ Electron's main thread, so the first line after a boot took 6.8–7.8 s on the
 kiosk. They now load once boot is `ready`, on the STT engine's own thread in
 the voice process (ADR 0093): `stt-loaded` at 11.5 s on the kiosk, and the
 first line is warm.
+
+## Amendment 2026-10-26 — A cloud ear is tried for seven days, Parakeet one setting away (#463)
+
+The ear was still the largest open stage in the ledger (17 `stt` lines on
+2026-10-26, the names on `play` and `search`), and Parakeet is the ceiling
+for a local model on the kiosk's i3. The owner ruled a bounded trial of a
+cloud ear, under terms that keep this ADR's reasons intact rather than
+overturn them:
+
+- **Measured offline before any living-room audio leaves.** ElevenLabs
+  Scribe v2 Realtime is scored on the kept utterance dumps against
+  Parakeet, same bias terms. It goes live only if it gets strictly more of
+  the ledger's meant names right and its word error rate on the labelled
+  clips is not worse. Below that bar the trial does not run.
+- **Seven days live, then keep or roll back on the numbers.** The measure
+  is the ledger's new `stt` lines over the trial against the seven days
+  before, and the `stt` span against Parakeet's. The owner may end it
+  sooner either way.
+- **Audio leaves only after the wake word, only the VAD's segment.**
+  Nothing streams at rest. The Creator plan keeps clips and transcripts in
+  the vendor's history; zero retention is enterprise-only. The adapter
+  deletes each transcript after reading it where the API allows, and #463
+  records what stays.
+- **Parakeet stays loaded and is the fallback on the same line.** A cloud
+  fault or no committed transcript within 1.5 s of the Endpoint sends the
+  utterance's audio to Parakeet. This is the fallback code keeps, not a
+  hybrid: no line is routed by a judgement about which ear should hear it,
+  and no router is built.
+- **Rollback is `sttEngine` back to `parakeet`.** No model, file or
+  setting is removed by the trial.
+- **The zero-operating-cost reason stands.** The Creator plan the owner
+  already holds includes 56 hours a month of realtime transcription; an
+  hour of post-wake audio is under 3 % of it, so the trial adds no bill. A
+  paid-per-utterance ear would still be refused.
+
+If the trial is kept, this ADR is superseded by one that names the cloud
+ear the default and the terms it keeps. If it is rolled back, this
+amendment records the number it lost on.
