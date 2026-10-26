@@ -134,18 +134,30 @@ interface TargetInfo {
   readonly url: string
 }
 
+/** How long one CDP call may take: a page wedged under a dialog answers none, and a run read off it must not wait forever (#467). */
+const CDP_BOUND_MS = 15_000
+
+/** The promise, or a rejection naming what took too long. */
+function bounded<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took over ${Math.round(ms / 1000)} s`)), ms)
+  })
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
+}
+
 async function evaluateIn<T>(cdp: CdpClient, targetId: string, expression: string): Promise<T | undefined> {
-  const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true })
+  const { sessionId } = await bounded(cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true }), CDP_BOUND_MS, 'attaching to the page')
   try {
-    const response = await cdp.send<{ result?: { value?: T } }>('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId)
+    const response = await bounded(cdp.send<{ result?: { value?: T } }>('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId), CDP_BOUND_MS, 'reading the page')
     return response.result?.value
   } finally {
-    await cdp.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+    await bounded(cdp.send('Target.detachFromTarget', { sessionId }), CDP_BOUND_MS, 'detaching').catch(() => {})
   }
 }
 
 async function targets(cdp: CdpClient): Promise<TargetInfo[]> {
-  return (await cdp.send<{ targetInfos: TargetInfo[] }>('Target.getTargets')).targetInfos
+  return (await bounded(cdp.send<{ targetInfos: TargetInfo[] }>('Target.getTargets'), CDP_BOUND_MS, 'listing the targets')).targetInfos
 }
 
 /** The app boots to the Idle Screen: a keydown wakes the dashboard, as any real input does (the e2e harness's way). */
@@ -255,6 +267,9 @@ function heard(output: string): { said: string[]; asked: string[] } {
   return { said, asked }
 }
 
+/** The app of the case running now, so a run past its bound can be killed. */
+let liveApp: LaunchedApp | null = null
+
 async function runCase(goal: GoalCase, plannerModel: string | undefined): Promise<{ run: GoalRun; records: unknown[]; limited: number }> {
   const boundS = errandArm ? ERRAND_RUN_BOUND_S : GOAL_RUN_BOUND_S
   const profile = mkdtempSync(join(tmpdir(), 'bingbong-goal-gate-'))
@@ -287,6 +302,7 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
       ...(thinking !== undefined ? { BINGBONG_PLANNER_THINKING: thinking } : {}),
     },
   })
+  liveApp = app
   try {
     await wakeDashboard(app.cdp)
     if (!(await waitForPrompts(app, 1, SETUP_BOUND_MS))) throw new Error('the CLI harness never prompted')
@@ -325,9 +341,26 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
     }
     return { run, records: task.records, limited: task.limited }
   } finally {
+    liveApp = null
     await app.quit().catch(() => {})
     // The app may still be letting go of its profile as it exits.
     rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+  }
+}
+
+/**
+ * One case run, given its bound and the setup's and the reading's on top:
+ * past them it is a run that failed, never a gate that hangs (#467: one
+ * run wedged an arm for two hours).
+ */
+async function runBounded(goal: GoalCase, plannerModel: string | undefined): ReturnType<typeof runCase> {
+  const boundS = errandArm ? ERRAND_RUN_BOUND_S : GOAL_RUN_BOUND_S
+  try {
+    return await bounded(runCase(goal, plannerModel), boundS * 1000 + 3 * SETUP_BOUND_MS, 'the run')
+  } catch (error) {
+    // The wedged run's app goes with it: no process outlives its case.
+    await liveApp?.quit({ signal: 'SIGKILL' }).catch(() => {})
+    throw error
   }
 }
 
@@ -404,14 +437,14 @@ for (const model of rejudge !== undefined ? [] : models.length === 0 ? [undefine
     for (let n = 1; n <= repeat; n++) {
       let score: GoalRunScore
       try {
-        let ran = await runCase(goal, model)
+        let ran = await runBounded(goal, model)
         // A run that met a 429 measured the host, not the arm: it is run again, twice at most.
         for (let tries = 0; ran.limited > 0 && tries < RATE_LIMIT_RETRIES; tries += 1) {
           limited += ran.limited
           rerun += 1
           console.error(`${goal.id} ${n}/${repeat}: ${ran.limited} × 429, run again`)
           await sleep(10_000 * (tries + 1))
-          ran = await runCase(goal, model)
+          ran = await runBounded(goal, model)
         }
         limited += ran.limited
         const { run, records } = ran
