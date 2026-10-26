@@ -1,6 +1,6 @@
 # Input-to-output chart — 2026-10-26, base `02389cbc` + the Errand (#467)
 
-- **Source:** base `02389cbc` + accompanying implementation changes (#467) on branch `worktree-impl-467` (its first commit `bb43d772` and the uncommitted follow-up), in `src/main/run/errand.ts`, `src/main/run/commandRunner.ts`, `src/core/errand/errandLine.ts`, `confirmClass.ts`, `errandClock.ts`, `errandMemory.ts`, `plannerCommand.ts`, `src/main/index.ts` and `src/main/cli/runCliHarness.ts`. The containing commit records the exact snapshot.
+- **Source:** base `02389cbc` + accompanying implementation changes (#467) on branch `worktree-impl-467` (its first commit `1e244113` after the rebase onto `4f081a9e`, and the review commits that followed), in `src/main/run/errand.ts`, `src/main/run/commandRunner.ts`, `src/core/errand/errandLine.ts`, `confirmClass.ts`, `errandClock.ts`, `errandMemory.ts`, `plannerCommand.ts`, `src/main/index.ts` and `src/main/cli/runCliHarness.ts`. The containing commit records the exact snapshot.
 - **Previous chart:** base `a1a470bb` + the Capture Op (#466), 26 October 2026: [`../2026-10-26-a1a470bb-capture/chart.html`](../2026-10-26-a1a470bb-capture/chart.html).
 
 ## Behavioral changes since `a1a470bb` + #466
