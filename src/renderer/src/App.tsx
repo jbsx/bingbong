@@ -49,6 +49,9 @@ export function App() {
   // Whether the Idle Screen is up, as of the last render: once up it is
   // sticky, and only input or a Command that acts on the pane wakes it.
   const idleUp = useRef(false)
+  // The Idle Screen asked for (#458): the shortcut, or a line's app op, which fires mid-turn. It comes up at once, over the
+  // turn still running, and from the asking on counts as up, so the rest of that turn — its Answer, its status — leaves it up.
+  const idleAsked = useRef(false)
   // A key typed on the Idle Screen opens its Prompt with it, as main's does (#361).
   const typeIntoPrompt = useCallback((text: string) => setPromptDraft((draft) => (draft ?? '') + text), [])
   const idle = useIdle({
@@ -104,7 +107,14 @@ export function App() {
     setView('dashboard')
     idleNow()
   }, [idleNow])
-  useEffect(() => window.bingbong.idle.onEnter(() => setView('dashboard')), [])
+  useEffect(
+    () =>
+      window.bingbong.idle.onEnter(() => {
+        idleAsked.current = true
+        setView('dashboard')
+      }),
+    [],
+  )
   // A Command that asks for a view shows it (#420, ADR 0091), Settings at its section; main is told the view showing, whoever moved it.
   useEffect(
     () =>
@@ -117,13 +127,13 @@ export function App() {
   useEffect(() => window.bingbong.view.reportShown(view === 'settings' && section !== null ? { view, section: section.id } : { view }), [view, section])
   useEffect(() => {
     const unsubEvent = window.bingbong.assistant.onEvent((event) => {
-      if (!idleUp.current || wakesIdleScreen(event)) ping()
+      if (!(idleUp.current || idleAsked.current) || wakesIdleScreen(event)) ping()
     })
     const unsubVoice = window.bingbong.voice.onState((state) => {
-      if (state.listening && !idleUp.current) ping()
+      if (state.listening && !(idleUp.current || idleAsked.current)) ping()
     })
     const unsubHeard = window.bingbong.voice.onHeard(() => {
-      if (!idleUp.current) ping()
+      if (!(idleUp.current || idleAsked.current)) ping()
     })
     return () => {
       unsubEvent()
@@ -143,7 +153,8 @@ export function App() {
   // up, the Idle Screen stays up through them until something wakes it.
   // A cold ear is no activity: the Idle Screen comes up over it and says so (#442).
   const quiet = (status === 'idle' || status === 'starting' || status === 'earFailed') && !voice.listening && !voice.transcribing
-  const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current)
+  if (!idle.idle) idleAsked.current = false
+  const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current || idleAsked.current)
   idleUp.current = showIdle
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
   // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.

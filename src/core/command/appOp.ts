@@ -18,11 +18,15 @@ import { firstNumber } from '../timer/duration'
 /** The app's full-window views (App.tsx): the browsing dashboard, the Weight page, Settings. */
 export type AppView = 'dashboard' | 'weight' | 'settings'
 
-/** What the app holds when a line is read: its panel, the view showing (and the Settings section shown), its settings and the voices installed. */
+/** A view an op shows: one of the app's views, or the Idle Screen over them (#458), which the idle timeout and its shortcut bring up. */
+export type ShownView = AppView | 'idle'
+
+/** What the app holds when a line is read: its panel, the view showing (and the Settings section shown), whether the Idle Screen is up over it, its settings and the voices installed. */
 export interface AppState {
   readonly panel: FeedPanelState
   readonly view: AppView
   readonly section?: string
+  readonly idle: boolean
   readonly settings: AppSettings
   readonly voices: readonly string[]
 }
@@ -35,7 +39,7 @@ export type AppOp =
   | { readonly kind: 'panel'; readonly op: 'open' | 'close' | FeedPanelMode }
   /** The panel's width, by the Amount Choice. */
   | { readonly kind: 'panelWidth' }
-  | { readonly kind: 'view'; readonly view: AppView; readonly section?: string }
+  | { readonly kind: 'view'; readonly view: ShownView; readonly section?: string }
   /** A setting set to one value: a switch's, a choice's, a voice. */
   | { readonly kind: 'set'; readonly path: SettingPath; readonly value: string | number | boolean }
   /** One member of a set setting shown or not: an Idle Screen card. */
@@ -113,7 +117,7 @@ function kindAt(path: SettingPath, settings: AppSettings, kinds: SettingKinds<Ap
   return leavesIn(settings, kinds).find((leaf) => leaf.path.join('.') === key)?.kind ?? null
 }
 
-const VIEW_NAMES: Readonly<Record<AppView, string>> = { dashboard: 'the browser', weight: 'the Weight page', settings: 'the Settings page' }
+const VIEW_NAMES: Readonly<Record<ShownView, string>> = { dashboard: 'the browser', weight: 'the Weight page', settings: 'the Settings page', idle: 'the Idle Screen' }
 
 const sectionTitle = (id: string | undefined): string | undefined => SETTINGS_SECTIONS.find((section) => section.id === id)?.title
 
@@ -202,10 +206,26 @@ function panelOptions(panel: FeedPanelState): AppOption[] {
   ]
 }
 
-/** The views' options: the browser, the Weight page, and Settings — at the top and at each of its sections. */
+/**
+ * The Idle Screen's line (#458), worded and placed as measured (gate
+ * 2026-10-26, Mammoth ∩ Elephant, the 23 cards carrying the app's lines and
+ * six real lines): before `show_dashboard`, the three "go to Idle Screen"
+ * lines passed, none lost and one won; after it, or at the app block's end,
+ * Elephant lost a view or setting case, and every wording naming "home"
+ * lost one too. "Go back to home page." reads `back` (or, with no `back`,
+ * `navigate`) under every wording.
+ */
+const IDLE_LINE = 'app: bring the Idle Screen back over the browser, music playing on'
+
+/**
+ * The views' options: the browser, the Weight page, and Settings — at the
+ * top and at each of its sections — and the Idle Screen (#458) whenever it
+ * is not up, over any of them.
+ */
 function viewOptions(state: AppState): AppOption[] {
   const now = shownNow(state)
   return [
+    ...(state.idle ? [] : [{ label: 'show_idle', line: `${IDLE_LINE} — ${now}`, op: { kind: 'view', view: 'idle' } } satisfies AppOption]),
     { label: 'show_dashboard', line: `app: show the browser, leaving Settings or the Weight page — ${now}`, op: { kind: 'view', view: 'dashboard' } },
     { label: 'show_weight', line: `app: show the Weight page, the weigh-ins — ${now}`, op: { kind: 'view', view: 'weight' } },
     { label: 'show_settings', line: `app: show the Settings page — ${now}`, op: { kind: 'view', view: 'settings' } },
@@ -264,13 +284,16 @@ export function appOpOf(label: string, state: AppState, kinds: SettingKinds<AppS
   return appOptions(state, kinds).find((option) => option.label === label)?.op ?? null
 }
 
+/** Whether an op's Answer is spoken: not the Idle Screen's (#458), which is its own receipt. */
+export const appOpSpeaks = (op: AppOp): boolean => !(op.kind === 'view' && op.view === 'idle')
+
 /** Whether an op moves by the Amount Choice. */
 export const takesAmount = (op: AppOp): boolean => op.kind === 'amount' || op.kind === 'panelWidth'
 
 /** What an op changes, worked out against the app as it is: the panel, the view, or the settings to save; a place to look up; null when the words carry no value for it. */
 export type AppChange =
   | { readonly kind: 'panel'; readonly open?: boolean; readonly mode?: FeedPanelMode; readonly width?: number }
-  | { readonly kind: 'view'; readonly view: AppView; readonly section?: string }
+  | { readonly kind: 'view'; readonly view: ShownView; readonly section?: string }
   | { readonly kind: 'settings'; readonly settings: AppSettings }
   | { readonly kind: 'place'; readonly path: SettingPath; readonly words: string }
   /** A folder to look up (#424) among the home folder's own. */
@@ -452,5 +475,5 @@ export function describeAppOp(action: AppOpAction): string {
  * as readily, and its view is reached by its words in full.
  */
 export function appWords(): ReadonlySet<string> {
-  return new Set(['settings', 'weight', 'dashboard', 'panel', 'feed'])
+  return new Set(['settings', 'weight', 'dashboard', 'idle', 'panel', 'feed'])
 }

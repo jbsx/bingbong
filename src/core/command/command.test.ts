@@ -90,4 +90,9 @@ describe('commandKeepsIdle on a blank pane (#361)', () => {
     expect(commandKeepsIdle(command('scroll_down'), true)).toBe(false)
     expect(commandKeepsIdle(command('timer'), true)).toBe(true)
   })
+
+  it('keeps it for the app op that brings the Idle Screen back (#458), and wakes for every other view', () => {
+    expect(commandKeepsIdle({ verb: 'app', target: null, slot: null, app: { kind: 'view', view: 'idle' } }, true)).toBe(true)
+    expect(commandKeepsIdle({ verb: 'app', target: null, slot: null, app: { kind: 'view', view: 'dashboard' } }, true)).toBe(false)
+  })
 })

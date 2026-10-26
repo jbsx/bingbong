@@ -259,14 +259,19 @@ export function verbOpensPage(verb: CommandVerb): boolean {
 /**
  * Whether this Command leaves the Idle Screen up: its verb does, unless it
  * is "show the video", which wakes the dashboard on the watch page (#344),
- * or an app op on the panel or a view (#420), which shows on the dashboard.
+ * or an app op on the panel or a view (#420), which shows on the dashboard;
+ * the Idle Screen's own op (#458) brings it up, so keeps it.
  * On a blank pane every Command does but one that opens a page (#361): the
  * blank pane is never worth the screen, so a `scroll down` there answers
  * over the Idle Screen.
  */
 export function commandKeepsIdle(command: Command, paneHasPage = true): boolean {
   if (!paneHasPage && !verbOpensPage(command.verb)) return true
-  if (command.verb === 'app') return command.app?.kind !== 'panel' && command.app?.kind !== 'panelWidth' && command.app?.kind !== 'view'
+  if (command.verb === 'app') {
+    const op = command.app
+    if (op?.kind === 'view') return op.view === 'idle'
+    return op?.kind !== 'panel' && op?.kind !== 'panelWidth'
+  }
   return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
 

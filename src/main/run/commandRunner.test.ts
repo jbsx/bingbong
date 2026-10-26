@@ -354,14 +354,14 @@ describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf 
 describe('the app itself on the card (#420, ADR 0091)', () => {
   /** An app whose changes land at once: the panel's and the settings' as asked, the view as shown. */
   function fakeApp(start: Partial<AppState> = {}) {
-    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', settings: defaultSettings(), voices: [], ...start }
+    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', idle: false, settings: defaultSettings(), voices: [], ...start }
     const changes: AppChange[] = []
     const app: AppControl = {
       state: () => state,
       apply: async (change) => {
         changes.push(change)
         if (change.kind === 'panel') state = { ...state, panel: { ...state.panel, ...(change.open !== undefined ? { open: change.open } : {}), ...(change.mode !== undefined ? { mode: change.mode } : {}), ...(change.width !== undefined ? { width: change.width } : {}) } }
-        if (change.kind === 'view') state = { ...state, view: change.view, ...(change.section !== undefined ? { section: change.section } : {}) }
+        if (change.kind === 'view') state = change.view === 'idle' ? { ...state, idle: true } : { ...state, view: change.view, ...(change.section !== undefined ? { section: change.section } : {}) }
         if (change.kind === 'settings') state = { ...state, settings: change.settings }
         return state
       },
@@ -402,6 +402,29 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
     expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Ad blocking turned off.'])
     expect(speech.spoken.map((line) => line.text)).toEqual(['Ad blocking turned off.'])
     expect(browser.navigations).toEqual([])
+  })
+
+  it('"go to Idle Screen" over the shown video brings the Idle Screen back in one hop (#458): the page and music untouched, nothing said', async () => {
+    const speech = new FakeSpeech()
+    const { app, changes } = fakeApp()
+    const { browser, decision, events, runner } = harness({ app, speech })
+    decision.script.push({ answers: { action: choice('show_idle'), slot: choice('none') } })
+    await runner.run('Go to Idle Screen', { source: 'spoken' })
+    expect(cardOf(decision.requests[0]!).options.show_idle).toContain('Idle Screen')
+    expect(changes).toEqual([{ kind: 'view', view: 'idle' }])
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ keepsIdle: true })
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Showing the Idle Screen.'])
+    expect(speech.spoken).toEqual([])
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+  })
+
+  it('offers no road to the Idle Screen while it is up (#458)', async () => {
+    const { app } = fakeApp({ idle: true })
+    const { decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('go to the idle screen', { source: 'typed' })
+    expect(cardOf(decision.requests[0]!).options).not.toHaveProperty('show_idle')
   })
 
   it('asks the Amount beside an app amount, and makes the panel wider by the rung read', async () => {

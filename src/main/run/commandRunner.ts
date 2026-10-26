@@ -84,7 +84,7 @@ import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
-import { appAnswer, appChangeOf, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
+import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
 import { SITE_ANSWERS, alertLine, exactSiteAnswer, readSiteAnswer, siteQuestionAsk, siteQuestionLine, type SiteAnswer, type SiteQuestion } from '../../core/command/siteQuestion'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
@@ -1361,9 +1361,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
         react('display', shownAt)
       } else if (command.verb === 'say' || command.verb === 'app') {
-        // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice.
+        // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice — but the Idle Screen's (#458), its own receipt.
         answer(turnId, result)
-        if (deps.speech !== undefined) void say(deps.speech, turnId, result)
+        if (deps.speech !== undefined && (command.app === undefined || appOpSpeaks(command.app))) void say(deps.speech, turnId, result)
       } else if (uploaded !== null) {
         // An upload's Answer (#424): the file set, said; or that none was, a failure naming why. Nothing is sent.
         if (uploaded.file === null) {

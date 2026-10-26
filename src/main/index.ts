@@ -579,7 +579,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // what the Command's turn published.
   const commandListeners = new Set<(event: PipelineEvent) => void>()
   // The app itself on the card (#420, ADR 0091): its panel, views and settings.
-  const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
+  const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, idle: { up: () => idleShown.up, enter: enterIdle }, voicesDir: () => piperConfig.voicesDir })
   onWindowClosed(win, appControl.detach)
   // Each Status Capsule stage timed (#442): the p95s that date its "still …" bound.
   const stageSpans = createStageSpans((stage, durMs, detail) => perfTracer.span(APP_TURN_ID, stage, durMs, detail))

@@ -13,12 +13,15 @@ import type { SettingsStore } from '../settings/settingsStore'
 
 // The app's own surfaces as the runner reaches them (#420, ADR 0091): the
 // Feed panel's fold, the settings store, and the dashboard's view, which is
-// its React state — sent there, and told back over APP_VIEW_IPC. The ops
-// themselves are core's; this file only reaches the three.
+// its React state — sent there, and told back over APP_VIEW_IPC — and the
+// Idle Screen over it (#458), brought up by the road its shortcut takes. The
+// ops themselves are core's; this file only reaches them.
 
 export interface AppControlDeps {
   readonly panel: Pick<FeedPanelOverlay, 'state' | 'setOpen' | 'setMode' | 'setWidth'>
   readonly settings: SettingsStore
+  /** The Idle Screen (#458): whether it is up, as the dashboard last said, and the road the idle shortcut takes into it. */
+  readonly idle: { up(): boolean; enter(): void }
   /** Where the Piper voices are installed: the card offers each. */
   readonly voicesDir: () => string
 }
@@ -49,7 +52,7 @@ export function attachAppControl(win: BrowserWindow, deps: AppControlDeps): { co
 
   const panelNow = (): FeedPanelState => deps.panel.state()
   const control: AppControl = {
-    state: () => ({ panel: panelNow(), ...shown, settings: deps.settings.get(), voices: installedVoices(deps.voicesDir()) }),
+    state: () => ({ panel: panelNow(), ...shown, idle: deps.idle.up(), settings: deps.settings.get(), voices: installedVoices(deps.voicesDir()) }),
     async apply(change) {
       switch (change.kind) {
         case 'panel':
@@ -58,6 +61,11 @@ export function attachAppControl(win: BrowserWindow, deps: AppControlDeps): { co
           if (change.width !== undefined) deps.panel.setWidth(change.width)
           break
         case 'view':
+          // The Idle Screen comes up as the shortcut brings it (#458): the pane, the Player and the Last Page kept as the idle timeout keeps them.
+          if (change.view === 'idle') {
+            deps.idle.enter()
+            break
+          }
           shown = { view: change.view, ...(change.section !== undefined ? { section: change.section } : {}) }
           if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(APP_VIEW_IPC.show, shown)
           break

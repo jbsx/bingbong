@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { defaultSettings, type AppSettings } from '../settings/settings'
 import { SETTING_KINDS, type SettingKinds } from '../settings/settingKinds'
-import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOptions, settingOptions, timeOfDayIn, type AppOpAction, type AppState } from './appOp'
+import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOpSpeaks, appOptions, settingOptions, timeOfDayIn, type AppOpAction, type AppState } from './appOp'
 
 function stateWith(settings: Partial<AppSettings> = {}, rest: Partial<AppState> = {}): AppState {
   return {
     panel: { mode: 'overlay', open: false, width: 536 },
     view: 'dashboard',
+    idle: false,
     settings: { ...defaultSettings(), ...settings },
     voices: ['en_GB-alba-medium', 'en_US-amy-low'],
     ...rest,
@@ -75,6 +76,15 @@ describe('appOptions: the app on the card (#420, ADR 0091)', () => {
     expect(offered.show_weight).toBeDefined()
     expect(offered.show_dashboard).toBeDefined()
   })
+
+  it('offers the Idle Screen back (#458) over every view whenever it is not up, never while it is', () => {
+    for (const view of ['dashboard', 'weight', 'settings'] as const) {
+      const card = appCardOptions(stateWith({}, { view }))
+      expect(card.find((option) => option.label === 'show_idle')?.line).toMatch(/^app: .*Idle Screen.* — now showing /)
+    }
+    expect(appCardOptions(stateWith({}, { idle: true })).map((option) => option.label)).not.toContain('show_idle')
+    expect(appOpOf('show_idle', stateWith({}, { idle: true }))).toBeNull()
+  })
 })
 
 describe('an app op fired (#420)', () => {
@@ -136,6 +146,15 @@ describe('an app op fired (#420)', () => {
     const { action, change } = fire('show_settings_weather', state)
     expect(change).toEqual({ kind: 'view', view: 'settings', section: 'weather' })
     expect(appAnswer(action, state, state)).toBe('Showing the Settings page, at Weather.')
+  })
+
+  it('brings the Idle Screen back (#458): the view is the Idle Screen, its Answer shown and never spoken', () => {
+    const state = stateWith({}, { view: 'settings' })
+    const { action, change } = fire('show_idle', state)
+    expect(change).toEqual({ kind: 'view', view: 'idle' })
+    expect(appAnswer(action, state, { ...state, idle: true })).toBe('Showing the Idle Screen.')
+    expect(appOpSpeaks(action)).toBe(false)
+    expect(appOpSpeaks(fire('show_dashboard', state).action)).toBe(true)
   })
 
   it('hands a spoken city to the geocoder, and reads a spoken time of day', () => {

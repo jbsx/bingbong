@@ -128,6 +128,7 @@
           "panel_overlay": "app: float the activity panel over the page — now open, overlay, 536 px wide",
           "panel_docked": "app: dock the activity panel beside the page, in its own room — now open, overlay, 536 px wide",
           "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now open, overlay, 536 px wide",
+          "show_idle": "app: bring the Idle Screen back over the browser, music playing on — now showing the browser",
           "show_dashboard": "app: show the browser, leaving Settings or the Weight page — now showing the browser",
           "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
           "show_settings": "app: show the Settings page — now showing the browser",
