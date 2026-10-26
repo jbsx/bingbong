@@ -430,7 +430,9 @@ async function main(): Promise<void> {
     const overlayTarget = [...sessions.values()].find((s) => s.sessionId === overlaySid)
     await cdp.send('Target.activateTarget', { targetId: overlayTarget?.targetId ?? '' })
     await sleep(1000)
-    let runOpen = false
+    // A line with no run details on show (no orchestrator on this branch; Details off by default since #454) has no summary to open: the shot goes on without (#455).
+    const hasSummary = await evaluate<boolean>(cdp, overlaySid, `(() => { const el = document.querySelector('.feed-run-summary'); return !!el && el.getBoundingClientRect().width > 0 })()`)
+    let runOpen = !hasSummary
     for (let attempt = 0; attempt < 5 && !runOpen; attempt++) {
       await evaluate(cdp, overlaySid, `document.querySelector('.feed-list').scrollTop = 0`)
       await sleep(300)
