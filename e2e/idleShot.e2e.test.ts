@@ -251,6 +251,9 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await reenterIdle()
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer') && !!document.querySelector('.idle-upnext') && !!document.querySelector('.idle-music-card--small')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
     expect(await text('.idle-timer-sub')).toMatch(/^Timer 25 minutes· ends \d\d:\d\d$/)
+    // Running, the Timer is quiet (#446).
+    expect(await accentOf('.idle-timer-left', 'color')).toBe(false)
+    expect(await accentOf('.idle-timer-arc', 'stroke')).toBe(false)
     expect((await screenGeometry()).homes).toMatchObject({ music: 'middle small', usage: 'middle full' })
     for (const scheme of ['dark', 'light'] as const) await held(`idle-${count}-music-timer`, scheme)
     await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
@@ -262,6 +265,9 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await reenterIdle()
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer--ringing')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     expect(await text('.idle-timer--ringing .idle-timer-left')).toBe('Time’s up')
+    // A ringing Timer is live (#446): its words and its ring take the accent; held() checks nothing else does.
+    expect(await accentOf('.idle-timer--ringing .idle-timer-left', 'color')).toBe(true)
+    expect(await accentOf('.idle-timer--ringing .idle-timer-arc', 'stroke')).toBe(true)
     await held('timer-ringing')
     await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
@@ -343,6 +349,19 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await waitFor(async () => ((await text('.idle-home[data-card="weight"]')) === 'Step on the scale' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
     await held('no-weighins')
   })
+
+  /** Whether the element's `property` is the accent's colour. */
+  async function accentOf(selector: string, property: 'color' | 'stroke'): Promise<boolean> {
+    return harness.dashboardEval<boolean>(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      const probe = document.createElement('i')
+      probe.style.color = 'var(--accent)'
+      document.body.append(probe)
+      const accent = getComputedStyle(probe).color
+      probe.remove()
+      return el !== null && getComputedStyle(el)[${JSON.stringify(property)}] === accent
+    })()`)
+  }
 
   async function text(selector: string): Promise<string> {
     return harness.dashboardEval<string>(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`)

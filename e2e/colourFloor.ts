@@ -7,8 +7,8 @@
 // - Every element with its own text is set in Inter or JetBrains Mono.
 // - At rest, the accent marks only what is live: nothing outside the Status
 //   Capsule, the Voice Prompt, the Idle Screen's voice line, a primary button
-//   (Settings' Save, the Prompt Bar's Run) or the control under the keyboard
-//   takes the accent's colour.
+//   (Settings' Save, the Prompt Bar's Run), a ringing Timer (#446) or the
+//   control under the keyboard takes the accent's colour.
 // - No colour sits in the accent's or the failure's hue band without being
 //   that colour, so peach and coral each keep one meaning (a data series is
 //   exempt from the five meaningful colours, never from the bands).
@@ -54,7 +54,7 @@ export const colourFloor = (rest: boolean): string => `(() => {
   const failText = token('--fail-text')
   const same = (a, b) => a && b && Math.abs(a.r - b.r) < 1.5 && Math.abs(a.g - b.g) < 1.5 && Math.abs(a.b - b.b) < 1.5
   const inBand = (c) => { const h = hue(c); if (h === null || !saturated(c)) return false; return [accent, fail].some((t) => { const d = Math.abs(h - hue(t)); return Math.min(d, 360 - d) <= ${HUE_BAND} }) }
-  const LIVE = '.status-capsule, .voice-prompt, .idle-voice, .settings-button--primary, .prompt-verb'
+  const LIVE = '.status-capsule, .voice-prompt, .idle-voice, .settings-button--primary, .prompt-verb, .idle-timer--ringing, .toolbar-timer--ringing'
   for (const el of document.querySelectorAll('body *')) {
     // Text nobody sees: skipped by content-visibility (a Feed run scrolled away) or under an ancestor at no opacity.
     if (el.closest('option, .feed-sr') || !shown(el) || !el.checkVisibility({ contentVisibilityAuto: true })) continue

@@ -32,6 +32,8 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
         '/colon': page(`<p>12<span style="color:var(--accent)">:</span>30</p>`),
         '/coral': page(`<p style="color:#ff8f74">Claude</p>`),
         '/today': page(`<span class="today">26</span>`),
+        '/ringing': page(`<button class="idle-timer idle-timer--ringing" style="font:inherit;background:none;border:0"><p style="color:var(--accent)">Time’s up</p></button>`),
+        '/running': page(`<section class="idle-timer"><p style="color:var(--accent)">24:59</p></section>`),
       },
       'bingbong-colour-floor-chrome-',
     )
@@ -64,6 +66,11 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
   it('finds the accent on decoration at rest, and leaves it to a running Task', async () => {
     expect(await floor('/colon')).toEqual([expect.stringMatching(/^accent at rest: span ":"/)])
     expect(await floor('/colon', false)).toEqual([])
+  })
+
+  it('counts a ringing Timer as live, and a running one as quiet (#446)', async () => {
+    expect(await floor('/ringing')).toEqual([])
+    expect(await floor('/running')).toEqual([expect.stringMatching(/^accent at rest: p "24:59"/)])
   })
 
   it('finds a colour in the accent’s or the failure’s hue that is neither', async () => {

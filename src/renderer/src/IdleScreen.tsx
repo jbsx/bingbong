@@ -102,14 +102,14 @@ function TimerRing({ fraction }: { fraction: number }) {
 }
 
 /**
- * The Timer Clock (CONTEXT.md, Timer): a second clock beside the time, in
- * peach — the countdown, ticking four times a second so a second never
+ * The Timer Clock (CONTEXT.md, Timer): a second clock beside the time —
+ * the countdown, quiet, ticking four times a second so a second never
  * lingers, over "Timer 25 minutes · ends 10:18"; while it rings, "Time's
- * up" pulsing. A ringing Timer is a control — the tap turns it off through
- * the same `timer off` Command the words are, on the pointer going down,
- * as the other idle controls do (useIdle unmounts this screen before a
- * click could land). A running one is not: a tap there only wakes the
- * dashboard.
+ * up" pulsing, in peach, the one live thing on it (#446). A ringing Timer
+ * is a control — the tap turns it off through the same `timer off`
+ * Command the words are, on the pointer going down, as the other idle
+ * controls do (useIdle unmounts this screen before a click could land). A
+ * running one is not: a tap there only wakes the dashboard.
  */
 function TimerClock({ timer, format }: { timer: Exclude<TimerState, { status: 'off' }>; format: TimeFormat }) {
   const [now, setNow] = useState(() => Date.now())

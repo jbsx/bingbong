@@ -614,7 +614,13 @@ body {
   cursor: pointer;
 }
 
+/* Ringing, the Timer is live (#446): its mark and its words take the accent. */
+.toolbar-timer--ringing .chrome-icon {
+  color: var(--accent);
+}
+
 .toolbar-timer--ringing .toolbar-widget-text {
+  color: var(--accent);
   font-family: inherit;
   font-size: var(--type-m);
 }
@@ -2563,12 +2569,17 @@ details[open] > .settings-summary::before {
   stroke-linecap: round;
 }
 
-/* Ringing, the Timer Clock is the control that turns it off: "Time's up", pulsing. */
+/* Ringing, the Timer Clock is the control that turns it off: "Time's up", pulsing. A live thing (#446, principle 8), it takes the accent; running, it stays quiet. */
 .idle-timer--ringing {
   cursor: pointer;
 }
 
+.idle-timer--ringing .idle-timer-arc {
+  stroke: var(--accent);
+}
+
 .idle-timer--ringing .idle-timer-left {
+  color: var(--accent);
   font-size: 84px;
   line-height: 1.36;
   letter-spacing: -0.03em;

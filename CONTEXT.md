@@ -1116,9 +1116,9 @@ timer"); a new one replaces the one running. `timer off`, "cancel the
 timer" or "stop the timer" turns it off; "cancel" and "stop" alone are
 still the stop verb, and a stop also silences a Timer that is ringing.
 The Idle Screen shows it as the Timer Clock: a second clock beside the
-time, in peach, with its length and when it ends ("Timer 25 minutes · ends
-10:18") while it runs, "Time's up" pulsing while it rings, and a tap on it
-while it rings turns it off. At zero it rings: a synthesized alarm, played back to back through
+time with its length and when it ends ("Timer 25 minutes · ends
+10:18") while it runs, quiet; "Time's up" pulsing in peach while it rings,
+a live thing (#446), and a tap on it while it rings turns it off. At zero it rings: a synthesized alarm, played back to back through
 its own player for at most a minute. It lives in main and does not
 survive a restart. `timer` is the grammar's alone: Jev is never offered it.
 _Avoid_: alarm (for the countdown), stopwatch, reminder
