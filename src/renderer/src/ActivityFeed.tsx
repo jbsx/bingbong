@@ -63,7 +63,7 @@ export interface FeedLineEmphasis {
 }
 
 export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?: FeedLineEmphasis }) {
-  // One time per entry, always first (#333): every entry's time sits in the same left column.
+  // One time per entry, always first (#333): every entry's time sits in the same left column — a Command's words aside (#438).
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
     // Your words (#54): commands and heard transcriptions, right-aligned
@@ -74,7 +74,8 @@ export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?
     // Task (#336) adds one line per later hop that fired.
     return (
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.working === true ? ' feed-entry--working' : ''}`}>
-        {time}
+        {/* One time per Command (#438, owner ruling 2026-10-26): the result's; the words keep the column, empty, so the bubble does not move. */}
+        <span className="feed-time" aria-hidden="true" />
         <span className="feed-bubble">
           <span className="feed-text">
             <BreaksAtSlashes text={entry.text} />

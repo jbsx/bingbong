@@ -9,6 +9,7 @@ import { mediaOpAnswer } from './mediaOp'
 import { scrollOpOfVerb } from './scrollOp'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
+import { withNextLine } from './tryLine'
 
 // The Answer a Command leaves in the Feed (#333): exactly one per Command,
 // written from facts the Command and the page already hold — never by a
@@ -30,14 +31,14 @@ export const FLAG_ANSWERS = {
   nothing: 'Nothing to flag yet.',
 } as const
 
-/** Why Jev gave no reading, as the "No command found." line gives it. */
-const JEV_UNAVAILABLE: Record<DecisionUnavailableReason, string> = {
-  timeout: "Jev didn't answer in time",
-  transport: "Jev couldn't be reached",
-  http: "Jev's service answered with an error",
-  malformed: "Jev's answer couldn't be read",
-  cancelled: "Jev's call was cancelled",
-  failed: "Jev's call failed",
+/** Why the words went unread, in the person's words (#438): the screen never names the model that reads them. */
+const UNREAD: Record<DecisionUnavailableReason, string> = {
+  timeout: 'Reading the words took too long.',
+  transport: "The words couldn't be read: there's no connection.",
+  http: "The words couldn't be read.",
+  malformed: "The words couldn't be read.",
+  cancelled: 'Reading the words was cancelled.',
+  failed: "The words couldn't be read.",
 }
 
 /** What a reading that settled no Command was made of: the grammar's own error, and Jev's part in it. */
@@ -52,39 +53,38 @@ export interface NoResponseFacts {
   readonly marked?: JevDetail | JevUnavailable
 }
 
-/** An action card label in words (#370): `click-12` is "click [12]", `open-3` "open link 3", `scroll_down` "scroll down". */
+/** An action card label as a line (#370, #438): `click-12` is "click 12", `open-3` "open link 3", `scroll_down` "scroll down". */
 function actionWords(label: string): string {
   return label
-    .replace(/^(click|type|menu)-(\d+)$/, '$1 [$2]')
     .replace(/^open-(\d+)$/, 'open link $1')
-    .replace(/^(down|up)-(\d+)$/, 'scroll [$2] $1')
+    .replace(/^(down|up)-(\d+)$/, 'scroll $2 $1')
+    .replace(/^([a-z_]+)-(\d+)$/, '$1 $2')
     .replace(/_/g, ' ')
 }
 
 /**
- * Why nothing was done: the grammar's own error for a verb it knows, else
- * one shape for every other case (2026-10-22 audit) — what happened, then
- * why in a few words: Jev off or not answering, or Jev's reading off its
- * action card, and the Where Ask's second look when there was one.
+ * Why nothing was done, and the line to say next (#438, principle 9): the
+ * grammar's own error for a verb it knows, else what the words were read
+ * as, in the person's words — off this page, no command at all, or not
+ * read — and the Where Ask's second look when there was one. The next
+ * line is a fallback wording: "read" when the words pointed at the page,
+ * "help" otherwise.
  */
-function noResponseReason(facts: NoResponseFacts): string {
-  if (facts.grammarError !== null) return facts.grammarError
-  return `No command found. (${noCommandWhy(facts)}.)`
-}
-
-function noCommandWhy(facts: NoResponseFacts): string {
-  if (!facts.jevAsked) return "Jev is off, and the grammar doesn't know these words — try “help”"
+function noResponseReason(facts: NoResponseFacts): { why: string; next: string } {
+  if (facts.grammarError !== null) return { why: facts.grammarError, next: 'help' }
+  if (!facts.jevAsked) return { why: "Those words aren't a command I know.", next: 'help' }
   const jev = facts.jev
-  if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
+  if (jev !== undefined && 'reason' in jev) return { why: UNREAD[jev.reason], next: 'help' }
   const top = topAction(jev)
-  // An unsure click on a Textless Ref asked again with the marked page (#382): the guess, and the page showing no command.
-  if (facts.marked !== undefined && facts.where === undefined) return `Jev was unsure of “${actionWords(top)}”, and the marked page showed it none`
+  const unfit = (action: string): { why: string; next: string } => ({ why: `The words read as “${actionWords(action)}”, but nothing on this page fits it.`, next: 'read' })
+  // An unsure click on a Textless Ref asked again with the marked page (#382): the page showed no control for it.
+  if (facts.marked !== undefined && facts.where === undefined) return { why: `The words read as “${actionWords(top)}”, but no control on this page is sure to be it.`, next: 'read' }
   const where = facts.where
-  if (where === undefined) return top === 'none' ? 'Jev read none in the words' : `Jev read “${actionWords(top)}”, but nothing on this page fits it`
+  if (where === undefined) return top === 'none' ? { why: "Those words aren't a command.", next: 'help' } : unfit(top)
   // After a Where Ask (#379, ADR 0082), the second look's reading: the first read none.
-  if ('reason' in where) return `${JEV_UNAVAILABLE[where.reason]} on a second look`
+  if ('reason' in where) return { why: UNREAD[where.reason], next: 'help' }
   const found = topAction(where)
-  return found === 'none' ? 'A second look found nothing on this page to look for' : `A second look read “${actionWords(found)}”, but nothing on this page fits it`
+  return found === 'none' ? { why: 'Nothing on this page fits the words.', next: 'read' } : unfit(found)
 }
 
 /** The action card label a reading gave the most probability; `none` when it gave none. */
@@ -95,10 +95,12 @@ function topAction(jev: JevDetail | undefined): string {
 
 /**
  * The Answer of an Utterance read as no Command (owner ruling 2026-10-19):
- * never a silent fade — "No response." and, under it, the real reason.
+ * never a silent fade — "No response.", under it the real reason, and the
+ * line that would have worked (#438).
  */
 export function noResponseAnswer(facts: NoResponseFacts): string {
-  return `No response.\n\n${noResponseReason(facts)}`
+  const { why, next } = noResponseReason(facts)
+  return withNextLine(`No response.\n\n${why}`, next).shown
 }
 
 /** What a page is called in an Answer: its title whole (no host stands beside it here), or its site's name when it has none. */

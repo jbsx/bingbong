@@ -1,4 +1,5 @@
 import type { PipelineEvent, PipelineStatus } from './events'
+import { stageWord } from './stageWords'
 
 // Progress projection: the header hint's state, as a pure function over the
 // pipeline event stream. The stage and its start come from status events.
@@ -10,8 +11,10 @@ export interface RunProgress {
   stage: PipelineStatus
   /** Wall-clock `at` of the stage's status event — the elapsed anchor, so the seconds are this stage's own (#428). */
   startedAt: number
-  /** What the stage is on (#428): the heard words while hop 0 thinks, the action's words while it acts. */
+  /** What the stage is on (#428): the heard words while hop 0 thinks, the action's object while it acts and while its page loads (#438). */
   detail?: string
+  /** Acting's own word for the action (#438), carried into its Loading: the word the pill says while it acts. */
+  word?: string
   /** The Hop the stage is in (#428). */
   hop?: number
 }
@@ -36,10 +39,15 @@ export function createRunProgressTracker(): {
           activeTurn = event.turnId
           // The same action's wait, carried from its own turn into the next hop's: its seconds go on climbing.
           const goesOn = last !== null && event.status === 'loading' && last.stage === 'loading' && last.hop === event.hop
+          // An action's Loading is on what the action was on (#438): its word and object ride on, the same hop only.
+          const carried = event.status === 'loading' && event.detail === undefined && last !== null && (last.stage === 'acting' || last.stage === 'loading') && last.hop === event.hop ? last : null
+          const detail = event.detail ?? carried?.detail
+          const word = event.word ?? carried?.word
           progress = {
             stage: event.status,
             startedAt: goesOn ? last!.startedAt : event.at,
-            ...(event.detail !== undefined ? { detail: event.detail } : {}),
+            ...(word !== undefined ? { word } : {}),
+            ...(detail !== undefined ? { detail } : {}),
             ...(event.hop !== undefined ? { hop: event.hop } : {}),
           }
           last = progress
@@ -91,7 +99,7 @@ export function runProgressParts(progress: RunProgress, now: number, pillStatus:
   const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
   const detail = progress.detail === undefined || progress.detail === '' ? null : progress.stage === 'thinking' ? `“${progress.detail}”` : progress.detail
   return {
-    named: pillStatus === progress.stage ? '' : `${progress.stage} — `,
+    named: pillStatus === progress.stage ? '' : `${stageWord(progress)} — `,
     detail,
     tail: [hop, stuck, `${seconds}s`].filter((part) => part !== null).join(' · '),
   }

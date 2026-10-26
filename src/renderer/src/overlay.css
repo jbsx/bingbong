@@ -355,8 +355,10 @@ body,
 }
 
 /* Stop sits beside Run at Run's size, in the failure colour: it ends what
-   Bing Bong is doing. */
-.panel-stop {
+   Bing Bong is doing. Its slot is the same box while nothing runs (#438),
+   unseen, so Run never moves when it appears. */
+.panel-stop,
+.panel-stop-slot {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -372,6 +374,10 @@ body,
   font-weight: 600;
   cursor: pointer;
   transition: background 120ms ease;
+}
+
+.panel-stop-slot {
+  visibility: hidden;
 }
 
 .panel-stop-mark {

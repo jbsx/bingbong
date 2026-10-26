@@ -1,5 +1,6 @@
-import type { PipelineEvent, PipelineStatus } from '../pipeline/events'
+import type { PipelineEvent } from '../pipeline/events'
 import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjection'
+import { STAGE_WORDS, stageLine, type StageWords } from '../pipeline/stageWords'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
@@ -86,15 +87,6 @@ export interface HopLine {
 /** The closing hops that fire nothing and add nothing to their Task's entry (#336); an abandoned one shows greyed. */
 const SILENT_CLOSES: ReadonlySet<string> = new Set(['done', 'no next step', 'not read'])
 
-/** A run's steps as the Run Detail names them (#333). */
-const STEP_NAMES: Readonly<Record<PipelineStatus, string>> = {
-  thinking: 'Understanding',
-  acting: 'Working on the page',
-  loading: 'Waiting for the page',
-  speaking: 'Reading aloud',
-  cancelled: 'Stopped',
-}
-
 /**
  * The Answer drawn at reading size (#359, ADR 0078): the newest one, while
  * nothing has been said after it — once a newer Command is in the Feed,
@@ -141,6 +133,8 @@ export function createFeedProjection(): {
   const taskEntryIds = new Map<string, number>()
   const taskAnswerIds = new Map<string, number>()
   const hopLineOfTurn = new Map<string, { taskId: string; index: number }>()
+  // Each run's last action as its stage named it (#438), with its hop: that hop's Loading is on the same object.
+  const actedOf = new Map<string, { hop: number | undefined; words: StageWords }>()
   /** The run a turn's noise groups under: its Task's, which is hop 0's turn. */
   const runOf = (turnId: string): string => taskOfTurn.get(turnId) ?? turnId
 
@@ -292,9 +286,12 @@ export function createFeedProjection(): {
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a
           // timestamped detail line, so consecutive lines reconstruct how
-          // long each phase took. Ephemeral like all detail; named in plain
-          // words, never the internal stage name (#333).
-          appendDetail(event.at, STEP_NAMES[event.status], 'stage', event.turnId)
+          // long each phase took. Ephemeral like all detail; named with the
+          // Status Capsule's words (#333, #438): Acting by the action's word
+          // and object, its Loading on the same object.
+          if (event.status === 'acting') actedOf.set(runOf(event.turnId), { hop: event.hop, words: { word: event.word ?? STAGE_WORDS.acting, ...(event.detail !== undefined ? { object: event.detail } : {}) } })
+          const acted = actedOf.get(runOf(event.turnId))
+          appendDetail(event.at, stageLine(event.status, acted !== undefined && acted.hop === event.hop ? acted.words : undefined), 'stage', event.turnId)
           return
         default: {
           const projected = projectPipelineEvent(event)
@@ -314,6 +311,7 @@ export function createFeedProjection(): {
       taskEntryIds.clear()
       taskAnswerIds.clear()
       hopLineOfTurn.clear()
+      actedOf.clear()
     },
   }
 }

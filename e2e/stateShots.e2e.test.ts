@@ -214,6 +214,13 @@ async function command(run: Run, line: string, settle = true): Promise<void> {
 const clickPanel = (run: Run, selector: string): Promise<unknown> => run.harness.overlayEval(`document.querySelector(${JSON.stringify(selector)})?.click()`)
 const clickDashboard = (run: Run, selector: string): Promise<unknown> => run.harness.dashboardEval(`document.querySelector(${JSON.stringify(selector)})?.click()`)
 
+/** A failure's Answer names the line that would have worked and never the model that reads the words (#438, principles 9 and 10). */
+async function expectNextLine(run: Run, state: string): Promise<void> {
+  const answer = await run.harness.overlayEval<string>(`[...document.querySelectorAll('.feed-entry--assistant')].at(-1)?.textContent ?? ''`)
+  expect.soft(answer, `${run.theme} ${state}: the Answer says what to say next`).toMatch(/Try “[^”]+”\./)
+  expect.soft(answer, `${run.theme} ${state}: the Answer never names the model`).not.toMatch(/jev/i)
+}
+
 /** The round-6 list (`current/log.txt`): the Commands in order, a shot after each state. */
 async function walkTheShell(run: Run): Promise<void> {
   const { harness, fixture } = run
@@ -234,10 +241,12 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '09b-read-answer-panel-shut')
   await command(run, 'click 999')
   await shoot(run, '10-failure')
+  await expectNextLine(run, '10-failure')
   await command(run, 'scroll down')
   await shoot(run, '11-scrolled')
   await command(run, 'zorblax the quux thing')
   await shoot(run, '12-unknown-command')
+  await expectNextLine(run, '12-unknown-command')
   await command(run, 'back')
   await shoot(run, '13-back')
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
@@ -250,6 +259,9 @@ async function walkTheShell(run: Run): Promise<void> {
   await command(run, `navigate ${fixture.url('/held-response')}`, false)
   await sleep(2500)
   await shoot(run, '16-loading')
+  // The wait names its stage and host in the Feed's words (#438), never the raw line.
+  const waiting = await harness.dashboardEval<string>(`document.querySelector('.toolbar .status-capsule')?.textContent ?? ''`)
+  expect.soft(waiting, `${run.theme} 16-loading: the capsule names the stage and host`).toMatch(/^(Opening|Loading)…127\.0\.0\.1 · \d+s/)
   await clickPanel(run, '[aria-label="Stop active command"]')
   await promptIdle(harness)
   await sleep(800)
@@ -258,13 +270,16 @@ async function walkTheShell(run: Run): Promise<void> {
   await sleep(800)
   await command(run, `navigate ${fixture.url('/consent-wall')}`)
   await shoot(run, '18-consent-wall')
+  await expectNextLine(run, '18-consent-wall')
   await command(run, `navigate ${fixture.url('/dialog-wall')}`)
   await shoot(run, '19-dialog-wall')
+  await expectNextLine(run, '19-dialog-wall')
   await command(run, `navigate ${fixture.url('/interactive')}`)
   await command(run, 'screenshot')
   await shoot(run, '20-screenshot-cmd')
   await command(run, 'navigate http://127.0.0.1:1/nothing')
   await shoot(run, '21-nav-failed')
+  await expectNextLine(run, '21-nav-failed')
   await command(run, `navigate ${fixture.url('/empty-main')}`)
   await shoot(run, '22-empty-landing')
   // A Task walked to a sure yes (#375): the Capsule's bar full where the Task left it, the Feed's lines read closer, no closer, closer.

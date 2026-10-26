@@ -92,7 +92,7 @@ describe('idle prompt e2e: the blank pane is never shown', () => {
       },
       { timeoutMs: 10000, intervalMs: 100 },
     )
-    expect(reply).toBe("There's no page open.")
+    expect(reply).toMatch(/^There's no page open\.\s*Try “resume”\.$/)
     expect(await harness.dashboardEval<string>(`document.querySelector('.idle-prompt-said')?.textContent ?? ''`)).toBe('scroll down')
     await settle()
     expect(await idleUp()).toBe(true)

@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-26, base `3a8c5d2f` + #436](versions/2026-10-26-3a8c5d2f-glance/chart.html), in which, with the Feed panel shut, the Status Capsule keeps the sentence the app said for your last line beside “Ready” until your next line (#436). [Overview](versions/2026-10-26-3a8c5d2f-glance/overview.png) · [changes](versions/2026-10-26-3a8c5d2f-glance/changes.md)
+**Latest:** [2026-10-26, base `9db2d2ba` + #438](versions/2026-10-26-9db2d2ba-narrated/chart.html), in which the Capsule says each stage in the Feed's words and what it is on (“Opening… example.com · 3s”), and every failure and “No response” ends with a line to try (#438). [Overview](versions/2026-10-26-9db2d2ba-narrated/overview.png) · [changes](versions/2026-10-26-9db2d2ba-narrated/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-26 | `9db2d2ba` + #438 | [chart](versions/2026-10-26-9db2d2ba-narrated/chart.html) | No transition changes. The pill says the stage's word (“Opening…”, “Loading…”) and the hint its object in your words; the Feed's stage lines are the same words; a failure's Answer and spoken line end “Try “…”.”; “No response” gives its reason without naming Jev and a Try line; a Command keeps one time in the Feed. [changes](versions/2026-10-26-9db2d2ba-narrated/changes.md) |
 | 2026-10-26 | `3a8c5d2f` + #436 | [chart](versions/2026-10-26-3a8c5d2f-glance/chart.html) | No transition changes. With the panel shut the Capsule keeps the last spoken sentence (a read's first part, a Task's closing line, a page's question) until the next line; the live words still win. [changes](versions/2026-10-26-3a8c5d2f-glance/changes.md) |
 | 2026-10-26 | `4af7377e` + #441 | [chart](versions/2026-10-26-4af7377e-hearing/chart.html) | No transition changes. While listening, “say a command” becomes “…” on the frame speech is confirmed (Voice Prompt, Idle Screen, Capsule hint), still under “Listening”; the first partial comes at 0.5 s of speech, not 1 s; a `speech-to-hearing` perf span. [changes](versions/2026-10-26-4af7377e-hearing/changes.md) |
 | 2026-10-25 | `d0263a1f` + #428 | [chart](versions/2026-10-25-d0263a1f-stages/chart.html) | No transition changes. The Capsule says “Thinking…” (with the heard words) before the page read, then per hop “Acting…” (the action's words) and “Loading…”; per-stage seconds; “still thinking” / “page still loading” past 5 s; the Idle Screen shows it. [changes](versions/2026-10-25-d0263a1f-stages/changes.md) |

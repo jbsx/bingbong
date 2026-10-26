@@ -1332,9 +1332,12 @@ once — the pill says the state, the hint carries only instruction, the live
 words, or what the Command is on and for how long: the stage's detail and its
 seconds — and never grows past its third of the Toolbar: long text ellipsizes.
 A Command's stages are Thinking (from the moment its line is taken, the heard
-words beside it, over the page read and every ask), Acting (the action's
-words), Loading (the action's wait for its navigation or settle, until the
-next Hop reads the page) and Speaking. Past the first Hop the hint names the
+words beside it, over the page read and every ask), Acting (named by the
+action's own word — Opening, Searching, Clicking, Playing — with what it is
+on in the person's words: the host, the terms, the label; never the action
+line), Loading (the action's wait for its navigation or settle, on the same
+object, until the next Hop reads the page) and Speaking. The pill says the
+stage's word and the Feed's Run Detail the same words (#438). Past the first Hop the hint names the
 Hop, and the seconds are the stage's own. A stage that runs past 5 s names its
 wait ("still thinking", "page still loading"). The screen never names the
 Decision Model (owner ruling 2026-10-25, #428). Its orb is the feed's assistant mark: one visual

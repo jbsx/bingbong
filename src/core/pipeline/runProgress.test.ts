@@ -12,16 +12,18 @@ describe('describeRunProgress', () => {
     expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 3_400, 'acting')).toBe('2s')
   })
 
-  it('names the stage when the pill shows another state (the mic opened mid-run)', () => {
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 3_400, 'listening')).toBe('acting — 2s')
+  it('names the stage by its word when the pill shows another state (the mic opened mid-run)', () => {
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 3_400, 'listening')).toBe('Acting — 2s')
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, word: 'Opening', detail: 'example.com' }, 3_400, 'listening')).toBe('Opening — example.com · 2s')
+    expect(describeRunProgress({ stage: 'loading', startedAt: 1_000, word: 'Opening', detail: 'example.com' }, 3_400, 'listening')).toBe('Loading — example.com · 2s')
   })
 
   it('never counts below zero on a clock behind the event', () => {
     expect(describeRunProgress({ stage: 'thinking', startedAt: 5_000 }, 4_000, 'thinking')).toBe('0s')
   })
 
-  it('carries the action\'s words while acting', () => {
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, detail: 'open youtube.com', hop: 0 }, 2_100, 'acting')).toBe('open youtube.com · 1s')
+  it('carries what the action is on while acting, in the person\'s words (#438)', () => {
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, word: 'Opening', detail: 'youtube.com', hop: 0 }, 2_100, 'acting')).toBe('youtube.com · 1s')
   })
 
   it('keeps the heard words in sight while thinking, quoted as the live words are', () => {
@@ -49,7 +51,7 @@ describe('describeRunProgress', () => {
 })
 
 describe('createRunProgressTracker', () => {
-  const status = (turnId: string, stage: 'thinking' | 'acting' | 'loading', at: number, more: { detail?: string; hop?: number } = {}): PipelineEvent => ({ type: 'status', turnId, status: stage, at, ...more })
+  const status = (turnId: string, stage: 'thinking' | 'acting' | 'loading', at: number, more: { detail?: string; word?: string; hop?: number } = {}): PipelineEvent => ({ type: 'status', turnId, status: stage, at, ...more })
 
   it('follows a line from its first thinking, before any command, and anchors each stage on its own start', () => {
     const tracker = createRunProgressTracker()
@@ -73,6 +75,16 @@ describe('createRunProgressTracker', () => {
     expect(tracker.current()).toEqual({ stage: 'thinking', startedAt: 400, hop: 1 })
     tracker.onEvent({ type: 'done', turnId: 't2', outcome: 'done', at: 500 })
     expect(tracker.current()).toBeNull()
+  })
+
+  it('carries the action\'s word and object into its Loading, on the same hop only (#438)', () => {
+    const tracker = createRunProgressTracker()
+    tracker.onEvent(status('t1', 'acting', 100, { word: 'Opening', detail: 'example.com', hop: 0 }))
+    tracker.onEvent(status('t1', 'loading', 300, { hop: 0 }))
+    expect(tracker.current()).toEqual({ stage: 'loading', startedAt: 300, word: 'Opening', detail: 'example.com', hop: 0 })
+    tracker.onEvent(status('t2', 'thinking', 900, { hop: 1 }))
+    tracker.onEvent(status('t2', 'loading', 1_000, { hop: 1 }))
+    expect(tracker.current()).toEqual({ stage: 'loading', startedAt: 1_000, hop: 1 })
   })
 
   it('keeps an action\'s wait on its own anchor when the next hop\'s turn takes it up', () => {

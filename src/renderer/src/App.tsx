@@ -214,7 +214,7 @@ export function App() {
         <div className="toolbar-start">
           <div className={`status-capsule status-capsule--${capsuleTone(status)}`}>
             <StatusOrb status={status} />
-            <StatusPill status={status} />
+            <StatusPill status={status} progress={assistant.progress} />
             {status === 'listening' ? <VoiceWave bars={6} /> : null}
             {/* Run progress (#43) keeps its place even when the mic opens
                 mid-run — the climbing timer must never disappear behind a

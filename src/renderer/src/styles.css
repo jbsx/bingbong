@@ -987,6 +987,18 @@ body {
   animation: feed-entry-in 160ms ease;
 }
 
+/* The Feed is not capped (#438, owner ruling 2026-10-26): an entry out of
+   the list's view is not rendered, only held at its last size, so a day of
+   lines costs the i3 what is on screen. Never shrunk by the column: a
+   skipped entry has no content to hold it, and squeezed to nothing it
+   shifted every line below it (0.83–1.01 over 30 Commands, 0.000 with). */
+.feed-list > .feed-entry,
+.feed-list > .feed-run {
+  flex-shrink: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
 @keyframes feed-entry-in {
   from {
     opacity: 0;
@@ -2632,7 +2644,9 @@ button.idle-line {
 /* The Idle Prompt (#361): the Prompt Bar over the Idle Screen, no Feed
    beneath it — set for the room like the screen it sits on. A tap on the
    ground around it closes it. A command palette in the middle of the
-   screen: the line, the reply under it, the keys at the foot. */
+   screen: the line, the reply under it, the keys at the foot. The scrim is
+   opaque enough alone: no blur, which the theme forbids and the i3 pays
+   for every frame (#438). */
 .idle-prompt-backdrop {
   position: fixed;
   inset: 0;
@@ -2642,7 +2656,6 @@ button.idle-line {
   justify-content: center;
   padding: 16px;
   background: var(--scrim);
-  backdrop-filter: blur(8px);
 }
 
 .idle-prompt {

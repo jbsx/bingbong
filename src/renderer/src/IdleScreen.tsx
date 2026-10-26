@@ -446,7 +446,7 @@ function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProg
   return (
     <div className="status-capsule idle-status">
       <StatusOrb status={status} />
-      <StatusPill status={status} />
+      <StatusPill status={status} progress={progress} />
       {progress !== null ? <RunHint progress={progress} status={status} /> : null}
     </div>
   )

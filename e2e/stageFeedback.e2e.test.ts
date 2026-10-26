@@ -65,3 +65,102 @@ describe('stage feedback e2e (#428): the Capsule over the Idle Screen while a li
     expect(await idleUp()).toBe(true)
   })
 })
+
+// The narrated wait (#438): a slow navigate's Capsule says the Feed's stage
+// word and the host, never the raw line, its seconds climbing; Run never
+// moves when Stop shows; and thirty Commands in the panel shift its layout
+// by under 0.05 in all.
+describe('narrated wait e2e (#438): stage words in the Capsule, no layout shift in the panel', () => {
+  let harness: Harness
+
+  beforeAll(async () => {
+    harness = await startHarness({ launchArgs: ['--mute-audio'] })
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+  })
+
+  const capsule = (): Promise<{ pill: string; hint: string }> =>
+    harness.dashboardEval(`(() => ({
+      pill: document.querySelector('.toolbar .status-pill')?.textContent ?? '',
+      hint: document.querySelector('.toolbar .run-hint')?.textContent ?? '',
+    }))()`)
+  const runBox = (): Promise<string> => harness.overlayEval(`JSON.stringify(document.querySelector('.prompt-verb')?.getBoundingClientRect())`)
+  const promptIdle = (): Promise<true> =>
+    waitFor(async () => ((await harness.overlayEval<boolean>(`!document.querySelector('.prompt-form[aria-busy]')`)) ? true : undefined), { timeoutMs: 25_000, intervalMs: 50 })
+
+  it('a slow navigate says "Loading…" and the host, the Feed the same words, seconds climbing; Run keeps its box as Stop shows', async () => {
+    await harness.ensurePanelOpen()
+    // The panel opening moves Run with it: its box is read once it holds still.
+    let held = ''
+    const before = await waitFor(async () => {
+      const box = await runBox()
+      const still = box === held
+      held = box
+      return still ? box : undefined
+    }, { timeoutMs: 5_000, intervalMs: 300 })
+    expect(JSON.parse(before)).toMatchObject({ width: expect.any(Number) })
+    expect(await harness.submitCommand(`navigate ${harness.fixture.url('/held-response')}`)).toBe('submitted')
+    // The held page sends nothing, so its navigate never shows a first effect: it stays Acting, as "Opening…".
+    const first = await waitFor(async () => {
+      const shown = await capsule()
+      return shown.pill === 'Opening…' && /\d+s$/.test(shown.hint) ? shown : undefined
+    }, { timeoutMs: 5_000, intervalMs: 50 })
+    // The stage word in the pill and the host in the hint, never the raw line.
+    expect(first.hint).toMatch(/^127\.0\.0\.1 · \d+s$/)
+    expect(`${first.pill} ${first.hint}`).not.toMatch(/navigate|http|acting/i)
+    // The Feed's Run Detail names the same stage with the same words.
+    const lines = await harness.overlayEval<string[]>(`Array.from(document.querySelectorAll('.feed-entry--stage .feed-text')).map((el) => el.textContent)`)
+    expect(lines).toContain('Opening 127.0.0.1')
+    expect(lines.join(' ')).not.toMatch(/Understanding|Working on the page|Waiting for the page/)
+    const seconds = (hint: string): number => Number(/(\d+)s$/.exec(hint)![1])
+    const later = await waitFor(async () => {
+      const shown = await capsule()
+      return seconds(shown.hint) >= seconds(first.hint) + 2 ? shown : undefined
+    }, { timeoutMs: 5_000, intervalMs: 100 })
+    expect(later.pill).toBe('Opening…')
+    // Stop is up, and Run has not moved.
+    expect(await harness.overlayEval<boolean>(`!!document.querySelector('.panel-stop')`)).toBe(true)
+    expect(await runBox()).toBe(before)
+    await harness.overlayEval(`window.bingbong.assistant.abort()`)
+    await promptIdle()
+    expect(await runBox()).toBe(before)
+  })
+
+  it('thirty Commands in the panel shift its layout by under 0.05 in all; past a hundred entries, every one off screen is skipped', async () => {
+    await harness.navigatePane(harness.fixture.url('/story'))
+    await harness.ensurePanelOpen()
+    await harness.overlayEval(`(() => {
+      window.__shift = { sum: 0, sources: [] }
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.hadRecentInput) continue
+          window.__shift.sum += entry.value
+          window.__shift.sources.push(entry.value.toFixed(3) + ' ' + (entry.sources ?? []).map((source) => (source.node?.className ?? '?') + ' ' + Math.round(source.previousRect.y) + '>' + Math.round(source.currentRect.y)).join(' | '))
+        }
+      }).observe({ type: 'layout-shift' })
+    })()`)
+    for (let index = 0; index < 30; index++) {
+      expect(await harness.submitCommand(index % 2 === 0 ? 'scroll down' : 'scroll up')).toBe('submitted')
+      await promptIdle()
+    }
+    const shift = await harness.overlayEval<{ sum: number; sources: string[] }>(`window.__shift`)
+    console.log(`layout shift over 30 Commands: ${shift.sum.toFixed(4)}`)
+    expect(shift.sum, shift.sources.join('\n')).toBeLessThan(0.05)
+    // The Feed is not capped (owner ruling 2026-10-26): what is off screen is skipped by content-visibility, never dropped.
+    for (let index = 0; index < 20; index++) {
+      expect(await harness.submitCommand(index % 2 === 0 ? 'scroll down' : 'scroll up')).toBe('submitted')
+      await promptIdle()
+    }
+    const feed = await harness.overlayEval<{ entries: number; offScreen: number; skippable: number }>(`(() => {
+      const list = document.querySelector('.feed-list').getBoundingClientRect()
+      const items = [...document.querySelectorAll('.feed-list > .feed-entry, .feed-list > .feed-run')]
+      const off = items.filter((el) => { const box = el.getBoundingClientRect(); return box.bottom < list.top || box.top > list.bottom })
+      return { entries: document.querySelectorAll('.feed-entry').length, offScreen: off.length, skippable: off.filter((el) => getComputedStyle(el).contentVisibility === 'auto').length }
+    })()`)
+    expect(feed.entries).toBeGreaterThanOrEqual(100)
+    expect(feed.offScreen).toBeGreaterThan(0)
+    expect(feed.skippable).toBe(feed.offScreen)
+  })
+})

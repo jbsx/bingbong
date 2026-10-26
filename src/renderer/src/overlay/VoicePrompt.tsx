@@ -68,12 +68,18 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
       <div className="prompt-row">
         {phase === 'rest' ? <span className={`voice-orb${earOff ? ' voice-orb--off' : ''}`} aria-hidden="true" /> : null}
         <PromptBar placeholder={placeholder} />
+        {/* Stop's slot is held while nothing runs (#438): Run never moves when Stop appears. */}
         {runActive ? (
           <button type="button" className="panel-stop" onClick={() => void window.bingbong.assistant.abort()} aria-label="Stop active command">
             <span className="panel-stop-mark" aria-hidden="true" />
             Stop
           </button>
-        ) : null}
+        ) : (
+          <span className="panel-stop-slot" aria-hidden="true">
+            <span className="panel-stop-mark" />
+            Stop
+          </span>
+        )}
       </div>
     </div>
   )

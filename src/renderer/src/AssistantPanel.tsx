@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { OrbStatus } from './useAssistant'
 import { runProgressParts, type RunProgress } from '../../core/pipeline/runProgress'
+import { stageWord } from '../../core/pipeline/stageWords'
 import type { TaskProgress } from '../../core/pipeline/taskProgress'
 
 /**
@@ -72,12 +73,14 @@ export function VoiceWave({ bars }: { bars: number }) {
 
 /**
  * The status pill (#50): the state, named in text beside the still orb —
- * readable from across the room without any motion.
+ * readable from across the room without any motion. While a Command's
+ * stage is the state it shows, the pill says the stage's word (#438), the
+ * Feed's: "Opening…" while a navigate acts, "Loading…" while its page loads.
  */
-export function StatusPill({ status }: { status: OrbStatus }) {
+export function StatusPill({ status, progress = null }: { status: OrbStatus; progress?: RunProgress | null }) {
   return (
     <span className={`status-pill status-pill--${status}`} role="status">
-      {PILL_LABELS[status]}
+      {progress !== null && progress.stage === status && status !== 'cancelled' ? `${stageWord(progress)}…` : PILL_LABELS[status]}
     </span>
   )
 }

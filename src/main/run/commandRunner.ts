@@ -6,6 +6,8 @@ import { askImageFile, type AskKind } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
+import { actingWords } from '../../core/pipeline/stageWords'
+import { nextLine, withNextLine } from '../../core/command/tryLine'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
@@ -718,9 +720,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * failure and shown whether or not there is a voice; spoken too, not
    * waited on: the turn ends now, and the next Command silences it.
    */
-  function answerFailure(turnId: string, line: string): void {
-    answer(turnId, line, 'failure')
-    if (deps.speech !== undefined) void say(deps.speech, turnId, line, { failure: true })
+  function answerFailure(turnId: string, line: string, of: { command?: Command | null; words?: string } = {}): void {
+    // It names the line that would have worked (#438): under it on the screen, after it aloud.
+    const { shown, said } = withNextLine(line, nextLine(line, of.command, of.words))
+    answer(turnId, shown, 'failure')
+    if (deps.speech !== undefined) void say(deps.speech, turnId, said, { failure: true })
   }
 
   /** Silence the runner's speech, if any is sounding; whether any was. */
@@ -1246,7 +1250,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (!paneHasPage && verbNeedsPage(command.verb)) {
       // A blank pane has nothing to act on (#361): it is never shown, and an action on it, hidden under the Idle Screen, would never settle.
       inFlight = null
-      answerFailure(turnId, SPOKEN_FAILURES.noPage)
+      answerFailure(turnId, SPOKEN_FAILURES.noPage, { command })
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { outcome: 'wall' }
     }
@@ -1265,8 +1269,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
-    // Acting (#428): the stage names the action's words, the `command`'s own, and its Hop.
-    publish({ type: 'status', turnId, status: 'acting', hop: task.hop, detail: action, at: at() })
+    // Acting (#428): the stage names the action by its own word and its object in the person's words (#438), and its Hop.
+    const acting = actingWords(command, page)
+    publish({ type: 'status', turnId, status: 'acting', hop: task.hop, word: acting.word, ...(acting.object !== undefined && acting.object !== '' ? { detail: acting.object } : {}), at: at() })
     const callId = `${turnId}-1`
     // `resume` decides once, here, whether it is a navigate: the tool the Feed names and the action performed agree.
     const resume = command.verb === 'resume' ? resumePlan() : null
@@ -1356,7 +1361,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // The Player's own Answer (#343): what it played, queued or did to the element — or, marked a failure, why it could not.
         const outcomeOfPlay: PlayerOutcome = played
         if (outcomeOfPlay.failure === true) {
-          answerFailure(turnId, outcomeOfPlay.answer)
+          answerFailure(turnId, outcomeOfPlay.answer, { command })
           outcome = 'wall'
         } else {
           answer(turnId, outcomeOfPlay.answer)
@@ -1384,7 +1389,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           return ended('stayed')
         }
         if (failure !== null) {
-          answerFailure(turnId, SPOKEN_FAILURES[failure])
+          answerFailure(turnId, SPOKEN_FAILURES[failure], { command })
           outcome = 'wall'
         } else if (card === null) {
           // One Answer per Command (#333), from its verb's sentence.
@@ -1418,7 +1423,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       react('failed')
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-      answerFailure(turnId, stayed ? SPOKEN_FAILURES.dialogStayed : failureLineOf(name, message))
+      answerFailure(turnId, stayed ? SPOKEN_FAILURES.dialogStayed : failureLineOf(name, message), { command })
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { ...ended('wall'), error: message }
@@ -1942,7 +1947,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** A Task that looked again and found nothing (#363): its last record carries the end, and the line names the words on a turn of its own. */
   function endNotFound(task: Task, hop: number, words: string, last: DecisionRecord, endTurnId: string, endAt: number): { ended: TaskEnded; hop: number } {
     log({ ...last, ended: 'not_found' })
-    answerFailure(endTurnId, notHereLine(words))
+    answerFailure(endTurnId, notHereLine(words), { words })
     dropHop(endTurnId, task, hopOf(task, hop), "couldn't find it here", 'done', endAt)
     return { ended: 'not_found', hop }
   }

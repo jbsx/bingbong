@@ -27,11 +27,12 @@ export type PipelineStatus = 'thinking' | 'acting' | 'loading' | 'speaking' | 'c
  *
  * A `status` names the stage entered (#428) and the Hop it is in;
  * `detail` is what the stage is on — the heard words while hop 0 thinks,
- * the action's words (the `command`'s own) while it acts.
+ * the action's object in the person's words while it acts (#438) — and
+ * `word` is Acting's own word for the action ("Opening", "Searching").
  */
 export type PipelineEvent =
   | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; keepsIdle?: boolean; task?: { id: string; hop: number; step?: number; of?: number; progress?: number }; at: number }
-  | { type: 'status'; turnId: string; status: PipelineStatus; hop?: number; detail?: string; at: number }
+  | { type: 'status'; turnId: string; status: PipelineStatus; hop?: number; detail?: string; word?: string; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {
       type: 'tool_result'

@@ -131,7 +131,7 @@ describe('feed projection', () => {
     const feed = project(run('t1', 'open x', 1_000)).entries()
     expect(feed.map((entry) => [entry.kind, entry.text])).toEqual([
       ['command', 'open x'],
-      ['stage', 'Working on the page'],
+      ['stage', 'Acting'],
       ['tool', '→ https://x.test'],
       ['display', 'Here it is.'],
     ])
@@ -195,16 +195,18 @@ describe('feed projection', () => {
     ])
   })
 
-  it('names a run’s steps in plain words, never the internal stage names (#333)', () => {
+  it('names a run’s steps with the Status Capsule’s words, the action’s word and object on Acting and its Loading (#333, #438)', () => {
     const feed = project([
-      { type: 'command', turnId: 't1', text: 'read', at: 1 },
-      { type: 'status', turnId: 't1', status: 'thinking', at: 2 },
-      { type: 'status', turnId: 't1', status: 'acting', at: 3 },
-      { type: 'status', turnId: 't1', status: 'loading', at: 4 },
-      { type: 'status', turnId: 't1', status: 'speaking', at: 5 },
-      { type: 'status', turnId: 't1', status: 'cancelled', at: 6 },
+      { type: 'command', turnId: 't1', text: 'open example', at: 1 },
+      { type: 'status', turnId: 't1', status: 'thinking', hop: 0, detail: 'open example', at: 2 },
+      { type: 'status', turnId: 't1', status: 'acting', hop: 0, word: 'Opening', detail: 'example.com', at: 3 },
+      { type: 'status', turnId: 't1', status: 'loading', hop: 0, at: 4 },
+      { type: 'status', turnId: 't1', status: 'thinking', hop: 1, at: 5 },
+      { type: 'status', turnId: 't1', status: 'loading', hop: 1, at: 6 },
+      { type: 'status', turnId: 't1', status: 'speaking', at: 7 },
+      { type: 'status', turnId: 't1', status: 'cancelled', at: 8 },
     ]).entries()
-    expect(feed.filter((entry) => entry.kind === 'stage').map((entry) => entry.text)).toEqual(['Understanding', 'Working on the page', 'Waiting for the page', 'Reading aloud', 'Stopped'])
+    expect(feed.filter((entry) => entry.kind === 'stage').map((entry) => entry.text)).toEqual(['Thinking', 'Opening example.com', 'Loading example.com', 'Thinking', 'Loading', 'Speaking', 'Stopped'])
   })
 
   it('stamps every entry with the turn it came from, conversation lines included, and marks a failure line (#329)', () => {
