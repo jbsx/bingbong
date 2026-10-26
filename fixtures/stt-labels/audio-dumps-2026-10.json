@@ -322,6 +322,166 @@
     "utterance-1793030019176-0062.wav": {
       "said": "play tum se tum tak by niyam",
       "evidence": "turn-mvpfs19n-v19 'Play tum se tum takbai niyong.': the owner's standing line for this song (ledger turn-mvp8igvj-v2's chain); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793033377188-0002.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play tum se tum tak by niyam.', Whisper medium.en 'Play Toontak by Nihon'; the next line built on it"
+    },
+    "utterance-1793033402634-0004.wav": {
+      "said": "lower music volume",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
+    },
+    "utterance-1793033410020-0005.wav": {
+      "said": "change the volume to 25%",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Change the volume to 25%.', Whisper medium.en 'Music Volume to 25%.'; the next line built on it"
+    },
+    "utterance-1793033432191-0007.wav": {
+      "said": "show it",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
+    },
+    "utterance-1793033440065-0008.wav": {
+      "said": "show the page",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show the page.', Whisper medium.en 'Show on the page.'; the next line built on it"
+    },
+    "utterance-1793033451988-0010.wav": {
+      "said": "show it",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
+    },
+    "utterance-1793033502465-0012.wav": {
+      "said": "play iraada by niyam",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play Irada by Niyam.', Whisper medium.en 'Play Irada by Niamh.'; the next line built on it"
+    },
+    "utterance-1793033566763-0016.wav": {
+      "said": "loop the song",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'Loop the song.'; the next line built on it"
+    },
+    "utterance-1793033580384-0017.wav": {
+      "said": "scroll up",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
+    },
+    "utterance-1793033587666-0018.wav": {
+      "said": "escape",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Escape.', Whisper medium.en \"Let's Escape\"; the next line built on it"
+    },
+    "utterance-1793033595198-0020.wav": {
+      "said": "scroll up",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
+    },
+    "utterance-1793033661517-0022.wav": {
+      "said": "pause",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Pause.', Whisper medium.en 'Bye.'; the next line built on it"
+    },
+    "utterance-1793033665794-0023.wav": {
+      "said": "resume",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
+    },
+    "utterance-1793033672608-0024.wav": {
+      "said": "play",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'PLAY'; the next line built on it"
+    },
+    "utterance-1793033676236-0025.wav": {
+      "said": "stop",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+    },
+    "utterance-1793033680598-0026.wav": {
+      "said": "resume",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
+    },
+    "utterance-1793033685850-0027.wav": {
+      "said": "play",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'Play'; the next line built on it"
+    },
+    "utterance-1793033700533-0030.wav": {
+      "said": "idle page",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Title page.', Whisper medium.en 'item page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
+      "ledger": "turn-mvphyxti-vm",
+      "names": [
+        "idle"
+      ]
+    },
+    "utterance-1793033709127-0031.wav": {
+      "said": "idle page",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"I don't page.\", Whisper medium.en 'IDLE page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
+      "ledger": "turn-mvphz4g8-vn",
+      "names": [
+        "idle"
+      ]
+    },
+    "utterance-1793033716735-0032.wav": {
+      "said": "idle i d l e page",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Idle, I-D-L-E, page.', Whisper medium.en 'IDLE IDLE page'; the next line built on it"
+    },
+    "utterance-1793033730716-0034.wav": {
+      "said": "help",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
+    },
+    "utterance-1793033741231-0035.wav": {
+      "said": "mark as flagged",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'Mark as flagged.'; the next line built on it"
+    },
+    "utterance-1793033742595-0036.wav": {
+      "said": "or failure",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'or failure.'; the next line built on it"
+    },
+    "utterance-1793033759098-0038.wav": {
+      "said": "help",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
+    },
+    "utterance-1793033763965-0039.wav": {
+      "said": "read",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
+    },
+    "utterance-1793034921064-0042.wav": {
+      "said": "start a timer for five seconds",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Start a timer for five seconds.', Whisper medium.en 'Start the timer for 5 seconds.'; the next line built on it"
+    },
+    "utterance-1793034930527-0043.wav": {
+      "said": "stop the timer",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop the timer.', Whisper medium.en 'Stop the timer.'; the next line built on it"
+    },
+    "utterance-1793035125741-0045.wav": {
+      "said": "resume",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume'; the next line built on it"
+    },
+    "utterance-1793035131226-0046.wav": {
+      "said": "play iraada by niyam",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play iraada by niyam.', Whisper medium.en 'Play Radha by Neom.'; the next line built on it"
+    },
+    "utterance-1793035217157-0048.wav": {
+      "said": "loop the song",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'loop the song'; the next line built on it"
+    },
+    "utterance-1793036171624-0050.wav": {
+      "said": "read",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
+    },
+    "utterance-1793036277045-0052.wav": {
+      "said": "lower music volume",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
+    },
+    "utterance-1793036283554-0053.wav": {
+      "said": "set music volume to 25%",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Set music volume to 25%.', Whisper medium.en 'Set music volume to 25%.'; the next line built on it"
+    },
+    "utterance-1793037387553-0055.wav": {
+      "said": "stop",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+    },
+    "utterance-1793039960734-0058.wav": {
+      "said": "something interesting",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Something interesting.', Whisper medium.en 'something interesting.'; the next line built on it"
+    },
+    "utterance-1793040075179-0069.wav": {
+      "said": "play feeling good",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en \"Play Feelin' Good.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+    },
+    "utterance-1793040098909-0071.wav": {
+      "said": "play feeling good",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"They're feeling good.\", Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+    },
+    "utterance-1793040108831-0072.wav": {
+      "said": "play feeling good",
+      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
     }
   },
   "unlabelled": {
