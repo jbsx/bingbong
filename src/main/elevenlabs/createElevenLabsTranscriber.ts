@@ -22,6 +22,7 @@ export const CLOUD_COMMIT_TIMEOUT_MS = 1_500
 /** Frames batched into one audio message: 4 × 32 ms. */
 const FRAMES_PER_CHUNK = 4
 const FRAME_SAMPLES = 512
+const SAMPLE_RATE = 16_000
 
 /** The socket surface the ear needs; the default is Node's own WebSocket. */
 export interface EarSocket {
@@ -191,7 +192,7 @@ export function createElevenLabsTranscriber(deps: ElevenLabsTranscriberDeps): Cl
   function sendAudio(conn: Connection, samples: Float32Array): void {
     if (samples.length === 0) return
     sentSamples += samples.length
-    send(conn, JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: toPcm16Base64(samples), commit: false, sample_rate: 16_000 }))
+    send(conn, JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: toPcm16Base64(samples), commit: false, sample_rate: SAMPLE_RATE }))
   }
 
   function flush(conn: Connection): void {
@@ -263,7 +264,7 @@ export function createElevenLabsTranscriber(deps: ElevenLabsTranscriberDeps): Cl
       flush(conn)
       // What the Endpoint carries past the frames pushed: its own frame. The trailing silence the endpointer trimmed was already sent.
       if (pcm.length > sentSamples) sendAudio(conn, pcm.subarray(sentSamples))
-      lastSentMs = Math.round(sentSamples / 16)
+      lastSentMs = Math.round((sentSamples / SAMPLE_RATE) * 1000)
       capturing = false
       if (conn.fault !== null) {
         drop()
@@ -277,7 +278,7 @@ export function createElevenLabsTranscriber(deps: ElevenLabsTranscriberDeps): Cl
           resolve(result)
         }
         conn.commitSent = true
-        send(conn, JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: '', commit: true, sample_rate: 16_000 }))
+        send(conn, JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: '', commit: true, sample_rate: SAMPLE_RATE }))
         if (conn.fault !== null) conn.settle({ fault: conn.fault })
       })
       // The socket closes at the Endpoint (grill ruling 7, a guess).

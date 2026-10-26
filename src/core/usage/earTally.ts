@@ -20,6 +20,17 @@ export type EarTally = Record<string, Record<string, EarDay>>
 /** The cloud ear the tally names by what it was sent (ADR 0019 as amended: the one there is). */
 export const CLOUD_EAR = 'elevenlabs'
 
+/**
+ * Who an `stt` span's line was for (#463): a span carrying `sentMs` is the
+ * cloud ear's, whoever heard it; `heard` is the engine whose words it was.
+ * Null when the span names no engine.
+ */
+export function sttLine(detail: Readonly<Record<string, unknown>>): { asked: string; heard: string; sentMs: number | null } | null {
+  if (typeof detail.engine !== 'string') return null
+  const sentMs = typeof detail.sentMs === 'number' && Number.isFinite(detail.sentMs) && detail.sentMs >= 0 ? detail.sentMs : null
+  return { asked: sentMs !== null ? CLOUD_EAR : detail.engine, heard: detail.engine, sentMs }
+}
+
 const KEEP_DAYS = 31
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -80,11 +91,10 @@ export function createEarTallyBook(initial: EarTally): EarTallyBook {
   return {
     heard(span) {
       if (span.stage !== 'stt' || span.detail === undefined || span.detail.error !== undefined) return false
-      const sentMs = seconds(span.detail.sentMs)
-      const totalMs = seconds(span.detail.totalMs)
-      const engine = sentMs !== null ? CLOUD_EAR : typeof span.detail.engine === 'string' ? span.detail.engine : null
-      const ms = sentMs ?? totalMs
-      if (engine === null || ms === null) return false
+      const line = sttLine(span.detail)
+      const ms = line?.sentMs ?? seconds(span.detail.totalMs)
+      if (line === null || ms === null) return false
+      const engine = line.asked
       const day = dayKey(span.at)
       const was = tally[day]?.[engine] ?? { fired: 0, nothing: 0 }
       tally = { ...tally, [day]: { ...tally[day], [engine]: { ...was, nothing: was.nothing + ms / 1000 } } }

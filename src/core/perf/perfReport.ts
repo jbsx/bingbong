@@ -2,6 +2,7 @@ import type { PerfSpanRecord, StageTally } from './perfTracer'
 import type { CommandLogRecord } from '../command/decisionRecord'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 import { buildAppReport, formatAppReport, isAppRecord, type AppReport } from './appTelemetry.ts'
+import { sttLine } from '../usage/earTally.ts'
 import { buildDecisionReport, buildReactionReport, formatCommandReport, type DecisionReport, type ReactionReport } from './commandReport.ts'
 
 // The #33 report: per-stage p50/p95/max/count over every span in the log,
@@ -123,8 +124,9 @@ function buildSttEngines(records: readonly PerfSpanRecord[]): SttEngineStats[] {
   const byEngine = new Map<string, { warm: number[]; cold: number[] }>()
   for (const record of records) {
     const detail = record.detail
-    if (record.stage !== 'stt' || detail === undefined || typeof detail.engine !== 'string' || detail.error !== undefined) continue
-    const engine = typeof detail.sentMs === 'number' && detail.engine !== 'elevenlabs' ? `elevenlabs→${detail.engine}` : detail.engine
+    const line = record.stage === 'stt' && detail !== undefined && detail.error === undefined ? sttLine(detail) : null
+    if (line === null || detail === undefined) continue
+    const engine = line.asked === line.heard ? line.heard : `${line.asked}→${line.heard}`
     const spans = byEngine.get(engine) ?? { warm: [], cold: [] }
     ;(detail.cold === true ? spans.cold : spans.warm).push(record.durMs)
     byEngine.set(engine, spans)

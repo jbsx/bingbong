@@ -60,7 +60,8 @@ export function resolveVoiceConfig(
   const modelsDir = join(dirs.userDataDir, 'models')
   // The engine by env over the setting (#463): an e2e run or the trial's switch picks it without touching Settings.
   const named = env.BINGBONG_STT_ENGINE?.trim() ?? ''
-  const chosen = named !== '' && asSttModel(named) === named ? asSttModel(named) : sttEngine
+  const known = asSttModel(named)
+  const chosen = named !== '' && known === named ? known : sttEngine
   const apiKey = env.ELEVENLABS_API_KEY?.trim() ?? ''
   const url = env.BINGBONG_ELEVENLABS_URL?.trim()
   // The cloud ear with no key is never a dead ear: Parakeet hears, and Settings says why (grill ruling 3).
