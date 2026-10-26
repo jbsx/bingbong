@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FEED_DETAILS_STORAGE_KEY,
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
   FEED_PANEL_WIDTH_MAX_STEPS,
@@ -12,6 +13,7 @@ import {
   isPanelWidthDirection,
   isPanelWidthPreset,
   presetFeedPanelWidth,
+  readStoredFeedDetails,
   readStoredFeedMode,
   readStoredFeedWidth,
   stepFeedPanelWidth,
@@ -174,6 +176,22 @@ describe('readStoredFeedMode', () => {
   it('falls back to overlay on junk values', () => {
     expect(readStoredFeedMode({ getItem: () => 'floating' })).toBe('overlay')
     expect(readStoredFeedMode({ getItem: () => JSON.stringify({ mode: 'docked' }) })).toBe('overlay')
+  })
+})
+
+describe('readStoredFeedDetails', () => {
+  it('is off with no storage or key', () => {
+    expect(readStoredFeedDetails(null)).toBe(false)
+    expect(readStoredFeedDetails({ getItem: () => null })).toBe(false)
+  })
+
+  it('reads the switch left on', () => {
+    expect(readStoredFeedDetails({ getItem: (key) => (key === FEED_DETAILS_STORAGE_KEY ? 'on' : null) })).toBe(true)
+  })
+
+  it('is off on junk values', () => {
+    expect(readStoredFeedDetails({ getItem: () => 'true' })).toBe(false)
+    expect(readStoredFeedDetails({ getItem: () => 'off' })).toBe(false)
   })
 })
 

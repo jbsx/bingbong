@@ -110,6 +110,14 @@ export function presetFeedPanelWidth(preset: PanelWidthPreset, windowWidth: numb
   return clampFeedPanelWidth(windowWidth * PANEL_WIDTH_PRESET_FRACTIONS[preset], windowWidth)
 }
 
+/** Where the overlay persists the Details switch (#454) — same view-preference deal. */
+export const FEED_DETAILS_STORAGE_KEY = 'bingbong.feedDetails'
+
+/** Whether the Feed shows its Details (#454) — times, action lines, run detail: off unless left on. */
+export function readStoredFeedDetails(storage: { getItem(key: string): string | null } | null | undefined): boolean {
+  return storage?.getItem(FEED_DETAILS_STORAGE_KEY) === 'on'
+}
+
 /**
  * Reads the persisted mode from localStorage-like storage. The default (and
  * the fallback for junk) is overlay: the feed floats above the browser pane
