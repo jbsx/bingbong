@@ -131,6 +131,8 @@ const SPEECH = 0.95
 const QUIET = 0.01
 /** The Utterance taken over /empty-main, whose "Fixture Museums" link is a Page Term — words no Command reads. */
 const WORDS = 'what about the Fixture Museums collections'
+/** Chromium's fake mic: with no capture device the mic's open fails, which closes the listen at once (#444). */
+const FAKE_MIC = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
 const frames = (value: number, count: number): number[] => Array.from({ length: count }, () => value)
 
 type Theme = 'dark' | 'light'
@@ -271,9 +273,10 @@ async function walkTheShell(run: Run): Promise<void> {
   await command(run, `navigate ${fixture.url('/held-response')}`, false)
   await sleep(2500)
   await shoot(run, '16-loading', false)
-  // The wait names its stage and host in the Feed's words (#438), never the raw line.
+  // The wait names its stage and host in the Feed's words (#438), never the raw line; held past its stuck bound
+  // (#442) it says which wait it is before the seconds.
   const waiting = await harness.dashboardEval<string>(`document.querySelector('.toolbar .status-capsule')?.textContent ?? ''`)
-  expect.soft(waiting, `${run.theme} 16-loading: the capsule names the stage and host`).toMatch(/^(Opening|Loading)…127\.0\.0\.1 · \d+s/)
+  expect.soft(waiting, `${run.theme} 16-loading: the capsule names the stage and host`).toMatch(/^(Opening…127\.0\.0\.1 · (still acting · )?|Loading…127\.0\.0\.1 · (page still loading · )?)\d+s/)
   await clickPanel(run, '[aria-label="Stop active command"]')
   await promptIdle(harness)
   await sleep(800)
@@ -409,20 +412,16 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
 async function walkTheVoicePrompt(run: Run): Promise<void> {
   const { harness, fixture } = run
   await command(run, `navigate ${fixture.url('/empty-main')}`)
-  // Frames advance the scripts one each: the wake, then speech the endpointer never sees end. The words are no
-  // Command, so nothing fires early (#326); a partial every other frame, paced so the Page Terms are in.
-  const feed = (count: number): Promise<unknown> => harness.dashboardEval(`(() => { for (let i = 0; i < ${count}; i++) window.bingbong.voice.sendAudio(new Float32Array(512)) })()`)
-  await feed(12)
-  await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 })
+  // The page is in while the ear still loads; once it is in, the mic's frames advance the scripts one each, at its
+  // pace: the wake, then speech the endpointer never sees end. The words are no Command, so nothing fires early (#326).
+  if (!(await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--starting')`))) {
+    await shoot(run, 'no-ear-starting')
+    expect.fail('the ear still loading once the page is in: BINGBONG_VAD_LOAD_MS ran out before the walk had its page')
+  }
+  await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 30_000, intervalMs: 100 })
   // LISTENING held to the glance floor (#436) as soon as it shows, before any words come.
   await shoot(run, '29-listening', false)
-  await waitFor(
-    async () => {
-      await feed(2)
-      return (await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt-said em')`)) ? true : undefined
-    },
-    { timeoutMs: 40_000, intervalMs: 500 },
-  ).catch(async (error: unknown) => {
+  await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt-said em')`)) ? true : undefined), { timeoutMs: 25_000, intervalMs: 100 }).catch(async (error: unknown) => {
     await shoot(run, 'no-term')
     throw error
   })
@@ -541,7 +540,7 @@ describe('the states screenshot review (#359)', () => {
             { text: '', delayMs: 14_000, partials: ['zorblax the quux'] },
           ]),
         },
-        ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+        FAKE_MIC,
       )
       try {
         await walkTheEarWaits(run)
@@ -552,14 +551,21 @@ describe('the states screenshot review (#359)', () => {
     }, 200_000)
 
     it(`shoots the Voice Prompt taking an Utterance in ${theme}`, async () => {
-      const run = await launch(theme, {
-        BINGBONG_WAKE_ENGINE: 'node',
-        BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
-        // Two Utterances in one Hot Listen: the page collected at the first speech start comes back empty (see
-        // #359's report), so the words shown are the second's, taken over the page with its Page Terms.
-        BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 40), ...frames(QUIET, 40), SPEECH]),
-        BINGBONG_STT_SCRIPT: JSON.stringify(['what about', { text: WORDS, partials: ['what about', 'what about the Fixture', ...frames(0, 200).map(() => WORDS)] }]),
-      })
+      // Chromium's fake mic, as the ear's waits use; the ear "loads" until the walk has its page, so the VAD
+      // script starts only once the page is in. Its partials come at the mic's pace, inside the 30 s utterance cap.
+      const run = await launch(
+        theme,
+        {
+          BINGBONG_WAKE_ENGINE: 'node',
+          BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
+          BINGBONG_VAD_LOAD_MS: '20000',
+          // Two Utterances in one Hot Listen: the page collected at the first speech start comes back empty (see
+          // #359's report), so the words shown are the second's, taken over the page with its Page Terms.
+          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 40), ...frames(QUIET, 40), SPEECH]),
+          BINGBONG_STT_SCRIPT: JSON.stringify(['what about', { text: WORDS, partials: ['what about', 'what about the Fixture', ...frames(0, 200).map(() => WORDS)] }]),
+        },
+        FAKE_MIC,
+      )
       try {
         await walkTheVoicePrompt(run)
       } finally {
