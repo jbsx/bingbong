@@ -4,7 +4,7 @@ import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
 import { promptChars } from '../decision/cardBudget'
-import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -254,7 +254,6 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     expect(bare.action.options).not.toHaveProperty('pause-7')
     expect(bare).not.toHaveProperty('amount')
     expect(hopQuestions('skip ahead', WATCH, { hop: 1, visited: [WATCH.url], actions: [], links: [] })).toHaveProperty('amount')
-    expect(partialQuestions('skip ahead', WATCH)).toHaveProperty('amount')
   })
 
   it("carries the element's state on its ref line: playing, elapsed/duration or live, volume or muted, loop, speed when not normal, captions with text tracks, buffering, failed", () => {
@@ -1235,12 +1234,11 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
     expect(stepsOf('play highs and lows pomme')).toEqual({ none: 'one command: the whole line', w3: 'play highs | lows pomme' })
   })
 
-  it('is not asked for a line with no conjunction, or one that starts or ends on one; nor at a later hop, on a partial, or when left out', () => {
+  it('is not asked for a line with no conjunction, or one that starts or ends on one; nor at a later hop, or when left out', () => {
     expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['action', 'slot', 'extent'])
     expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['action', 'slot', 'extent'])
     expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['action', 'slot', 'extent'])
     expect(Object.keys(hopQuestions(LINE, BLANK, { hop: 1, visited: [], actions: [], links: [] }))).not.toContain('steps')
-    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'extent', 'complete'])
     expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['action', 'slot', 'extent'])
   })
 
@@ -1272,9 +1270,9 @@ describe('Appliance Verbs (#374)', () => {
   const APPLIANCE_VERBS = ['play', 'play_next', 'queue', 'skip', 'previous', 'show', 'correct', 'correct_back', 'forget']
   const PAGE_SONG: CommandPage = { ...WATCH, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }
 
-  it("with a song queued, the command, hop and partial asks offer the nine beside the browser's ref-less verbs, each described, and no paragraph of their own", () => {
+  it("with a song queued, the command and hop asks offer the nine beside the browser's ref-less verbs, each described, and no paragraph of their own", () => {
     const appliance = { queued: true }
-    for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance }), partialQuestions('next song', WATCH, { appliance })]) {
+    for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance })]) {
       const labels = Object.keys(questions.action.options)
       expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS, 'capture-page'])
       for (const verb of APPLIANCE_VERBS) expect(questions.action.options[verb]).toMatch(/^music: /)
@@ -1321,11 +1319,10 @@ describe('Appliance Verbs (#374)', () => {
     const facts = { now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } }
     const SAYS = ['say_time', 'say_weather', 'say_playing', 'say_timer']
 
-    it('offers the facts on the command, hop and partial asks, after the music verbs, with or without a Player; never on the Where Ask', () => {
+    it('offers the facts on the command and hop asks, after the music verbs, with or without a Player; never on the Where Ask', () => {
       for (const questions of [
         commandQuestions("what's the time", WATCH, undefined, { appliance: { queued: true, facts } }),
         hopQuestions("what's the time", WATCH, HOP, { appliance: { queued: true, facts } }),
-        partialQuestions("what's the time", WATCH, { appliance: { queued: true, facts } }),
       ]) {
         // The page's capture stands last (#466), after them.
         expect(Object.keys(questions.action.options).slice(-(APPLIANCE_VERBS.length + SAYS.length + 1))).toEqual([...APPLIANCE_VERBS, ...SAYS, 'capture-page'])
@@ -1672,11 +1669,10 @@ describe('the Hearing on the card (#396, ADR 0077 as amended)', () => {
     expect(commandQuestions('Search NKBH D', PAGE).slot.options['s1-2']).toBe('NKBH D')
   })
 
-  it('rides the Where Ask, the Mark Ask, a hop and a partial', () => {
+  it('rides the Where Ask, the Mark Ask and a hop', () => {
     const hop: HopContext = { hop: 1, visited: [], actions: [], links: [], setAside: [], searched: [], terms: [] }
     expect(whereQuestions('Search NKBH D', PAGE, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
     expect(hopQuestions('Search NKBH D', PAGE, hop, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
-    expect(partialQuestions('Search NKBH D', PAGE, { heard }).slot.options['s1-2']).toBe('NKBH D (sounds like "MKBHD")')
   })
 })
 

@@ -51,6 +51,69 @@ describe('createDecisionModel', () => {
     expect(await pending).toMatchObject({ status: 'unavailable', reason: 'timeout' })
   })
 
+  it('sends the same ask bytes to the next host after a 429, at once, and names every attempt (#477)', async () => {
+    const calls: Array<{ url: string; body: string; authorization: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, body: String(init?.body), authorization: new Headers(init?.headers).get('authorization') })
+        if (url.startsWith('https://live.test')) return new Response(JSON.stringify({ error: 'rate limited' }), { status: 429, headers: { 'content-type': 'application/json' } })
+        return new Response(JSON.stringify({ model: 'second-v', answers: ANSWERS }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }),
+    )
+    const decision = createDecisionModel({
+      BINGBONG_DECISION_API_KEY: 'live-secret',
+      BINGBONG_DECISION_BASE_URL: 'https://live.test',
+      BINGBONG_DECISION_MODEL: 'live-model',
+      BINGBONG_DECISION_FALLBACKS: 'second-model|https://second.test|SECOND_KEY',
+      SECOND_KEY: 'second-secret',
+    })
+
+    const result = await decision!.ask({ state: 's', questions: QUESTIONS })
+
+    expect(result).toMatchObject({ status: 'answered', answers: ANSWERS, model: 'second-v' })
+    expect(result.attempts).toEqual([
+      expect.objectContaining({ model: 'live-model', host: 'https://live.test', outcome: 'http', httpStatus: 429 }),
+      expect.objectContaining({ model: 'second-v', host: 'https://second.test', outcome: 'answered' }),
+    ])
+    expect(calls.map((call) => call.url)).toEqual(['https://live.test/v1/systemone', 'https://second.test/v1/systemone'])
+    // The same ask, re-addressed: only the model id differs between the two bodies.
+    expect(JSON.parse(calls[0]!.body)).toEqual({ ...JSON.parse(calls[1]!.body), model: 'live-model' })
+    expect(JSON.parse(calls[1]!.body).model).toBe('second-model')
+    expect(calls.map((call) => call.authorization)).toEqual(['Bearer live-secret', 'Bearer second-secret'])
+    expect(decision!.model).toBe('live-model')
+  })
+
+  it('with no fallback named is unavailable on a 429 after one request, as before (#477)', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ error: 'rate limited' }), { status: 429, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+    const result = await createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret' })!.ask({ state: 's', questions: QUESTIONS })
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'http', httpStatus: 429 })
+    expect(result.attempts).toBeUndefined()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives every attempt but the last 2,250 ms, and the last BINGBONG_DECISION_TIMEOUT_MS (#477)', async () => {
+    vi.useFakeTimers()
+    const fetch = hangingFetch()
+    vi.stubGlobal('fetch', fetch)
+    const pending = createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret', BINGBONG_DECISION_TIMEOUT_MS: '3000', BINGBONG_DECISION_FALLBACKS: 'second-model' })!.ask({ state: 's', questions: QUESTIONS })
+    let settled = false
+    void pending.then(() => (settled = true))
+
+    await vi.advanceTimersByTimeAsync(2249)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    const result = await pending
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'timeout', model: 'second-model' })
+    expect(result.attempts?.map((attempt) => attempt.outcome)).toEqual(['timeout', 'timeout'])
+  })
+
   it('leaves the role unconfigured on a protocol this build does not speak (#395)', () => {
     expect(createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret', BINGBONG_DECISION_PROTOCOL: 'openai-decisions' })).toBeNull()
   })

@@ -5,7 +5,8 @@
 // protocol by env (#395) — else none.
 
 import { createHash } from 'node:crypto'
-import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting, type ConfiguredDecisionRouting } from '../../core/decision/decisionRouting.ts'
+import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting, type ConfiguredDecisionRouting, type ModelEndpointConfig } from '../../core/decision/decisionRouting.ts'
+import { withFallbacks } from '../../core/decision/fallbackChain.ts'
 import {
   DECISION_UNAVAILABLE_REASONS,
   readDecisionAnswers,
@@ -95,14 +96,23 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
 
 /**
  * The adapter for the routing's protocol, with its timeout and images
- * setting; `timeoutMs` in place of the routing's for `pnpm jev:replay`,
- * which costs no round.
+ * setting, over the live host and then the Fallback Hosts (#477): every
+ * attempt with a host after it times out at the routing's fallback
+ * timeout, the last at its timeout, so no fallback is one host and one
+ * timeout as before. `timeoutMs` in place of the routing's for `pnpm
+ * jev:replay`, which costs no round; `fallbacks: false` for the gate and
+ * the replay, which ask exactly the model they name (ruling 11 of #477).
  */
-export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, overrides: { readonly timeoutMs?: number } = {}): DecisionModel {
-  switch (routing.protocol) {
-    case 'systemone':
-      return { ...createJevDecisionModel(routing.endpoint, { timeoutMs: overrides.timeoutMs ?? routing.timeoutMs, images: routing.images }), cardBudget: routing.cardBudget }
+export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, overrides: { readonly timeoutMs?: number; readonly fallbacks?: boolean } = {}): DecisionModel {
+  const hosts = overrides.fallbacks === false ? [routing.endpoint] : [routing.endpoint, ...routing.fallbacks]
+  const adapter = (endpoint: ModelEndpointConfig, last: boolean): DecisionModel => {
+    const timeoutMs = overrides.timeoutMs ?? (last ? routing.timeoutMs : routing.fallbackTimeoutMs)
+    switch (routing.protocol) {
+      case 'systemone':
+        return { ...createJevDecisionModel(endpoint, { timeoutMs, images: routing.images }), cardBudget: routing.cardBudget }
+    }
   }
+  return withFallbacks(hosts.map((endpoint, index) => ({ model: adapter(endpoint, index === hosts.length - 1), host: endpoint.baseUrl })))
 }
 
 export function createDecisionModel(env: Record<string, string | undefined>): DecisionModel | null {

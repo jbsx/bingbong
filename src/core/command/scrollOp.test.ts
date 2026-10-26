@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { RegionFacts } from '../browser/snapshot'
 import { describeCommand, type Command, type CommandPage, type CommandRef } from './command'
-import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, markQuestions, partialQuestions, textlessRefsOf, readCommandAnswers, refIdentityOf, setAsideOf, type HopContext } from './jevReading'
+import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, markQuestions, textlessRefsOf, readCommandAnswers, refIdentityOf, setAsideOf, type HopContext } from './jevReading'
 
 // Scroll Regions (#383, ADR 0085): an element the page scrolls on its own
 // is a ref of its own kind, with no click, carrying two Scroll Ops; how far
@@ -62,7 +62,7 @@ describe('the Extent (ADR 0085): a Choice of its own on every ask, read only for
     readCommandAnswers({ action: choice(label), slot: choice('none'), ...(extent !== undefined ? { extent: choice(extent) } : {}), ...extra }, text, PAGE)
 
   it('is asked on every ask, a region on the card or not, with its five rungs', () => {
-    for (const questions of [commandQuestions('scroll down', PAGE), commandQuestions('scroll down', { ...PAGE, refs: PAGE.refs.slice(0, 1) }), hopQuestions('scroll down', PAGE, { hop: 1, visited: [], actions: [], links: [] }), partialQuestions('scroll', PAGE)]) {
+    for (const questions of [commandQuestions('scroll down', PAGE), commandQuestions('scroll down', { ...PAGE, refs: PAGE.refs.slice(0, 1) }), hopQuestions('scroll down', PAGE, { hop: 1, visited: [], actions: [], links: [] })]) {
       expect(Object.keys((questions as { extent: { options: Record<string, string> } }).extent.options)).toEqual(['words', 'little', 'screen', 'lot', 'end'])
     }
   })

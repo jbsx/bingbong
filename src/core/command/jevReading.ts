@@ -1046,11 +1046,11 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * The questions: the action card and the Slot; at a hop past the first,
  * the card's refs and links are what the hop offers. On a site (#340) — a real page that
  * is no Web Engine's web search — `where` is asked beside them in the same
- * call; an Early Fire partial is a hop-0 reading and asks it too; a later
- * hop asks it on a site the Task has not searched (#341). At hop 0, on a
- * line with a conjunction, `steps` is asked too (#364) — never at a later
- * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
- * own words (`steps: false`).
+ * call; a later hop asks it on a site the Task has not searched (#341). At
+ * hop 0, on a line with a conjunction, `steps` is asked too (#364) — never
+ * at a later hop, over a pop-up a dismiss phrase closes, or for a Step's
+ * own words (`steps: false`). No partial is asked anything (#477): an Early
+ * Fire is the Local Match's alone.
  */
 export function commandQuestions(
   text: string,
@@ -1497,20 +1497,6 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
   if (!('outcome' in answers)) return null
   const { choice } = answers.outcome
   return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, probability: choiceProbability(answers.outcome) } : null
-}
-
-/**
- * A partial transcript's questions (Early Fire, #326): the action card
- * and one Noul — whether the words so far are the whole Command. The Noul
- * decides only whether to wait for more words, never whether to act.
- */
-export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
-
-export function partialQuestions(text: string, page: CommandPage, { appliance, heard, further }: { readonly appliance?: Appliance; readonly heard?: readonly NameHearing[]; readonly further?: number } = {}): PartialQuestions {
-  return {
-    ...commandQuestions(text, page, undefined, { steps: false, appliance, heard, further }),
-    complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
-  }
 }
 
 /** Whether a card label offers something further down (#406, ADR 0088): an open, a right-click or a show, what yields to the Card Budget. */

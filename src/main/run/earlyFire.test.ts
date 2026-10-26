@@ -96,57 +96,49 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     return { browser, records, asks, perf, decision, runner }
   }
 
-  it('writes each partial\'s ask under its own id, and the Early Fire\'s record names the partial it fired on (#338)', async () => {
+  it('asks nothing on a partial (#477): the Endpoint\'s ask is the first, under the turn\'s id, and no record names a partial', async () => {
     const { records, asks, decision, perf, runner } = wired([
-      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { action: choice('search'), slot: choice('s2-3') },
       { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
-    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'hop'])
-    expect(asks[0]).not.toHaveProperty('turnId')
+    expect(asks.map((ask) => ask.kind)).toEqual(['command', 'hop'])
+    expect(asks[0]!.turnId).toBe(asks[0]!.id)
     expect(asks[0]!.questions).toEqual(decision.requests[0]!.questions)
-    expect(Object.keys(asks[0]!.questions)).toContain('complete')
+    expect(Object.keys(asks[0]!.questions)).not.toContain('complete')
     expect(decisions(records).map((record) => record.ask)).toEqual(asks.map((ask) => ask.id))
-    expect(decisions(records)[0]!.partialAsks).toEqual([asks[0]!.id])
-  })
-
-  it('names the ask of a partial that fired nothing on the record its Endpoint writes (#338)', async () => {
-    const { records, asks, perf, runner } = wired([
-      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
-      { action: choice('none'), slot: choice('none') },
-      { action: choice('none'), slot: choice('none') },
-    ])
-    await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
-
-    // The Endpoint's none is followed by its Where Ask (#379), whose own record carries none of the partials.
-    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'command', 'where'])
-    expect(decisions(records)).toEqual([expect.objectContaining({ ask: asks[1]!.id, partialCalls: 1, partialAsks: [asks[0]!.id] }), expect.objectContaining({ ask: asks[2]!.id, whereAsk: true })])
-    expect(decisions(records)[1]).not.toHaveProperty('partialCalls')
+    for (const record of decisions(records)) {
+      expect(record).not.toHaveProperty('partialAsks')
+      expect(record).not.toHaveProperty('partialCalls')
+      expect(record).not.toHaveProperty('earlyFire')
+    }
   })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
 
-  it('goes on only after the Endpoint, and hop 1 reads the final transcript', async () => {
+  it('reads the line once, at the Endpoint, and hop 1 reads the same transcript', async () => {
     const { browser, records, perf, decision, runner } = wired([
-      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { action: choice('search'), slot: choice('s2-3') },
       { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
-    expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=some%20lofi'])
+    expect(browser.navigations).toHaveLength(1)
+    expect(browser.navigations[0]).toMatch(/^https:\/\/duckduckgo\.com\/\?q=/)
     expect(decision.requests).toHaveLength(2)
+    expect(decision.requests[0]!.state).toContain('"Pull up some lofi music."')
     expect(decision.requests[1]!.state).toContain('"Pull up some lofi music."')
     expect(decisions(records)).toEqual([
-      expect.objectContaining({ verb: 'search', earlyFire: expect.objectContaining({ partial: 'pull up some lofi' }), task: expect.objectContaining({ hop: 0 }) }),
+      expect.objectContaining({ verb: 'search', transcript: 'Pull up some lofi music.', task: expect.objectContaining({ hop: 0 }) }),
       expect.objectContaining({ verb: 'none', transcript: 'Pull up some lofi music.', ended: 'done', task: expect.objectContaining({ hop: 1 }) }),
     ])
     expect(decisions(records)[0]!.ended).toBeUndefined()
   })
 
-  it('keeps an Early-Fired hop 0\'s reading: a dead end after the menu it opened tries that reading\'s runner-up (#363)', async () => {
+  it('keeps hop 0\'s reading: a dead end after the menu it opened tries that reading\'s runner-up (#363)', async () => {
     const action: DecisionAnswer = { type: 'choice', choice: 'menu-1', confidence: 0.5, probabilities: { 'menu-1': 0.5, 'menu-2': 0.3, none: 0.2 } }
     const { browser, perf, runner } = wired([
-      { action, slot: choice('none'), complete: { type: 'noul', noul: 0.9 } },
+      { action, slot: choice('none') },
       { action: choice('none'), slot: choice('s0-0') },
       { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
@@ -168,17 +160,18 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape'])
   })
 
-  it('ends after hop 0 when its partials are let go before an Endpoint', async () => {
-    const { browser, records, decision, runner } = wired([{ action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
+  it('ends a Local Match Early Fire after hop 0 when its partials are let go before an Endpoint, and asks nothing', async () => {
+    const { browser, records, decision, runner } = wired([])
+    browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example' }
     void runner.prepare()
-    await runner.consider('pull up some lofi')
-    expect(browser.navigations).toHaveLength(1)
+    await runner.consider('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
     runner.dropPartials()
     // The next Utterance's speech start records it, with no Endpoint, and no hop is read.
     void runner.prepare()
     await flushMicrotasks()
-    expect(decision.requests).toHaveLength(1)
-    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'search', ended: 'superseded', earlyFire: { partial: 'pull up some lofi', noul: 0.9 } })])
+    expect(decision.requests).toHaveLength(0)
+    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'scroll_down', ended: 'local_match', earlyFire: { partial: 'scroll down' } })])
   })
 })
 

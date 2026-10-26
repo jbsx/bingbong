@@ -2,6 +2,12 @@
 
 ## Status
 
+Amended on 2026-10-26 by #477: Jev is never asked on a partial transcript.
+An Early Fire is a Local Match line alone, and Jev reads a line once, at
+its Endpoint. On the kiosk, the Early Fires on a Jev partial were wrong 6
+times out of 6, for a median head start of 161 ms. A failed ask goes to the
+next host in the Decision Model's list before "unavailable" is said.
+
 Amended on 2026-10-24 by #423: a Site Question, a site's own confirm, is
 relayed to the user and answered by their next line, never by the loop. A
 confirm usually guards what `back` cannot undo, so "a Misfire is recovered,
@@ -52,8 +58,9 @@ moment one exists:
   model asked;
 - else Jev's top Choice, acted on at any confidence, refused only when
   Jev reads the Utterance as no Command for the page;
-- as an Early Fire on a partial transcript once the words so far read as
-  a complete Command, the Endpoint then only closing the Utterance;
+- as an Early Fire on a partial transcript once the words so far are a
+  Local Match line (#477; until then, once they read as a complete
+  Command), the Endpoint then only closing the Utterance;
 - at the Endpoint otherwise, released 300 ms into silence with no merge
   hold, so a pause mid-sentence makes two Commands;
 - with the browser's pacing sleeps removed and typing inserted whole.
@@ -83,9 +90,10 @@ machine; the Hardware Floor waits.
 - Misfires will happen and are the design working, not failing. The
   Misfire log is the dataset the accuracy work starts from.
 - Bot detection gets likelier on sites that read human pacing; accepted.
-- Jev is asked up to a few times per Utterance under Early Fire, at
-  $0.042 per million input tokens: cents a day. The rate cap in the
-  TypeSafe console is the limit to watch, not the bill.
+- Jev is asked once per hop, at the Endpoint (#477; under increment 2 it
+  was asked up to a few times per Utterance under Early Fire), at $0.042
+  per million input tokens: cents a day. The rate cap in the TypeSafe
+  console is the limit to watch, not the bill.
 - Every later lever (Hot Listen, persistent Piper, Early Fire) is measured
   against the plain loop's Reaction distribution before it stays.
 - The Decision Model is pinned to `jev-1.14.0`, not the `jev-1.13.0` the
@@ -1397,3 +1405,57 @@ listener is delegated still is not one.
   dialog of its own is asked for its text only once the page merge puts
   its iframe in the top's open dialog: walking every frame's body on every
   collect cost a 3,000-paragraph frame 27 ms.
+
+## Amendment 2026-10-26 — an Early Fire is a Local Match line, and an ask that fails goes to the next host (#477)
+
+Increment 2 (#326) let a partial transcript be one Jev call. The call carried
+the Choices and the Noul "Is this a complete command, with nothing still to
+be said?", and the Command fired when the Noul cleared 0.7. On the kiosk on
+2026-10-26, 6 Early Fires fired on a Jev-read partial and none of them matched
+the final transcript. All 6 acted wrongly: "Group this song" clicked Save to
+playlist at 0.23 (turn-mvphvwa2-1), "Nope" clicked Leave history off at 0.68
+(turn-mvp8m1th-3), and "Back and settle" went back at 0.83 (turn-mvp8i345-1).
+The median lead over the Endpoint was 161 ms. Across the local logs about 12
+of 17 Jev-read Early Fires were wrong, while about 13 Local Match Early Fires
+were all right. A partial is a mishearing waiting to be corrected, and the
+Noul reads its words as complete because, as words, they are. Partial asks
+were 70 of the kiosk's 243 calls (29%), sent to a host that was already
+answering 429.
+
+- **An Early Fire is a Local Match line.** A partial is read by the Local
+  Match alone, under the holds increment 2 set: `firesEarly`,
+  `headsAnotherVerb`, and the Flag, Player, dismiss and Site Question
+  holds. Jev is never asked on a partial. The Decision's third bullet now
+  reads: "as an Early Fire on a partial transcript once the words so far
+  are a Local Match line, the Endpoint then only closing the Utterance".
+  The Consequence "Jev is asked up to a few times per Utterance under
+  Early Fire" is gone: hop 0 is one ask, at the Endpoint.
+- **What the Endpoint reuses stays.** The page collected at speech start
+  serves the Endpoint's ask as before. Only the partial's ask and the fire
+  on its answer go, together with the `partial` ask kind, the `complete`
+  Noul, `partialCalls`, `partialAsks` and `earlyFire.noul`. `pnpm
+  perf:report` still reads them in old logs.
+- **Accepted:** a right Jev-read Early Fire, which was rare, loses its
+  head start. On the kiosk the head start was 161 ms and none were right.
+- **An ask goes down a list of hosts.** The Decision Model is the live
+  host from the env, then the hosts `BINGBONG_DECISION_FALLBACKS` names,
+  in order. The list is empty by default, which is the behaviour before
+  this amendment.
+  - On any failure but an abort (a 429 or another HTTP status, a timeout,
+    a transport fault, a malformed answer), the same ask bytes go at once
+    to the next host, with no wait on the one that failed.
+  - "Unavailable" means every host failed.
+  - Every attempt but the last times out at 2,250 ms, which is the p95 of
+    the 162 answered kiosk asks (2,142 ms) rounded up to the next 250 ms.
+    The last keeps `BINGBONG_DECISION_TIMEOUT_MS`.
+  - The record and the asks log name each attempt and the host that
+    answered, and `pnpm perf:report` counts the fallbacks.
+  - Two parts are guesses, cheapest to reverse: every ask starts at the
+    live host, and a malformed answer falls over too.
+- **The ask is well-formed.**
+  - A line that fails the grammar is parsed again without the ear's
+    trailing punctuation, so "Help." is `help`. A line that parses today
+    is unchanged.
+  - The Mark Ask's image is scaled to the image-reading host's documented
+    long edge before it is sent. The 2,560 px kiosk capture got a 400
+    (turn-mvjdvzlf-3); on replay, 1568×882 answers and 1569×883 does not.

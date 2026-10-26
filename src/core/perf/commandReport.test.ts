@@ -85,6 +85,7 @@ describe('buildDecisionReport', () => {
       jevAnswered: 2,
       jevLatency: { p50: 260, p95: 800 },
       jevRefused: {},
+      fellOver: { count: 0, answered: 0 },
       jevInputTokens: null,
       // The answers before #406 carry no token count; the timeout is banded nowhere.
       jevLatencyByTokens: [{ model: 'jev-1.14.0', band: 'no count', count: 2, p50: 180, p95: 260 }],
@@ -247,6 +248,19 @@ describe('formatCommandReport', () => {
     expect(formatCommandReport(buildReactionReport([]), report).at(-1)).toBe('tasks: 3 | ended local_match 2, done 1 | hops p50 1, max 2 | overruns by hop: none | lines split into Steps: 1')
   })
 
+  it('counts the asks that fell over to a Fallback Host beside the refusals, each attempt\'s refusal counted (#477)', () => {
+    const attempt = (model: string, host: string, outcome: 'answered' | 'http' | 'timeout', latencyMs: number) => ({ model, host, outcome, ...(outcome === 'http' ? { httpStatus: 429 } : {}), latencyMs })
+    const base = decision('t1', 'jev')
+    const fellAndAnswered: DecisionRecord = { ...base, jev: { ...(base.jev as object), model: 'elephant', attempts: [attempt('mammoth', 'a', 'http', 200), attempt('elephant', 'b', 'answered', 900)] } as unknown as DecisionRecord['jev'] }
+    const fellAndLost: DecisionRecord = { ...decision('t2', 'best_guess'), jev: { model: 'elephant', latencyMs: 2450, reason: 'timeout', attempts: [attempt('mammoth', 'a', 'http', 200), attempt('elephant', 'b', 'timeout', 2250)] } }
+    const oneHost: DecisionRecord = { ...decision('t3', 'best_guess'), jev: { model: 'mammoth', latencyMs: 300, reason: 'http', httpStatus: 429, message: 'rate limited' } }
+    const report = buildDecisionReport([fellAndAnswered, fellAndLost, oneHost, decision('t4', 'jev')])
+
+    expect(report.fellOver).toEqual({ count: 2, answered: 1 })
+    expect(report.jevRefused).toEqual({ 429: 3 })
+    expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain('jev refused 3 (429 3) | fell over 2 (answered by a fallback 1)')
+  })
+
   it('prints the refusals by status and the hosts\' token counts, so a card over its budget reads from the report (#406, ADR 0088)', () => {
     const answered = (turnId: string, inputTokens: number): DecisionRecord => {
       const base = decision(turnId, 'jev')
@@ -256,6 +270,7 @@ describe('formatCommandReport', () => {
     const report = buildDecisionReport([answered('t1', 9000), answered('t2', 15000), refused, decision('t4', 'best_guess')])
 
     expect(report.jevRefused).toEqual({ 422: 1 })
+    expect(report.fellOver).toEqual({ count: 0, answered: 0 })
     expect(report.jevInputTokens).toEqual({ p50: 9000, max: 15000 })
     expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain('jev refused 1 (422 1) | input tokens p50 9000 max 15000')
   })

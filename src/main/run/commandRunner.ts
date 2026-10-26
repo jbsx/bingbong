@@ -33,7 +33,6 @@ import {
   doneFacts,
   doneLine,
   hopQuestions,
-  partialQuestions,
   readCommandAnswers,
   readSettingAnswers,
   settingQuestions,
@@ -598,19 +597,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** Partial asks made so far: a partial is asked before its turn exists, so its ask id is its own. */
-  let partialAsks = 0
-
   /**
    * One Jev call (#338): its whole ask is written to the sidecar once the
    * answer is in — never ahead of the call, where a page's state text would
    * cost the round its write — so a misread can be replayed; resolves to
    * the result, with the ask's id the reading's decision record names.
+   * Every ask has its turn (#477): no partial is asked. An ask that went
+   * down the Fallback Hosts carries its attempts and the model that
+   * answered, and the sidecar line keeps them.
    */
   async function askJev<const Q extends DecisionQuestions>(
     model: DecisionModel,
     kind: AskKind,
-    turnId: string | null,
+    turnId: string,
     state: string,
     questions: Q,
     /** The ask's own id, for a turn asked twice (#364: a line's split, then its first Step); the turn's id otherwise. */
@@ -619,17 +618,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     images?: Readonly<Record<string, Uint8Array>>,
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
     const askedAt = at()
-    const askId = ownId ?? turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
+    const askId = ownId ?? turnId
     const result = await model.ask({ state, questions, ...(images !== undefined ? { images } : {}) })
-    // A host that refused the ask (#406, ADR 0088) — a card over its prompt, a key it turned away — is a fault, not only a slow round.
-    if (result.status === 'unavailable' && result.httpStatus !== undefined) {
-      reportFault('run.commandRunner.jevUnavailable', `${result.model} answered ${result.httpStatus}: ${result.message}`, turnId !== null ? { turnId } : {})
+    // A host that refused the ask (#406, ADR 0088) — a card over its prompt, a key it turned away — is a fault, not only a slow round; so is each attempt a host refused on the way to an answer (#477).
+    const refusals = result.attempts?.filter((attempt) => attempt.outcome === 'http') ?? (result.status === 'unavailable' && result.httpStatus !== undefined ? [{ model: result.model, httpStatus: result.httpStatus }] : [])
+    for (const refused of refusals) {
+      reportFault('run.commandRunner.jevUnavailable', `${refused.model} answered ${refused.httpStatus}${result.status === 'unavailable' ? `: ${result.message}` : ''}`, { turnId })
     }
     try {
       const saved = images === undefined ? null : savedImages(askId, images)
-      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions, ...(saved !== null ? { images: saved } : {}) })
+      const answeredBy = result.status === 'answered' && result.attempts !== undefined && result.attempts.length > 1 ? { answeredBy: result.model } : {}
+      deps.askLog?.write({ type: 'ask', id: askId, turnId, at: askedAt, kind, model: model.model, ...answeredBy, ...(result.attempts !== undefined ? { attempts: result.attempts } : {}), state, questions, ...(saved !== null ? { images: saved } : {}) })
     } catch (error) {
-      reportFault('run.commandRunner.askLog', error, turnId !== null ? { turnId } : {})
+      reportFault('run.commandRunner.askLog', error, { turnId })
     }
     return { ...result, askId }
   }
@@ -858,7 +859,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       result === null
         ? {}
         : result.status === 'answered'
-          ? { jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId }
+          ? { jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens, result.attempts), ask: result.askId }
           : { jev: jevUnavailableOf(result), ask: result.askId }
     return { command: first, page, reading: 'local_match', jevAsked: result !== null, ...asked, ...(rest.length > 0 ? { ladder: rest } : {}) }
   }
@@ -914,7 +915,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const result = await askJev(model, 'setting', turnId, fits ? state : commandState(text, { url: '', title: '', refs: [] }), questions, `${first.ask ?? turnId}-setting`)
     if (result.status !== 'answered') return { ...first, command: UNREAD, jev: jevUnavailableOf(result), ask: result.askId }
     // The card's own pick stands as the reading's action: a settings ask that reads none never sends the line to the Where Ask, the app's line having been chosen.
-    return { ...first, command: readSettingAnswers(result.answers, text, app), jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId }
+    return { ...first, command: readSettingAnswers(result.answers, text, app), jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens, result.attempts), ask: result.askId }
   }
 
   /** A hop 0 reading of Jev's answer to the action card; one it did not answer is no Command, and nothing guesses (#353). */
@@ -925,7 +926,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         page,
         reading: 'jev',
         jevAsked: true,
-        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens),
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens, result.attempts),
         ask: result.askId,
         action: result.answers.action,
       }
@@ -1560,7 +1561,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const result = await askJev(model, 'shelf', turnId, ask.state, ask.questions, `${turnId}-shelf`)
     if (result.status !== 'answered') return { file: null, reason: 'unread', shelf: ask.files.length, ask: result.askId, jev: jevUnavailableOf(result) }
     const file = readShelfAnswer(result.answers.file, ask.files)
-    const asked = { shelf: ask.files.length, ask: result.askId, jev: shelfJevDetailOf(result.answers.file, result.latencyMs, result.model, result.inputTokens) }
+    const asked = { shelf: ask.files.length, ask: result.askId, jev: shelfJevDetailOf(result.answers.file, result.latencyMs, result.model, result.inputTokens, result.attempts) }
     if (file === null) return { file: null, reason: 'none', ...asked }
     try {
       if (browser.attachFiles === undefined) throw new Error('no file chooser on this surface')
@@ -2195,7 +2196,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         page,
         reading: 'jev',
         jevAsked: true,
-        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens),
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens, result.attempts),
         ask: result.askId,
       }
       const { command, matched } = matchName(read.command, page, spoken)
@@ -2316,10 +2317,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** A partial heard while another was being read: considered next, the newest only. */
   let waitingPartial: string | null = null
   let considering = false
-  /** Jev calls made on this Utterance's partials, for the record its Endpoint writes. */
-  let partialCalls = 0
-  /** Their asks' ids (#338), so a partial that fired nothing is still reached from the record its Endpoint writes. */
-  let partialAskIds: string[] = []
 
   /** A Command fired on a partial, waiting for its Utterance's Endpoint to write its record and close its Reaction. */
   interface EarlyFired {
@@ -2329,13 +2326,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** The tracer's monotonic ms when it fired (the record's `at` is wall-clock). */
     readonly firedMono: number
     readonly record: DecisionRecord
-    readonly noul?: number
     /** The submission it made, which its Task is superseded past (#328). */
     readonly submission: number
     readonly command: Command
     readonly page: CommandPage
-    /** Jev's action card answer, when Jev read the partial (#363, #370): the runner-up a dead end may try. */
-    readonly action?: DecisionChoiceAnswer
     /** What its action came to, once it settles: hop 0's, which the Endpoint's Task goes on from (#328). */
     outcome: Promise<FireResult>
     /** The Endpoint's monotonic ms, once it came. */
@@ -2385,9 +2379,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...fired.record,
       ...(endpoint !== null ? { transcript: endpoint.transcript } : {}),
       ...(endpoint?.truncated ? { truncated: true } : {}),
-      earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}), ...(fired.noul !== undefined ? { noul: fired.noul } : {}) },
-      ...(partialCalls > 0 ? { partialCalls } : {}),
-      ...(partialAskIds.length > 0 ? { partialAsks: [...partialAskIds] } : {}),
+      earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}) },
     }
     if (ended !== 'deferred') log({ ...record, ended })
     if (endpoint !== null && fired.effect !== null) {
@@ -2402,12 +2394,17 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     utterance += 1
     lastPartial = null
     waitingPartial = null
-    partialCalls = 0
-    partialAskIds = []
   }
 
-  /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
-  async function readPartial(words: string, stale: () => boolean): Promise<(Reading & { noul?: number }) | null> {
+  /**
+   * A partial's reading, when it settles a Command that may fire before the
+   * Endpoint: the Local Match's alone (#477, ADR 0076 as amended). Jev is
+   * never asked on a partial — on the kiosk every Early Fire on a Jev-read
+   * partial was wrong (6 of 6, a median lead of 161 ms), a partial being a
+   * mishearing waiting to be corrected — so a line Jev reads is read once,
+   * at its Endpoint, over the page prepared at speech start.
+   */
+  async function readPartial(words: string, stale: () => boolean): Promise<Reading | null> {
     const quick = localMatch(words, [], knownAddress)
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
@@ -2426,28 +2423,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (stale()) return null
     const local = localMatch(words, page.refs, knownAddress)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
-    const model = deps.decisionModel()
-    if (model === null) return null
-    partialCalls += 1
-    const askedIn = utterance
-    const heard = hearingOf(words, page, true)
-    const ask = budgeted(model, (further) => partialQuestions(words, page, { appliance: appliance(), heard, further }), (questions) => commandState(words, page, undefined, undefined, undefined, questions, heard))
-    const result = await askJev(model, 'partial', null, ask.state, ask.questions)
-    // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
-    if (askedIn === utterance) partialAskIds.push(result.askId)
-    // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
-    if (stale() || result.status !== 'answered') return null
-    const noul = result.answers.complete.noul
-    if (noul < DEFAULT_DECISION_THRESHOLDS.noul) return null
-    const command = readCommandAnswers(result.answers, words, page, undefined, deps.app?.state())
-    if (command.verb === 'none') return null
-    // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
-    if (command.music?.kind === 'search') return null
-    // So does a fact (#402): "what's the weather" may yet be "what's the weather in Gurgaon", which the home city's does not answer.
-    if (command.verb === 'say') return null
-    // And an app op (#420): "set the idle timeout to 1" may yet be "… 10 minutes".
-    if (command.verb === 'app') return null
-    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens), ask: result.askId, action: result.answers.action, noul }
+    // Anything else — free words, a Slot, a line only Jev would read — waits for its Endpoint.
+    return null
   }
 
   /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */
@@ -2472,11 +2449,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       partial: words,
       firedMono: monotonic(),
       record: { ...recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false), task: hop0 },
-      ...(found.noul !== undefined ? { noul: found.noul } : {}),
       submission: submitted,
       command,
       page: found.page,
-      ...(found.action !== undefined ? { action: found.action } : {}),
       outcome: Promise.resolve({ outcome: 'landed' }),
       endpointAt: null,
       effect: null,
@@ -2958,7 +2933,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
-        if (fired.action !== undefined) task.reading = { action: fired.action, page: fired.page }
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
         else await continueTask(task, 1)
@@ -2966,8 +2940,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       // A spoken Endpoint of another Utterance: the Early Fire never reached its own. A typed line leaves it waiting for its Endpoint.
       if (fired !== null && source === 'spoken') closeEarly(fired, null)
-      const calls = source === 'spoken' ? partialCalls : 0
-      const callAsks = source === 'spoken' ? partialAskIds : []
       // An Endpoint (or a typed line) ends the Utterance: a partial still being read fires nothing.
       if (source === 'spoken') nextUtterance()
 
@@ -3033,8 +3005,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-        const extra = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
-        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending, extra) : await runStep(line, turnId, trimmed, heard, extra, { measured: true })
+        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending, {}) : await runStep(line, turnId, trimmed, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
         if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: trimmed, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }

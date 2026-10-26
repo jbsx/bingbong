@@ -1,5 +1,5 @@
 import type { KeyPress, PageLanding } from '../ports/browser'
-import type { DecisionChoiceAnswer, DecisionUnavailableReason } from '../ports/decisionModel'
+import type { DecisionAttempt, DecisionChoiceAnswer, DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
 import type { MusicAction } from '../music/musicWords'
 import type { MediaOpAction } from './mediaOp'
@@ -25,10 +25,13 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 
 /** Jev's answer, as the record keeps it: the confidence of each Choice and the probabilities that mattered; `where` only when it was asked (#340). */
 export interface JevDetail {
+  /** The model that answered — a Fallback Host's when the live one failed (#477). */
   readonly model: string
   readonly latencyMs: number
   /** The host's own count of the ask's tokens (#406, ADR 0088), when it reported one. */
   readonly inputTokens?: number
+  /** Every host's try at the ask, in order, the answering one last (#477); absent in records before it, and from a model that knows one host. */
+  readonly attempts?: readonly DecisionAttempt[]
   readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number; readonly passage?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
@@ -57,11 +60,19 @@ export interface JevUnavailable {
   readonly reason: DecisionUnavailableReason
   readonly httpStatus?: number
   readonly message?: string
+  /** Every host's try at the ask, in order (#477): unavailable means every one failed. Absent in records before it, and from a model that knows one host. */
+  readonly attempts?: readonly DecisionAttempt[]
 }
 
-/** An unavailable answer as the record keeps it (#406): the message only beside a status, where it is the host's. */
-export function jevUnavailableOf(result: { readonly model: string; readonly latencyMs: number; readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number }): JevUnavailable {
-  return { model: result.model, latencyMs: result.latencyMs, reason: result.reason, ...(result.httpStatus !== undefined ? { httpStatus: result.httpStatus, message: result.message } : {}) }
+/** An unavailable answer as the record keeps it (#406): the message only beside a status, where it is the host's; every attempt (#477). */
+export function jevUnavailableOf(result: { readonly model: string; readonly latencyMs: number; readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number; readonly attempts?: readonly DecisionAttempt[] }): JevUnavailable {
+  return {
+    model: result.model,
+    latencyMs: result.latencyMs,
+    reason: result.reason,
+    ...(result.httpStatus !== undefined ? { httpStatus: result.httpStatus, message: result.message } : {}),
+    ...(result.attempts !== undefined ? { attempts: result.attempts } : {}),
+  }
 }
 
 export interface DecisionRecord {
@@ -96,11 +107,11 @@ export interface DecisionRecord {
   readonly ask?: string
   /** The Utterance spoken over the page hit the 30 s cap. */
   readonly truncated?: boolean
-  /** The Command fired on a partial transcript, before the Endpoint (#326); absent for one read at the Endpoint. */
+  /** The Command fired on a partial transcript, before the Endpoint (#326), a Local Match line since #477; absent for one read at the Endpoint. */
   readonly earlyFire?: EarlyFireDetail
-  /** Jev calls made on this Utterance's partials (#326), whether one fired or not; absent when none was. */
+  /** Jev calls made on this Utterance's partials (#326). Written before #477 only — Jev is no longer asked on a partial — and still read by `pnpm perf:report`. */
   readonly partialCalls?: number
-  /** Those calls' ask ids in asks-*.jsonl (#338), whether one fired or not; absent when none was made. */
+  /** Those calls' ask ids in asks-*.jsonl (#338). Written before #477 only. */
   readonly partialAsks?: readonly string[]
   /** The Task this reading is a hop of (#328): hop 0's turn id, and which hop. */
   readonly task?: TaskHop
@@ -156,13 +167,14 @@ export interface ShelfJevDetail {
   readonly model: string
   readonly latencyMs: number
   readonly inputTokens?: number
+  readonly attempts?: readonly DecisionAttempt[]
   readonly confidence: number
   readonly probabilities: Readonly<Record<string, number>>
 }
 
-/** The Shelf ask's answer as the record keeps it (#424). */
-export function shelfJevDetailOf(answer: DecisionChoiceAnswer, latencyMs: number, model: string, inputTokens?: number): ShelfJevDetail {
-  return { model, latencyMs, ...(inputTokens !== undefined ? { inputTokens } : {}), confidence: answer.confidence, probabilities: topProbabilities(answer.probabilities, KEPT_PROBABILITIES) }
+/** The Shelf ask's answer as the record keeps it (#424); `attempts` when the ask went down the Fallback Hosts (#477). */
+export function shelfJevDetailOf(answer: DecisionChoiceAnswer, latencyMs: number, model: string, inputTokens?: number, attempts?: readonly DecisionAttempt[]): ShelfJevDetail {
+  return { model, latencyMs, ...(inputTokens !== undefined ? { inputTokens } : {}), ...(attempts !== undefined ? { attempts } : {}), confidence: answer.confidence, probabilities: topProbabilities(answer.probabilities, KEPT_PROBABILITIES) }
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */
@@ -206,7 +218,7 @@ export interface EarlyFireDetail {
   readonly partial: string
   /** How long before the Endpoint it fired; absent when the Utterance never reached one (the Listen closed under it). */
   readonly leadMs?: number
-  /** Jev's "complete command?" Noul, when Jev settled the partial. */
+  /** Jev's "complete command?" Noul, when Jev settled the partial. Written before #477 only: no partial is Jev's now. */
   readonly noul?: number
 }
 
@@ -351,8 +363,8 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
   )
 }
 
-/** Jev's answers as the record keeps them. */
-export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string, inputTokens?: number): JevDetail {
+/** Jev's answers as the record keeps them; `attempts` when the ask went down the Fallback Hosts (#477). */
+export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string, inputTokens?: number, attempts?: readonly DecisionAttempt[]): JevDetail {
   const amount = 'amount' in answers ? answers.amount : undefined
   const extent = 'extent' in answers ? answers.extent : undefined
   const where = 'where' in answers ? answers.where : undefined
@@ -364,6 +376,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
     model,
     latencyMs,
     ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(attempts !== undefined ? { attempts } : {}),
     confidence: {
       action: answers.action.confidence,
       slot: answers.slot.confidence,

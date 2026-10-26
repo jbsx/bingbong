@@ -72,3 +72,12 @@ on a YouTube watch-page card measured the forms:
   to the Mark Ask.
 - The `box` question and crops were measured and rejected. Marks on
   labelled refs were rejected as clutter.
+
+## Note (#477, 2026-10-26)
+
+The Mark Ask's image is scaled so its long edge is at most the documented
+limit of the image-reading host. Where several hosts read images, it is the
+smallest limit, as the Card Budget is the smallest host's (ADR 0088). The
+owner's 2,560×1,440 display made every Mark Ask a 400 "Invalid image
+dimensions" (turn-mvjdvzlf-3). The marks keep their size relative to the
+image.

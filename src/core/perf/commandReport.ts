@@ -9,8 +9,10 @@ import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 // and how many Misfires the next Command signalled. Early Fire (#326)
 // splits the Reaction by whether the Command fired on a partial, and the
 // decisions gain its share, its lead over the Endpoint, and the Jev calls
-// each spoken Utterance cost. Pure functions over parsed records; the
-// files are read at the main seam.
+// each spoken Utterance cost (`partialCalls`, written before #477 and
+// still read). The asks that fell over to a Fallback Host (#477) stand
+// beside the refusals. Pure functions over parsed records; the files are
+// read at the main seam.
 
 const REACTION_STAGE = 'reaction'
 const FIRST_SOUND_STAGE = 'tts-first-sound'
@@ -65,8 +67,10 @@ export interface DecisionReport {
   jevAnswered: number
   /** Over every Jev call made; null when none was. */
   jevLatency: { p50: number; p95: number } | null
-  /** The calls a host refused (#406), by HTTP status: a 422 is a card over the host's prompt. */
+  /** The calls a host refused (#406), by HTTP status: a 422 is a card over the host's prompt. Over every attempt (#477): a refusal a fallback then answered counts here too. */
   jevRefused: Record<number, number>
+  /** The asks that fell over to a Fallback Host (#477): the live host failed and a second attempt was made; how many a fallback then answered. */
+  fellOver: { count: number; answered: number }
   /** The hosts' own token counts over the answered calls that carry one (#406, ADR 0088); null when none does. */
   jevInputTokens: { p50: number; max: number } | null
   /** Every answered call's latency by model, then by token band (#440): models by call count, bands smallest first, `no count` last. */
@@ -199,6 +203,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     jevAnswered: 0,
     jevLatency: null,
     jevRefused: {},
+    fellOver: { count: 0, answered: 0 },
     jevInputTokens: null,
     jevLatencyByTokens: [],
     misfires: 0,
@@ -252,7 +257,15 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       if (record.jev !== undefined && Number.isFinite(record.jev.latencyMs)) {
         latencies.push(record.jev.latencyMs)
       }
-      if (record.jev !== undefined && 'httpStatus' in record.jev && typeof record.jev.httpStatus === 'number') report.jevRefused[record.jev.httpStatus] = (report.jevRefused[record.jev.httpStatus] ?? 0) + 1
+      // A refusal is counted per attempt once the record names them (#477); a record before that names one host's.
+      const attempts = record.jev?.attempts
+      if (attempts !== undefined) {
+        for (const attempt of attempts) if (attempt.outcome === 'http' && typeof attempt.httpStatus === 'number') report.jevRefused[attempt.httpStatus] = (report.jevRefused[attempt.httpStatus] ?? 0) + 1
+        if (attempts.length > 1) {
+          report.fellOver.count += 1
+          if (attempts[attempts.length - 1]!.outcome === 'answered') report.fellOver.answered += 1
+        }
+      } else if (record.jev !== undefined && 'httpStatus' in record.jev && typeof record.jev.httpStatus === 'number') report.jevRefused[record.jev.httpStatus] = (report.jevRefused[record.jev.httpStatus] ?? 0) + 1
       const counted = record.jev !== undefined && 'inputTokens' in record.jev && typeof record.jev.inputTokens === 'number' ? record.jev.inputTokens : undefined
       if (counted !== undefined) tokens.push(counted)
       // Only an answer's latency is banded: a refusal or a timeout says nothing of what its card cost.
@@ -298,6 +311,11 @@ function refusedText(refused: Record<number, number>): string {
   if (byStatus.length === 0) return ''
   const total = byStatus.reduce((sum, [, count]) => sum + count, 0)
   return ` | jev refused ${total} (${byStatus.map(([status, count]) => `${status} ${count}`).join(', ')})`
+}
+
+/** The asks that fell over (#477): ` | fell over 3 (answered by a fallback 2)`; nothing when none did. */
+function fellOverText(fell: { count: number; answered: number }): string {
+  return fell.count === 0 ? '' : ` | fell over ${fell.count} (answered by a fallback ${fell.answered})`
 }
 
 function percent(part: number, whole: number): string {
@@ -350,6 +368,7 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
         : `jev asked ${decisions.jevAsked} (${percent(decisions.jevAsked, decisions.commands)}), answered ${decisions.jevAnswered}` +
           (decisions.jevLatency ? `, latency p50 ${formatMs(decisions.jevLatency.p50)} p95 ${formatMs(decisions.jevLatency.p95)}` : '') +
           refusedText(decisions.jevRefused) +
+          fellOverText(decisions.fellOver) +
           (decisions.jevInputTokens ? ` | input tokens p50 ${decisions.jevInputTokens.p50} max ${decisions.jevInputTokens.max}` : '')
     const signals = Object.entries(decisions.misfiresBySignal)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

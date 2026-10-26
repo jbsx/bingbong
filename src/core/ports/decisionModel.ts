@@ -66,6 +66,23 @@ export interface DecisionRequest<Q extends DecisionQuestions> {
 export const DECISION_UNAVAILABLE_REASONS = ['timeout', 'transport', 'http', 'malformed', 'cancelled', 'failed'] as const
 export type DecisionUnavailableReason = (typeof DECISION_UNAVAILABLE_REASONS)[number]
 
+/**
+ * One host's try at one ask (#477, ADR 0076 as amended): the model it was
+ * addressed to, the host it went to, how it came out — `answered`, or the
+ * unavailable reason — the HTTP status on an `http` reason, and how long
+ * it took. An ask is one Attempt or more, down the Fallback Hosts
+ * (`BINGBONG_DECISION_FALLBACKS`), and ends at the first answer; only an
+ * abort ends it before the last host. Never a key.
+ */
+export interface DecisionAttempt {
+  readonly model: string
+  /** The host's base URL, as the routing names it. */
+  readonly host: string
+  readonly outcome: 'answered' | DecisionUnavailableReason
+  readonly httpStatus?: number
+  readonly latencyMs: number
+}
+
 export type DecisionResult<Q extends DecisionQuestions> =
   | {
       readonly status: 'answered'
@@ -75,16 +92,20 @@ export type DecisionResult<Q extends DecisionQuestions> =
       readonly model: string
       /** The host's own count of the ask's tokens (#406, ADR 0088), when it reported one: what a card's size is read against. */
       readonly inputTokens?: number
+      /** Every host's try at this ask, in order, the answering one last (#477); absent from a model that knows one host. */
+      readonly attempts?: readonly DecisionAttempt[]
     }
   | {
       readonly status: 'unavailable'
       readonly reason: DecisionUnavailableReason
       readonly message: string
       readonly latencyMs: number
-      /** The model id the request was addressed to. */
+      /** The model id the request was addressed to; with Fallback Hosts, the last one tried. */
       readonly model: string
       /** The HTTP status, on an `http` reason. */
       readonly httpStatus?: number
+      /** Every host's try at this ask, in order (#477): unavailable means every one failed. Absent from a model that knows one host. */
+      readonly attempts?: readonly DecisionAttempt[]
     }
 
 export interface DecisionModel {

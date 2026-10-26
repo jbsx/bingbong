@@ -6,6 +6,7 @@ import type { CommandLogRecord } from '../../core/command/decisionRecord'
 import type { AskRecord } from '../../core/decision/askRecord'
 import type { DecisionAnswer, DecisionChoiceQuestion, DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult, DecisionUnavailableReason } from '../../core/ports/decisionModel'
 import { FakeBrowser, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
+import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
@@ -978,17 +979,21 @@ describe('the Player (#343)', () => {
     expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ verb: 'play', music: { kind: 'skip' }, ended: 'terminal' })
   })
 
-  it('a partial Jev reads as an Appliance Verb with no words fires early; one read as `play <words>` waits for its Endpoint (#362)', async () => {
+  it('no partial is Jev\'s (#477): "play daft" and "go to the next song" fire nothing before their Endpoint, which asks once with the Appliance Verbs on the card', async () => {
     const { browser, decision, events, runner } = music()
     await runner.run('play bohemian rhapsody')
     const navigations = browser.navigations.length
-    decision.script.push({ answers: { action: choice('play'), slot: choice('s1-1'), complete: { type: 'noul', noul: 0.95 } } })
+    const asked = decision.requests.length
+    void runner.prepare()
     await runner.consider('play daft')
-    expect(browser.navigations).toHaveLength(navigations)
-    decision.script.push({ answers: { action: choice('skip'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
     await runner.consider('go to the next song')
+    expect(browser.navigations).toHaveLength(navigations)
+    expect(decision.requests).toHaveLength(asked)
+    decision.script.push({ answers: { action: choice('skip'), slot: choice('none') } })
+    await runner.run('go to the next song', { source: 'spoken' })
     await flushMicrotasks()
     expect(events.filter((event) => event.type === 'display').at(-1)).toMatchObject({ text: 'Nothing queued.' })
+    expect(decision.requests).toHaveLength(asked + 1)
     expect(Object.keys((decision.requests.at(-1)!.questions.action as DecisionChoiceQuestion).options)).toContain('skip')
   })
 
@@ -2081,141 +2086,71 @@ describe('Early Fire (#326)', () => {
   const noul = (value: number): DecisionAnswer => ({ type: 'noul', noul: value })
   const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ action: choice('navigate'), slot: choice('s1-1'), complete: noul(complete) })
 
-  it('never fires a Slot-carrying partial on the Local Match; asks Jev the three Choices and one Noul, and fires only when the Noul clears 0.7', async () => {
-    const { browser, events, records, decision, runner } = harness()
+  it('asks nothing on a partial (#477, AC1): one the model would read as complete fires nothing, and the Endpoint asks once, with no complete Noul', async () => {
+    const { browser, events, records, asks, decision, runner } = harness()
     void runner.prepare()
-    decision.script.push({ answers: openYoutube(0.3) })
+    // The script would answer any partial surely: it is never asked.
+    decision.script.push({ answers: openYoutube(0.95) })
     await runner.consider('open you')
-    expect(browser.navigations).toEqual([])
-    expect(decision.requests).toHaveLength(1)
-    const questions = decision.requests[0]!.questions
-    // example.com is a site, so the partial asks where too (#340).
-    expect(Object.keys(questions).sort()).toEqual(['action', 'complete', 'extent', 'slot', 'where'])
-    expect(questions.complete).toEqual({ type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' })
-    expect([questions.action, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice'])
-
-    decision.script.push({ answers: openYoutube(0.9) })
     await runner.consider('open youtube')
-    expect(browser.navigations).toEqual(['https://youtube.com'])
-    expect(decision.requests).toHaveLength(2)
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toHaveLength(0)
+    expect(events).toEqual([])
 
-    // The Endpoint's transcript is not read for hop 0 again: no second navigation. Its Task's next hop reads it (#328).
+    // The navigate's Task goes on to hop 1 (#328), which the script ends done.
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('open youtube please', { source: 'spoken', endpointAt: 0 })
-    expect(decision.requests).toHaveLength(3)
-    expect(decision.requests[2]!.state).toContain('"open youtube please"')
+    expect(decision.requests).toHaveLength(2)
+    expect(decision.requests[0]!.state).toContain('"open youtube please"')
+    expect(Object.keys(decision.requests[0]!.questions)).not.toContain('complete')
+    expect(asks.map((ask) => ask.kind)).toEqual(['command', 'hop'])
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(events.filter((event) => event.type === 'command')).toHaveLength(2)
     const decisions = records.filter((record) => record.type === 'decision')
     expect(decisions).toHaveLength(2)
-    expect(decisions[0]).toMatchObject({ verb: 'navigate', slot: 'youtube', reading: 'jev', jevAsked: true, partialCalls: 2, earlyFire: { partial: 'open youtube', noul: 0.9 } })
+    expect(decisions[0]).toMatchObject({ verb: 'navigate', slot: 'youtube', reading: 'jev', jevAsked: true, transcript: 'open youtube please' })
+    expect(decisions[0]).not.toHaveProperty('earlyFire')
+    expect(decisions[0]).not.toHaveProperty('partialCalls')
+    expect(decisions[0]).not.toHaveProperty('partialAsks')
   })
 
   it('holds a bare verb that may still become another Command: "scroll" waits for "scroll up"', async () => {
     const { browser, decision, runner } = harness()
     void runner.prepare()
-    decision.script.push({ unavailable: 'timeout' })
     await runner.consider('scroll')
     expect(browser.scrolls).toEqual([])
+    expect(decision.requests).toHaveLength(0)
     await runner.consider('scroll up')
     expect(browser.scrolls).toEqual(['up'])
   })
 
-  it('makes no call for a partial identical to the last one considered', async () => {
-    const { decision, runner } = harness()
+  it('fires nothing for a partial still waiting on the page when its Utterance is let go (disarm, the abort head)', async () => {
+    const { browser, runner } = harness()
+    let collected: (snapshot: PageSnapshot) => void = () => {}
+    const snapshot = browser.snapshot
+    browser.collectPage = () => new Promise<PageSnapshot>((resolve) => (collected = resolve))
     void runner.prepare()
-    decision.script.push({ answers: openYoutube(0.3) }, { answers: openYoutube(0.3) })
-    await runner.consider('open you')
-    await runner.consider('open you ')
-    expect(decision.requests).toHaveLength(1)
-  })
-
-  it('fires nothing for a partial still being read at the Endpoint, and reads the final transcript as before', async () => {
-    const { browser, events, decision, runner } = harness()
-    void runner.prepare()
-    let answer: (result: DecisionResult<DecisionQuestions>) => void = () => {}
-    const ask = decision.ask.bind(decision)
-    decision.ask = ((request: DecisionRequest<DecisionQuestions>) => {
-      if (decision.requests.length > 0) return ask(request)
-      decision.requests.push(request)
-      return new Promise<DecisionResult<DecisionQuestions>>((resolve) => (answer = resolve))
-    }) as typeof decision.ask
-    const partial = runner.consider('open you')
-    await flushMicrotasks()
-    decision.script.push({ answers: { action: choice('navigate'), slot: choice('s1-1') } })
-    const endpoint = runner.run('open youtube', { source: 'spoken' })
-    await flushMicrotasks()
-    answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
-    await partial
-    await endpoint
-    expect(browser.navigations).toEqual(['https://youtube.com'])
-    expect(events.filter((event) => event.type === 'command')).toHaveLength(1)
-    expect(events.find((event) => event.type === 'command')).toMatchObject({ text: 'open youtube' })
-  })
-
-  it('fires nothing and publishes no error when Jev is unavailable on a partial; the Endpoint reads as before', async () => {
-    const { browser, events, decision, runner } = harness()
-    void runner.prepare()
-    decision.script.push({ unavailable: 'transport' })
-    await runner.consider('open you')
-    expect(browser.navigations).toEqual([])
-    expect(events).toEqual([])
-    decision.script.push({ answers: { action: choice('navigate'), slot: choice('s1-1') } })
-    await runner.run('open youtube', { source: 'spoken' })
-    expect(browser.navigations).toEqual(['https://youtube.com'])
-    expect(events.some((event) => event.type === 'error')).toBe(false)
-  })
-
-  it('keeps one partial call in flight: a partial heard meanwhile waits, and only the newest is read next', async () => {
-    const { decision, runner } = harness()
-    void runner.prepare()
-    decision.script.push({ answers: openYoutube(0.3) }, { answers: openYoutube(0.3) })
-    const first = runner.consider('open you')
-    void runner.consider('open yout')
-    void runner.consider('open youtu')
-    await first
-    expect(decision.requests.map((request) => request.state.split('\n')[0])).toEqual(['The user spoke to a web browser: "open you"', 'The user spoke to a web browser: "open youtu"'])
-  })
-
-  /** A decision model whose first ask parks until `answer`. */
-  function parkFirstAsk(decision: CountingDecisionModel): { answer(result: DecisionResult<DecisionQuestions>): void } {
-    let answer: (result: DecisionResult<DecisionQuestions>) => void = () => {}
-    const ask = decision.ask.bind(decision)
-    decision.ask = ((request: DecisionRequest<DecisionQuestions>) => {
-      if (decision.requests.length > 0) return ask(request)
-      decision.requests.push(request)
-      return new Promise<DecisionResult<DecisionQuestions>>((resolve) => (answer = resolve))
-    }) as typeof decision.ask
-    return { answer: (result) => answer(result) }
-  }
-
-  it('fires nothing for a partial still being read when its Utterance is let go (disarm, the abort head)', async () => {
-    const { browser, decision, runner } = harness()
-    void runner.prepare()
-    const parked = parkFirstAsk(decision)
-    const partial = runner.consider('open you')
+    // "click sign in" needs the page's refs, so its reading waits on the collect.
+    const partial = runner.consider('click sign in')
     await flushMicrotasks()
     runner.dropPartials()
-    parked.answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
+    collected({ ...snapshot, refs: [{ ...snapshot.refs[0]!, ref: 1, kind: 'button', label: 'Sign in' }] })
     await partial
-    expect(browser.navigations).toEqual([])
+    expect(browser.clicks).toEqual([])
   })
 
-  it('frees the one call in flight once a partial fires: the next Utterance\'s partials are read while the action still runs', async () => {
-    const { browser, decision, runner } = harness()
+  it('frees the partial read once a partial fires: the next Utterance\'s partials are read while the action still runs', async () => {
+    const { browser, runner } = harness()
     let land: () => void = () => {}
-    browser.navigate = (url) =>
+    browser.back = () =>
       new Promise((resolve) => {
-        browser.navigations.push(url)
-        land = () => resolve(`navigated to ${url}`)
+        land = () => resolve('went back')
       })
     void runner.prepare()
-    decision.script.push({ answers: openYoutube(0.95) })
-    const first = runner.consider('open youtube')
+    const first = runner.consider('go back')
     await flushMicrotasks()
-    expect(browser.navigations).toEqual(['https://youtube.com'])
     // The Endpoint's Task waits for hop 0 to land before it goes on (#328).
-    const endpoint = runner.run('open youtube', { source: 'spoken' })
+    const endpoint = runner.run('go back', { source: 'spoken' })
     await flushMicrotasks()
     void runner.prepare()
     await runner.consider('scroll down')
@@ -4092,15 +4027,15 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     expect(decisions(records).find((record) => record.runnerUp === true)).toMatchObject({ verb: 'click', target: 3 })
   })
 
-  it('AC6: an Early Fire partial that reads none asks nothing more; the Endpoint\'s none does', async () => {
+  it('AC6: a partial asks nothing (#477); the Endpoint\'s none asks where', async () => {
     const { browser, decision, runner } = watchHarness()
-    decision.script.push(reading({ none: 0.7 }, { complete: { type: 'noul', noul: 0.95 } }), NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }), SURE_YES)
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }), SURE_YES)
     void runner.prepare()
     await runner.consider('turn on ambient')
-    expect(decision.requests).toHaveLength(1)
+    expect(decision.requests).toHaveLength(0)
     await runner.run('turn on ambient mode', { source: 'spoken' })
-    expect(decision.requests.map(isWhereAsk)).toEqual([false, false, true, false])
-    expect(decision.requests.filter((request) => 'complete' in request.questions)).toHaveLength(1)
+    expect(decision.requests.map(isWhereAsk)).toEqual([false, true, false])
+    expect(decision.requests.filter((request) => 'complete' in request.questions)).toHaveLength(0)
     expect(browser.clicks).toEqual([1])
   })
 
@@ -4871,14 +4806,13 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     expect(decisions(records)[0]).not.toHaveProperty('split')
   })
 
-  it('never splits a line the grammar settles whole, nor one fired early on a partial', async () => {
+  it('never splits a line the grammar settles whole; a partial is asked nothing at all (#477)', async () => {
     const { decision, runner } = harness()
     await runner.run('scroll down')
     expect(decision.requests).toHaveLength(0)
     void runner.prepare()
-    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), complete: { type: 'noul', noul: 0.9 } } })
     await runner.consider('click sign in and')
-    expect(Object.keys(decision.requests[0]!.questions)).not.toContain('steps')
+    expect(decision.requests).toHaveLength(0)
   })
 })
 

@@ -142,3 +142,12 @@ for every Decision Model: a model whose answer stays under it shows a card
 problem, not a bar to lower. The dismiss, consent-decline and Textless bars
 read the same number by a guess no measure reached (no live split changes
 what they do); a dismiss or decline case from a live split would settle it.
+
+## Note (#477, 2026-10-26)
+
+"No retries" still holds for a host: no request is sent twice to the same
+one. An ask that fails on one host is sent at once, with the same bytes, to
+the next host `BINGBONG_DECISION_FALLBACKS` names. "Unavailable" means every
+host failed. Every attempt but the last is bounded at 2,250 ms, so an ask
+costs at most the sum of its attempts' timeouts. With no fallback named it
+costs one timeout, as before (ADR 0076 as amended by #477).

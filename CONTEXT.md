@@ -552,8 +552,9 @@ plain verb with the label exactly one element carries. A line with free
 words — search terms, a song's words, words about the page — is never its:
 it goes to the
 Decision Model with every option, Appliance Verbs included.
-It is the fastest reading, and the only one that fires when the Decision
-Model does not answer — a line it does not settle is then no Command. It
+It is the fastest reading, the only one that fires on a partial (Early
+Fire), and the only one that fires when the Decision Model does not answer
+on any host — a line it does not settle is then no Command. It
 never guesses: there is no lenient reading, no nearest label, no words
 turned into a search.
 _Avoid_: grammar hit, regex path, offline mode, best guess
@@ -566,9 +567,11 @@ _Avoid_: history, bookmark, favourite
 
 **Early Fire**:
 Acting on a partial transcript, before the Endpoint, once the words so far
-read as a complete Command. The Endpoint then only closes the Utterance; a
-Command that no partial settled is read at the Endpoint as usual.
-_Avoid_: speculative execution, eager execution, streaming intent
+are a Local Match line. The Decision Model is never asked on a partial: a
+line it reads is read once, at the Endpoint (#477). The Endpoint then only
+closes the Utterance; a Command that no partial settled is read at the
+Endpoint as usual.
+_Avoid_: speculative execution, eager execution, streaming intent, partial ask
 
 **Misfire**:
 A Command that did what was heard rather than what was meant: a split
@@ -579,11 +582,26 @@ accuracy can be worked on once Reaction is won.
 _Avoid_: error, wrong action, false positive, hallucination
 
 **Ask**:
-What one Jev call was sent: the state text and the questions with their
-options, exactly as asked. Every Ask is kept beside the decision log, and
-the record of the Command it was read for names it, so a misread can be
-asked again.
+What one call of the Decision Model sent: the state text and the questions
+with their options, exactly as asked, the same bytes to every host it went
+to. Every Ask is kept beside the decision log with its Attempts, and the
+record of the Command it was read for names it, so a misread can be asked
+again.
 _Avoid_: prompt, request log
+
+**Fallback Host**:
+A host and model the Decision Model asks after the live one, in the order
+the env names them, when the one before failed: a 429, a fault, a timeout.
+It is sent the same Ask at once, and "unavailable" means every host
+failed. None is named by default. It reads the same card as the live one
+under the same Card Budget, so it should be one the gate measures.
+_Avoid_: retry, backup model, failover, second opinion
+
+**Attempt**:
+One host's try at one Ask: answered, or failed with its reason and how
+long it took. An Ask is one Attempt or more, down the Fallback Hosts, and
+ends at the first answer. Only an abort ends it before the last host.
+_Avoid_: retry, try, request
 
 **Jev Case**:
 An Ask the owner promoted from a real misread, with the answer each

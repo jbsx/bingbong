@@ -99,7 +99,7 @@ export async function replayCorpus(dir: string, deps: ReplayDeps, options: Repla
   if (model === undefined) {
     const routing = resolveDecisionRouting(deps.env)
     if (!routing.configured) return { code: 2, report: `jev:replay asks the real Jev and needs its key — ${routing.reason}` }
-    model = createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS })
+    model = createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS, fallbacks: false })
   }
   const entries = readCorpus(dir)
   if (entries.length === 0) return { code: 0, report: `no cases in ${dir}` }
@@ -224,13 +224,13 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
     for (const id of options.models) {
       const routing = resolveDecisionRouting({ ...deps.env, BINGBONG_DECISION_MODEL: id })
       if (!routing.configured) return { code: 2, report: `jev:gate cannot reach ${id} — ${routing.reason}` }
-      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS }))
+      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS, fallbacks: false }))
     }
     if (options.withJev) {
       // Jev is the default endpoint: the env with every BINGBONG_DECISION_* setting cleared, its own key (TYPESAFE_API_KEY) kept.
       const routing = resolveDecisionRouting(Object.fromEntries(Object.entries(deps.env).filter(([key]) => !key.startsWith(DECISION_ENV_PREFIX))))
       if (!routing.configured) return { code: 2, report: `jev:gate --with-jev asks the real Jev and needs its key — ${routing.reason}` }
-      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS }))
+      built.push(createRoutedDecisionModel(routing, { timeoutMs: REPLAY_TIMEOUT_MS, fallbacks: false }))
     }
     models = built
   }

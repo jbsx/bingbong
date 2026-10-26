@@ -2,6 +2,37 @@ import { describe, expect, it } from 'vitest'
 import { CLI_HEADS, grammarErrorOf, headsFlagLine, parseCliCommand, readFlagLine } from './cliGrammar'
 
 describe('parseCliCommand', () => {
+  describe("the ear's trailing punctuation (#477, ADR 0076 as amended)", () => {
+    it.each([
+      ['Help.', { type: 'help' }],
+      ['help!', { type: 'help' }],
+      ['Back.', { type: 'back' }],
+      ['Reload…', { type: 'reload' }],
+      ['Read.', { type: 'read' }],
+      ['Resume?', { type: 'resume' }],
+      ['Scroll down.', { type: 'scroll', direction: 'down' }],
+      ['click 7.', { type: 'click', ref: 7 } ],
+      ['Menu 7,', { type: 'menu', ref: 7 }],
+      ['Capture page.', { type: 'capture', ref: 'page' }],
+      ['Press enter.', { type: 'press', press: { key: 'Enter' }, times: 1 }],
+      ['Screenshot.', { type: 'screenshot', path: undefined }],
+      ['Timer off.', { type: 'timer', durationMs: null }],
+      ['Pause.', { type: 'play', music: { kind: 'pause' } }],
+    ] as const)('reads %j as the grammar line it is, for every verb the grammar has', (line, command) => {
+      expect(parseCliCommand(line)).toEqual({ ok: true, command: expect.objectContaining(command) })
+    })
+
+    it('parses the line as given first: a typed line that matched before keeps its reading, full stop and all', () => {
+      expect(parseCliCommand('type 5 hello.')).toEqual({ ok: true, command: { type: 'type', ref: 5, text: 'hello.' } })
+      expect(parseCliCommand('navigate example.com.')).toEqual({ ok: true, command: { type: 'navigate', input: 'example.com.' } })
+    })
+
+    it('keeps the error the words as given earned when the line fails both ways', () => {
+      expect(parseCliCommand('click seven.')).toEqual({ ok: false, error: "click: expected a ref number, e.g. 'click 7'" })
+      expect(parseCliCommand('Hello.')).toEqual({ ok: false, error: "unknown command: 'Hello.' — try 'help'" })
+    })
+  })
+
   it('parses navigate with its url input', () => {
     expect(parseCliCommand('navigate https://youtube.com')).toEqual({
       ok: true,

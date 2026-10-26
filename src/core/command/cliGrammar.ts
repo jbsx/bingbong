@@ -146,7 +146,34 @@ function unescape(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
 }
 
+/**
+ * The run of sentence punctuation the ear puts after a spoken line
+ * ("Help.", "Reload!", "Scroll down…") and nothing else: a trailing `.`
+ * `,` `!` `?` `…` `;` `:` or whitespace, however many.
+ */
+const TRAILING_PUNCTUATION = /[\s.,!?…;:]+$/u
+
+/**
+ * The CLI grammar's reading of a line (#477, ADR 0076 as amended): the
+ * line as given first, so a typed `type 5 hello.` keeps its full stop and
+ * no line that parsed before reads differently; when that is no grammar
+ * line, the line again with the ear's trailing punctuation off and its head
+ * word in lower case, so the ear's "Help." is the grammar's `help`, for
+ * every verb the grammar reads. A line that fails both ways keeps its first
+ * reading, the error the words as given earned.
+ */
 export function parseCliCommand(line: string): ParsedCliCommand {
+  const asGiven = parseGrammarLine(line)
+  if (asGiven !== null && asGiven.ok) return asGiven
+  const unpunctuated = line.trim().replace(TRAILING_PUNCTUATION, '')
+  const space = unpunctuated.search(/\s/)
+  const lowered = space === -1 ? unpunctuated.toLowerCase() : unpunctuated.slice(0, space).toLowerCase() + unpunctuated.slice(space)
+  if (lowered === line.trim()) return asGiven
+  const again = parseGrammarLine(lowered)
+  return again !== null && again.ok ? again : asGiven
+}
+
+function parseGrammarLine(line: string): ParsedCliCommand {
   const trimmed = line.trim()
   if (!trimmed) return null
 

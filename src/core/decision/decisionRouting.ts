@@ -44,6 +44,61 @@ const DECISION_IMAGES_ENV_KEY = `${DECISION_ENV_PREFIX}_IMAGES`
 /** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */
 export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`
 
+/**
+ * The Fallback Hosts (#477, ADR 0076 as amended): a comma list, in
+ * `BINGBONG_GATE_MODELS`'s style, of the hosts an ask goes to after the
+ * live one failed — a 429 or another status, a timeout, a transport fault,
+ * a malformed answer — in order, the same bytes at once, no wait on the
+ * one that failed. Each entry is `<model>` (on the live host and key, as
+ * the gate reads a model) or `<model>|<base-url>|<key-env-name>`: the name
+ * of the env var that holds the key, never the key. Empty by default,
+ * which is one host and the behaviour before #477. A fallback should be a
+ * gate model: a card the gate never measured on that model is a reading
+ * nobody checked. `pnpm jev:gate`, `jev:replay` and the Planner never read
+ * it — each asks exactly the model it names.
+ */
+export const DECISION_FALLBACKS_ENV_KEY = `${DECISION_ENV_PREFIX}_FALLBACKS`
+/**
+ * How long every attempt that has a host after it may take (#477): 2,250
+ * ms, measured on the 162 answered asks in the kiosk's decision records to
+ * 2026-10-26 — p50 1,227 ms, p95 2,142 ms, p99 2,739 ms, max 2,943 ms;
+ * the p95 rounded up to the next 250 ms (7 of the 162 answers came later).
+ * The last attempt keeps `BINGBONG_DECISION_TIMEOUT_MS`, so an empty list
+ * costs exactly one timeout, as before.
+ */
+export const DECISION_DEFAULT_FALLBACK_TIMEOUT_MS = 2_250
+const DECISION_FALLBACK_TIMEOUT_ENV_KEY = `${DECISION_ENV_PREFIX}_FALLBACK_TIMEOUT_MS`
+
+/**
+ * The most pixels an ask's image may have on either side (#477, ADR 0084
+ * as amended): TypeSafe's image docs (docs.typesafe.ai/images, read
+ * 2026-10-26) give "Width and height: 280 to 1568 pixels each", "an image
+ * outside them is rejected, never resized to fit". The ledger's replay
+ * agrees (turn-mvjdvzlf-3: 1568×882 answers, 1569×883 does not). One
+ * number for every host, the smallest documented, as the Card Budget is
+ * the smallest host's (ADR 0088); where the docs and the replay disagree,
+ * the smaller wins. The Mark Ask's capture is scaled so its long edge is
+ * at most this before it is sent; the marks keep their size relative to
+ * the image.
+ */
+export const DECISION_IMAGE_LONG_EDGE_PX = 1568
+
+/** The short side the same docs refuse under: a capture scaled to the long edge with a side under this is still refused (280 px), noted, not padded. */
+export const DECISION_IMAGE_SHORT_EDGE_MIN_PX = 280
+
+/**
+ * The size an image is sent at (#477): as it is when its long edge is
+ * within `DECISION_IMAGE_LONG_EDGE_PX`, else scaled down to it on both
+ * sides, the aspect kept; `scale` is what every mark's box is multiplied
+ * by. A 2560×1440 capture becomes 1568×882.
+ */
+export function fitImageToLongEdge(size: { readonly width: number; readonly height: number }, limit: number = DECISION_IMAGE_LONG_EDGE_PX): { width: number; height: number; scale: number } {
+  const long = Math.max(size.width, size.height)
+  if (!(long > limit)) return { width: size.width, height: size.height, scale: 1 }
+  const scale = limit / long
+  return { width: Math.max(1, Math.floor(size.width * scale)), height: Math.max(1, Math.floor(size.height * scale)), scale }
+}
+
 /** Whether the decision role resolved, and to what; never thrown, since unconfigured is a valid state. */
 export type DecisionRouting =
   | {
@@ -56,6 +111,10 @@ export type DecisionRouting =
       readonly images: boolean
       /** The Card Budget (#406, ADR 0088), in the host's tokens: one number for every model. */
       readonly cardBudget: number
+      /** The Fallback Hosts (#477), in order; empty for one host. */
+      readonly fallbacks: readonly ModelEndpointConfig[]
+      /** How long an attempt with a host after it may take (#477); the last keeps `timeoutMs`. */
+      readonly fallbackTimeoutMs: number
     }
   | { readonly configured: false; readonly reason: string }
 
@@ -74,6 +133,8 @@ export function decisionEnvKeys(): string[] {
     DECISION_IMAGES_ENV_KEY,
     DECISION_PROTOCOL_ENV_KEY,
     CARD_BUDGET_ENV_KEY,
+    DECISION_FALLBACKS_ENV_KEY,
+    DECISION_FALLBACK_TIMEOUT_ENV_KEY,
   ]
 }
 
@@ -117,16 +178,53 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
   if (images !== undefined && images !== 'true' && images !== 'false') {
     return { configured: false, reason: `${DECISION_IMAGES_ENV_KEY} must be true or false, got "${rawImages}"` }
   }
+  const rawFallbackTimeout = readEnv(env, DECISION_FALLBACK_TIMEOUT_ENV_KEY)
+  const fallbackTimeoutMs = rawFallbackTimeout === undefined ? DECISION_DEFAULT_FALLBACK_TIMEOUT_MS : Number(rawFallbackTimeout)
+  if (!Number.isInteger(fallbackTimeoutMs) || fallbackTimeoutMs <= 0) {
+    return { configured: false, reason: `${DECISION_FALLBACK_TIMEOUT_ENV_KEY} must be a whole number of ms above 0, got "${rawFallbackTimeout}"` }
+  }
+  const endpoint: ModelEndpointConfig = {
+    baseUrl: readEnv(env, `${DECISION_ENV_PREFIX}_BASE_URL`) ?? DECISION_DEFAULT_BASE_URL,
+    model: readEnv(env, `${DECISION_ENV_PREFIX}_MODEL`) ?? DECISION_DEFAULT_MODEL,
+    apiKey,
+  }
+  const fallbacks = resolveFallbacks(env, endpoint)
+  if ('reason' in fallbacks) return { configured: false, reason: fallbacks.reason }
   return {
     configured: true,
-    endpoint: {
-      baseUrl: readEnv(env, `${DECISION_ENV_PREFIX}_BASE_URL`) ?? DECISION_DEFAULT_BASE_URL,
-      model: readEnv(env, `${DECISION_ENV_PREFIX}_MODEL`) ?? DECISION_DEFAULT_MODEL,
-      apiKey,
-    },
+    endpoint,
     protocol,
     timeoutMs,
     images: images !== 'false',
     cardBudget: cardBudgetTokens(env),
+    fallbacks: fallbacks.hosts,
+    fallbackTimeoutMs,
   }
+}
+
+/**
+ * The Fallback Hosts `BINGBONG_DECISION_FALLBACKS` names (#477), each
+ * `<model>` on the live host and key or `<model>|<base-url>|<key-env-name>`;
+ * an entry that does not parse, or names a key env that is unset, leaves
+ * the role unconfigured with the reason — a fallback that would fail every
+ * time is no fallback.
+ */
+function resolveFallbacks(env: Record<string, string | undefined>, live: ModelEndpointConfig): { hosts: ModelEndpointConfig[] } | { reason: string } {
+  const raw = readEnv(env, DECISION_FALLBACKS_ENV_KEY)
+  if (raw === undefined) return { hosts: [] }
+  const hosts: ModelEndpointConfig[] = []
+  for (const entry of raw.split(',').map((part) => part.trim()).filter((part) => part !== '')) {
+    const [model, baseUrl, keyEnvName, ...more] = entry.split('|').map((part) => part.trim())
+    if (model === undefined || model === '' || more.length > 0 || (baseUrl !== undefined && (baseUrl === '' || keyEnvName === undefined || keyEnvName === ''))) {
+      return { reason: `${DECISION_FALLBACKS_ENV_KEY} entry "${entry}" must be <model> or <model>|<base-url>|<key-env-name>` }
+    }
+    if (baseUrl === undefined) {
+      hosts.push({ ...live, model })
+      continue
+    }
+    const apiKey = readEnv(env, keyEnvName!)
+    if (apiKey === undefined) return { reason: `${DECISION_FALLBACKS_ENV_KEY} entry "${entry}": ${keyEnvName} is not set` }
+    hosts.push({ baseUrl, model, apiKey })
+  }
+  return { hosts }
 }
