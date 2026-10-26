@@ -3,7 +3,6 @@ import { headlineAnswerId, type FeedEntry } from '../../core/feed/feedProjection
 import { describeProgress, moveOf } from '../../core/pipeline/taskProgress'
 import { REST_HINT } from '../../core/voice/voiceHint'
 import { earPhase } from '../../core/voice/voicePrompt'
-import { ChromeIcon } from './ChromeIcon'
 import { FeedMarkdown } from './FeedMarkdown'
 
 /**
@@ -16,17 +15,17 @@ function ProgressWord({ progress }: { progress: number }) {
 }
 
 /**
- * The activity feed list (#44): timestamped entries for commands, tool
- * lines, spoken/displayed text, errors, and stage detail lines —
- * observation only. Conversation structure (#54): user entries render
- * right-aligned in muted bubbles, assistant Answers as left-aligned
- * railed cards; everything else stays a plain system line. Attribution
- * (ADR 0013): one device — the Status Capsule orb beside every assistant
- * entry; no text handles, the name living in screen-reader text only.
- * Run grouping (#55): run noise — tool lines and stage markers
- * — folds under one per-run details expander, collapsed (#333), its title
- * reading as activity while its run is live, so the conversation reads as just you
- * and Bing Bong. Markdown (#56): the Answer's Card renders as structure
+ * The activity feed list (#44): entries for commands, tool lines,
+ * spoken/displayed text, errors, and stage detail lines — observation
+ * only. One entry shape (#454): a Command is two left-aligned lines, the
+ * words heard in the quiet layer and the outcome on its rail; everything
+ * else stays a plain system line. Attribution (ADR 0013): no text
+ * handles, the name living in screen-reader text only. Details (#454):
+ * the times, the action lines and the run detail draw only with the
+ * panel's one switch on. Run grouping (#55): run noise — tool lines and
+ * stage markers — folds under one per-run details expander, collapsed
+ * (#333), its title reading as activity while its run is live, so the
+ * conversation reads as just you and Bing Bong. Markdown (#56): the Answer's Card renders as structure
  * (FeedMarkdown) — code blocks, lists, headings, links that navigate the
  * pane — while a display-less Answer renders its spoken line (italic
  * speech). Rendered by the feed panel's overlay webContents (#45).
@@ -38,8 +37,8 @@ export function formatFeedTime(at: number): string {
 
 /**
  * Text that may carry a long address (#333): a line break may fall after
- * any slash, so the address wraps inside its bubble at its slashes rather
- * than mid-word or past the bubble's edge.
+ * any slash, so the address wraps inside the Feed's column at its slashes rather
+ * than mid-word or past the column's edge.
  */
 function BreaksAtSlashes({ text }: { text: string }) {
   const parts = text.split(/(?<=\/)/)
@@ -65,58 +64,52 @@ export interface FeedLineEmphasis {
 }
 
 export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?: FeedLineEmphasis }) {
-  // One time per entry, always first (#333): every entry's time sits in the same left column — a Command's words aside (#438).
-  const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
+  // An entry's time (#333) is a Detail (#454): drawn above it only with the panel's Details switch on.
+  const time = <time className="feed-time feed-detail">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
-    // Your words (#54): commands and heard transcriptions, right-aligned
-    // in muted bubbles — no glyph, no handle (ADR 0013): the orb marks
-    // Bing Bong only; your own words need no attribution. One entry per
-    // Command (#324, ADR 0076): the words heard, and under them the action
+    // Your words (#54, #454): the first of a Command's two lines, on the
+    // Feed's left edge — no bubble, no glyph, no handle (ADR 0013): your
+    // own words need no attribution. One entry per Command (#324, ADR
+    // 0076): the words heard, and under them, with Details on, the action
     // taken; an Utterance read as no Command is the words alone, greyed. A
-    // Task (#336) adds one line per later hop that fired.
+    // Task (#336) adds one action line per later hop that fired. One time
+    // per Command (#438, owner ruling 2026-10-26): the result's.
     return (
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.working === true ? ' feed-entry--working' : ''}`}>
-        {/* One time per Command (#438, owner ruling 2026-10-26): the result's; the words keep the column, empty, so the bubble does not move. */}
-        <span className="feed-time" aria-hidden="true" />
-        <span className={`feed-bubble${emphasis.working === true && !entry.muted ? ' live-tint' : ''}`}>
-          <span className="feed-text">
-            <BreaksAtSlashes text={entry.text} />
-          </span>
-          {entry.action !== undefined ? (
-            <span className="feed-action">
-              <BreaksAtSlashes text={entry.action} />
-              {entry.progress !== undefined ? <ProgressWord progress={entry.progress} /> : null}
-            </span>
-          ) : null}
-          {(entry.hopLines ?? []).map((hop, index) => (
-            <span key={index} className={`feed-action feed-action--hop${hop.muted ? ' feed-action--muted' : ''}${hop.failure ? ' feed-action--failed' : ''}`}>
-              <BreaksAtSlashes text={hop.text} />
-              {hop.progress !== undefined ? <ProgressWord progress={hop.progress} /> : null}
-            </span>
-          ))}
+        <span className="feed-words">
+          <BreaksAtSlashes text={entry.text} />
         </span>
+        {entry.action !== undefined ? (
+          <span className="feed-action feed-detail">
+            <BreaksAtSlashes text={entry.action} />
+            {entry.progress !== undefined ? <ProgressWord progress={entry.progress} /> : null}
+          </span>
+        ) : null}
+        {(entry.hopLines ?? []).map((hop, index) => (
+          <span key={index} className={`feed-action feed-action--hop feed-detail${hop.muted ? ' feed-action--muted' : ''}${hop.failure ? ' feed-action--failed' : ''}`}>
+            <BreaksAtSlashes text={hop.text} />
+            {hop.progress !== undefined ? <ProgressWord progress={hop.progress} /> : null}
+          </span>
+        ))}
       </p>
     )
   }
   if (entry.role === 'assistant') {
-    // Bing Bong's answers (#54, ADR 0013): one attribution device — the
-    // Status Capsule's orb beside every assistant entry, the name living
-    // in screen-reader text. The Card renders its markdown (#56); a
-    // display-less turn renders its spoken line — italic speech in the
-    // same card frame; a turn's two renderings never both render.
+    // Bing Bong's outcome (#54, #454): the second of a Command's lines, on
+    // a rail — the one mark; the words carry the meaning, the name living
+    // in screen-reader text (ADR 0013). The Card renders its markdown
+    // (#56); a display-less turn renders its spoken line — italic speech
+    // on the same rail; a turn's two renderings never both render.
     // The entry's own event stamp rides the card as nonvisual metadata:
     // an observer correlating a rendered Answer with the published
     // `display` event reads the same `at` here. A line telling what went
-    // wrong takes the failure colour on its mark and rail (#329); a Stop's is grey.
+    // wrong takes the failure colour on its rail (#329); a Stop's is grey.
     return (
       <div
         className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}${entry.failure ? ' feed-entry--failed' : ''}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.headline === true ? ' feed-entry--headline' : ''}`}
         data-event-at={entry.at}
       >
         {time}
-        <span className="feed-orb" aria-hidden="true">
-          <ChromeIcon name={entry.failure ? 'cross' : entry.muted ? 'dash' : 'tick'} size={14} />
-        </span>
         <div className="feed-card">
           <span className="feed-sr">Bing Bong</span>
           {entry.kind === 'display' ? (
@@ -209,7 +202,7 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
   }, [entries, open])
   return (
     <details
-      className={`feed-run${live ? ' feed-run--live' : ''}`}
+      className={`feed-run feed-detail${live ? ' feed-run--live' : ''}`}
       data-run-id={runId}
       open={open}
       onToggle={(event) => {
@@ -246,10 +239,13 @@ function useEarCannotHear(): boolean {
 export function ActivityFeed({
   entries,
   liveRunId,
+  details = false,
   headerActions,
   footer,
 }: {
   entries: FeedEntry[]
+  /** The panel's Details switch (#454): every entry's time, action lines and run detail drawn. */
+  details?: boolean
   /** The run currently in flight (#55) — its expander is titled as activity. */
   liveRunId?: string | null
   headerActions?: React.ReactNode
@@ -268,7 +264,7 @@ export function ActivityFeed({
   }, [entries])
 
   return (
-    <div className="feed" aria-label="activity feed">
+    <div className={`feed${details ? ' feed--details' : ''}`} aria-label="activity feed">
       <div className="feed-header">
         activity
         {headerActions ? <span className="feed-header-actions">{headerActions}</span> : null}

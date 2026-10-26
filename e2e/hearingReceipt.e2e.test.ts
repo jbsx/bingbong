@@ -99,8 +99,9 @@ describe('the hearing receipt (#441)', () => {
       const onset = span.at - span.durMs
       console.log(`[hearing receipt] Voice Prompt: span ${span.durMs.toFixed(1)} ms, paint ${(paintMs - onset).toFixed(1)} ms after onset`)
       expect(paintMs - onset).toBeLessThan(BAR_MS)
-      expect(await harness.overlayEval<string>(`document.querySelector('.voice-prompt-said')?.textContent ?? ''`)).toBe('…')
-      expect(await harness.overlayEval<string>(`document.querySelector('.voice-prompt-state')?.textContent ?? ''`)).toBe('Listening')
+      // Hearing with no words yet is an honest empty line (#454): no "…", the partial the line that grows.
+      expect(await harness.overlayEval<string>(`document.querySelector('.voice-prompt-said')?.textContent ?? ''`)).toBe('')
+      expect(await harness.overlayEval<string>(`document.querySelector('.voice-prompt-state')?.textContent ?? ''`)).toBe('Listening…')
       shoot('41-voice-prompt-hearing')
     } finally {
       await harness.quit()

@@ -3,7 +3,7 @@ import type { VoicePartialEvent, VoiceState } from '../../../core/voice/ipcChann
 import { PAUSE_CAP_MS_DEFAULT } from '../../../core/settings/settings'
 import { EAR_FAILED_LINE, REST_HINT } from '../../../core/voice/voiceHint'
 import { earPhase, partialSpans, quietLine, wordlessLine } from '../../../core/voice/voicePrompt'
-import { EarWait, VoiceWave } from '../AssistantPanel'
+import { EarWait, PILL_LABELS, VoiceWave } from '../AssistantPanel'
 import { useSettings } from '../useSettings'
 import { PromptBar } from './PromptBar'
 
@@ -41,9 +41,10 @@ function useVoiceFeed(): { state: VoiceState | null; partial: VoicePartialEvent 
 
 /**
  * The Voice Prompt (ADR 0078, #359): the Prompt Bar's F1 form in the
- * panel's footer — the orb, the hint, and the voice state. While an
- * Utterance is taken it says LISTENING over a waveform, "…" from the
- * frame speech starts (#441), then the live words with any Page Term in
+ * panel's footer — the orb, the hint, and the voice state, in the
+ * Capsule's words and face (#454). While an Utterance is taken it says
+ * "Listening…" beside a waveform, an empty line from the frame speech
+ * starts (#441, #454), then the live words with any Page Term in
  * peach, and what ends it (the turn check, or
  * the Pause cap of quiet). Typing works the same in every state: the field is
  * always the Prompt Bar, and Stop sits beside it while a run is live.
@@ -63,15 +64,11 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
   const placeholder =
     phase === 'starting'
       ? 'Not hearing yet — type a command'
-      : phase !== 'rest'
-        ? quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT)
-        : runActive
-          ? 'Type a command'
-          : ear === 'failed'
-            ? 'Type a command'
-            : earOff
-            ? 'Microphone off — type a command'
-            : REST_HINT
+      : phase !== 'rest' || runActive || ear === 'failed'
+        ? 'Type a command'
+        : earOff
+          ? 'Microphone off — type a command'
+          : REST_HINT
 
   return (
     <div className={`voice-prompt voice-prompt--${phase}${live ? ' live-tint' : ''}`}>
@@ -80,8 +77,9 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
           <div className="voice-prompt-head">
             <span className="voice-orb" aria-hidden="true" />
             {live ? <VoiceWave bars={14} /> : null}
+            {/* The Capsule's own word for the state (#454, ui.md 9): one state, one face. */}
             <span className="voice-prompt-state" role="status">
-              {live ? 'Listening' : phase === 'starting' ? 'Starting' : 'Transcribing'}
+              {PILL_LABELS[phase === 'starting' || phase === 'transcribing' ? phase : 'listening']}
             </span>
             {phase !== 'starting' ? <span className="voice-prompt-hint">{state?.reason === 'wake' ? 'after “Bing Bong”' : 'after Ctrl+Space'}</span> : null}
           </div>
@@ -89,12 +87,16 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
             {waiting ? (
               <EarWait phase={phase} voice={{ partial: lastWords, transcribing: state?.transcribing === true, ...(state?.since !== undefined ? { since: state.since } : {}) }} />
             ) : words === '' ? (
-              wordlessLine(phase)
+              // Hearing with no words yet is an empty line (#454): the partial is the line that grows, and no "…" stands in for it.
+              phase === 'listening' ? wordlessLine(phase) : ''
             ) : (
               partialSpans(words, partial?.terms ?? []).map((span, index) => (span.term ? <em key={index}>{span.text}</em> : <span key={index}>{span.text}</span>))
             )}
             {live ? <span className="voice-prompt-caret" aria-hidden="true" /> : null}
           </p>
+          {/* What ends the Utterance (#357), at 24 px (#454, ui.md 2). Guess: a line of its own, not the field's placeholder — at 24 px the
+              placeholder is cut at the default panel's field width; the issue's own measure (a readable bound) would settle a move back. */}
+          {live ? <p className="voice-prompt-bound">{quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT)}</p> : null}
         </>
       ) : ear === 'failed' ? (
         // The wait's outcome (#447), whole and in the said-line's place: a placeholder would be cut at the field's width.

@@ -122,6 +122,33 @@ const CHECK_SCRIPT = `(() => {
   return issues
 })()`
 
+/**
+ * The Feed read from the chair (#454): with Details off no run detail, time or action line is drawn, and every word
+ * in the panel's Feed and Voice Prompt is Inter at 16 px or more — an Answer's own code blocks aside, which are the
+ * page's words, not the panel's.
+ */
+const FEED_CHECK = `(() => {
+  const issues = []
+  const feed = document.querySelector('.feed')
+  if (feed === null) return issues
+  const drawn = (el) => { const box = el.getBoundingClientRect(); return el.getClientRects().length > 0 && box.width > 1 && box.height > 1 && getComputedStyle(el).visibility !== 'hidden' }
+  const name = (el) => (typeof el.className === 'string' && el.className !== '' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()) + ' "' + (el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40) + '"'
+  if (!feed.classList.contains('feed--details')) {
+    for (const el of feed.querySelectorAll('.feed-run, .feed-time, .feed-action')) if (drawn(el)) issues.push('a Detail drawn with Details off: ' + name(el))
+  }
+  for (const el of feed.querySelectorAll('*')) {
+    if (el.closest('svg, .feed-sr, .feed-markdown pre, .feed-markdown code')) continue
+    if (feed.classList.contains('feed--details') && el.closest('.feed-detail')) continue
+    const field = el instanceof HTMLInputElement && el.type === 'text'
+    const own = field ? (el.value || el.placeholder) !== '' : [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== '')
+    if (!own || !drawn(el)) continue
+    const style = getComputedStyle(el)
+    if (parseFloat(style.fontSize) < 16) issues.push('Feed text under 16 px (' + style.fontSize + '): ' + name(el))
+    if (!style.fontFamily.startsWith('InterVariable')) issues.push('Feed text not in Inter (' + style.fontFamily + '): ' + name(el))
+  }
+  return issues
+})()`
+
 /** A Weigh-in stepping on and settling on the stand-in scale (the frames weight.e2e reads). */
 const STEPPING_ON = [
   '120f1558c6f738c1a43f013f01046c',
@@ -228,6 +255,7 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
     tinted.push(...(await evaluate(LIVE_TINTED).catch((error: unknown) => (found.push(`${surface}: tint not read: ${String(error)}`), []))))
   }
   for (const [surface, evaluate] of surfaces) await read(surface, evaluate)
+  for (const issue of await run.harness.overlayEval<string[]>(FEED_CHECK).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`panel: ${issue}`)
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
   const riding = await run.harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open .weighin-popup')`).catch(() => false)
   if (!riding && (await run.harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup')`).catch(() => false))) {
@@ -281,6 +309,16 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '08-page-loaded')
   await command(run, 'read')
   await shoot(run, '09-read-answer')
+  // The one Details switch (#454): off by default; on, every entry's time and action line is drawn, and the choice is kept.
+  const detailsDrawn = `[...document.querySelectorAll('.feed-time, .feed-action')].filter((el) => el.getClientRects().length > 0).length`
+  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09-read-answer: no Detail drawn by default`).toBe(0)
+  await clickPanel(run, '.feed-details-toggle')
+  await sleep(300)
+  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09c-read-answer-details: the times and action lines drawn`).toBeGreaterThan(2)
+  expect.soft(await harness.overlayEval<string | null>(`localStorage.getItem('bingbong.feedDetails')`), `${run.theme}: the switch is kept`).toBe('on')
+  await shoot(run, '09c-read-answer-details')
+  await clickPanel(run, '.feed-details-toggle')
+  await sleep(300)
   // The panel shut, the capsule keeps the sentence the read said (#436), until the next input.
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   const kept = await waitFor(async () => {
@@ -309,7 +347,8 @@ async function walkTheShell(run: Run): Promise<void> {
   await command(run, `navigate ${fixture.url('/held-response')}`, false)
   await sleep(2500)
   await shoot(run, '16-loading', false)
-  expectTinted(run, '16-loading', ['status-capsule', 'feed-bubble', 'feed-run-summary'])
+  // The Feed draws no wash (#454): the working Command's words step up instead, and the run detail is behind Details.
+  expectTinted(run, '16-loading', ['status-capsule'])
   // The wait names its stage and host in the Feed's words (#438), never the raw line; held past its stuck bound
   // (#442) it says which wait it is before the seconds.
   const waiting = await harness.dashboardEval<string>(`document.querySelector('.toolbar .status-capsule')?.textContent ?? ''`)
@@ -445,7 +484,7 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
   await sleep(800)
 }
 
-/** An Utterance being taken over a page whose "Fixture Museums" is a Page Term: LISTENING, the live words, the quiet that ends it. */
+/** An Utterance being taken over a page whose "Fixture Museums" is a Page Term: "Listening…", the live words, the quiet that ends it. */
 async function walkTheVoicePrompt(run: Run): Promise<void> {
   const { harness, fixture } = run
   await command(run, `navigate ${fixture.url('/empty-main')}`)
@@ -456,9 +495,11 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
     expect.fail('the ear still loading once the page is in: BINGBONG_VAD_LOAD_MS ran out before the walk had its page')
   }
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 30_000, intervalMs: 100 })
-  // LISTENING held to the glance floor (#436) as soon as it shows, before any words come.
+  // "Listening…" held to the glance floor (#436) as soon as it shows, before any words come.
   await shoot(run, '29-listening', false)
   expectTinted(run, '29-listening', ['status-capsule', 'voice-prompt'])
+  // One state, one face (#454, ui.md 9): the Capsule's word, in Inter (FEED_CHECK) at the glance floor (CHECK_SCRIPT).
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.voice-prompt-state')?.textContent ?? ''`), `${run.theme} 29-listening: the Capsule's word`).toBe('Listening…')
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt-said em')`)) ? true : undefined), { timeoutMs: 25_000, intervalMs: 100 }).catch(async (error: unknown) => {
     await shoot(run, 'no-term')
     throw error

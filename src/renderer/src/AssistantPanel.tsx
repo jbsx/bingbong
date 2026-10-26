@@ -40,7 +40,7 @@ export function StatusOrb({ status }: { status: OrbStatus }) {
  * Awake and waiting is "Ready", never "Idle" — the Idle Screen is another
  * state — and a Stop, the user's own act, is "Stopped" (#334).
  */
-const PILL_LABELS: Record<OrbStatus, string> = {
+export const PILL_LABELS: Record<OrbStatus, string> = {
   idle: 'Ready',
   // The ear cannot hear yet (#442): never "Ready" while speaking would go unheard.
   starting: 'Starting…',

@@ -26,6 +26,8 @@ const ICONS = {
   timer: [{ d: 'M10 2h4' }, { d: 'm12 14 3-3' }, { circle: [12, 14, 8] }],
   music: [{ d: 'M9 18V5l12-2v13' }, { circle: [6, 18, 3] }, { circle: [18, 16, 3] }],
   ended: [{ d: 'M6 6h12v12H6z' }],
+  // Lucide's "list": the Feed's Details switch (#454).
+  details: [{ d: 'M3 12h.01' }, { d: 'M3 18h.01' }, { d: 'M3 6h.01' }, { d: 'M8 12h13' }, { d: 'M8 18h13' }, { d: 'M8 6h13' }],
 } satisfies Record<string, Part[]>
 
 export type ChromeIconName = keyof typeof ICONS

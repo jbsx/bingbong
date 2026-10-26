@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
 import { ChromeIcon } from '../ChromeIcon'
+import { FEED_DETAILS_STORAGE_KEY, readStoredFeedDetails } from '../../../core/panel/feedPanelState'
 import { overlaySlotContent } from '../../../core/panel/peekCardState'
 import { weighInPopupSurface } from '../../../core/scale/weighInPopup'
 import { PeekCard } from '../PeekCard'
@@ -35,6 +36,8 @@ export function OverlayPanel() {
   const { mode, open, width } = usePanelState()
   const progress = useRunProgress()
   const runActive = progress !== null
+  // The Feed's Details switch (#454): off by default, remembered as the panel's other choices are.
+  const [details, setDetails] = useState(() => readStoredFeedDetails(window.localStorage))
   // The Peek Card (ADR 0029): rendered from this overlay page — the one
   // surface that floats above the native pane. The slot rule decides which
   // single element shows (panel, card, or edge tab); the dashboard sizes
@@ -103,8 +106,23 @@ export function OverlayPanel() {
 
   // The Voice Prompt (#359): the Prompt Bar in its F1 form, Stop beside it while a run is live.
   const panelFooter = <VoicePrompt runActive={runActive} />
+  const toggleDetails = (): void => {
+    const next = !details
+    setDetails(next)
+    try {
+      window.localStorage.setItem(FEED_DETAILS_STORAGE_KEY, next ? 'on' : 'off')
+    } catch (error) {
+      // A storage failure only loses the memory of the choice, never the switch.
+      reportRendererFault('feedPanel.persistDetails', error)
+    }
+  }
   const panelControls = (
     <>
+      {/* Details (#454): click-only like its neighbours — the Capsule's Try lines are the spoken road (ui.md 6, bent). */}
+      <button type="button" className="feed-header-button feed-details-toggle" aria-pressed={details} title={details ? 'Hide the Feed’s details' : 'Show the Feed’s details'} onClick={toggleDetails}>
+        <ChromeIcon name="details" size={22} />
+        <span>Details</span>
+      </button>
       <button
         type="button"
         className="feed-header-button"
@@ -146,7 +164,7 @@ export function OverlayPanel() {
           aria-label="Resize the feed panel"
           onPointerDown={onHandlePointerDown}
         />
-        <ActivityFeed entries={feed} liveRunId={liveRunId} footer={panelFooter} headerActions={panelControls} />
+        <ActivityFeed entries={feed} liveRunId={liveRunId} details={details} footer={panelFooter} headerActions={panelControls} />
       </div>
       {/* Exactly one collapsed affordance renders (ADR 0029): the Peek
           Card replaces the edge tab while it is visible — both are the

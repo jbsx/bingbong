@@ -4,7 +4,7 @@ type HastNode = { type: string; tagName?: string; value?: string; properties?: R
 /**
  * A rehype step for an Answer's Card: a line break may fall after any
  * slash in its text, so a long address or file path wraps inside the Card
- * at its slashes rather than mid-word — the rule the Command bubble's
+ * at its slashes rather than mid-word — the rule the Command's words'
  * BreaksAtSlashes follows (#333). Text inside code keeps its exact
  * characters; a link's href is an attribute and is never touched.
  */

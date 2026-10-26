@@ -199,11 +199,6 @@
     --code-bg: rgba(255, 255, 255, 0.05);
   }
 
-  /* The words heard stand on the black ground inside their outline, where the quiet action under them clears 7:1 (#437). */
-  :root .feed-bubble {
-    background: transparent;
-  }
-
   /* At full contrast nothing is veiled: the bars draw at full strength, the orb without its halo. */
   :root .wx-lohi-bar {
     opacity: 1;
@@ -995,17 +990,16 @@ body {
   color: var(--fg3);
 }
 
-/* The Feed's columns: the time, the mark, the words. */
+/* The Feed's list (#454): one left edge, every Command two lines — the words
+   heard, then the outcome — 8 px inside a Command, 24 px between Commands, so
+   the grouping reads by proximity before a word is read (ui.md 7). */
 .feed-list {
-  --feed-time-width: 88px;
-  --feed-mark-width: 22px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px 26px 22px 20px;
+  padding: 18px 26px 22px 24px;
   scrollbar-width: thin;
   scrollbar-color: var(--hair2) transparent;
   -webkit-mask-image: linear-gradient(transparent 0, #000 18px);
@@ -1013,7 +1007,7 @@ body {
 
 .feed-empty {
   margin: 0;
-  padding: 8px 4px;
+  padding: 8px 0;
   font-size: var(--type-m);
   color: var(--fg3);
 }
@@ -1021,12 +1015,22 @@ body {
 /* Motion boundary: a new entry fades in where it lands — opacity only,
    never translation. Text never travels. */
 .feed-entry {
-  display: grid;
-  grid-template-columns: var(--feed-time-width) var(--feed-mark-width) minmax(0, 1fr);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
   line-height: 1.38;
   animation: feed-entry-in 160ms ease;
+}
+
+/* A Command's outcome sits under its words; the next Command starts 24 px
+   on. A hidden Details row between them is no box and takes no space. */
+.feed-list > * + * {
+  margin-top: 8px;
+}
+
+.feed-list > * + .feed-entry--user {
+  margin-top: 24px;
 }
 
 /* The Feed is not capped (#438, owner ruling 2026-10-26): an entry out of
@@ -1047,17 +1051,22 @@ body {
   }
 }
 
-/* A long error folds under its first line: the fold itself is a block (a
-   details element is not laid out as a grid), its summary takes the
-   Feed's columns. */
+/* Details (#454): the times, the action lines and the run detail, for every
+   entry at once, behind the panel header's one switch — off, they are not
+   drawn. */
+.feed:not(.feed--details) .feed-detail {
+  display: none;
+}
+
+/* A long error folds under its first line. */
 details.feed-entry {
   display: block;
 }
 
 .feed-entry summary {
-  display: grid;
-  grid-template-columns: var(--feed-time-width) var(--feed-mark-width) minmax(0, 1fr);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
 }
@@ -1067,17 +1076,14 @@ details.feed-entry {
 }
 
 .feed-entry summary > .feed-text {
-  grid-column: 2 / 4;
   font-size: var(--type-s);
 }
 
-/* One time column (#333): every entry's time comes first, at one width,
-   so the times line up down the Feed's left edge whoever spoke. */
+/* An entry's time, with Details on: a quiet line above it. */
 .feed-time {
-  grid-column: 1;
-  padding-top: 6px;
   font-family: var(--font-mono);
   font-size: var(--type-s);
+  line-height: 1.25;
   color: var(--fg3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1088,9 +1094,8 @@ details.feed-entry {
   overflow-wrap: anywhere;
 }
 
-/* A system line's words take the mark's column and the words'. */
+/* A system line's words. */
 .feed-entry > .feed-text {
-  grid-column: 2 / 4;
   font-size: var(--type-s);
   color: var(--fg2);
 }
@@ -1108,48 +1113,49 @@ details.feed-entry {
   border: 0;
 }
 
-/* Your words: a bubble at the right, after the time column (#333). A long
-   address in it wraps at its slashes (the renderer marks a break after
-   each), and breaks mid-word only when one part alone is wider than the
-   bubble. */
-.feed-bubble {
-  grid-column: 2 / 4;
-  justify-self: end;
+/* The words heard (#454): the receipt, the quiet layer at reading size, on
+   the Feed's left edge whatever their length. A long address wraps at its
+   slashes (the renderer marks a break after each), and breaks mid-word
+   only when one part alone is wider than the column. */
+.feed-words {
   min-width: 0;
-  max-width: 100%;
   overflow-wrap: break-word;
-  padding: 9px 16px 10px;
-  border: 1px solid var(--hair);
-  border-radius: 16px 16px 4px 16px;
-  background: var(--raise);
-}
-
-.feed-entry--user .feed-bubble .feed-text {
-  display: block;
-  color: var(--fgh);
   font-size: var(--type-m);
   line-height: 1.36;
+  color: var(--fg2);
 }
 
-/* One entry per Command (#324, ADR 0076): the action taken reads as a
-   quiet mono subline under the words heard, in the same bubble. */
-.feed-bubble .feed-action {
+/* The Command being worked on: its words step up to the loud layer.
+   Guess (#454): no wash — a tinted box behind the words is the bubble the
+   issue removes; the Capsule is what says the work is live. */
+.feed-entry--working .feed-words {
+  color: var(--fg);
+}
+
+/* An Utterance read as no Command (#324): the words alone, in the quietest
+   text — the Feed shows it was heard and nothing was done. */
+.feed-entry--user.feed-entry--muted .feed-words {
+  color: var(--fg3);
+}
+
+/* The action taken (#324, ADR 0076), with Details on: a quiet mono line
+   under the words heard. */
+.feed-action {
   display: block;
-  margin-top: 3px;
   overflow-wrap: break-word;
   font-family: var(--font-mono);
   font-size: var(--type-s);
   color: var(--fg3);
 }
 
-/* A Task's later hops (#336): one quiet line each under the words, struck
-   through where the Task was abandoned (a fade would drop the quiet layer
-   under 7:1, #437), in the failure colour where a hop met a wall. */
-.feed-bubble .feed-action--muted {
+/* A Task's later hops (#336): one quiet line each, struck through where the
+   Task was abandoned (a fade would drop the quiet layer under 7:1, #437),
+   in the failure colour where a hop met a wall. */
+.feed-action--muted {
   text-decoration: line-through;
 }
 
-.feed-bubble .feed-action--failed {
+.feed-action--failed {
   color: var(--fail);
 }
 
@@ -1173,113 +1179,41 @@ details.feed-entry {
   color: var(--accent);
 }
 
-/* The Command being worked on: the loud bubble, edged in peach. */
-.feed-entry--working .feed-bubble {
-  border: 1.5px solid var(--accent-edge);
-}
-
-.feed-entry--working .feed-bubble .feed-text {
-  font-size: var(--type-m);
-  line-height: 1.28;
-  font-weight: 500;
-  color: var(--fg);
-}
-
-/* An Utterance read as no Command (#324): the words alone, dashed and
-   greyed — the Feed shows it was heard and nothing was done. */
-.feed-entry--muted .feed-bubble {
-  border-style: dashed;
-  border-color: var(--hair2);
-  background: transparent;
-}
-
-.feed-entry--user.feed-entry--muted .feed-bubble .feed-text {
-  color: var(--fg3);
-}
-
-/* Bing Bong's Answer: a mark and a rail, no box — success green, failure
-   coral (#329), a Stop's or a no-op's neutral; the words in the quiet
-   layer until it is the headline. */
-.feed-orb {
-  grid-column: 2;
-  display: grid;
-  place-items: center;
-  width: 12px;
-  height: 12px;
-  margin-top: 11px;
-  border-radius: 50%;
-  background: var(--ok);
-  color: var(--bg);
-}
-
-.feed-orb .chrome-icon {
-  display: none;
-}
-
+/* Bing Bong's outcome (#454): the words on a rail — the rail the one mark,
+   success green, failure coral (#329), a Stop's or a no-op's neutral; the
+   words carry the meaning, in the loud layer. */
 .feed-card {
-  grid-column: 3;
   min-width: 0;
-  padding: 4px 0 4px 16px;
+  padding: 2px 0 2px 16px;
   border-left: 3px solid color-mix(in srgb, var(--ok) 55%, transparent);
   font-size: var(--type-m);
   line-height: 1.38;
-  color: var(--fg2);
+  color: var(--fg);
 }
 
 .feed-card .feed-text {
   display: block;
 }
 
-.feed-entry--failed .feed-orb {
-  background: var(--fail);
-}
-
 .feed-entry--failed .feed-card {
   border-left-color: color-mix(in srgb, var(--fail) 60%, transparent);
-}
-
-.feed-entry--assistant.feed-entry--muted .feed-orb {
-  background: var(--idle);
 }
 
 .feed-entry--assistant.feed-entry--muted .feed-card {
   border-left-color: color-mix(in srgb, var(--idle) 55%, transparent);
 }
 
-/* The newest Answer is the headline (#359): read from three metres. */
-.feed-entry--headline .feed-orb {
-  width: 22px;
-  height: 22px;
-  margin: 8px 0 0 -5px;
-}
-
-.feed-entry--headline .feed-orb .chrome-icon {
-  display: block;
-}
-
+/* The newest Answer is the headline (#359): its rail at full strength. */
 .feed-entry--headline .feed-card {
-  padding: 2px 0 4px 18px;
-  border-left-width: 4px;
   border-left-color: var(--ok);
-  font-size: var(--type-m);
-  line-height: 1.3;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--fg);
 }
 
 .feed-entry--headline.feed-entry--failed .feed-card {
   border-left-color: var(--fail);
-  color: var(--fail-text);
 }
 
 .feed-entry--headline.feed-entry--assistant.feed-entry--muted .feed-card {
   border-left-color: var(--idle);
-}
-
-.feed-entry--headline .feed-markdown p + p {
-  font-size: var(--type-m);
-  color: var(--fgh);
 }
 
 /* The spoken half of an Answer with no Card: italic speech — "this was
@@ -1308,7 +1242,7 @@ details.feed-entry {
 }
 
 .feed-error-detail {
-  margin: 6px 0 0 calc(var(--feed-time-width) + var(--feed-mark-width));
+  margin: 6px 0 0;
   padding: 8px 12px;
   border-left: 2px solid var(--fail);
   border-radius: 0 8px 8px 0;
@@ -1345,11 +1279,6 @@ details.feed-entry {
   font-weight: 600;
   line-height: 1.25;
   color: inherit;
-}
-
-.feed-entry--headline .feed-markdown :is(h1, h2, h3, h4, h5, h6) {
-  font-size: var(--type-l);
-  letter-spacing: -0.015em;
 }
 
 .feed-markdown ul,
@@ -1423,16 +1352,10 @@ details.feed-entry {
 }
 
 /* The Run Detail: run noise — tool lines and stage markers — folds under
-   one quiet section per run, collapsed until clicked (#333). Its summary
-   starts where the words do; its lines keep the Feed's time column. It is
-   bare, floating or docked: the panel is already its box. Only a live run
-   draws one (below). */
-.feed-run {
-  margin: -4px 0 0;
-}
-
+   one quiet section per run, collapsed until clicked (#333), and drawn
+   only with Details on (#454). It is bare, floating or docked: the panel
+   is already its box. Only a live run draws one (below). */
 .feed-run-summary {
-  margin-left: calc(var(--feed-time-width) + var(--feed-mark-width));
   display: flex;
   align-items: center;
   gap: 10px;
