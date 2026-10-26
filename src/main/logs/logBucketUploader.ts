@@ -6,7 +6,10 @@ import type { S3Client } from './s3Client'
 
 // The Log Bucket's uploader (#418), in the app's own main process: every
 // five minutes the logs dir, ask-images included, is copied to
-// `<bucket>/<machine>/`. Copied, never synced: the app's 7-day purge never
+// `<bucket>/<machine>/`, and the audio dumps (#34, when the kiosk writes
+// them) to `<bucket>/<machine>/audio-dumps/`, so `pnpm logs:pull` brings
+// the dumps with the logs and the STT gate (#471) hears what the kiosk
+// heard. Copied, never synced: the app's 7-day purge never
 // deletes anything in the bucket. The bucket is never listed to decide what
 // to send: at start each file is checked with a HEAD (the catch-up after
 // downtime; the logs are append-only, so a same-size object is the same
@@ -20,6 +23,8 @@ const TRIM_INTERVAL_MS = 24 * 60 * 60_000
 
 export interface LogBucketUploaderOptions {
   readonly logsDir: string
+  /** The utterance dumps' folder, copied under `audio-dumps/`; absent, none are. */
+  readonly dumpsDir?: string
   readonly machine: string
   readonly highBytes: number
   readonly lowBytes: number
@@ -73,11 +78,12 @@ export function createLogBucketUploader(options: LogBucketUploaderOptions): LogB
     let uploaded = 0
     let failed = 0
     let firstError: unknown
-    const files = await listFiles(options.logsDir)
+    const roots: { dir: string; under: string }[] = [{ dir: options.logsDir, under: '' }, ...(options.dumpsDir !== undefined ? [{ dir: options.dumpsDir, under: 'audio-dumps/' }] : [])]
+    const files = (await Promise.all(roots.map(async (root) => (await listFiles(root.dir)).map((path) => ({ path, root }))))).flat()
     // A purged file is forgotten here; its upload stays in the bucket.
-    for (const path of sent.keys()) if (!files.includes(path)) sent.delete(path)
-    for (const path of files) {
-      const key = `${machine}/${relative(options.logsDir, path).split(sep).join('/')}`
+    for (const path of sent.keys()) if (!files.some((file) => file.path === path)) sent.delete(path)
+    for (const { path, root } of files) {
+      const key = `${machine}/${root.under}${relative(root.dir, path).split(sep).join('/')}`
       try {
         const info = await stat(path)
         const last = sent.get(path)

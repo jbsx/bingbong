@@ -1,0 +1,422 @@
+{
+ "utterance-1792244719141-0001.wav": {
+  "heard": "YouTube.",
+  "errors": 0
+ },
+ "utterance-1792244731626-0002.wav": {
+  "heard": "Open Elon Musk's latest tweet.",
+  "errors": 0
+ },
+ "utterance-1792244743264-0003.wav": {
+  "heard": "Click on the first link.",
+  "errors": 0
+ },
+ "utterance-1792244750370-0004.wav": {
+  "heard": "Go back.",
+  "errors": 1
+ },
+ "utterance-1792244763244-0005.wav": {
+  "heard": "Go to Elon Musk's profile.",
+  "errors": 0
+ },
+ "utterance-1792244772705-0006.wav": {
+  "heard": "Go back.",
+  "errors": 0
+ },
+ "utterance-1792244779756-0007.wav": {
+  "heard": "Elon Musk's profile.",
+  "errors": 0
+ },
+ "utterance-1792244786980-0008.wav": {
+  "heard": "All that.",
+  "errors": 2
+ },
+ "utterance-1792244792994-0009.wav": {
+  "heard": "Open the first result.",
+  "errors": 0
+ },
+ "utterance-1792244799073-0010.wav": {
+  "heard": "Go back.",
+  "errors": 0
+ },
+ "utterance-1792245564200-0001.wav": {
+  "heard": "Open YouTube.",
+  "errors": 0
+ },
+ "utterance-1792245580079-0002.wav": {
+  "heard": "Click on \"Search.\"",
+  "errors": 0
+ },
+ "utterance-1792245592413-0003.wav": {
+  "heard": "Search finance tech tips.",
+  "errors": 1
+ },
+ "utterance-1792245601956-0004.wav": {
+  "heard": "Go back.",
+  "errors": 0
+ },
+ "utterance-1792245609967-0005.wav": {
+  "heard": "On YouTube, search Linus Tech Tips.",
+  "errors": 0
+ },
+ "utterance-1792245619278-0006.wav": {
+  "heard": "On YouTube, search Linus Tech Tips.",
+  "errors": 0
+ },
+ "utterance-1792245634981-0008.wav": {
+  "heard": "Delete the text.",
+  "errors": 0
+ },
+ "utterance-1792245642416-0009.wav": {
+  "heard": "Type Linus Tech Tips.",
+  "errors": 0
+ },
+ "utterance-1792245649328-0010.wav": {
+  "heard": "Search.",
+  "errors": 0
+ },
+ "utterance-1792245655602-0011.wav": {
+  "heard": "Go back.",
+  "errors": 0
+ },
+ "utterance-1792245665201-0012.wav": {
+  "heard": "Type \"Linus Tech Tips\" in the search box.",
+  "errors": 0
+ },
+ "utterance-1792245671686-0013.wav": {
+  "heard": "Click on the search button.",
+  "errors": 0
+ },
+ "utterance-1792245679015-0014.wav": {
+  "heard": "Press enter.",
+  "errors": 0
+ },
+ "utterance-1792245689432-0015.wav": {
+  "heard": "Click on the first video.",
+  "errors": 0
+ },
+ "utterance-1792245734824-0016.wav": {
+  "heard": "Refresh page.",
+  "errors": 0
+ },
+ "utterance-1792245741226-0017.wav": {
+  "heard": "Reload the page.",
+  "errors": 0
+ },
+ "utterance-1792245750214-0018.wav": {
+  "heard": "Reload.",
+  "errors": 0
+ },
+ "utterance-1792245793580-0020.wav": {
+  "heard": "Press Ctrl+R.",
+  "errors": 1
+ },
+ "utterance-1792854529592-0001.wav": {
+  "heard": "What time is it?",
+  "errors": 0
+ },
+ "utterance-1792854547620-0002.wav": {
+  "heard": "What time is it?",
+  "errors": 0
+ },
+ "utterance-1792854553621-0003.wav": {
+  "heard": "What day?",
+  "errors": 0
+ },
+ "utterance-1792854562488-0004.wav": {
+  "heard": "When is Diwali?",
+  "errors": 0
+ },
+ "utterance-1792854580676-0005.wav": {
+  "heard": "When is the valley next year?",
+  "errors": 2
+ },
+ "utterance-1792854600747-0006.wav": {
+  "heard": "Click on the first link.",
+  "errors": 0
+ },
+ "utterance-1792854606016-0007.wav": {
+  "heard": "Scroll down.",
+  "errors": 0
+ },
+ "utterance-1792854607792-0008.wav": {
+  "heard": "Scroll down.",
+  "errors": 0
+ },
+ "utterance-1792854707823-0009.wav": {
+  "heard": "What's the time?",
+  "errors": 0
+ },
+ "utterance-1792854721928-0010.wav": {
+  "heard": "What's the weather like in Gurgaon?",
+  "errors": 0
+ },
+ "utterance-1792854730054-0011.wav": {
+  "heard": "What's the weather like in Gurgaon?",
+  "errors": 0
+ },
+ "utterance-1792930327570-0001.wav": {
+  "heard": "Play Highs and Lows by Kanye West.",
+  "errors": 0
+ },
+ "utterance-1792941416662-0001.wav": {
+  "heard": "Play tum se tum tak, bhai, niyam.",
+  "errors": 1
+ },
+ "utterance-1793008098894-0004.wav": {
+  "heard": "Look this song.",
+  "errors": 1
+ },
+ "utterance-1793008283882-0019.wav": {
+  "heard": "Loop this song.",
+  "errors": 0
+ },
+ "utterance-1793011417842-0042.wav": {
+  "heard": "Open side panel.",
+  "errors": 0
+ },
+ "utterance-1793017797487-0002.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017815531-0004.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017860524-0013.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017893436-0018.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017975096-0024.wav": {
+  "heard": "Loop this song.",
+  "errors": 0
+ },
+ "utterance-1793017982924-0025.wav": {
+  "heard": "Loop this song.",
+  "errors": 0
+ },
+ "utterance-1793008064408-0002.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793008137506-0008.wav": {
+  "heard": "Increase music volume.",
+  "errors": 0
+ },
+ "utterance-1793008177311-0013.wav": {
+  "heard": "Set music volume to 50%.",
+  "errors": 0
+ },
+ "utterance-1793008198690-0015.wav": {
+  "heard": "Set music volume to 70%.",
+  "errors": 0
+ },
+ "utterance-1793008273547-0017.wav": {
+  "heard": "Play the song from the beginning.",
+  "errors": 0
+ },
+ "utterance-1793008469400-0024.wav": {
+  "heard": "Loop this song.",
+  "errors": 0
+ },
+ "utterance-1793008486229-0027.wav": {
+  "heard": "Play it from the beginning.",
+  "errors": 0
+ },
+ "utterance-1793011426981-0043.wav": {
+  "heard": "Open slide panel.",
+  "errors": 1
+ },
+ "utterance-1793017831693-0006.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017874442-0014.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017900129-0019.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017910437-0020.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017925023-0021.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793017934378-0022.wav": {
+  "heard": "Play Tum Se Tum Tak by Niyam, N-I-Y-A-M.",
+  "errors": 0
+ },
+ "utterance-1793017989495-0026.wav": {
+  "heard": "Loop, L-O-O-P, song.",
+  "errors": 4
+ },
+ "utterance-1793017997664-0027.wav": {
+  "heard": "Loop, L-O-O-P, this song.",
+  "errors": 0
+ },
+ "utterance-1793030019176-0062.wav": {
+  "heard": "Play tum se tum tak by niyam.",
+  "errors": 0
+ },
+ "utterance-1793033377188-0002.wav": {
+  "heard": "Play tum se tum tak by niyam.",
+  "errors": 0
+ },
+ "utterance-1793033402634-0004.wav": {
+  "heard": "Lower music volume.",
+  "errors": 0
+ },
+ "utterance-1793033410020-0005.wav": {
+  "heard": "Change the volume to 25%.",
+  "errors": 0
+ },
+ "utterance-1793033432191-0007.wav": {
+  "heard": "Show it.",
+  "errors": 0
+ },
+ "utterance-1793033440065-0008.wav": {
+  "heard": "Show the page.",
+  "errors": 0
+ },
+ "utterance-1793033451988-0010.wav": {
+  "heard": "Show it.",
+  "errors": 0
+ },
+ "utterance-1793033502465-0012.wav": {
+  "heard": "Play Iraada by Niyam.",
+  "errors": 0
+ },
+ "utterance-1793033566763-0016.wav": {
+  "heard": "Loop the song.",
+  "errors": 0
+ },
+ "utterance-1793033580384-0017.wav": {
+  "heard": "Roll up.",
+  "errors": 1
+ },
+ "utterance-1793033587666-0018.wav": {
+  "heard": "Escape.",
+  "errors": 0
+ },
+ "utterance-1793033595198-0020.wav": {
+  "heard": "Scroll up.",
+  "errors": 0
+ },
+ "utterance-1793033661517-0022.wav": {
+  "heard": "Pause.",
+  "errors": 0
+ },
+ "utterance-1793033665794-0023.wav": {
+  "heard": "Resume.",
+  "errors": 0
+ },
+ "utterance-1793033672608-0024.wav": {
+  "heard": "Play.",
+  "errors": 0
+ },
+ "utterance-1793033676236-0025.wav": {
+  "heard": "Stop.",
+  "errors": 0
+ },
+ "utterance-1793033680598-0026.wav": {
+  "heard": "Resume.",
+  "errors": 0
+ },
+ "utterance-1793033685850-0027.wav": {
+  "heard": "Play.",
+  "errors": 0
+ },
+ "utterance-1793033700533-0030.wav": {
+  "heard": "Idle page.",
+  "errors": 0
+ },
+ "utterance-1793033709127-0031.wav": {
+  "heard": "Idle page.",
+  "errors": 0
+ },
+ "utterance-1793033716735-0032.wav": {
+  "heard": "Idle, I-D-L-E page.",
+  "errors": 0
+ },
+ "utterance-1793033730716-0034.wav": {
+  "heard": "Help.",
+  "errors": 0
+ },
+ "utterance-1793033741231-0035.wav": {
+  "heard": "Mark as flagged.",
+  "errors": 0
+ },
+ "utterance-1793033742595-0036.wav": {
+  "heard": "Or failure.",
+  "errors": 0
+ },
+ "utterance-1793033759098-0038.wav": {
+  "heard": "Help.",
+  "errors": 0
+ },
+ "utterance-1793033763965-0039.wav": {
+  "heard": "Read.",
+  "errors": 0
+ },
+ "utterance-1793034921064-0042.wav": {
+  "heard": "Start a timer for five seconds.",
+  "errors": 0
+ },
+ "utterance-1793034930527-0043.wav": {
+  "heard": "Stop the timer.",
+  "errors": 0
+ },
+ "utterance-1793035125741-0045.wav": {
+  "heard": "Resume.",
+  "errors": 0
+ },
+ "utterance-1793035131226-0046.wav": {
+  "heard": "Play iraada by niyam.",
+  "errors": 0
+ },
+ "utterance-1793035217157-0048.wav": {
+  "heard": "Loop the song.",
+  "errors": 0
+ },
+ "utterance-1793036171624-0050.wav": {
+  "heard": "Read.",
+  "errors": 0
+ },
+ "utterance-1793036277045-0052.wav": {
+  "heard": "Lower music volume.",
+  "errors": 0
+ },
+ "utterance-1793036283554-0053.wav": {
+  "heard": "Set music volume to 25%.",
+  "errors": 0
+ },
+ "utterance-1793037387553-0055.wav": {
+  "heard": "Stop.",
+  "errors": 0
+ },
+ "utterance-1793039960734-0058.wav": {
+  "heard": "Something interesting.",
+  "errors": 0
+ },
+ "utterance-1793040075179-0069.wav": {
+  "heard": "Play Feeling Good.",
+  "errors": 0
+ },
+ "utterance-1793040098909-0071.wav": {
+  "heard": "Play feeling good.",
+  "errors": 0
+ },
+ "utterance-1793040108831-0072.wav": {
+  "heard": "Play Feeling Good.",
+  "errors": 0
+ }
+}

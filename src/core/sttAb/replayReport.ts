@@ -1,4 +1,5 @@
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
+import { numberAt } from '../timer/duration.ts'
 
 // The #35 replay report: what scripts/replay-stt.ts prints after replaying
 // utterance dumps through a shipped STT engine — per-file rows plus the
@@ -50,14 +51,30 @@ export function formatReplayReport(rows: ReplayRow[]): string {
   return lines.join('\n')
 }
 
-/** A transcript's words as a label's are written: lower case, apostrophes dropped, letters and digits only. */
+/**
+ * A transcript's words as a label's are written: lower case, apostrophes
+ * dropped, letters and digits only, and a number as digits whether said
+ * in words or written so by the ear (#471): "fifty percent" and "50%" are
+ * the same words to the app, which reads both (#457).
+ */
 function wordsOf(text: string): string[] {
-  return text
+  const words = text
     .toLowerCase()
     .replace(/[’']/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/%/g, ' percent ')
+    .replace(/[^\p{L}\p{N}.\s]/gu, ' ')
     .split(/\s+/)
+    .map((word) => word.replace(/^\.+|\.+$/g, ''))
     .filter((word) => word !== '')
+  const out: string[] = []
+  for (let at = 0; at < words.length; ) {
+    const number = numberAt(words, at)
+    if (number !== null && !number.alone && number.next > at) {
+      out.push(String(number.value))
+      at = number.next
+    } else out.push(words[at++]!)
+  }
+  return out
 }
 
 /** The words heard wrong against what was said (#456): substituted, dropped or added — a word-level edit distance. */

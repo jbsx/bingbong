@@ -58,6 +58,12 @@ describe('wordErrors (#456)', () => {
     expect(wordErrors('back', '')).toBe(1)
     expect(wordErrors("what's the time", 'Whats the time?')).toBe(0)
   })
+
+  it('reads a number the same said in words or written in digits by the ear (#471)', () => {
+    expect(wordErrors('set music volume to fifty percent', 'Set music volume to 50%.')).toBe(0)
+    expect(wordErrors('skip forward one point five seconds', 'Skip forward 1.5 seconds.')).toBe(0)
+    expect(wordErrors('set music volume to fifty percent', 'Set music volume to 15%.')).toBe(1)
+  })
 })
 
 describe('formatLabelScore (#456)', () => {

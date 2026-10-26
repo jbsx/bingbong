@@ -819,6 +819,7 @@ app.whenReady().then(async () => {
     const stopLogBucket = createLogBucketUploader({
       ...logBucket.start,
       logsDir,
+      dumpsDir: utteranceDumps.dir,
       client: createS3Client(logBucket.start),
     }).start()
     app.on('will-quit', quitTrace.hook('log-bucket', stopLogBucket))

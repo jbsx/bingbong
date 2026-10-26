@@ -20,6 +20,7 @@
     "cli": "pnpm build && electron . --browser-cli",
     "perf:report": "node scripts/perf-report.ts",
     "stt:replay": "node scripts/replay-stt.ts",
+    "stt:gate": "node --env-file-if-exists=.env scripts/stt-gate.ts",
     "turn:replay": "node scripts/replay-turn.ts",
     "jev:replay": "node scripts/jev-replay.ts",
     "jev:gate": "node scripts/jev-gate.ts",

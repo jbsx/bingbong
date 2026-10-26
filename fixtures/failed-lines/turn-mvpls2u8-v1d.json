@@ -7,5 +7,6 @@
   "happened": "ElevenLabs heard \"They're feeling good.\" (batch Scribe: 'Are they feeling good?'); Whisper medium.en hears 'Play feeling good.' on the same dump; Jev none",
   "meant": "play Feeling Good (the repeat ten seconds later was heard and played)",
   "log": "decision-1793033383382-1.jsonl",
-  "claimedBy": "#471"
+  "claimedBy": "#471",
+  "case": "utterance-1793040098909-0071.wav"
 }

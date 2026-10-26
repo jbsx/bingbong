@@ -62,6 +62,16 @@ describe('the Log Bucket uploader', () => {
     expect(keys()).toEqual(['kiosk/ask-images/ask-1.png', 'kiosk/decision-1.jsonl'])
   })
 
+  it("uploads the audio dumps under the machine's audio-dumps folder, so logs:pull brings them with the logs (#471)", async () => {
+    write('decision-1.jsonl', '{"a":1}\n')
+    const dumpsDir = mkdtempSync(join(tmpdir(), 'audio-dumps-'))
+    writeFileSync(join(dumpsDir, 'utterance-1-0001.wav'), 'RIFF')
+    const client = createS3Client({ endpoint: 'https://r2.test', bucket: 'kachow', accessKeyId: 'id', secretAccessKey: 's', fetch: s3.fetch })
+    await createLogBucketUploader({ logsDir, dumpsDir, machine: 'kiosk', highBytes: 8e9, lowBytes: 7e9, client, now: () => clock }).copy()
+    expect(keys()).toEqual(['kiosk/audio-dumps/utterance-1-0001.wav', 'kiosk/decision-1.jsonl'])
+    rmSync(dumpsDir, { recursive: true, force: true })
+  })
+
   it('sends only what changed since the last copy, never listing the bucket', async () => {
     write('decision-1.jsonl', '{"a":1}\n')
     write('perf-1.jsonl', '{"p":1}\n')

@@ -1,492 +1,507 @@
 {
-  "source": "Each dump matched 1:1 by time to a decision record (2026-10-17 logs: ~/.claude/jobs/07c4ba48/tmp/today-logs/decision-1792244719460-1.jsonl and the decision-1792245564371 records in ~/.claude/jobs/c8172ccb/tmp/all2.jsonl; 2026-10-24: ~/.config/bingbong/logs/decision-1792854534608-1.jsonl); a label is kept only where the Command was accepted (the next line built on it) or a retry chain, the ledger, a post mortem or the owner's own words make the words sure, with the live decode and the 2026-10-17 Small/Base replays (session 8245387d) used only as corroboration. Lower case, no punctuation except the apostrophe inside a word. The #463 labels (kiosk dumps of 2026-10-23..26) follow the same rule from the kiosk decision logs and the ledger; a label with `ledger` and `names` is a ledger `stt` clip, scored on those names.",
-  "labels": {
-    "utterance-1792244719141-0001.wav": {
-      "said": "youtube",
-      "evidence": "decision turn-mvcg8bvu-1 heard 'YouTube.', opened YouTube; next line built on it (no undo); Small replay agrees"
-    },
-    "utterance-1792244731626-0002.wav": {
-      "said": "open elon musk's latest tweet",
-      "evidence": "turn-mvcg8lik-2 heard 'Open Elon Musk's latest tweet.' and searched it; next line clicked a result (accepted); Base replay agrees on the name; the owner said the same line again on 2026-10-19 (ledger turn-mvfpbusm-1)"
-    },
-    "utterance-1792244743264-0003.wav": {
-      "said": "click on the first link",
-      "evidence": "turn-mvcg8ui2-3; live, Small and Base agree; memory kachow-324-checkpoint names the line (Jev clicked ref [1], undone by the next 'back')"
-    },
-    "utterance-1792244750370-0004.wav": {
-      "said": "back",
-      "evidence": "turn-mvcg8zz7-4 fired back as the recovery of the misread click; live, Small and Base agree"
-    },
-    "utterance-1792244763244-0005.wav": {
-      "said": "go to elon musk's profile",
-      "evidence": "turn-mvcg99wt-5 heard 'Go to your masks profile'; 'Go back' and the retry 'Elon musk's profile' follow; memory kachow-324-checkpoint: STT misheard 'Elon Musk's' as 'your masks'; Small replay heard 'Go to Elon Musk's profile.'"
-    },
-    "utterance-1792244772705-0006.wav": {
-      "said": "go back",
-      "evidence": "turn-mvcg9h7m-6 fired back (undo of the misheard open); live, Small and Base agree"
-    },
-    "utterance-1792244779756-0007.wav": {
-      "said": "elon musk's profile",
-      "evidence": "turn-mvcg9mnh-7 heard 'Elon musk's profile', the retry of 0005; owner in session 07c4ba48: 'it looked up elon musks profile'; Small agrees"
-    },
-    "utterance-1792244786980-0008.wav": {
-      "said": "back",
-      "evidence": "turn-mvcg9s85-8 heard 'Back' and fired back, one of the four back recoveries counted in kachow-324-checkpoint; the next line 'open the first result' is on the results page it returned to"
-    },
-    "utterance-1792244792994-0009.wav": {
-      "said": "open the first result",
-      "evidence": "turn-mvcg9wv8-9; live, Small and Base agree; owner in session 07c4ba48 describes asking for 'the first result' and it being searched verbatim"
-    },
-    "utterance-1792244799073-0010.wav": {
-      "said": "go back",
-      "evidence": "turn-mvcga1k2-a fired back (undo of the verbatim search); live, Small and Base agree"
-    },
-    "utterance-1792245564200-0001.wav": {
-      "said": "open youtube",
-      "evidence": "turn-mvcgqfxr-1 opened YouTube, next line clicked its Search box (accepted); live, Small and Base agree"
-    },
-    "utterance-1792245580079-0002.wav": {
-      "said": "click on search",
-      "evidence": "turn-mvcgqs6p-2 clicked [3] Search, the session then searched it; live, Small and Base agree"
-    },
-    "utterance-1792245592413-0003.wav": {
-      "said": "search linus tech tips",
-      "evidence": "turn-mvcgr1pg-3 heard 'Search line status'; 'Go back' then the retry chain 'on YouTube search ... Linus Tech Tips' (0005, 0006) settles the name; every decode has 'search' plus one three-word name"
-    },
-    "utterance-1792245601956-0004.wav": {
-      "said": "go back",
-      "evidence": "decision at 1792245602090 fired back after the wrong search; live and Small agree"
-    },
-    "utterance-1792245609967-0005.wav": {
-      "said": "on youtube search linus tech tips",
-      "evidence": "heard 'on YouTube search Lana Statics'; repeated at once as 0006, heard right as 'on YouTube search Linus Tech Tips.'; same frame in every decode"
-    },
-    "utterance-1792245619278-0006.wav": {
-      "said": "on youtube search linus tech tips",
-      "evidence": "decision at 1792245619858; live, Small and Base agree"
-    },
-    "utterance-1792245634981-0008.wav": {
-      "said": "delete the text",
-      "evidence": "decision at 1792245635588 cleared the box; live, Small and Base agree; the owner's #325 brief quotes the line"
-    },
-    "utterance-1792245642416-0009.wav": {
-      "said": "type linus tech tips",
-      "evidence": "heard 'Type linus tag tips'; the retry chain (owner's #325 brief: 'Delete the text' -> 'Type Linus Tech dips' -> ...) and 0012 settle the name; Base heard 'Type Linus Tech tips'"
-    },
-    "utterance-1792245649328-0010.wav": {
-      "said": "search",
-      "evidence": "decision at 1792245649657; live, Small and Base agree"
-    },
-    "utterance-1792245655602-0011.wav": {
-      "said": "go back",
-      "evidence": "decision at 1792245655863 fired back; live, Small and Base agree"
-    },
-    "utterance-1792245665201-0012.wav": {
-      "said": "type linus tech tips in the search box",
-      "evidence": "decision at 1792245665579 typed 'Linus Tech Tips' and the next lines submitted it (accepted); live and Base agree"
-    },
-    "utterance-1792245671686-0013.wav": {
-      "said": "click on the search button",
-      "evidence": "decision at 1792245671848; live, Small and Base agree"
-    },
-    "utterance-1792245679015-0014.wav": {
-      "said": "press enter",
-      "evidence": "decision at 1792245679105 pressed enter; live, Small and Base agree"
-    },
-    "utterance-1792245689432-0015.wav": {
-      "said": "click on the first video",
-      "evidence": "decision at 1792245689915 clicked the first video; live, Small and Base agree"
-    },
-    "utterance-1792245734824-0016.wav": {
-      "said": "refresh page",
-      "evidence": "decision at 1792245735160 (Jev none), followed by the reload rephrasings; live and Small agree"
-    },
-    "utterance-1792245741226-0017.wav": {
-      "said": "reload the page",
-      "evidence": "decision at 1792245741728, a rephrase in the reload chain; live, Small and Base agree"
-    },
-    "utterance-1792245750214-0018.wav": {
-      "said": "reload",
-      "evidence": "decision at 1792245750548, a rephrase in the reload chain; live, Small and Base agree"
-    },
-    "utterance-1792245793580-0020.wav": {
-      "said": "press control r",
-      "evidence": "decision at 1792245794116 pressed ctrl r, ending the reload chain; live 'Press ctrl r', Small 'Press Ctrl + R', Base 'Press control r'"
-    },
-    "utterance-1792854529592-0001.wav": {
-      "said": "what time is it",
-      "evidence": "turn-mvmjaon0-1 said the time; post mortem 2026-10-24 16:08: the time tasks did what was meant"
-    },
-    "utterance-1792854547620-0002.wav": {
-      "said": "what time is it",
-      "evidence": "turn-mvmjb2jq-2 said the time; post mortem: the time tasks did what was meant"
-    },
-    "utterance-1792854553621-0003.wav": {
-      "said": "what day",
-      "evidence": "turn-mvmjb76d-3 said the time/day; post mortem: the time tasks did what was meant"
-    },
-    "utterance-1792854562488-0004.wav": {
-      "said": "when is diwali",
-      "evidence": "turn-mvmjbe0o-4 searched it and read the answer; post mortem: the Diwali tasks did what was meant"
-    },
-    "utterance-1792854580676-0005.wav": {
-      "said": "when is diwali next year",
-      "evidence": "turn-mvmjbs1x-7 searched it; post mortem: the Diwali tasks did what was meant"
-    },
-    "utterance-1792854600747-0006.wav": {
-      "said": "click on the first link",
-      "evidence": "turn-mvmjc7jf-a clicked the first result; post mortem: first link did what was meant"
-    },
-    "utterance-1792854606016-0007.wav": {
-      "said": "scroll down",
-      "evidence": "turn-mvmjcblt-e scrolled (Local Match); post mortem: scroll did what was meant"
-    },
-    "utterance-1792854607792-0008.wav": {
-      "said": "scroll down",
-      "evidence": "turn-mvmjccz4-f scrolled (Local Match); post mortem: scroll did what was meant"
-    },
-    "utterance-1792854707823-0009.wav": {
-      "said": "what's the time",
-      "evidence": "turn-mvmjei5s-g said the time; post mortem: the time tasks did what was meant"
-    },
-    "utterance-1792854721928-0010.wav": {
-      "said": "what's the weather like in gurgaon",
-      "evidence": "turn-mvmjetct-i; ledger fixtures/failed-lines/turn-mvmjetct-i.json (stage reading, STT right)"
-    },
-    "utterance-1792854730054-0011.wav": {
-      "said": "what's the weather like in gurgaon",
-      "ledger": "turn-mvmjezbb-k",
-      "names": [
-        "gurgaon"
-      ],
-      "evidence": "turn-mvmjezbb-k heard 'Gergan'; ledger fixtures/failed-lines/turn-mvmjezbb-k.json: the owner said the Gurgaon line again (stage stt)"
-    },
-    "utterance-1792930327570-0001.wav": {
-      "said": "play highs and lows by kanye west",
-      "ledger": "turn-mvnsfarj-1",
-      "names": [
-        "kanye west"
-      ],
-      "evidence": "ledger turn-mvnsfarj-1: Parakeet heard 'Kanye Rest' for 'Kanye West', meant 'play Highs and Lows by Kanye West'"
-    },
-    "utterance-1792941416662-0001.wav": {
-      "said": "play tum se tum tak by niyam",
-      "ledger": "turn-mvnz0z5j-1",
-      "names": [
-        "tum se tum tak",
-        "niyam"
-      ],
-      "evidence": "ledger turn-mvnz0z5j-1: Parakeet heard 'Play Tum Se Tum Tak by Niyam' as 'Play Tum Setum Tuck Bai Diamo'; the owner typed 'play tum se tum tak by niyam' 31 s later"
-    },
-    "utterance-1793008098894-0004.wav": {
-      "said": "loop this song",
-      "ledger": "turn-mvp2q7gx-v2",
-      "names": [
-        "loop"
-      ],
-      "evidence": "ledger turn-mvp2q7gx-v2: Parakeet heard 'Look this song.' for 'Loop this song'"
-    },
-    "utterance-1793008283882-0019.wav": {
-      "said": "loop this song",
-      "ledger": "turn-mvp2u67g-va",
-      "names": [
-        "loop"
-      ],
-      "evidence": "ledger turn-mvp2u67g-va: Parakeet heard 'Look there some' for 'Loop this song'"
-    },
-    "utterance-1793011417842-0042.wav": {
-      "said": "open side panel",
-      "ledger": "turn-mvp4pcdw-vo",
-      "names": [
-        "open",
-        "side panel"
-      ],
-      "evidence": "ledger turn-mvp4pcdw-vo: Parakeet heard 'Hope side banner.' for 'Open side panel.'; the owner's next line 'Open side panel.' worked"
-    },
-    "utterance-1793017797487-0002.wav": {
-      "said": "play tum se tum tak by niyam",
-      "ledger": "turn-mvp8i345-1",
-      "names": [
-        "tum se tum tak",
-        "niyam"
-      ],
-      "evidence": "ledger turn-mvp8i345-1: final 'Platum Setum Tuck Bai Nium' for 'Play Tum Se Tum Tak by Niyam'"
-    },
-    "utterance-1793017815531-0004.wav": {
-      "said": "play tum se tum tak by niyam",
-      "ledger": "turn-mvp8igvj-v2",
-      "names": [
-        "tum se tum tak",
-        "niyam"
-      ],
-      "evidence": "ledger turn-mvp8igvj-v2: Parakeet heard 'Niyam' as 'Neon' in 'Play Tum See Tum Tuck by Neon'"
-    },
-    "utterance-1793017860524-0013.wav": {
-      "said": "play tum se tum tak by niyam",
-      "ledger": "turn-mvp8jflc-v7",
-      "names": [
-        "tum se tum tak",
-        "niyam"
-      ],
-      "evidence": "ledger turn-mvp8jflc-v7: 'Platum Setum Tuck Bai Neom' for 'Play Tum Se Tum Tak by Niyam'"
-    },
-    "utterance-1793017893436-0018.wav": {
-      "said": "play tum se tum tak by niyam",
-      "ledger": "turn-mvp8k4v2-2",
-      "names": [
-        "tum se tum tak",
-        "niyam"
-      ],
-      "evidence": "ledger turn-mvp8k4v2-2: final 'Play tum se tum tak bai niyum.' for 'Play Tum Se Tum Tak by Niyam'"
-    },
-    "utterance-1793017975096-0024.wav": {
-      "said": "loop this song",
-      "ledger": "turn-mvp8lvzu-vg",
-      "names": [
-        "loop"
-      ],
-      "evidence": "ledger turn-mvp8lvzu-vg: Parakeet heard 'Look this song.' for 'Loop this song.'"
-    },
-    "utterance-1793017982924-0025.wav": {
-      "said": "loop this song",
-      "ledger": "turn-mvp8m1th-3",
-      "names": [
-        "loop"
-      ],
-      "evidence": "ledger turn-mvp8m1th-3: final 'Loop this song.' (right; the partial 'Nope.' fired the Early Fire)"
-    },
-    "utterance-1793008064408-0002.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp2pgv5-v1 heard 'Clay tum se tum takbai niyum.' and the next lines run on the watch page of Tum Se Tum Tak - Niyam (ledger turn-mvp2q7gx-v2); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793008137506-0008.wav": {
-      "said": "increase music volume",
-      "evidence": "turn-mvp2r19i-v5 fired the music volume; the owner's next lines go on setting it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793008177311-0013.wav": {
-      "said": "set music volume to fifty percent",
-      "evidence": "turn-mvp2rvzb-v7 fired the volume; next line sets it again to seventy; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793008198690-0015.wav": {
-      "said": "set music volume to seventy percent",
-      "evidence": "turn-mvp2sch1-v8 fired the volume and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793008273547-0017.wav": {
-      "said": "play the song from the beginning",
-      "evidence": "turn-mvp2ty8d-v9 fired the media op and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793008469400-0024.wav": {
-      "said": "loop this song",
-      "evidence": "turn-mvp2y5cq-vd fired from the Local Match (ledger turn-mvp2q7gx-v2 names it)"
-    },
-    "utterance-1793008486229-0027.wav": {
-      "said": "play it from the beginning",
-      "evidence": "turn-mvp2yicf-vf fired the media op, the retry of 'Blade from the beginning.'; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793011426981-0043.wav": {
-      "said": "open side panel",
-      "evidence": "turn-mvp4pjfu-vp worked (ledger turn-mvp4pcdw-vo)"
-    },
-    "utterance-1793017831693-0006.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp8itd3-v3 'Play Tum Se Tum Tuck by Neon', inside the retry chain ledger turn-mvp8igvj-v2 states (Tum Se Tum Tak by Niyam)"
-    },
-    "utterance-1793017874442-0014.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp8jqbz-v8 'Play Tum See Tum Tuck by Neom', the retry of ledger turn-mvp8jflc-v7"
-    },
-    "utterance-1793017900129-0019.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp8ka5g-vc 'Play tum se tum takbai niyum.', the retry of ledger turn-mvp8k4v2-2"
-    },
-    "utterance-1793017910437-0020.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp8ki3t-vd 'Play Tumse Tum Tuk by Neo', the same retry chain (ledger turn-mvp8k4v2-2)"
-    },
-    "utterance-1793017925023-0021.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvp8ktd1-ve 'Play tum se tum tak bai nium.', the same retry chain"
-    },
-    "utterance-1793017934378-0022.wav": {
-      "said": "play tum se tum tak by niyam n i y a m",
-      "evidence": "turn-mvp8l0ku-vf 'Play tum se tum tuk by nium n i y a m': the chain's last retry, the name spelled out"
-    },
-    "utterance-1793017989495-0026.wav": {
-      "said": "loop this song",
-      "evidence": "turn-mvp8m31x-4 'Loop this song.', the retry after ledger turn-mvp8m1th-3"
-    },
-    "utterance-1793017997664-0027.wav": {
-      "said": "loop l o o p this song",
-      "evidence": "turn-mvp8mdeu-vj 'Loop L O O P this song.' fired the loop and ended the chain; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793030019176-0062.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "turn-mvpfs19n-v19 'Play tum se tum takbai niyong.': the owner's standing line for this song (ledger turn-mvp8igvj-v2's chain); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
-    },
-    "utterance-1793033377188-0002.wav": {
-      "said": "play tum se tum tak by niyam",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play tum se tum tak by niyam.', Whisper medium.en 'Play Toontak by Nihon'; the next line built on it"
-    },
-    "utterance-1793033402634-0004.wav": {
-      "said": "lower music volume",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
-    },
-    "utterance-1793033410020-0005.wav": {
-      "said": "change the volume to 25%",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Change the volume to 25%.', Whisper medium.en 'Music Volume to 25%.'; the next line built on it"
-    },
-    "utterance-1793033432191-0007.wav": {
-      "said": "show it",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
-    },
-    "utterance-1793033440065-0008.wav": {
-      "said": "show the page",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show the page.', Whisper medium.en 'Show on the page.'; the next line built on it"
-    },
-    "utterance-1793033451988-0010.wav": {
-      "said": "show it",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
-    },
-    "utterance-1793033502465-0012.wav": {
-      "said": "play iraada by niyam",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play Irada by Niyam.', Whisper medium.en 'Play Irada by Niamh.'; the next line built on it"
-    },
-    "utterance-1793033566763-0016.wav": {
-      "said": "loop the song",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'Loop the song.'; the next line built on it"
-    },
-    "utterance-1793033580384-0017.wav": {
-      "said": "scroll up",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
-    },
-    "utterance-1793033587666-0018.wav": {
-      "said": "escape",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Escape.', Whisper medium.en \"Let's Escape\"; the next line built on it"
-    },
-    "utterance-1793033595198-0020.wav": {
-      "said": "scroll up",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
-    },
-    "utterance-1793033661517-0022.wav": {
-      "said": "pause",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Pause.', Whisper medium.en 'Bye.'; the next line built on it"
-    },
-    "utterance-1793033665794-0023.wav": {
-      "said": "resume",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
-    },
-    "utterance-1793033672608-0024.wav": {
-      "said": "play",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'PLAY'; the next line built on it"
-    },
-    "utterance-1793033676236-0025.wav": {
-      "said": "stop",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
-    },
-    "utterance-1793033680598-0026.wav": {
-      "said": "resume",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
-    },
-    "utterance-1793033685850-0027.wav": {
-      "said": "play",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'Play'; the next line built on it"
-    },
-    "utterance-1793033700533-0030.wav": {
-      "said": "idle page",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Title page.', Whisper medium.en 'item page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
-      "ledger": "turn-mvphyxti-vm",
-      "names": [
-        "idle"
-      ]
-    },
-    "utterance-1793033709127-0031.wav": {
-      "said": "idle page",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"I don't page.\", Whisper medium.en 'IDLE page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
-      "ledger": "turn-mvphz4g8-vn",
-      "names": [
-        "idle"
-      ]
-    },
-    "utterance-1793033716735-0032.wav": {
-      "said": "idle i d l e page",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Idle, I-D-L-E, page.', Whisper medium.en 'IDLE IDLE page'; the next line built on it"
-    },
-    "utterance-1793033730716-0034.wav": {
-      "said": "help",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
-    },
-    "utterance-1793033741231-0035.wav": {
-      "said": "mark as flagged",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'Mark as flagged.'; the next line built on it"
-    },
-    "utterance-1793033742595-0036.wav": {
-      "said": "or failure",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'or failure.'; the next line built on it"
-    },
-    "utterance-1793033759098-0038.wav": {
-      "said": "help",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
-    },
-    "utterance-1793033763965-0039.wav": {
-      "said": "read",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
-    },
-    "utterance-1793034921064-0042.wav": {
-      "said": "start a timer for five seconds",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Start a timer for five seconds.', Whisper medium.en 'Start the timer for 5 seconds.'; the next line built on it"
-    },
-    "utterance-1793034930527-0043.wav": {
-      "said": "stop the timer",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop the timer.', Whisper medium.en 'Stop the timer.'; the next line built on it"
-    },
-    "utterance-1793035125741-0045.wav": {
-      "said": "resume",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume'; the next line built on it"
-    },
-    "utterance-1793035131226-0046.wav": {
-      "said": "play iraada by niyam",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play iraada by niyam.', Whisper medium.en 'Play Radha by Neom.'; the next line built on it"
-    },
-    "utterance-1793035217157-0048.wav": {
-      "said": "loop the song",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'loop the song'; the next line built on it"
-    },
-    "utterance-1793036171624-0050.wav": {
-      "said": "read",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
-    },
-    "utterance-1793036277045-0052.wav": {
-      "said": "lower music volume",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
-    },
-    "utterance-1793036283554-0053.wav": {
-      "said": "set music volume to 25%",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Set music volume to 25%.', Whisper medium.en 'Set music volume to 25%.'; the next line built on it"
-    },
-    "utterance-1793037387553-0055.wav": {
-      "said": "stop",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
-    },
-    "utterance-1793039960734-0058.wav": {
-      "said": "something interesting",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Something interesting.', Whisper medium.en 'something interesting.'; the next line built on it"
-    },
-    "utterance-1793040075179-0069.wav": {
-      "said": "play feeling good",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en \"Play Feelin' Good.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
-    },
-    "utterance-1793040098909-0071.wav": {
-      "said": "play feeling good",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"They're feeling good.\", Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
-    },
-    "utterance-1793040108831-0072.wav": {
-      "said": "play feeling good",
-      "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
-    }
+ "source": "Each dump matched 1:1 by time to a decision record (2026-10-17 logs: ~/.claude/jobs/07c4ba48/tmp/today-logs/decision-1792244719460-1.jsonl and the decision-1792245564371 records in ~/.claude/jobs/c8172ccb/tmp/all2.jsonl; 2026-10-24: ~/.config/bingbong/logs/decision-1792854534608-1.jsonl); a label is kept only where the Command was accepted (the next line built on it) or a retry chain, the ledger, a post mortem or the owner's own words make the words sure, with the live decode and the 2026-10-17 Small/Base replays (session 8245387d) used only as corroboration. Lower case, no punctuation except the apostrophe inside a word. The #463 labels (kiosk dumps of 2026-10-23..26) follow the same rule from the kiosk decision logs and the ledger; a label with `ledger` and `names` is a ledger `stt` clip, scored on those names.",
+ "learnedSource": "The Learned Terms the app held when the 2026-10-26 kiosk lines were spoken (#471), read off the kiosk's learned-terms store that day; the STT gate asks a dump without a logged keyterms list with these and the grammar's heads. A new learned name is added here with the dumps it was learned from, never alone.",
+ "learned": [
+  "tum se tum tak",
+  "niyam",
+  "iraada",
+  "iraada niyam",
+  "michael bublé",
+  "feeling good",
+  "joji",
+  "like you do",
+  "50 cent",
+  "many men",
+  "highs and lows",
+  "ye"
+ ],
+ "labels": {
+  "utterance-1792244719141-0001.wav": {
+   "said": "youtube",
+   "evidence": "decision turn-mvcg8bvu-1 heard 'YouTube.', opened YouTube; next line built on it (no undo); Small replay agrees"
   },
-  "unlabelled": {
-    "utterance-1787154757369-0001.wav": "2026-08-19, no decision log survives and no session records the owner's words; decodes 'Open the first line of stackups video you can find' suggest Linus Tech Tips but the words are not sure",
-    "utterance-1792245627878-0007.wav": "heard 'Type - backtips' live, 'I need liner stack tips' (Small), 'Ave line stack tips' (Base): the name is Linus Tech Tips but the leading word (type? i need?) is not sure",
-    "utterance-1792245756083-0019.wav": "heard 'Really fresh' live, 'Refresh' by Small and Base; a reload rephrase that Jev read as none and was followed by another rephrase, so whether it was 'refresh' or 'really refresh' is not sure"
+  "utterance-1792244731626-0002.wav": {
+   "said": "open elon musk's latest tweet",
+   "evidence": "turn-mvcg8lik-2 heard 'Open Elon Musk's latest tweet.' and searched it; next line clicked a result (accepted); Base replay agrees on the name; the owner said the same line again on 2026-10-19 (ledger turn-mvfpbusm-1)"
+  },
+  "utterance-1792244743264-0003.wav": {
+   "said": "click on the first link",
+   "evidence": "turn-mvcg8ui2-3; live, Small and Base agree; memory kachow-324-checkpoint names the line (Jev clicked ref [1], undone by the next 'back')"
+  },
+  "utterance-1792244750370-0004.wav": {
+   "said": "back",
+   "evidence": "turn-mvcg8zz7-4 fired back as the recovery of the misread click; live, Small and Base agree"
+  },
+  "utterance-1792244763244-0005.wav": {
+   "said": "go to elon musk's profile",
+   "evidence": "turn-mvcg99wt-5 heard 'Go to your masks profile'; 'Go back' and the retry 'Elon musk's profile' follow; memory kachow-324-checkpoint: STT misheard 'Elon Musk's' as 'your masks'; Small replay heard 'Go to Elon Musk's profile.'"
+  },
+  "utterance-1792244772705-0006.wav": {
+   "said": "go back",
+   "evidence": "turn-mvcg9h7m-6 fired back (undo of the misheard open); live, Small and Base agree"
+  },
+  "utterance-1792244779756-0007.wav": {
+   "said": "elon musk's profile",
+   "evidence": "turn-mvcg9mnh-7 heard 'Elon musk's profile', the retry of 0005; owner in session 07c4ba48: 'it looked up elon musks profile'; Small agrees"
+  },
+  "utterance-1792244786980-0008.wav": {
+   "said": "back",
+   "evidence": "turn-mvcg9s85-8 heard 'Back' and fired back, one of the four back recoveries counted in kachow-324-checkpoint; the next line 'open the first result' is on the results page it returned to"
+  },
+  "utterance-1792244792994-0009.wav": {
+   "said": "open the first result",
+   "evidence": "turn-mvcg9wv8-9; live, Small and Base agree; owner in session 07c4ba48 describes asking for 'the first result' and it being searched verbatim"
+  },
+  "utterance-1792244799073-0010.wav": {
+   "said": "go back",
+   "evidence": "turn-mvcga1k2-a fired back (undo of the verbatim search); live, Small and Base agree"
+  },
+  "utterance-1792245564200-0001.wav": {
+   "said": "open youtube",
+   "evidence": "turn-mvcgqfxr-1 opened YouTube, next line clicked its Search box (accepted); live, Small and Base agree"
+  },
+  "utterance-1792245580079-0002.wav": {
+   "said": "click on search",
+   "evidence": "turn-mvcgqs6p-2 clicked [3] Search, the session then searched it; live, Small and Base agree"
+  },
+  "utterance-1792245592413-0003.wav": {
+   "said": "search linus tech tips",
+   "evidence": "turn-mvcgr1pg-3 heard 'Search line status'; 'Go back' then the retry chain 'on YouTube search ... Linus Tech Tips' (0005, 0006) settles the name; every decode has 'search' plus one three-word name"
+  },
+  "utterance-1792245601956-0004.wav": {
+   "said": "go back",
+   "evidence": "decision at 1792245602090 fired back after the wrong search; live and Small agree"
+  },
+  "utterance-1792245609967-0005.wav": {
+   "said": "on youtube search linus tech tips",
+   "evidence": "heard 'on YouTube search Lana Statics'; repeated at once as 0006, heard right as 'on YouTube search Linus Tech Tips.'; same frame in every decode"
+  },
+  "utterance-1792245619278-0006.wav": {
+   "said": "on youtube search linus tech tips",
+   "evidence": "decision at 1792245619858; live, Small and Base agree"
+  },
+  "utterance-1792245634981-0008.wav": {
+   "said": "delete the text",
+   "evidence": "decision at 1792245635588 cleared the box; live, Small and Base agree; the owner's #325 brief quotes the line"
+  },
+  "utterance-1792245642416-0009.wav": {
+   "said": "type linus tech tips",
+   "evidence": "heard 'Type linus tag tips'; the retry chain (owner's #325 brief: 'Delete the text' -> 'Type Linus Tech dips' -> ...) and 0012 settle the name; Base heard 'Type Linus Tech tips'"
+  },
+  "utterance-1792245649328-0010.wav": {
+   "said": "search",
+   "evidence": "decision at 1792245649657; live, Small and Base agree"
+  },
+  "utterance-1792245655602-0011.wav": {
+   "said": "go back",
+   "evidence": "decision at 1792245655863 fired back; live, Small and Base agree"
+  },
+  "utterance-1792245665201-0012.wav": {
+   "said": "type linus tech tips in the search box",
+   "evidence": "decision at 1792245665579 typed 'Linus Tech Tips' and the next lines submitted it (accepted); live and Base agree"
+  },
+  "utterance-1792245671686-0013.wav": {
+   "said": "click on the search button",
+   "evidence": "decision at 1792245671848; live, Small and Base agree"
+  },
+  "utterance-1792245679015-0014.wav": {
+   "said": "press enter",
+   "evidence": "decision at 1792245679105 pressed enter; live, Small and Base agree"
+  },
+  "utterance-1792245689432-0015.wav": {
+   "said": "click on the first video",
+   "evidence": "decision at 1792245689915 clicked the first video; live, Small and Base agree"
+  },
+  "utterance-1792245734824-0016.wav": {
+   "said": "refresh page",
+   "evidence": "decision at 1792245735160 (Jev none), followed by the reload rephrasings; live and Small agree"
+  },
+  "utterance-1792245741226-0017.wav": {
+   "said": "reload the page",
+   "evidence": "decision at 1792245741728, a rephrase in the reload chain; live, Small and Base agree"
+  },
+  "utterance-1792245750214-0018.wav": {
+   "said": "reload",
+   "evidence": "decision at 1792245750548, a rephrase in the reload chain; live, Small and Base agree"
+  },
+  "utterance-1792245793580-0020.wav": {
+   "said": "press control r",
+   "evidence": "decision at 1792245794116 pressed ctrl r, ending the reload chain; live 'Press ctrl r', Small 'Press Ctrl + R', Base 'Press control r'"
+  },
+  "utterance-1792854529592-0001.wav": {
+   "said": "what time is it",
+   "evidence": "turn-mvmjaon0-1 said the time; post mortem 2026-10-24 16:08: the time tasks did what was meant"
+  },
+  "utterance-1792854547620-0002.wav": {
+   "said": "what time is it",
+   "evidence": "turn-mvmjb2jq-2 said the time; post mortem: the time tasks did what was meant"
+  },
+  "utterance-1792854553621-0003.wav": {
+   "said": "what day",
+   "evidence": "turn-mvmjb76d-3 said the time/day; post mortem: the time tasks did what was meant"
+  },
+  "utterance-1792854562488-0004.wav": {
+   "said": "when is diwali",
+   "evidence": "turn-mvmjbe0o-4 searched it and read the answer; post mortem: the Diwali tasks did what was meant"
+  },
+  "utterance-1792854580676-0005.wav": {
+   "said": "when is diwali next year",
+   "evidence": "turn-mvmjbs1x-7 searched it; post mortem: the Diwali tasks did what was meant"
+  },
+  "utterance-1792854600747-0006.wav": {
+   "said": "click on the first link",
+   "evidence": "turn-mvmjc7jf-a clicked the first result; post mortem: first link did what was meant"
+  },
+  "utterance-1792854606016-0007.wav": {
+   "said": "scroll down",
+   "evidence": "turn-mvmjcblt-e scrolled (Local Match); post mortem: scroll did what was meant"
+  },
+  "utterance-1792854607792-0008.wav": {
+   "said": "scroll down",
+   "evidence": "turn-mvmjccz4-f scrolled (Local Match); post mortem: scroll did what was meant"
+  },
+  "utterance-1792854707823-0009.wav": {
+   "said": "what's the time",
+   "evidence": "turn-mvmjei5s-g said the time; post mortem: the time tasks did what was meant"
+  },
+  "utterance-1792854721928-0010.wav": {
+   "said": "what's the weather like in gurgaon",
+   "evidence": "turn-mvmjetct-i; ledger fixtures/failed-lines/turn-mvmjetct-i.json (stage reading, STT right)"
+  },
+  "utterance-1792854730054-0011.wav": {
+   "said": "what's the weather like in gurgaon",
+   "ledger": "turn-mvmjezbb-k",
+   "names": [
+    "gurgaon"
+   ],
+   "evidence": "turn-mvmjezbb-k heard 'Gergan'; ledger fixtures/failed-lines/turn-mvmjezbb-k.json: the owner said the Gurgaon line again (stage stt)"
+  },
+  "utterance-1792930327570-0001.wav": {
+   "said": "play highs and lows by kanye west",
+   "ledger": "turn-mvnsfarj-1",
+   "names": [
+    "kanye west"
+   ],
+   "evidence": "ledger turn-mvnsfarj-1: Parakeet heard 'Kanye Rest' for 'Kanye West', meant 'play Highs and Lows by Kanye West'"
+  },
+  "utterance-1792941416662-0001.wav": {
+   "said": "play tum se tum tak by niyam",
+   "ledger": "turn-mvnz0z5j-1",
+   "names": [
+    "tum se tum tak",
+    "niyam"
+   ],
+   "evidence": "ledger turn-mvnz0z5j-1: Parakeet heard 'Play Tum Se Tum Tak by Niyam' as 'Play Tum Setum Tuck Bai Diamo'; the owner typed 'play tum se tum tak by niyam' 31 s later"
+  },
+  "utterance-1793008098894-0004.wav": {
+   "said": "loop this song",
+   "ledger": "turn-mvp2q7gx-v2",
+   "names": [
+    "loop"
+   ],
+   "evidence": "ledger turn-mvp2q7gx-v2: Parakeet heard 'Look this song.' for 'Loop this song'"
+  },
+  "utterance-1793008283882-0019.wav": {
+   "said": "loop this song",
+   "ledger": "turn-mvp2u67g-va",
+   "names": [
+    "loop"
+   ],
+   "evidence": "ledger turn-mvp2u67g-va: Parakeet heard 'Look there some' for 'Loop this song'"
+  },
+  "utterance-1793011417842-0042.wav": {
+   "said": "open side panel",
+   "ledger": "turn-mvp4pcdw-vo",
+   "names": [
+    "open",
+    "side panel"
+   ],
+   "evidence": "ledger turn-mvp4pcdw-vo: Parakeet heard 'Hope side banner.' for 'Open side panel.'; the owner's next line 'Open side panel.' worked"
+  },
+  "utterance-1793017797487-0002.wav": {
+   "said": "play tum se tum tak by niyam",
+   "ledger": "turn-mvp8i345-1",
+   "names": [
+    "tum se tum tak",
+    "niyam"
+   ],
+   "evidence": "ledger turn-mvp8i345-1: final 'Platum Setum Tuck Bai Nium' for 'Play Tum Se Tum Tak by Niyam'"
+  },
+  "utterance-1793017815531-0004.wav": {
+   "said": "play tum se tum tak by niyam",
+   "ledger": "turn-mvp8igvj-v2",
+   "names": [
+    "tum se tum tak",
+    "niyam"
+   ],
+   "evidence": "ledger turn-mvp8igvj-v2: Parakeet heard 'Niyam' as 'Neon' in 'Play Tum See Tum Tuck by Neon'"
+  },
+  "utterance-1793017860524-0013.wav": {
+   "said": "play tum se tum tak by niyam",
+   "ledger": "turn-mvp8jflc-v7",
+   "names": [
+    "tum se tum tak",
+    "niyam"
+   ],
+   "evidence": "ledger turn-mvp8jflc-v7: 'Platum Setum Tuck Bai Neom' for 'Play Tum Se Tum Tak by Niyam'"
+  },
+  "utterance-1793017893436-0018.wav": {
+   "said": "play tum se tum tak by niyam",
+   "ledger": "turn-mvp8k4v2-2",
+   "names": [
+    "tum se tum tak",
+    "niyam"
+   ],
+   "evidence": "ledger turn-mvp8k4v2-2: final 'Play tum se tum tak bai niyum.' for 'Play Tum Se Tum Tak by Niyam'"
+  },
+  "utterance-1793017975096-0024.wav": {
+   "said": "loop this song",
+   "ledger": "turn-mvp8lvzu-vg",
+   "names": [
+    "loop"
+   ],
+   "evidence": "ledger turn-mvp8lvzu-vg: Parakeet heard 'Look this song.' for 'Loop this song.'"
+  },
+  "utterance-1793017982924-0025.wav": {
+   "said": "loop this song",
+   "ledger": "turn-mvp8m1th-3",
+   "names": [
+    "loop"
+   ],
+   "evidence": "ledger turn-mvp8m1th-3: final 'Loop this song.' (right; the partial 'Nope.' fired the Early Fire)"
+  },
+  "utterance-1793008064408-0002.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp2pgv5-v1 heard 'Clay tum se tum takbai niyum.' and the next lines run on the watch page of Tum Se Tum Tak - Niyam (ledger turn-mvp2q7gx-v2); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793008137506-0008.wav": {
+   "said": "increase music volume",
+   "evidence": "turn-mvp2r19i-v5 fired the music volume; the owner's next lines go on setting it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793008177311-0013.wav": {
+   "said": "set music volume to fifty percent",
+   "evidence": "turn-mvp2rvzb-v7 fired the volume; next line sets it again to seventy; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793008198690-0015.wav": {
+   "said": "set music volume to seventy percent",
+   "evidence": "turn-mvp2sch1-v8 fired the volume and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793008273547-0017.wav": {
+   "said": "play the song from the beginning",
+   "evidence": "turn-mvp2ty8d-v9 fired the media op and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793008469400-0024.wav": {
+   "said": "loop this song",
+   "evidence": "turn-mvp2y5cq-vd fired from the Local Match (ledger turn-mvp2q7gx-v2 names it)"
+  },
+  "utterance-1793008486229-0027.wav": {
+   "said": "play it from the beginning",
+   "evidence": "turn-mvp2yicf-vf fired the media op, the retry of 'Blade from the beginning.'; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793011426981-0043.wav": {
+   "said": "open side panel",
+   "evidence": "turn-mvp4pjfu-vp worked (ledger turn-mvp4pcdw-vo)"
+  },
+  "utterance-1793017831693-0006.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp8itd3-v3 'Play Tum Se Tum Tuck by Neon', inside the retry chain ledger turn-mvp8igvj-v2 states (Tum Se Tum Tak by Niyam)"
+  },
+  "utterance-1793017874442-0014.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp8jqbz-v8 'Play Tum See Tum Tuck by Neom', the retry of ledger turn-mvp8jflc-v7"
+  },
+  "utterance-1793017900129-0019.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp8ka5g-vc 'Play tum se tum takbai niyum.', the retry of ledger turn-mvp8k4v2-2"
+  },
+  "utterance-1793017910437-0020.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp8ki3t-vd 'Play Tumse Tum Tuk by Neo', the same retry chain (ledger turn-mvp8k4v2-2)"
+  },
+  "utterance-1793017925023-0021.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvp8ktd1-ve 'Play tum se tum tak bai nium.', the same retry chain"
+  },
+  "utterance-1793017934378-0022.wav": {
+   "said": "play tum se tum tak by niyam n i y a m",
+   "evidence": "turn-mvp8l0ku-vf 'Play tum se tum tuk by nium n i y a m': the chain's last retry, the name spelled out"
+  },
+  "utterance-1793017989495-0026.wav": {
+   "said": "loop this song",
+   "evidence": "turn-mvp8m31x-4 'Loop this song.', the retry after ledger turn-mvp8m1th-3"
+  },
+  "utterance-1793017997664-0027.wav": {
+   "said": "loop l o o p this song",
+   "evidence": "turn-mvp8mdeu-vj 'Loop L O O P this song.' fired the loop and ended the chain; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793030019176-0062.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "turn-mvpfs19n-v19 'Play tum se tum takbai niyong.': the owner's standing line for this song (ledger turn-mvp8igvj-v2's chain); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+  },
+  "utterance-1793033377188-0002.wav": {
+   "said": "play tum se tum tak by niyam",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play tum se tum tak by niyam.', Whisper medium.en 'Play Toontak by Nihon'; the next line built on it"
+  },
+  "utterance-1793033402634-0004.wav": {
+   "said": "lower music volume",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
+  },
+  "utterance-1793033410020-0005.wav": {
+   "said": "change the volume to 25%",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Change the volume to 25%.', Whisper medium.en 'Music Volume to 25%.'; the next line built on it"
+  },
+  "utterance-1793033432191-0007.wav": {
+   "said": "show it",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
+  },
+  "utterance-1793033440065-0008.wav": {
+   "said": "show the page",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show the page.', Whisper medium.en 'Show on the page.'; the next line built on it"
+  },
+  "utterance-1793033451988-0010.wav": {
+   "said": "show it",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Show it.', Whisper medium.en 'Show it.'; the next line built on it"
+  },
+  "utterance-1793033502465-0012.wav": {
+   "said": "play iraada by niyam",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play Irada by Niyam.', Whisper medium.en 'Play Irada by Niamh.'; the next line built on it"
+  },
+  "utterance-1793033566763-0016.wav": {
+   "said": "loop the song",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'Loop the song.'; the next line built on it"
+  },
+  "utterance-1793033580384-0017.wav": {
+   "said": "scroll up",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
+  },
+  "utterance-1793033587666-0018.wav": {
+   "said": "escape",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Escape.', Whisper medium.en \"Let's Escape\"; the next line built on it"
+  },
+  "utterance-1793033595198-0020.wav": {
+   "said": "scroll up",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Scroll up.', Whisper medium.en 'Scroll up.'; the next line built on it"
+  },
+  "utterance-1793033661517-0022.wav": {
+   "said": "pause",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Pause.', Whisper medium.en 'Bye.'; the next line built on it"
+  },
+  "utterance-1793033665794-0023.wav": {
+   "said": "resume",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
+  },
+  "utterance-1793033672608-0024.wav": {
+   "said": "play",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'PLAY'; the next line built on it"
+  },
+  "utterance-1793033676236-0025.wav": {
+   "said": "stop",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+  },
+  "utterance-1793033680598-0026.wav": {
+   "said": "resume",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume.'; the next line built on it"
+  },
+  "utterance-1793033685850-0027.wav": {
+   "said": "play",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play.', Whisper medium.en 'Play'; the next line built on it"
+  },
+  "utterance-1793033700533-0030.wav": {
+   "said": "idle page",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Title page.', Whisper medium.en 'item page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
+   "ledger": "turn-mvphyxti-vm",
+   "names": [
+    "idle"
+   ]
+  },
+  "utterance-1793033709127-0031.wav": {
+   "said": "idle page",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"I don't page.\", Whisper medium.en 'IDLE page'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)",
+   "ledger": "turn-mvphz4g8-vn",
+   "names": [
+    "idle"
+   ]
+  },
+  "utterance-1793033716735-0032.wav": {
+   "said": "idle i d l e page",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Idle, I-D-L-E, page.', Whisper medium.en 'IDLE IDLE page'; the next line built on it"
+  },
+  "utterance-1793033730716-0034.wav": {
+   "said": "help",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
+  },
+  "utterance-1793033741231-0035.wav": {
+   "said": "mark as flagged",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'Mark as flagged.'; the next line built on it"
+  },
+  "utterance-1793033742595-0036.wav": {
+   "said": "or failure",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Or failure.', Whisper medium.en 'or failure.'; the next line built on it"
+  },
+  "utterance-1793033759098-0038.wav": {
+   "said": "help",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Help.', Whisper medium.en 'Help!'; the next line built on it"
+  },
+  "utterance-1793033763965-0039.wav": {
+   "said": "read",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
+  },
+  "utterance-1793034921064-0042.wav": {
+   "said": "start a timer for five seconds",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Start a timer for five seconds.', Whisper medium.en 'Start the timer for 5 seconds.'; the next line built on it"
+  },
+  "utterance-1793034930527-0043.wav": {
+   "said": "stop the timer",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop the timer.', Whisper medium.en 'Stop the timer.'; the next line built on it"
+  },
+  "utterance-1793035125741-0045.wav": {
+   "said": "resume",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Resume.', Whisper medium.en 'Resume'; the next line built on it"
+  },
+  "utterance-1793035131226-0046.wav": {
+   "said": "play iraada by niyam",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play iraada by niyam.', Whisper medium.en 'Play Radha by Neom.'; the next line built on it"
+  },
+  "utterance-1793035217157-0048.wav": {
+   "said": "loop the song",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Loop the song.', Whisper medium.en 'loop the song'; the next line built on it"
+  },
+  "utterance-1793036171624-0050.wav": {
+   "said": "read",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Read.', Whisper medium.en 'Read.'; the next line built on it"
+  },
+  "utterance-1793036277045-0052.wav": {
+   "said": "lower music volume",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Lower music volume.', Whisper medium.en 'lower music volume'; the next line built on it"
+  },
+  "utterance-1793036283554-0053.wav": {
+   "said": "set music volume to 25%",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Set music volume to 25%.', Whisper medium.en 'Set music volume to 25%.'; the next line built on it"
+  },
+  "utterance-1793037387553-0055.wav": {
+   "said": "stop",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Stop.', Whisper medium.en \"Let's go.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+  },
+  "utterance-1793039960734-0058.wav": {
+   "said": "something interesting",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Something interesting.', Whisper medium.en 'something interesting.'; the next line built on it"
+  },
+  "utterance-1793040075179-0069.wav": {
+   "said": "play feeling good",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en \"Play Feelin' Good.\"; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+  },
+  "utterance-1793040098909-0071.wav": {
+   "said": "play feeling good",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard \"They're feeling good.\", Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+  },
+  "utterance-1793040108831-0072.wav": {
+   "said": "play feeling good",
+   "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
   }
+ },
+ "unlabelled": {
+  "utterance-1787154757369-0001.wav": "2026-08-19, no decision log survives and no session records the owner's words; decodes 'Open the first line of stackups video you can find' suggest Linus Tech Tips but the words are not sure",
+  "utterance-1792245627878-0007.wav": "heard 'Type - backtips' live, 'I need liner stack tips' (Small), 'Ave line stack tips' (Base): the name is Linus Tech Tips but the leading word (type? i need?) is not sure",
+  "utterance-1792245756083-0019.wav": "heard 'Really fresh' live, 'Refresh' by Small and Base; a reload rephrase that Jev read as none and was followed by another rephrase, so whether it was 'refresh' or 'really refresh' is not sure"
+ }
 }
