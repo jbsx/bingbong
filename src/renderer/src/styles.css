@@ -102,7 +102,6 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --tb-h: 104px; /* the Toolbar: the capsule's 65 px state word and its frame (#436) */
   /* The Peek Card's ground: the solid panel, a breath see-through. */
-  --panel-peek: rgba(236, 238, 241, 0.96);
   /* The News card's "★ this month": a quiet gold of its own. */
   --news-star: #8f7f58;
   /* The idle screen's weather glyphs: sun yellow, cloud grey, rain blue,
@@ -189,7 +188,6 @@
     --shadow: none;
     --shadow-pop: none;
     --focus-ring: 0 0 0 3px rgba(255, 172, 130, 0.28);
-    --panel-peek: #000;
     --news-star: #ffe5a8;
     --wx-sun: #ffd60a;
     --wx-sun-fill: rgba(255, 214, 10, 0.3);
@@ -966,23 +964,23 @@ body {
   display: none;
 }
 
-/* The Peek Card's slot (ADR 0029): while the card shows, the collapsed
-   slot floats bottom-centre over the pane — away from the panel's
-   right-edge footprint, so switching card <-> panel reveals the page
-   beneath the other. The native view's bounds shrink-wrap this rect and
-   intercept input across all of it, so the card fills it exactly. The
-   overlay slot's top and right anchors are let go (#329), or the top one
-   would outrank the bottom and pin the card under the Toolbar: the card
-   sits in the same place in every mode. */
+/* The Peek Card's slot (ADR 0029, #475): while the card shows, the
+   collapsed slot is a band the pane's width, docked to the pane's bottom
+   edge, 340 px tall — the Ledger Strip. The native view's bounds
+   shrink-wrap this rect and intercept input across all of it, so the band
+   fills it exactly and the page's bottom 340 px is under it while it
+   shows, clickable again when it goes. The overlay slot's top anchor is let
+   go (#329), or it would outrank the bottom and pin the band under the
+   Toolbar: the band sits in the same place in every mode. */
 .feed-slot--peek {
   position: absolute;
   top: auto;
-  right: auto;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(640px, 80%);
-  height: 124px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: none;
+  width: auto;
+  height: 340px;
 }
 
 /* The Weigh-in pop-up's slot over the browsing pane: the Peek Card's
@@ -1470,11 +1468,285 @@ details.feed-entry {
   overscroll-behavior: contain;
 }
 
-/* The Peek Card (ADR 0021): the transient report of the live Run and its
-   Answer while the Feed Panel is Collapsed — voice shows it, clicking it
-   opens the panel (the only interactive square inch; no buttons ride it).
-   One solid panel over the page, the mark the Feed's. */
-.peek-card {
+/* The Peek Card (ADR 0021), in its Ledger Strip form (#475): the report
+   of a line's whole journey while the Feed Panel is Collapsed — a band the
+   pane's width at its bottom, solid, a hairline on top, no radius; clicking
+   it opens the panel (the only interactive square inch; no buttons ride
+   it). Four sizes (65/40/24/16), Inter and the mono face for every number,
+   tabular figures. Nothing moves between states: the rail's cells are
+   equal, the stage word sits at a fixed left with its mark pinned right,
+   the words row reserves two lines, the history five rows. */
+.peek-card--band {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: 16px;
+  width: 100%;
+  height: 340px;
+  padding: 24px 48px;
+  border-top: 1px solid var(--hair2);
+  background: var(--surface-solid);
+  color: var(--fg);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.peek-card--band:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
+}
+
+/* The rail: six equal cells on a grid over one track; the track fills to
+   the live station; the live dot is the only accent; a station the turn
+   skipped stays unlit. */
+.peek-rail {
+  position: relative;
+}
+
+.peek-rail-track,
+.peek-rail-fill {
+  position: absolute;
+  top: 6px;
+  left: calc(100% / 12);
+  height: 2px;
+}
+
+.peek-rail-track {
+  right: calc(100% / 12);
+  background: var(--hair2);
+}
+
+.peek-rail-fill {
+  background: var(--fg2);
+}
+
+.peek-rail-cells {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.peek-rail-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.peek-rail-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--hair2);
+}
+
+.peek-rail-label {
+  font-size: var(--type-m);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg3);
+}
+
+.peek-rail-cell--past .peek-rail-dot {
+  background: var(--fg2);
+}
+
+.peek-rail-cell--past .peek-rail-label {
+  color: var(--fg2);
+}
+
+.peek-rail-cell--live .peek-rail-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 6px var(--accentq);
+}
+
+.peek-rail-cell--live .peek-rail-label {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* The end (ui.md 8): said in words and in the outcome's colour; a Stop's end grey. */
+.peek-rail--done .peek-rail-cell--live .peek-rail-dot {
+  background: var(--ok);
+  box-shadow: none;
+}
+
+.peek-rail--failed .peek-rail-cell--live .peek-rail-dot {
+  background: var(--fail);
+  box-shadow: none;
+}
+
+.peek-rail--muted .peek-rail-cell--live .peek-rail-dot {
+  background: var(--idle);
+  box-shadow: none;
+}
+
+.peek-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 760px;
+  column-gap: 48px;
+  align-items: start;
+  min-height: 0;
+}
+
+.peek-left {
+  display: grid;
+  grid-template-rows: 80px 96px 30px;
+  row-gap: 6px;
+  min-width: 0;
+}
+
+/* The stage row: the word at a fixed left, the mark pinned to the right edge; neither ever ellipsizes. */
+.peek-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  height: 80px;
+}
+
+.peek-stage-word {
+  font-size: var(--type-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.peek-stage-mark {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-xl);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.peek-stage-mark--total {
+  color: var(--fg3);
+}
+
+.peek-stage-mark--wave {
+  align-self: center;
+}
+
+.peek-stage-mark .voice-wave {
+  height: 32px;
+}
+
+/* The words row: two lines reserved at 40 px; a longer Answer is cut at the second line — the Feed holds the rest, and the hint says so. */
+.peek-words {
+  margin: 0;
+  height: 96px;
+  font-size: var(--type-l);
+  font-weight: 500;
+  line-height: 48px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.peek-tone--live {
+  color: var(--accent);
+}
+
+.peek-words.peek-tone--live {
+  color: var(--fg);
+}
+
+.peek-tone--quiet {
+  color: var(--fg3);
+}
+
+.peek-tone--ok {
+  color: var(--ok);
+}
+
+.peek-tone--fail {
+  color: var(--fail-text);
+}
+
+.peek-tone--muted {
+  color: var(--fg2);
+}
+
+.peek-open-hint {
+  font-size: var(--type-m);
+  font-weight: 500;
+  line-height: 30px;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+
+/* The history: five fixed rows on one grid behind a hairline — the clock in the mono face at 16 px, the label and the text at 24 px; the newest in white, the older in grey; empty rows blank; a row's text ellipsizes. */
+.peek-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 212px;
+  padding-left: 32px;
+  border-left: 1px solid var(--hair2);
+}
+
+.peek-row {
+  display: grid;
+  grid-template-columns: 60px 170px minmax(0, 1fr);
+  gap: 0 20px;
+  align-items: baseline;
+  height: 36px;
+  color: var(--fg2);
+}
+
+.peek-row-clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-s);
+  text-align: right;
+  color: var(--fg3);
+}
+
+.peek-row-label,
+.peek-row-text {
+  font-size: var(--type-m);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.peek-row-label {
+  color: var(--fg3);
+}
+
+.peek-row--newest {
+  color: var(--fg);
+}
+
+.peek-row--newest .peek-row-label {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.peek-row--ok .peek-row-label {
+  color: var(--ok);
+}
+
+.peek-row--fail .peek-row-label,
+.peek-row--fail .peek-row-text {
+  color: var(--fail-text);
+}
+
+.peek-row--muted .peek-row-label {
+  color: var(--fg2);
+}
+
+/* The Idle form keeps the card's old frame: one solid panel, the mark the Feed's. */
+.peek-card--idle {
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -1497,11 +1769,6 @@ details.feed-entry {
   }
 }
 
-.peek-card:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring), var(--shadow-pop);
-}
-
 .peek-orb {
   width: 14px;
   height: 14px;
@@ -1522,10 +1789,6 @@ details.feed-entry {
   background: var(--fail);
 }
 
-.peek-card--failed .peek-text {
-  color: var(--fail-text);
-}
-
 /* A Stop's card: grey, as in the Feed. */
 .peek-card--muted .peek-orb {
   background: var(--idle);
@@ -1537,91 +1800,6 @@ details.feed-entry {
   gap: 4px;
   min-width: 0;
   flex: 1;
-}
-
-.peek-command {
-  margin: 0;
-  color: var(--fg);
-  font-size: var(--type-m);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.peek-step {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--type-s);
-  color: var(--accent);
-}
-
-.peek-text {
-  margin: 0;
-  color: var(--fg);
-  font-size: var(--type-m);
-  font-weight: 500;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.peek-text .feed-markdown p {
-  margin: 0;
-}
-
-.peek-text--spoken {
-  font-style: italic;
-}
-
-.peek-text--error {
-  color: var(--fail-text);
-}
-
-.peek-open-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: center;
-  color: var(--fg3);
-  font-size: var(--type-s);
-  flex: none;
-}
-
-/* The linger (#470): the Answer goes 15 s past its sentence, this bar
-   draining along the card's foot across that time; full and still while
-   the sentence sounds. */
-.peek-card {
-  position: relative;
-  overflow: hidden;
-}
-
-.peek-linger {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
-  background: var(--fg3);
-  transform-origin: left center;
-  animation-name: peek-drain;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
-
-.peek-linger--held {
-  animation: none;
-}
-
-@keyframes peek-drain {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
 }
 
 /* The Peek Card's Idle Screen form (#470): a failure or "No response." in

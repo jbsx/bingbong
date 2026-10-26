@@ -6,7 +6,8 @@
 //   the backgrounds behind it, down to the black ground.
 // - Every element with its own text is set in Inter or JetBrains Mono.
 // - At rest, the accent marks only what is live: nothing outside the Status
-//   Capsule, the Voice Prompt, the Idle Screen's voice line, a primary button
+//   Capsule, the Voice Prompt, the Idle Screen's voice line, the Ledger Strip
+//   (#475, whose finished face draws none), a primary button
 //   (Settings' Save, the Prompt Bar's Run), a ringing Timer (#446) or the
 //   control under the keyboard takes the accent's colour.
 // - No colour sits in the accent's or the failure's hue band without being
@@ -59,7 +60,7 @@ export const colourFloor = (rest: boolean): string => `(() => {
   const rootStyle = getComputedStyle(document.documentElement)
   const tint = rootStyle.getPropertyValue('--accentq').trim() === '' ? null : token('--accentq')
   const inBand = (c) => { const h = hue(c); if (h === null || !saturated(c)) return false; return [accent, fail].some((t) => { const d = Math.abs(h - hue(t)); return Math.min(d, 360 - d) <= ${HUE_BAND} }) }
-  const LIVE = '.status-capsule, .voice-prompt, .idle-voice, .settings-button--primary, .prompt-verb, .idle-timer--ringing, .toolbar-timer--ringing'
+  const LIVE = '.status-capsule, .voice-prompt, .idle-voice, .peek-card--band, .settings-button--primary, .prompt-verb, .idle-timer--ringing, .toolbar-timer--ringing'
   for (const el of document.querySelectorAll('body *')) {
     // Text nobody sees: skipped by content-visibility (a Feed run scrolled away) or under an ancestor at no opacity.
     if (el.closest('option, .feed-sr') || !shown(el) || !el.checkVisibility({ contentVisibilityAuto: true })) continue

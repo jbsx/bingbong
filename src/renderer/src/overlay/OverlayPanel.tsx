@@ -172,12 +172,7 @@ export function OverlayPanel() {
           bounds shrink-wrap whichever one shows. */}
       {weighInPopupSurface(weighIn, true, open) === 'panel' ? <WeighInPopup state={weighIn} /> : null}
       {slotContent === 'card' ? (
-        <PeekCard
-          state={peek.state}
-          entries={feed}
-          progress={progress}
-          onOpen={() => window.bingbong.feedPanel.toggle()}
-        />
+        <PeekCard state={peek.state} onOpen={() => window.bingbong.feedPanel.toggle()} />
       ) : slotContent === 'tab' ? (
         <button
           type="button"

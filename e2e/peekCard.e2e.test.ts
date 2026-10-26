@@ -9,6 +9,8 @@ import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
 // The Peek Card goes (#470, ADR 0026 as amended): 15 s past its sentence,
+// in its Ledger Strip form on the dashboard (#475) — the journey's rows,
+// the end in words, the band the pane's width at its bottom — and
 // on the dashboard as over the Idle Screen. Over the Idle Screen it shows
 // only a failure or "No response.", in the Weigh-in pop-up's place, a tap
 // dismissing it with the screen left up, and the Voice Prompt line keeps
@@ -109,7 +111,21 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     await submit(`navigate ${fixture.url('/')}`)
     await waitFor(async () => ((await idleShown()) ? undefined : true), { timeoutMs: 10_000, intervalMs: 100 })
     await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.peek-card--answer')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
-    expect(await harness.overlayEval<boolean>(`!!document.querySelector('.peek-card--answer .peek-linger')`)).toBe(true)
+    // The Ledger Strip (#475): the end said in words with the turn's total, the Answer under it, the journey in the history — never the raw line in a stage row.
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--answer .peek-stage-word')?.textContent ?? ''`)).toBe('Done')
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--answer .peek-stage-mark')?.textContent ?? ''`)).toMatch(/^\d+\.\ds$/)
+    const rows = await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--answer .peek-row:not(.peek-row--blank)')].map((row) => row.querySelector('.peek-row-label').textContent + ': ' + row.querySelector('.peek-row-text').textContent)`)
+    expect(rows).toContain('Done: ')
+    expect(rows.some((row) => row.startsWith('Opening: 127.0.0.1'))).toBe(true)
+    expect(rows.some((row) => /^(Acting|Opening): navigate http/.test(row))).toBe(false)
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-rail-cell--live .peek-rail-label')?.textContent ?? ''`)).toBe('Done')
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--answer')?.dataset.face ?? ''`)).toBe('done')
+    // The band's slot: the pane's width at its bottom, 340 px tall.
+    const slot = await harness.dashboardEval<{ left: number; width: number; height: number; bottom: number; paneRight: number; paneBottom: number }>(`(() => { const s = document.querySelector('.feed-slot--peek').getBoundingClientRect(); const p = document.querySelector('.browser-viewport').getBoundingClientRect(); return { left: s.left, width: s.width, height: s.height, bottom: s.bottom, paneRight: p.right, paneBottom: p.bottom } })()`)
+    expect(slot.height).toBe(340)
+    expect(slot.left).toBe(0)
+    expect(Math.abs(slot.left + slot.width - slot.paneRight)).toBeLessThan(1)
+    expect(Math.abs(slot.bottom - slot.paneBottom)).toBeLessThan(1)
     const answer = await waitFor(async () => {
       const seen = await harness.overlayEval<{ at: number | null; gone: number | null }>(`window.__answer`)
       return seen.gone !== null ? seen : undefined
@@ -120,4 +136,16 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     // The dashboard's slot followed: no card's room is left over the pane.
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--collapsed') && !document.querySelector('.feed-slot--peek')`)).toBe(true)
   }, 60_000)
+
+  it('docked, the band takes the same slot: the pane’s width at its bottom (AC6)', async () => {
+    await harness.dashboardEval(`window.bingbong.feedPanel.setMode('docked')`)
+    await harness.dashboardEval(`void window.bingbong.assistant.submit(${JSON.stringify(`navigate ${fixture.url('/story')}`)})`)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--docked.feed-slot--peek')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
+    const slot = await harness.dashboardEval<{ left: number; width: number; height: number; bottom: number; paneRight: number; paneBottom: number }>(`(() => { const s = document.querySelector('.feed-slot--peek').getBoundingClientRect(); const p = document.querySelector('.browser-viewport').getBoundingClientRect(); return { left: s.left, width: s.width, height: s.height, bottom: s.bottom, paneRight: p.right, paneBottom: p.bottom } })()`)
+    expect(slot.height).toBe(340)
+    expect(slot.left).toBe(0)
+    expect(Math.abs(slot.left + slot.width - slot.paneRight)).toBeLessThan(1)
+    expect(Math.abs(slot.bottom - slot.paneBottom)).toBeLessThan(1)
+    await harness.dashboardEval(`window.bingbong.feedPanel.setMode('overlay')`)
+  }, 30_000)
 })

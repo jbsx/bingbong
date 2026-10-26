@@ -20,6 +20,29 @@ export interface RunProgress {
   hop?: number
 }
 
+/**
+ * The stage a `status` event enters, from the last stage held (#428, #438):
+ * the same action's Loading, carried from its own turn into the next hop's,
+ * keeps its start so its seconds go on climbing; a Loading with no detail of
+ * its own is on what the action was on, its word and object riding on — the
+ * same hop only. One reading for every surface that shows a stage: the
+ * Capsule's hint and the Ledger Strip (#475) read the same words and seconds.
+ */
+export function stageEntered(last: RunProgress | null, event: Extract<PipelineEvent, { type: 'status' }>): RunProgress {
+  const sameHop = last !== null && last.hop === event.hop
+  const goesOn = sameHop && event.status === 'loading' && last.stage === 'loading'
+  const carried = sameHop && event.status === 'loading' && event.detail === undefined && (last.stage === 'acting' || last.stage === 'loading') ? last : null
+  const detail = event.detail ?? carried?.detail
+  const word = event.word ?? carried?.word
+  return {
+    stage: event.status,
+    startedAt: goesOn ? last.startedAt : event.at,
+    ...(word !== undefined ? { word } : {}),
+    ...(detail !== undefined ? { detail } : {}),
+    ...(event.hop !== undefined ? { hop: event.hop } : {}),
+  }
+}
+
 /** Folds pipeline events into the current RunProgress. Pure and renderer-agnostic. */
 export function createRunProgressTracker(): {
   onEvent(event: PipelineEvent): void
@@ -38,19 +61,7 @@ export function createRunProgressTracker(): {
       switch (event.type) {
         case 'status': {
           activeTurn = event.turnId
-          // The same action's wait, carried from its own turn into the next hop's: its seconds go on climbing.
-          const goesOn = last !== null && event.status === 'loading' && last.stage === 'loading' && last.hop === event.hop
-          // An action's Loading is on what the action was on (#438): its word and object ride on, the same hop only.
-          const carried = event.status === 'loading' && event.detail === undefined && last !== null && (last.stage === 'acting' || last.stage === 'loading') && last.hop === event.hop ? last : null
-          const detail = event.detail ?? carried?.detail
-          const word = event.word ?? carried?.word
-          progress = {
-            stage: event.status,
-            startedAt: goesOn ? last!.startedAt : event.at,
-            ...(word !== undefined ? { word } : {}),
-            ...(detail !== undefined ? { detail } : {}),
-            ...(event.hop !== undefined ? { hop: event.hop } : {}),
-          }
+          progress = stageEntered(last, event)
           last = progress
           return
         }
