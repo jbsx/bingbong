@@ -30,6 +30,7 @@
     "bugs:add": "node scripts/bugs-add.ts",
     "logs:pull": "node scripts/logs-pull.ts",
     "wake:score": "uv run scripts/wake-score/wake_score.py",
+    "wake:sweep": "uv run scripts/wake-sweep/wake_sweep.py",
     "wake:cpu": "node scripts/wake-cpu.ts",
     "shot": "pnpm build && xvfb-run -a -s '-screen 0 1920x1200x24' node scripts/screenshot.ts",
     "shot:idle": "pnpm build && BINGBONG_IDLE_SHOT=1 xvfb-run -a -s '-screen 0 1920x1080x24' vitest run --config vitest.e2e.config.ts e2e/idleShot.e2e.test.ts",

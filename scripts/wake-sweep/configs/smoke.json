@@ -1,0 +1,7 @@
+{
+  "sweep": "smoke",
+  "note": "End-to-end check of the queue on run 3's features: one short training (2,000 steps a stage), scored and pulled. About 20 GPU minutes.",
+  "data": [
+    {"name": "run3", "features": {"zip": "~/Downloads/kachow_features.zip"}, "training": "smoke-grid.json"}
+  ]
+}

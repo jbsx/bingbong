@@ -30,6 +30,31 @@ The five pronunciations are written as phonemes (`kətʃˈaʊ` and variants) and
 match the notebook's `TARGET_PHRASE`. espeak reads the spelling "kachow" as
 "KATCH-ow", so text would test the wrong word.
 
+## Selection and final halves
+
+```sh
+pnpm wake:score score sweep/ --split selection   # what a sweep ranks on
+pnpm wake:score score winner.onnx --split final  # the number reported for the winner
+```
+
+Ranking dozens of models on one test set flatters the winner, so a sweep
+ranks on one half and reports the winner on the other. `--split all`, the
+default, is both halves and gives the same numbers as before the split
+(`TESTSET_VERSION` stays 1).
+
+The split is by voice: of the 462 ways to put 6 of the 11 voices in
+selection and 5 in final, 21 split the 2,040 kachow clips exactly 1,020 /
+1,020, and seed 452 picked one of them. The voices are hard-coded in
+`SELECTION_VOICES`, so the split never moves:
+
+| Half | Voices | Kachow clips |
+|---|---|---|
+| selection | en_GB-alba, en_US-amy, en_US-hfc_female, en_US-l2arctic, en_US-lessac, en_US-ryan | 1,020 |
+| final | en_GB-aru, en_GB-northern_english_male, en_GB-vctk, en_US-arctic, en_US-kusal | 1,020 |
+
+The validation audio splits by time in the same proportion, selection
+first: about 5.3 h each. Your own recordings are counted in every split.
+
 ## Your own voice
 
 Synthetic voices are not your voice, room or microphone. Put recordings in

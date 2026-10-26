@@ -55,6 +55,16 @@ TARGET_FP_PER_HOUR = 0.5
 THRESHOLDS = [0.5, 0.7, 0.85, 0.9, 0.95, 0.99, 0.995]
 SEED = 20261026
 TESTSET_VERSION = 1
+# A sweep ranks many models on the selection half and reports the winner on the
+# final half, so the ranking cannot flatter it. `all` is both. The voices are
+# the 6 / 5 partition of the 11 whose kachow clips split closest to half and
+# half: of the 462 partitions, 21 split them exactly (1020 / 1020), and seed
+# 452 picked this one. Hard-coded so the split never moves. The validation
+# audio splits by time in the same proportion, selection first.
+SELECTION_VOICES = ("en_GB-alba-medium", "en_US-amy-medium", "en_US-hfc_female-medium",
+                    "en_US-l2arctic-medium", "en_US-lessac-medium", "en_US-ryan-medium")
+SELECTION_SHARE = 1020 / 2040
+SPLITS = ("all", "selection", "final")
 
 # What "kachow" sounds like when said, as Piper phonemes (espeak IPA). espeak's
 # own reading of the spelling "kachow" is kˈætʃaʊ ("KATCH-ow"), which is not it.
@@ -399,6 +409,23 @@ def fp_events(scores: np.ndarray, t: float) -> int:
     return n
 
 
+def split_voices(split: str) -> list[str]:
+    names = list(VOICES)
+    if split == "all":
+        return names
+    if split == "selection":
+        return sorted(SELECTION_VOICES)
+    return sorted(n for n in names if n not in SELECTION_VOICES)
+
+
+def split_validation(scores: np.ndarray, split: str) -> np.ndarray:
+    """The window scores lying wholly inside the split's part of the audio."""
+    if split == "all":
+        return scores
+    n_sel = round((len(scores) + WINDOW - 1) * SELECTION_SHARE)   # frames in the selection part
+    return scores[: n_sel - WINDOW + 1] if split == "selection" else scores[n_sel:]
+
+
 def model_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
@@ -414,12 +441,15 @@ def validation_scores(head: Head, path: Path) -> np.ndarray:
     return s
 
 
-def score_model(path: Path, ts: dict) -> dict:
+def score_model(path: Path, ts: dict, split: str = "all") -> dict:
     head = Head(path)
-    clip_max = np.array([head(windows_of(e)).max() for e in ts["clips_emb"]])
-    val = validation_scores(head, path)
+    voices = set(split_voices(split))
+    # Your own recordings are in every split: they never move the headline.
+    keep = [i for i, m in enumerate(ts["meta"]) if m["voice"] in voices or m["voice"] == "you"]
+    meta = [ts["meta"][i] for i in keep]
+    clip_max = np.array([head(windows_of(ts["clips_emb"][i])).max() for i in keep])
+    val = split_validation(validation_scores(head, path), split)
     hours = (len(val) + WINDOW - 1) * FRAME_S / 3600
-    meta = ts["meta"]
     kind = np.array([m["kind"] for m in meta])
     pos, near = kind == "positive", kind == "near_miss"
 
@@ -455,6 +485,7 @@ def score_model(path: Path, ts: dict) -> dict:
     indian = np.array([bool(m["indian"]) for m in meta])
     res = {
         "model": str(path), "sha": model_hash(path),
+        "split": split, "voices": sorted(voices),
         "validation_hours": hours,
         "operating_threshold": op,
         "headline_recall": row(op)["recall"] if op is not None else 0.0,
@@ -481,6 +512,8 @@ def print_card(r: dict) -> None:
     print(f"\n{Path(r['model']).name}  (sha {r['sha']})")
     print(f"  test clips: {r['counts']['positive']} kachow, {r['counts']['near_miss']} near-miss;"
           f" {r['validation_hours']:.1f} h of everyday audio for false wakes")
+    if r.get("split", "all") != "all":
+        print(f"  split: {r['split']} ({', '.join(r['voices'])})")
     if op is None:
         print(f"  HEADLINE: never reaches {TARGET_FP_PER_HOUR} false wakes/hour at any threshold -> 0%")
     else:
@@ -505,7 +538,7 @@ def print_card(r: dict) -> None:
     print("  Near misses that fire: " + (", ".join(f"{k} {pct(v).strip()}" for k, v in worst) or "none"))
 
 
-def score(args: argparse.Namespace) -> None:
+def load_testset() -> dict:
     if not TESTSET.exists():
         sys.exit(f"no test set at {TESTSET}; run `wake_score.py build` first")
     z = np.load(TESTSET)
@@ -514,15 +547,18 @@ def score(args: argparse.Namespace) -> None:
         sys.exit("test set is from another version of this script; rerun build")
     emb = z["embeddings"].astype(np.float32)
     ends = np.cumsum(z["lengths"])
-    ts = {"meta": meta["clips"], "clips_emb": np.split(emb, ends[:-1])}
+    return {"meta": meta["clips"], "clips_emb": np.split(emb, ends[:-1])}
 
+
+def score(args: argparse.Namespace) -> None:
+    ts = load_testset()
     paths: list[Path] = []
     for p in map(Path, args.models):
         paths += sorted(p.glob("*.onnx")) if p.is_dir() else [p]
     results = []
     for p in paths:
         log(f"  scoring {p.name}")
-        results.append(score_model(p, ts))
+        results.append(score_model(p, ts, args.split))
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1))
     if len(results) == 1:
@@ -547,6 +583,8 @@ def main() -> None:
     sp = sub.add_parser("score", help="score one or more .onnx models (files or directories)")
     sp.add_argument("models", nargs="+")
     sp.add_argument("--json", help="also write the full results here")
+    sp.add_argument("--split", choices=SPLITS, default="all",
+                    help="selection: the voices and audio a sweep ranks on; final: the held-out rest")
     sp.add_argument("--cards", action="store_true", help="print a full card per model when ranking several")
     args = ap.parse_args()
     {"build": build, "score": score}[args.cmd](args)

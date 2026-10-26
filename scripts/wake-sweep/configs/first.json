@@ -1,0 +1,7 @@
+{
+  "sweep": "first",
+  "note": "#452 ruling 2: the first sweep is training-only, on run 3's features (augmentation_rounds 2, Colab 2026-10-26 12:13).",
+  "data": [
+    {"name": "run3", "features": {"zip": "~/Downloads/kachow_features.zip"}, "training": "first-grid.json"}
+  ]
+}

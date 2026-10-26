@@ -1,0 +1,7 @@
+{
+  "sweep": "features-smoke",
+  "note": "End-to-end check of the features job: run 3's data settings at 400 clips instead of 20,000, then one short training on them. About 30 GPU minutes.",
+  "data": [
+    {"name": "tiny", "features": {"job": {"n_samples": 400, "n_samples_val": 100}}, "training": "smoke-grid.json"}
+  ]
+}
