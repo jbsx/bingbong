@@ -160,6 +160,8 @@ interface Run {
   label: string
   /** Every state's failures, by state, asserted once the whole walk is shot. */
   issues: Map<string, string[]>
+  /** The live-tinted surfaces each state showed (#449), so the floor is known to have read them. */
+  tinted: Map<string, string[]>
 }
 
 /** A window size the walk runs at: the appliance's, or a laptop's (#447). */
@@ -193,7 +195,7 @@ async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs
   expect(Math.abs(width - size.width), `the window at ${size.width} px wide`).toBeLessThan(40)
   await sleep(800)
   const label = size === APPLIANCE ? theme : `${theme}-${size.width}x${size.height}`
-  return { harness, fixture, usage, userDataDir, theme, label, issues: new Map() }
+  return { harness, fixture, usage, userDataDir, theme, label, issues: new Map(), tinted: new Map() }
 }
 
 async function close(run: Run): Promise<void> {
@@ -213,6 +215,7 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
   mkdirSync(OUT, { recursive: true })
   onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.label}-${state}.png`)}'`)
   const found: string[] = []
+  const tinted: string[] = []
   const surfaces: [string, (expression: string) => Promise<string[]>][] = [
     ['dashboard', (expression) => run.harness.dashboardEval<string[]>(expression)],
     ['panel', (expression) => run.harness.overlayEval<string[]>(expression)],
@@ -222,6 +225,7 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
     for (const script of [CHECK_SCRIPT, colourFloor(rest)]) {
       for (const issue of await evaluate(script).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
     }
+    tinted.push(...(await evaluate(LIVE_TINTED).catch((error: unknown) => (found.push(`${surface}: tint not read: ${String(error)}`), []))))
   }
   for (const [surface, evaluate] of surfaces) await read(surface, evaluate)
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
@@ -230,6 +234,15 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
     await read('weigh-in', (expression) => run.harness.weighInEval<string[]>(expression))
   }
   run.issues.set(state, found)
+  run.tinted.set(state, tinted)
+}
+
+/** The first class of each live-tinted element on show: the surfaces the floor's tint rule read in a state. */
+const LIVE_TINTED = `[...document.querySelectorAll('.live-tint')].filter((el) => el.getBoundingClientRect().width > 1).map((el) => el.classList[0])`
+
+/** The tinted surfaces a state must show (#449): the floor passing them is only proof if they were there. */
+function expectTinted(run: Run, state: string, surfaces: string[]): void {
+  expect.soft(run.tinted.get(state), `${run.theme} ${state}: the live-tinted surfaces read`).toEqual(expect.arrayContaining(surfaces))
 }
 
 async function promptIdle(harness: Harness): Promise<void> {
@@ -296,6 +309,7 @@ async function walkTheShell(run: Run): Promise<void> {
   await command(run, `navigate ${fixture.url('/held-response')}`, false)
   await sleep(2500)
   await shoot(run, '16-loading', false)
+  expectTinted(run, '16-loading', ['status-capsule', 'feed-bubble', 'feed-run-summary'])
   // The wait names its stage and host in the Feed's words (#438), never the raw line; held past its stuck bound
   // (#442) it says which wait it is before the seconds.
   const waiting = await harness.dashboardEval<string>(`document.querySelector('.toolbar .status-capsule')?.textContent ?? ''`)
@@ -444,6 +458,7 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 30_000, intervalMs: 100 })
   // LISTENING held to the glance floor (#436) as soon as it shows, before any words come.
   await shoot(run, '29-listening', false)
+  expectTinted(run, '29-listening', ['status-capsule', 'voice-prompt'])
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt-said em')`)) ? true : undefined), { timeoutMs: 25_000, intervalMs: 100 }).catch(async (error: unknown) => {
     await shoot(run, 'no-term')
     throw error

@@ -78,7 +78,7 @@ export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.working === true ? ' feed-entry--working' : ''}`}>
         {/* One time per Command (#438, owner ruling 2026-10-26): the result's; the words keep the column, empty, so the bubble does not move. */}
         <span className="feed-time" aria-hidden="true" />
-        <span className="feed-bubble">
+        <span className={`feed-bubble${emphasis.working === true && !entry.muted ? ' live-tint' : ''}`}>
           <span className="feed-text">
             <BreaksAtSlashes text={entry.text} />
           </span>
@@ -219,7 +219,7 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
         setOpen((event.currentTarget as HTMLDetailsElement).open)
       }}
     >
-      <summary className="feed-run-summary">
+      <summary className={`feed-run-summary${live ? ' live-tint' : ''}`}>
         <span className="feed-run-title">{live ? 'working' : 'run detail'}</span>
         <span className="feed-run-count">{entries.length}</span>
       </summary>

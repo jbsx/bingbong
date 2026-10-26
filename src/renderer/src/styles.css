@@ -380,7 +380,6 @@ body {
 .status-capsule--working,
 .status-capsule--listening {
   border-color: var(--accent-edge);
-  background: var(--accentq);
 }
 
 /* The orb: state lives in its colour, named by the pill beside it. */
@@ -1177,7 +1176,6 @@ details.feed-entry {
 /* The Command being worked on: the loud bubble, edged in peach. */
 .feed-entry--working .feed-bubble {
   border: 1.5px solid var(--accent-edge);
-  background: var(--accentq);
 }
 
 .feed-entry--working .feed-bubble .feed-text {
@@ -1480,7 +1478,6 @@ details.feed-entry {
    bar that moves. */
 .feed-run--live .feed-run-summary {
   border-color: var(--accent-edge);
-  background: var(--accentq);
   color: var(--accent);
 }
 
@@ -5199,4 +5196,20 @@ button.idle-line {
 .idle-repos--lean .idle-repo-name {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* The live tint (#448, #449): the peach wash on whatever is live — the
+   working or listening Status Capsule, the working bubble, the live run's
+   summary, the live ear's Voice Prompt. The dark quiet grey clears 7:1 on
+   black only (7.01:1), so no wash keeps it there: on any tinted surface the
+   quiet text steps to the middle grey, 9.20:1 on the wash. Last in the sheet
+   and as specific as a surface's own dark ground, so the wash wins it. */
+:root .live-tint {
+  background: var(--accentq);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root .live-tint {
+    --fg3: var(--fg2);
+  }
 }

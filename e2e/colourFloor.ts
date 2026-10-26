@@ -12,6 +12,9 @@
 // - No colour sits in the accent's or the failure's hue band without being
 //   that colour, so peach and coral each keep one meaning (a data series is
 //   exempt from the five meaningful colours, never from the bands).
+// - The live tint is one class (#449): every element washed in --accentq
+//   carries .live-tint, and in dark its quiet grey is the middle one, so
+//   quiet text on any tinted surface clears 7:1 by the rule, not by luck.
 
 /**
  * Degrees either side of the accent's and the failure's hue that another
@@ -53,6 +56,8 @@ export const colourFloor = (rest: boolean): string => `(() => {
   const fail = token('--fail')
   const failText = token('--fail-text')
   const same = (a, b) => a && b && Math.abs(a.r - b.r) < 1.5 && Math.abs(a.g - b.g) < 1.5 && Math.abs(a.b - b.b) < 1.5
+  const rootStyle = getComputedStyle(document.documentElement)
+  const tint = rootStyle.getPropertyValue('--accentq').trim() === '' ? null : token('--accentq')
   const inBand = (c) => { const h = hue(c); if (h === null || !saturated(c)) return false; return [accent, fail].some((t) => { const d = Math.abs(h - hue(t)); return Math.min(d, 360 - d) <= ${HUE_BAND} }) }
   const LIVE = '.status-capsule, .voice-prompt, .idle-voice, .settings-button--primary, .prompt-verb, .idle-timer--ringing, .toolbar-timer--ringing'
   for (const el of document.querySelectorAll('body *')) {
@@ -67,6 +72,9 @@ export const colourFloor = (rest: boolean): string => `(() => {
     }
     if (opacity < 0.02) continue
     const s = getComputedStyle(el)
+    const washed = parse(s.backgroundColor)
+    if (tint && same(washed, tint) && Math.abs(washed.a - tint.a) < 0.01 && !el.classList.contains('live-tint')) issues.push('live tint off .live-tint: ' + name(el))
+    if (dark && el.classList.contains('live-tint') && s.getPropertyValue('--fg3').trim() !== s.getPropertyValue('--fg2').trim()) issues.push('quiet grey on the live tint: ' + name(el))
     const field = (el instanceof HTMLInputElement && ['text', 'search', 'url', 'number', 'date', 'email', 'tel', 'password'].includes(el.type)) || el instanceof HTMLTextAreaElement
     const own = !el.closest('svg') && (field ? (el.value || el.placeholder) !== '' : !(el instanceof HTMLInputElement) && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
     if (own && !(el.closest('[aria-hidden="true"]') && el.closest('.feed-surface'))) {

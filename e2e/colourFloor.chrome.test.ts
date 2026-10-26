@@ -8,7 +8,7 @@ import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChr
 // passes the dark set as it stands. Skipped without a Chrome.
 
 const TOKENS = `<style>
-  :root { --accent: #ffac82; --fail: #ff7a6b; --fail-text: #ffd9d3; color-scheme: dark }
+  :root { --accent: #ffac82; --accentq: rgba(255, 172, 130, 0.14); --fail: #ff7a6b; --fail-text: #ffd9d3; --fg2: #bdbdbd; --fg3: #959595; color-scheme: dark }
   body { margin: 0; background: #000; color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 24px }
   .capsule { color: var(--accent) }
   .today { position: relative; display: inline-block; width: 60px; color: #000 }
@@ -33,6 +33,9 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
         '/coral': page(`<p style="color:#ff8f74">Claude</p>`),
         '/today': page(`<span class="today">26</span>`),
         '/ringing': page(`<button class="idle-timer idle-timer--ringing" style="font:inherit;background:none;border:0"><p style="color:var(--accent)">Time’s up</p></button>`),
+        '/tint': page(`<style>.live-tint { background: var(--accentq); --fg3: var(--fg2) }</style><div class="status-capsule live-tint"><p style="color:var(--fg3)">Say it again</p></div>`),
+        '/tint-stray': page(`<div class="status-capsule" style="height:40px;background:var(--accentq)"></div>`),
+        '/tint-unruled': page(`<div class="status-capsule live-tint" style="height:40px;background:var(--accentq)"></div>`),
         '/running': page(`<section class="idle-timer"><p style="color:var(--accent)">24:59</p></section>`),
       },
       'bingbong-colour-floor-chrome-',
@@ -75,6 +78,12 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
 
   it('finds a colour in the accent’s or the failure’s hue that is neither', async () => {
     expect(await floor('/coral')).toEqual([expect.stringMatching(/^in the accent or failure hue \(rgb\(255, 143, 116\)\)/)])
+  })
+
+  it('holds the live tint to its class: the wash only through .live-tint, and under it the quiet grey stepped up (#449)', async () => {
+    expect(await floor('/tint')).toEqual([])
+    expect(await floor('/tint-stray')).toEqual([expect.stringMatching(/^live tint off \.live-tint: \.status-capsule/)])
+    expect(await floor('/tint-unruled')).toEqual([expect.stringMatching(/^quiet grey on the live tint: \.status-capsule/)])
   })
 
   it('reads text on a mark drawn behind it against that mark', async () => {

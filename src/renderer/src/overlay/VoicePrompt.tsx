@@ -74,7 +74,7 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
             : REST_HINT
 
   return (
-    <div className={`voice-prompt voice-prompt--${phase}`}>
+    <div className={`voice-prompt voice-prompt--${phase}${live ? ' live-tint' : ''}`}>
       {phase !== 'rest' ? (
         <>
           <div className="voice-prompt-head">

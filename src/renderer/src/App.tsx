@@ -137,6 +137,7 @@ export function App() {
   // A cold ear outranks the ear's own states (#442), and a line it holds outranks a Command; a typed Command's stage still shows while the ear loads.
   const ear = earPhase(voice)
   const status = ear === 'starting' && (voice.transcribing || assistant.status === 'idle') ? 'starting' : ear === 'failed' && assistant.status === 'idle' ? 'earFailed' : voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  const tone = capsuleTone(status)
   // Never go idle over a running command, an open mic, the STT window, or
   // the settings page — the timer must not unmount a form mid-edit. Once
   // up, the Idle Screen stays up through them until something wakes it.
@@ -216,7 +217,7 @@ export function App() {
             (.status-orb--*, .status-pill, .voice-hint, .run-hint) are
             load-bearing e2e observation points. */}
         <div className="toolbar-start">
-          <div className={`status-capsule status-capsule--${capsuleTone(status)}`}>
+          <div className={`status-capsule status-capsule--${tone}${tone === 'working' || tone === 'listening' ? ' live-tint' : ''}`}>
             <StatusOrb status={status} />
             <StatusPill status={status} progress={assistant.progress} />
             {status === 'listening' ? <VoiceWave bars={6} /> : null}
