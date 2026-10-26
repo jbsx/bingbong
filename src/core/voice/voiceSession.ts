@@ -302,6 +302,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         onAbort: () => {
           interrupt('abort')
         },
+        // interrupt() lands only while a Command runs or a Hot Listen is open:
+        // outside those the head is not scored at all (#435).
+        abortWanted: () => deps.getRunState() !== 'idle' || hot,
         onError: (message) => {
           deps.onError(message)
           // A dead detector would re-fail on every chunk — drop the ear

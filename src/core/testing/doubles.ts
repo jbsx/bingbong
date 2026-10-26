@@ -1,7 +1,7 @@
 import type { Clock } from '../ports/clock'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
-import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
+import { WAKE_HEADS, type WakeHeadWanted, type WakeScores, type WakeWordDetector } from '../ports/wake'
 import type {
   MarkedScreenshot,
   BrowserController,
@@ -583,15 +583,23 @@ export class FakeWakeDetector implements WakeWordDetector {
     }
   }
 
-  score(chunk: Float32Array): Promise<WakeScores> {
+  /** The heads each score was asked for (#435), in order. */
+  readonly asked: (keyof WakeScores)[][] = []
+
+  score(chunk: Float32Array, wanted?: WakeHeadWanted): Promise<WakeScores> {
     this.chunks.push(chunk)
     if (this.failWith) return Promise.reject(this.failWith)
     const scores = { ...this.lasts }
+    const asked: (keyof WakeScores)[] = []
     for (const head of WAKE_HEADS) {
       const queue = this.queues[head]
       if (queue.length > 0) this.lasts[head] = queue.shift() ?? this.lasts[head]
-      scores[head] = this.lasts[head]
+      // A head not asked for is not run and reads 0, as the real detector's does.
+      const ask = wanted === undefined || wanted(head)
+      if (ask) asked.push(head)
+      scores[head] = ask ? this.lasts[head] : 0
     }
+    this.asked.push(asked)
     return Promise.resolve(scores)
   }
 

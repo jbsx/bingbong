@@ -11,13 +11,18 @@ export interface WakeScores {
 /** Every head, in stable order — the single place the closed set is enumerated. */
 export const WAKE_HEADS = ['wake', 'abort', 'holdOn'] as const satisfies readonly (keyof WakeScores)[]
 
+/** Which heads a score is asked for; a head left out may come back 0 unscored. */
+export type WakeHeadWanted = (head: keyof WakeScores) => boolean
+
 /** Mono 16 kHz PCM in, per-head wake confidences out (openWakeWord trio or the Python sidecar in main). */
 export interface WakeWordDetector {
   /**
    * Scores one 1280-sample (80 ms) chunk; resolves every head's confidence
-   * (0..1). Adapter failures (missing model, dead sidecar) reject.
+   * (0..1). With `wanted`, a head it refuses (asked just before that head
+   * would run) may be skipped and read 0 (#435). Adapter failures (missing
+   * model, dead sidecar) reject.
    */
-  score(chunk: Float32Array): Promise<WakeScores>
+  score(chunk: Float32Array, wanted?: WakeHeadWanted): Promise<WakeScores>
   /**
    * Hears one chunk without scoring it (the VAD gate is shut, so no head
    * could fire, #435). The detector keeps what it needs so the next

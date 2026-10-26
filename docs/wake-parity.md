@@ -93,7 +93,9 @@ training run) and land in `<userData>/models/wake/` as `bing_bong.onnx`,
 `stop_now.onnx`, and `hold_on.onnx`. Paths are overridable via
 `BINGBONG_WAKE_MODEL`, `BINGBONG_WAKE_ABORT_MODEL`, and
 `BINGBONG_WAKE_HOLD_ON_MODEL`. The Python sidecar engine scores the wake
-head only; the node engine runs all three.
+head only; the node engine loads all three and runs the heads the monitor
+asks for (#435): the wake head always, the abort head while a Command runs
+or a Hot Listen is open, "hold on" never.
 
 Known training gap (Aug 2026 run): the interrupt heads spike on some
 speech *onsets* — `hold_on` ≈ 0.99 for 2–3 chunks when speech starts

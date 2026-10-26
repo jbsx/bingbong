@@ -724,6 +724,22 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
   })
 
+  it('asks for the abort head only while a Command runs, and never for "hold on" (#435)', async () => {
+    const runState = { value: 'idle' as CommandRunState }
+    const detector = new FakeWakeDetector()
+    const harness = await createSession({ wake: { detector }, runState })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(detector.asked.length).toBeGreaterThan(0)
+    expect(new Set(detector.asked.flat())).toEqual(new Set(['wake']))
+
+    runState.value = 'running'
+    const before = detector.asked.length
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(detector.asked.slice(before).every((heads) => heads.join() === 'wake,abort')).toBe(true)
+  })
+
   it('without a wake detector, enableWakeMonitoring is a no-op', async () => {
     const harness = await createSession()
 

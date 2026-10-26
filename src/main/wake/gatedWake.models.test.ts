@@ -11,9 +11,12 @@ import { createOpenWakeWordDetector } from './createOpenWakeWordDetector'
 // The gated ear's exactness (#435), on the shipped models: the same audio
 // streams through an ear that scores every chunk (the detector's skip
 // hidden, as before #435) and the gated one, which only hears a chunk while
-// the VAD gate is shut and backfills the missed chunks when it opens. On
-// every chunk the gated ear scored, every head it was asked for reads the
-// same, to the last bit, and both ears fire the same wakes and aborts.
+// the VAD gate is shut and backfills the missed chunks when it opens, and
+// asks for the abort head only while an abort would land (a stand-in that
+// flips every 40 pushes) and never for "hold on". On every chunk the gated
+// ear scored, the wake head, and the abort head where it was asked for, read
+// the same to the last bit, and both ears fire the same wakes, and the same
+// aborts where one would land.
 // The audio is the TTS lines in fixtures/wake-audio with silences between
 // them longer than the 27-chunk ring, a reset after every wake (as the
 // session's listen does), and a stretch of a Hot Listen's pre-scored frames.
@@ -76,15 +79,19 @@ interface Ear {
   wakes: [number, WakeDetection][]
   aborts: [number, WakeDetection][]
   skipped: number
+  /** The chunks the abort head was asked for on. */
+  abortAsked: Set<number>
 }
 
 /** A detector that records each chunk's scores by its place in the stream. */
 function recording(detector: WakeWordDetector, ear: Ear, gated: boolean): { detector: WakeWordDetector; at(): number } {
   let index = 0
   const wrapped: WakeWordDetector = {
-    async score(chunk) {
+    // The full ear is the ear before #435: every head on every chunk, whatever is asked.
+    async score(chunk, wanted) {
       const at = index++
-      const scores = await detector.score(chunk)
+      if (gated && wanted?.('abort') !== false) ear.abortAsked.add(at)
+      const scores = await detector.score(chunk, gated ? wanted : undefined)
       ear.scores.set(at, scores)
       return scores
     },
@@ -110,6 +117,7 @@ async function run(threshold: number, resetEveryPushes?: number): Promise<{ full
   const sessionVad = await createSileroVad({ modelPath: join(modelsDir, 'silero_vad.onnx') })
 
   const ears = { full: newEar(), gated: newEar() }
+  let pushes = 0
   const monitors = await Promise.all(
     (['full', 'gated'] as const).map(async (kind) => {
       const ear = ears[kind]
@@ -124,6 +132,7 @@ async function run(threshold: number, resetEveryPushes?: number): Promise<{ full
           ear.wakes.push([wokeAt, detection])
         },
         onAbort: (detection) => ear.aborts.push([detector.at(), detection]),
+        ...(kind === 'gated' ? { abortWanted: () => Math.floor(pushes / 40) % 2 === 0 } : {}),
         onError: (message) => {
           throw new Error(message)
         },
@@ -140,7 +149,6 @@ async function run(threshold: number, resetEveryPushes?: number): Promise<{ full
     }),
   )
 
-  let pushes = 0
   for (let at = 0; at + PUSH_SAMPLES <= audio.length; at += PUSH_SAMPLES) {
     pushes += 1
     // A reset anywhere in the stream: a listen ending mid-line, a gate open or shut.
@@ -162,7 +170,7 @@ async function run(threshold: number, resetEveryPushes?: number): Promise<{ full
 }
 
 function newEar(): Ear {
-  return { scores: new Map(), wakes: [], aborts: [], skipped: 0 }
+  return { scores: new Map(), wakes: [], aborts: [], skipped: 0, abortAsked: new Set() }
 }
 
 function expectSame(full: Ear, gated: Ear): number {
@@ -172,11 +180,16 @@ function expectSame(full: Ear, gated: Ear): number {
   for (const [at, scores] of gated.scores) {
     const reference = full.scores.get(at)
     expect(reference, `chunk ${String(at)} was scored by the full ear`).toBeDefined()
-    for (const head of ['wake', 'abort', 'holdOn'] as const) maxDiff = Math.max(maxDiff, Math.abs(scores[head] - reference![head]))
+    maxDiff = Math.max(maxDiff, Math.abs(scores.wake - reference!.wake))
+    if (gated.abortAsked.has(at)) maxDiff = Math.max(maxDiff, Math.abs(scores.abort - reference!.abort))
+    else expect(scores.abort).toBe(0)
+    expect(scores.holdOn).toBe(0)
   }
   expect(maxDiff).toBe(0)
+  expect(gated.abortAsked.size).toBeGreaterThan(0)
+  expect(gated.abortAsked.size).toBeLessThan(gated.scores.size)
   expect(gated.wakes).toEqual(full.wakes)
-  expect(gated.aborts).toEqual(full.aborts)
+  expect(gated.aborts).toEqual(full.aborts.filter(([at]) => gated.abortAsked.has(at)))
   return maxDiff
 }
 
@@ -184,6 +197,9 @@ describe('the gated ear (#435, real models)', () => {
   it('scores every gate-open chunk exactly as the ear that scores every chunk, at the live threshold', async () => {
     const { full, gated } = await run(0.5)
     expectSame(full, gated)
+    // The TTS "bing bong" wakes and "stop now" aborts, gated or not.
+    expect(gated.wakes.length).toBeGreaterThan(0)
+    expect(gated.aborts.length).toBeGreaterThan(0)
     // The quiet stretches are most of the stream: the gated ear skipped them.
     expect(gated.skipped).toBeGreaterThan(gated.scores.size)
   }, 60_000)

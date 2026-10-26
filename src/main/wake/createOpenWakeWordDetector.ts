@@ -1,4 +1,4 @@
-import type { WakeScores, WakeWordDetector } from '../../core/ports/wake.ts'
+import type { WakeHeadWanted, WakeScores, WakeWordDetector } from '../../core/ports/wake.ts'
 import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake.ts'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
 import { timeModelLoad } from '../perf/modelLoads.ts'
@@ -169,18 +169,19 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
     }
   }
 
-  async function scoreChunk(chunk: Float32Array): Promise<WakeScores> {
+  async function scoreChunk(chunk: Float32Array, wanted: WakeHeadWanted | undefined): Promise<WakeScores> {
     const sessions = await ensureSessions()
     await catchUp(sessions)
     await melStep(sessions, chunk)
     await embeddingStep(sessions)
 
-    // One classifier per head over the trailing 16 embeddings.
+    // One classifier per head over the trailing 16 embeddings; a head not wanted is not run (#435).
     const features = featureRows.slice(featureRows.length - FEATURE_WINDOW)
     const classifierInput = new Float32Array(FEATURE_WINDOW * EMBEDDING_DIM)
     features.forEach((row, f) => classifierInput.set(row, f * EMBEDDING_DIM))
     const scores: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
     for (const head of WAKE_HEADS) {
+      if (wanted !== undefined && !wanted(head)) continue
       const session = sessions.heads[head]
       const inputName = session.inputNames[0] ?? 'input'
       const out = await session.run({
@@ -195,12 +196,12 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
   }
 
   return {
-    async score(chunk) {
+    async score(chunk, wanted) {
       assertWakeChunk(chunk)
       // Like the reference's group prediction: per-chunk scores, per-head max wins.
       const max: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
       for (let offset = 0; offset < chunk.length; offset += WAKE_CHUNK_SAMPLES) {
-        const scores = await scoreChunk(chunk.subarray(offset, offset + WAKE_CHUNK_SAMPLES))
+        const scores = await scoreChunk(chunk.subarray(offset, offset + WAKE_CHUNK_SAMPLES), wanted)
         for (const head of WAKE_HEADS) max[head] = Math.max(max[head], scores[head])
       }
       return max

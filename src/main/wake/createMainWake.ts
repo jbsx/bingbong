@@ -6,8 +6,8 @@ import { createScriptedWake } from './createScriptedWake'
 
 /**
  * Composition root for the wake word: the shared ONNX feature stack plus the
- * three heads ("bing bong" / "abort" / "hold on" — the last scored but
- * unwired, ADR 0024) in-process by default, the
+ * three heads ("bing bong" / "abort" / "hold on" — the last loaded but never
+ * asked for, unwired, ADR 0024; #435) in-process by default, the
  * Python reference sidecar (wake head only) behind the same seam as the
  * fallback, and a scripted double for e2e — selected purely by config.
  * Returns null when the engine is 'off' (hotkey-only mode).

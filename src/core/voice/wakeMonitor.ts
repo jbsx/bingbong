@@ -1,5 +1,5 @@
 import type { VadScorer } from '../ports/stt.ts'
-import type { WakeWordDetector } from '../ports/wake.ts'
+import type { WakeHeadWanted, WakeWordDetector } from '../ports/wake.ts'
 import { WAKE_CHUNK_SAMPLES } from '../ports/wake.ts'
 import { VAD_FRAME_SAMPLES } from './vadEndpointing.ts'
 
@@ -36,6 +36,12 @@ export interface WakeMonitorDeps {
   onWake(detection: WakeDetection): void
   /** The "abort" interrupt head; the session gates it by run state. */
   onAbort?(detection: WakeDetection): void
+  /**
+   * Whether an abort would do anything now (#435): read before the head
+   * runs, and while it says no the head is not scored. Absent, the head is
+   * scored whenever `onAbort` is wired.
+   */
+  abortWanted?(): boolean
   onError(message: string): void
 }
 
@@ -59,8 +65,9 @@ export interface WakeMonitor {
  * driven by the Silero instance the ears already loaded. A wake detection
  * latches the monitor until reset(), so one wake word produces exactly one
  * activation; the abort head doesn't latch (the session's interrupt handler
- * is idempotent and no-ops while idle). The "hold on" head is scored but
- * fires nothing — unwired in favor of wake-pauses-run (ADR 0024).
+ * is idempotent and no-ops while idle). The "hold on" head
+ * fires nothing — unwired in favor of wake-pauses-run (ADR 0024) — so it
+ * is never asked for, and the abort head only while an abort would land.
  *
  * The gate is read before the chunk is scored (#435): with it shut no head
  * can fire, so a detector that can skip only hears the chunk, and scores
@@ -74,6 +81,10 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
   let wakeCarry: Float32Array = new Float32Array(0)
   let recentVad: number[] = []
   let latched: 'fired' | 'error' | null = null
+  // The heads a score is asked for (#435): the wake always; the abort while
+  // one would land; "hold on" never, it fires nothing (ADR 0024).
+  const wanted: WakeHeadWanted = (head) =>
+    head === 'wake' || (head === 'abort' && deps.onAbort !== undefined && (deps.abortWanted?.() ?? true))
 
   function concat(a: Float32Array, b: Float32Array): Float32Array {
     const merged = new Float32Array(a.length + b.length)
@@ -105,7 +116,7 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
         deps.detector.skip(chunk)
         continue
       }
-      const scores = await deps.detector.score(chunk)
+      const scores = await deps.detector.score(chunk, wanted)
       const threshold = deps.getThreshold()
       const cleared = scores.wake >= threshold && gateMax >= vadGate
       if (cleared) {
@@ -115,7 +126,6 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
       }
       // Interrupt head: same gate, no latch — the session's interrupt
       // handler no-ops it while idle, so a hot head can't wedge the ear.
-      // The "hold on" head is scored but unwired (ADR 0024).
       if (scores.abort >= threshold && gateMax >= vadGate) {
         deps.onAbort?.({ score: scores.abort, threshold, gateMax, gate: vadGate })
       }

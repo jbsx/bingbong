@@ -303,4 +303,19 @@ describe('openWakeWord detector', () => {
       expect(runtime.melspec.feeds).toHaveLength(1)
     })
   })
+
+  it('runs only the heads asked for; the rest read 0 (#435)', async () => {
+    const runtime = createFakeRuntime({ headScores: { wake: Array(6).fill(0.9), abort: Array(6).fill(0.8), holdOn: Array(6).fill(0.7) } })
+    const detector = createDetector(runtime)
+
+    let scores: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
+    for (let i = 0; i < 6; i++) scores = await detector.score(new Float32Array(CHUNK), (head) => head === 'wake')
+
+    expect(scores.wake).toBeCloseTo(0.9, 5)
+    expect(scores.abort).toBe(0)
+    expect(scores.holdOn).toBe(0)
+    expect(runtime.heads.wake.feeds).toHaveLength(6)
+    expect(runtime.heads.abort.feeds).toHaveLength(0)
+    expect(runtime.heads.holdOn.feeds).toHaveLength(0)
+  })
 })

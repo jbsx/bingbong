@@ -240,4 +240,61 @@ describe('wake monitor', () => {
       expect(detector.chunks.map((chunk) => chunk[0])).toEqual([2 * WAKE_CHUNK_SAMPLES, 3 * WAKE_CHUNK_SAMPLES])
     })
   })
+
+  describe('the heads a score asks for (#435)', () => {
+    it('never asks for "hold on", and asks for the abort head while an abort would land', async () => {
+      const detector = new FakeWakeDetector()
+      let wanted = false
+      const monitor = createWakeMonitor({
+        vad: new FakeVad(Array.from({ length: 20 }, () => SPEECH)),
+        detector,
+        getThreshold: () => 0.5,
+        onWake: () => {},
+        onAbort: () => {},
+        abortWanted: () => wanted,
+        onError: () => {},
+      })
+
+      await monitor.pushAudio(new Float32Array(2 * WAKE_CHUNK_SAMPLES))
+      wanted = true
+      await monitor.pushAudio(new Float32Array(2 * WAKE_CHUNK_SAMPLES))
+
+      expect(detector.asked).toEqual([['wake'], ['wake'], ['wake', 'abort'], ['wake', 'abort']])
+    })
+
+    it('asks for no abort head when nothing hears it', async () => {
+      const detector = new FakeWakeDetector()
+      const monitor = createWakeMonitor({
+        vad: new FakeVad(Array.from({ length: 10 }, () => SPEECH)),
+        detector,
+        getThreshold: () => 0.5,
+        onWake: () => {},
+        onError: () => {},
+      })
+
+      await monitor.pushAudio(new Float32Array(WAKE_CHUNK_SAMPLES))
+
+      expect(detector.asked).toEqual([['wake']])
+    })
+
+    it('fires no abort on a head it did not ask for', async () => {
+      const detector = new FakeWakeDetector({ abort: [0.95, 0.95] })
+      let aborts = 0
+      const monitor = createWakeMonitor({
+        vad: new FakeVad(Array.from({ length: 10 }, () => SPEECH)),
+        detector,
+        getThreshold: () => 0.5,
+        onWake: () => {},
+        onAbort: () => {
+          aborts += 1
+        },
+        abortWanted: () => false,
+        onError: () => {},
+      })
+
+      await monitor.pushAudio(new Float32Array(2 * WAKE_CHUNK_SAMPLES))
+
+      expect(aborts).toBe(0)
+    })
+  })
 })

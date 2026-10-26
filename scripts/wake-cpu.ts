@@ -4,14 +4,19 @@
 // (2048-sample frames) as fast as they score it, and the process CPU each
 // second of audio costs. Two arms: `gated`, the ear as it ships (the wake
 // stack runs only while the VAD gate is open), and `ungated`, the ear before
-// #435 (the detector's skip hidden, every head scored on every chunk). The
+// #435 (the detector's skip hidden, every head scored on every chunk); the
+// gated arm also asks for the heads as the ear at rest does (the wake only:
+// no Command runs, no Hot Listen is open, "hold on" is never read). The
 // arms interleave, so a run is compared against its neighbour, not against
 // a CPU that has since boosted. Node runs this .ts directly via type
 // stripping (Node >= 22.18), so .ts-extension imports here and on the
 // runtime graph.
 //
 // Usage:
-//   pnpm wake:cpu [--seconds 30] [--repeat 3] [--arm gated|ungated|both] [--wav-dir <dir>]
+//   pnpm wake:cpu [--seconds 30] [--repeat 3] [--arm ungated,gated] [--wav-dir <dir>]
+//
+// A third arm, `all-heads`, is the gated ear that still scores every head
+// (#435's first change without its second).
 //
 // Audio: `silence` (digital zero), `noise` (a seeded hiss at about -60 dBFS,
 // a quiet room), and with --wav-dir every .wav in it (16 kHz mono s16le),
@@ -31,7 +36,7 @@ const { values } = parseArgs({
   options: {
     seconds: { type: 'string', default: '30' },
     repeat: { type: 'string', default: '3' },
-    arm: { type: 'string', default: 'both' },
+    arm: { type: 'string', default: 'ungated,gated' },
     'wav-dir': { type: 'string' },
     models: { type: 'string', default: join(import.meta.dirname, '../models') },
   },
@@ -40,7 +45,9 @@ const RATE = 16_000
 const PUSH_SAMPLES = 2048
 const seconds = Number(values.seconds)
 const repeat = Number(values.repeat)
-const arms = values.arm === 'both' ? (['ungated', 'gated'] as const) : ([values.arm] as ('gated' | 'ungated')[])
+type Arm = 'ungated' | 'all-heads' | 'gated'
+const arms = values.arm.split(',') as Arm[]
+for (const arm of arms) if (!['ungated', 'all-heads', 'gated'].includes(arm)) throw new Error(`unknown arm ${arm}`)
 const modelsDir = values.models
 
 function hiss(samples: number): Float32Array {
@@ -81,7 +88,7 @@ interface Reading {
   scored: number
 }
 
-async function measure(arm: 'gated' | 'ungated', audio: Float32Array): Promise<Reading> {
+async function measure(arm: Arm, audio: Float32Array): Promise<Reading> {
   const inner = createOpenWakeWordDetector({
     melspecModelPath: join(modelsDir, 'melspectrogram.onnx'),
     embeddingModelPath: join(modelsDir, 'embedding_model.onnx'),
@@ -95,13 +102,13 @@ async function measure(arm: 'gated' | 'ungated', audio: Float32Array): Promise<R
   let scored = 0
   const detector: WakeWordDetector = {
     // Ungated is the ear before #435: every head, every chunk.
-    score: (chunk) => {
+    score: (chunk, wanted) => {
       heard += 1
       scored += 1
-      return inner.score(chunk)
+      return inner.score(chunk, arm === 'gated' ? wanted : undefined)
     },
     reset: () => inner.reset(),
-    ...(arm === 'gated'
+    ...(arm !== 'ungated'
       ? {
           skip: (chunk: Float32Array) => {
             heard += 1
@@ -116,6 +123,8 @@ async function measure(arm: 'gated' | 'ungated', audio: Float32Array): Promise<R
     getThreshold: () => 0.5,
     onWake: () => monitor.reset(),
     onAbort: () => {},
+    // At rest no Command runs and no Hot Listen is open: an abort would land nowhere.
+    abortWanted: () => false,
     onError: (message) => {
       throw new Error(message)
     },
@@ -140,6 +149,6 @@ for (const [name, audio] of sources) {
     const runs = readings[arm]
     const ms = runs.map((run) => run.msPerSecond.toFixed(1)).join(' / ')
     const { heard, scored } = runs[0]
-    console.log(`${name.padEnd(10)} ${arm.padEnd(8)} ${ms} ms/s   wake chunks scored ${String(scored)} of ${String(heard)}`)
+    console.log(`${name.padEnd(10)} ${arm.padEnd(9)} ${ms} ms/s   wake chunks scored ${String(scored)} of ${String(heard)}`)
   }
 }
