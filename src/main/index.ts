@@ -64,7 +64,7 @@ import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/brow
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { attachPlaybackWatch, startBootClock, startCpuSampler, startQuitTrace, trackSurface, writeRunStamp } from './perf/attachAppTelemetry'
 import { resolveVoiceConfig } from './voice/voiceConfig'
-import { createMainVoice } from './voice/createMainVoice'
+import { voiceProcessStarter } from './voice/startVoiceProcess'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
 import { createBiasUnion } from '../core/voice/biasUnion'
 import { pageTermsOf } from '../core/voice/pageTerms'
@@ -74,11 +74,9 @@ import type { VoiceSession } from '../core/voice/voiceSession'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
 import { attachWeighInViewToWindow } from './scale/attachWeighInView'
 import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
-import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
+import { audioDumpEnabled } from '../core/voice/utteranceDump'
 import { silenceFramesForMs } from '../core/voice/vadEndpointing'
-import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
 import { resolveWakeConfig } from './wake/wakeConfig'
-import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
@@ -245,12 +243,9 @@ writeRunStamp(perfTracer, { version: app.getVersion(), machine: currentEnv().BIN
 
 // Opt-in utterance audio dumps (#34): BINGBONG_AUDIO_DUMP=1 writes each
 // detected utterance under <userData>/audio-dumps as a 16 kHz mono WAV —
-// exactly the artifact shape the offline STT benchmark replays.
-const utteranceDumper = createUtteranceDumper({
-  dir: join(app.getPath('userData'), 'audio-dumps'),
-  writer: fsUtteranceDumpWriter,
-  enabled: audioDumpEnabled(currentEnv()),
-})
+// exactly the artifact shape the offline STT benchmark replays. The voice
+// process writes them (#430), where the audio is.
+const utteranceDumps = { dir: join(app.getPath('userData'), 'audio-dumps'), enabled: audioDumpEnabled(currentEnv()) }
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -266,19 +261,27 @@ void piperReady().catch((error: unknown) => reportFault('tts.piperInstall', erro
 const hostFindings = checkThisHost(process.env, piperConfig.playerBin)
 for (const finding of hostFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 
-// Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
-// the models load once. Scripted doubles ride the same seam for e2e. The
-// STT tier is the settings snapshot at startup (#63).
+// Ears (T9): Silero VAD + streaming Parakeet (or a Moonshine tier) and Smart
+// Turn, loaded in the voice process (#430), off this thread. Scripted
+// doubles ride the same seam for e2e. The STT tier is the settings snapshot
+// at startup (#63).
 const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('userData'), bundledModelsDir: appDirs.bundledModelsDir }, settingsStore.get().sttEngine)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
 // openWakeWord ONNX stack; the Python sidecar is the config-only fallback
 // (BINGBONG_WAKE_ENGINE=python, wake head only).
 const wakeConfig = resolveWakeConfig(bootEnv, appDirs)
-const wakeDetector = createMainWake(wakeConfig)
+const wakeEnabled = wakeConfig.engine !== 'off'
 // The boot milestones (#429): the run is ready once the dashboard has painted
-// and, with a wake word, its model is in and the ear can hear it.
-const boot = startBootClock(perfTracer, wakeDetector ? ['dashboard-painted', 'wake-loaded'] : ['dashboard-painted'])
+// and, with the wake models, they are in and the ear can hear them (a
+// scripted or Python wake loads no model of its own). From ready the STT
+// engine loads in the voice process (#430), so the first line pays no load.
+let onBootReady: () => void = () => {}
+const bootReady = new Promise<void>((resolve) => {
+  onBootReady = resolve
+})
+const wakeLoads = wakeConfig.engine === 'node' && wakeConfig.wakeScript === undefined
+const boot = startBootClock(perfTracer, wakeLoads ? ['dashboard-painted', 'wake-loaded'] : ['dashboard-painted'], () => onBootReady())
 boot.mark('main-loaded')
 const chimeWav = createChimeWav()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
@@ -654,26 +657,21 @@ async function createWindow(): Promise<BrowserWindow> {
   // The decode's bias (ADR 0077): the Bias Lexicon, and the Page Terms of
   // the page collected at speech start, set for the one Utterance over it.
   const biasUnion = createBiasUnion({ lexicon: () => learnedTermsStore.biasPhrases() })
-  const voice = await createMainVoice(voiceConfig, () => biasUnion.phrases())
-  voiceSession = attachVoiceToWindow(win, {
+  const voice = attachVoiceToWindow(win, {
+    startVoiceProcess: voiceProcessStarter(join(__dirname, 'voiceProcess.js')),
+    config: { voice: voiceConfig, wake: wakeConfig, dumps: utteranceDumps },
+    getBiasPhrases: () => biasUnion.phrases(),
     onPagePrepared: (snapshot) =>
       biasUnion.setPageTerms(snapshot === null ? [] : pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText })),
     pageTerms: () => biasUnion.pageTerms(),
-    vad: voice.vad,
-    transcriber: voice.transcriber,
-    turn: voice.turn,
     tts: speakingGate.tts,
-    wake: wakeDetector
-      ? {
-          detector: wakeDetector,
-          // The settings slider applies to the next 80 ms chunk.
-          getThreshold: () => settingsStore.get().wakeWordThreshold,
-          chime: () => {
-            // The cue must never break activation — a player failure is silent.
-            chimePlayer.play(chimeWav).done.catch(() => {})
-          },
-        }
-      : undefined,
+    wakeEnabled,
+    // The settings slider applies to the next 80 ms chunk.
+    getWakeThreshold: () => settingsStore.get().wakeWordThreshold,
+    chime: () => {
+      // The cue must never break activation — a player failure is silent.
+      chimePlayer.play(chimeWav).done.catch(() => {})
+    },
     // The pause-cap slider (#357, the endpoint delay of #37) applies to the
     // next utterance, live. Both endpoint timings ride this seam (#60): the
     // pause cap and the resumption-merge window, each live from its Setting (#59).
@@ -690,8 +688,12 @@ async function createWindow(): Promise<BrowserWindow> {
     onEar: (open) => pane.reading.ear(open),
     publisher: eventPublisher,
     tracer: perfTracer,
-    dumper: utteranceDumper,
   })
+  voiceSession = voice
+  // The STT engine loads once the run is ready (#430), in the voice process; a failure leaves it to the first line.
+  void bootReady.then(() => voice.prepareTranscriber()).catch((error: unknown) => reportFault('voice.prepareTranscriber', error))
+  // The voice process ends with the app: its exit at quit is no fault to restart from.
+  app.once('before-quit', () => voice.stop())
   boot.mark('voice-attached')
 
   if (process.env.ELECTRON_RENDERER_URL) {

@@ -32,6 +32,12 @@ export interface Transcriber {
   finish(pcm: Float32Array): Promise<string>
   /** Drops an in-flight capture without transcribing (disarm, blip discard). */
   cancel(): void
+  /**
+   * Loads the engine's sessions ahead of the first finish() (#430), so the
+   * first line after a boot pays no load; a failure rejects and the next
+   * pass retries. Absent for engines with nothing to load.
+   */
+  prepare?(): Promise<void>
 }
 
 /**

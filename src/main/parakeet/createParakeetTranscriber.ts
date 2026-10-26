@@ -5,7 +5,7 @@ import type { BiasInput } from '../moonshine/createMoonshineTranscriber.ts'
 import { createRetriable } from '../moonshine/retriable.ts'
 import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
 import { ortSessionOptions, STT_THREADS, type OrtSessionOptions } from '../ortSessionOptions.ts'
-import { timeModelLoad } from '../perf/modelLoads'
+import { timeModelLoad } from '../perf/modelLoads.ts'
 
 // The default STT engine (#358): NVIDIA Parakeet TDT 0.6B v2, the int8
 // onnx-asr export, on the app's onnxruntime-node stack. Three graphs: the
@@ -184,6 +184,11 @@ export function createParakeetTranscriber(deps: ParakeetTranscriberDeps): Transc
     partialFaultSite: 'voice.createParakeetTranscriber.partialPass',
     partialMinSamples: deps.partialMinSamples,
     partialStrideSamples: deps.partialStrideSamples,
+    // At boot, in the voice process (#430): the vocab first, as a pass reads it, then the sessions.
+    prepare: async () => {
+      await ensureVocab()
+      await ensureSessions()
+    },
   })
 }
 

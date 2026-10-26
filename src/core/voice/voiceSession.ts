@@ -49,7 +49,7 @@ export interface VoiceSessionDeps {
   transcriber: Transcriber
   clock: Clock
   /** Stopped when the hotkey arms or the wake word fires — the barge-in hook. */
-  tts: TtsSpeaker
+  tts: Pick<TtsSpeaker, 'stop'>
   wake?: VoiceWakeDeps
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /**
@@ -120,6 +120,14 @@ export interface VoiceSession {
   interrupt(kind: 'abort'): boolean
   /** Escape (#326): closes a Hot Listen at once. Returns whether one was open. */
   closeHotListen(): boolean
+  /** Whether a Hot Listen is open (#326): what Escape would close. */
+  isHotListenOpen(): boolean
+  /**
+   * Loads the STT engine's sessions now (#430), off the first line: that
+   * line's `stt` span is `cold` only when it had to wait for the load.
+   * Rejects when the load fails; the first line then retries it.
+   */
+  prepareTranscriber(): Promise<void>
 }
 
 /**
@@ -177,8 +185,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let commandListenStart: number | null = null
   // Blank transcripts (blips) inside the command listen: a long wake-to-transcript with many is an open ear, not a slow one.
   let listenBlips = 0
-  // The first decode of the run loads the STT engine's sessions: its span says so, apart from a warm one.
+  // The first decode of the run loads the STT engine's sessions, unless they were loaded ahead of it (#430): its span says so, apart from a warm one.
   let decoded = 0
+  let prepared = false
   // The Hot Listen (#326): a wake listen that has submitted an utterance
   // and stays open for the next; its silence clock, when running.
   let hot = false
@@ -475,7 +484,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     const tracer = deps.tracer
     const turnId = tracer ? tracer.mintTurnId() : null
     const endpointAt = tracer ? tracer.now() : null
-    const cold = decoded === 0
+    const cold = decoded === 0 && !prepared
     decoded += 1
     const recordStt = (extra?: Record<string, unknown>): void => {
       if (!tracer || turnId === null || endpointAt === null) return
@@ -630,6 +639,13 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       if (!hot) return false
       stopListening()
       return true
+    },
+
+    isHotListenOpen: () => hot,
+
+    async prepareTranscriber() {
+      await deps.transcriber.prepare?.()
+      prepared = true
     },
   }
 }

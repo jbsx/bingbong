@@ -66,3 +66,18 @@ export function reportFault(site: string, error: unknown, ids: FaultIds = {}): v
     // failure this seam exists to keep from spreading.
   }
 }
+
+/**
+ * Delivers a fault another part of the app reported and sent here whole —
+ * the voice process (#430) has no log of its own. Safe like reportFault.
+ */
+export function forwardFault(report: FaultReport): void {
+  const sink = installed
+  if (sink === null) return
+  try {
+    sink(report)
+  // eslint-disable-next-line no-restricted-syntax -- the reporter itself
+  } catch {
+    // As reportFault: a failing fault report must not raise a second one.
+  }
+}

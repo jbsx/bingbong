@@ -1,7 +1,7 @@
 import type { WakeScores, WakeWordDetector } from '../../core/ports/wake'
 import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
-import { timeModelLoad } from '../perf/modelLoads'
+import { timeModelLoad } from '../perf/modelLoads.ts'
 
 /**
  * The "bing bong" wake word plus the "abort" / "hold on" interrupt heads:

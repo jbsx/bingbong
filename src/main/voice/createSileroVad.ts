@@ -1,7 +1,7 @@
 import type { VadScorer } from '../../core/ports/stt'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing.ts'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
-import { timeModelLoad } from '../perf/modelLoads'
+import { timeModelLoad } from '../perf/modelLoads.ts'
 
 /**
  * Silero VAD v5 over onnxruntime-node. The ONNX model is a streaming

@@ -6,7 +6,7 @@ import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
 import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
 import { ortSessionOptions, STT_THREADS, type OrtSessionOptions } from '../ortSessionOptions.ts'
-import { timeModelLoad } from '../perf/modelLoads'
+import { timeModelLoad } from '../perf/modelLoads.ts'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -267,5 +267,10 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     partialFaultSite: 'voice.createMoonshineTranscriber.partialPass',
     partialMinSamples: deps.partialMinSamples,
     partialStrideSamples: deps.partialStrideSamples,
+    // At boot, in the voice process (#430): the vocab first, as a pass reads it, then the sessions.
+    prepare: async () => {
+      await ensureVocab()
+      await ensureSessions()
+    },
   })
 }

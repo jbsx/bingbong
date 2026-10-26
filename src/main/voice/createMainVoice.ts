@@ -26,18 +26,23 @@ export interface MainVoice {
  * model and its Utterances end at the short pause.
  * The bias union getter (ADR 0022) rides through to the decoder.
  */
-export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () => BiasInput): Promise<MainVoice> {
+export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () => BiasInput, sttElsewhere?: Transcriber): Promise<MainVoice> {
   const vad: VadScorer = config.vadScript ? createScriptedVad(config.vadScript) : await createSileroVad({ modelPath: config.vadModel })
-  const bias = getBiasPhrases ? { getBiasPhrases } : {}
-  const transcriber: Transcriber = config.sttScript
-    ? createScriptedTranscriber(config.sttScript)
-    : config.sttEngine === 'parakeet'
-      ? createMainParakeetTranscriber({ modelsDir: config.modelsDir, ...bias })
-      : createMainMoonshineTranscriber({ modelsDir: config.modelsDir, tier: config.sttEngine, ...bias })
+  const transcriber = sttElsewhere ?? createMainVoiceTranscriber(config, getBiasPhrases)
   const turn: TurnDetector = config.turnScript
     ? createScriptedTurn(config.turnScript)
     : config.vadScript
       ? createScriptedTurn('[1]')
       : createSmartTurn({ modelsDir: config.modelsDir })
   return { vad, transcriber, turn }
+}
+
+/** The STT engine alone, by config: the scripted double, Parakeet, or a Moonshine tier. */
+export function createMainVoiceTranscriber(config: VoiceConfig, getBiasPhrases?: () => BiasInput): Transcriber {
+  const bias = getBiasPhrases ? { getBiasPhrases } : {}
+  return config.sttScript
+    ? createScriptedTranscriber(config.sttScript)
+    : config.sttEngine === 'parakeet'
+      ? createMainParakeetTranscriber({ modelsDir: config.modelsDir, ...bias })
+      : createMainMoonshineTranscriber({ modelsDir: config.modelsDir, tier: config.sttEngine, ...bias })
 }

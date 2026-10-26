@@ -4,7 +4,7 @@ import { SMART_TURN_FRAMES, SMART_TURN_MELS, smartTurnFeatures } from '../../cor
 import { fsMoonshineStore, type MoonshineModelStore } from '../moonshine/moonshineModels.ts'
 import { createRetriable } from '../moonshine/retriable.ts'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
-import { timeModelLoad } from '../perf/modelLoads'
+import { timeModelLoad } from '../perf/modelLoads.ts'
 
 /**
  * Smart Turn v3 over onnxruntime-node (#357): pipecat-ai's open end-of-turn

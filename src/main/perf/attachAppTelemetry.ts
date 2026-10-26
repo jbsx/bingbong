@@ -134,8 +134,8 @@ export function startCpuSampler(tracer: PerfTracer, metrics: () => readonly Proc
 }
 
 /** The run's boot milestones (#429), each in ms since the process started; `ready` once every one in `readyWhen` is in. */
-export function startBootClock(tracer: PerfTracer, readyWhen: readonly string[]): BootClock {
-  const boot = createBootClock((detail) => write(tracer, 'boot', { ...detail }, 'perf.appTelemetry.boot'), () => process.uptime() * 1000, readyWhen)
+export function startBootClock(tracer: PerfTracer, readyWhen: readonly string[], onReady?: () => void): BootClock {
+  const boot = createBootClock((detail) => write(tracer, 'boot', { ...detail }, 'perf.appTelemetry.boot'), () => process.uptime() * 1000, readyWhen, onReady)
   // Each model's load, wherever it happens; the first of each is a boot milestone too.
   setModelLoadSink((load) => {
     write(tracer, 'model-load', { model: load.model, first: load.first, ...(load.failed ? { failed: true } : {}), sinceStartMs: Math.round(process.uptime() * 1000) }, 'perf.appTelemetry.modelLoad', load.durMs)

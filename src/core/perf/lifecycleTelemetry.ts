@@ -19,7 +19,13 @@ export interface BootClock {
  * The run's boot milestones. `ready` is written once every milestone in
  * `readyWhen` is marked: the run is usable from there.
  */
-export function createBootClock(write: (detail: { milestone: string; sinceStartMs: number }) => void, sinceStartMs: () => number, readyWhen: readonly string[]): BootClock {
+export function createBootClock(
+  write: (detail: { milestone: string; sinceStartMs: number }) => void,
+  sinceStartMs: () => number,
+  readyWhen: readonly string[],
+  /** Told once, when the run is ready (#430: the STT engine loads from there). */
+  onReady?: () => void,
+): BootClock {
   const marked = new Set<string>()
   const record = (milestone: string): void => {
     marked.add(milestone)
@@ -29,7 +35,10 @@ export function createBootClock(write: (detail: { milestone: string; sinceStartM
     mark(milestone) {
       if (marked.has(milestone) || milestone === BOOT_READY) return
       record(milestone)
-      if (!marked.has(BOOT_READY) && readyWhen.every((needed) => marked.has(needed))) record(BOOT_READY)
+      if (!marked.has(BOOT_READY) && readyWhen.every((needed) => marked.has(needed))) {
+        record(BOOT_READY)
+        onReady?.()
+      }
     },
   }
 }

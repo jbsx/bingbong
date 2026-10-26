@@ -24,6 +24,8 @@ export interface RollingTranscriberDeps {
   partialMinSamples?: number
   /** New-sample growth required between partial passes (default 0.5 s). */
   partialStrideSamples?: number
+  /** Loads what a pass needs ahead of the first one (#430); absent loads on the first pass. */
+  prepare?: () => Promise<void>
 }
 
 export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcriber {
@@ -128,6 +130,8 @@ export function createRollingTranscriber(deps: RollingTranscriberDeps): Transcri
       generation += 1
       resetCapture()
     },
+
+    ...(deps.prepare ? { prepare: deps.prepare } : {}),
   }
 }
 
