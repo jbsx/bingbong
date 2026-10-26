@@ -63,7 +63,16 @@ order. Each data config has a features set and a training list:
 ```
 
 A `zip` is a features set already made (block 16's download). A `job`
-holds block-10 overrides for a features job. Each training config
+holds block-10 overrides for a features job, plus one knob of its own:
+`negative_phrase_share` repeats `custom_negative_phrases`, every phrase
+equally, until the class is that share of the adversarial texts. Upstream
+voices them by cycling one list with about `n_samples` generated texts, so
+left alone each custom phrase is about one clip in 20,000.
+
+The scorer's near-miss phrases are held out from training, like its voices.
+Some ("a chow", "catch", "ketchup", "gotcha") are deliberately missing from
+`custom_negative_phrases`. Don't add them, or the near-miss column turns
+into a replay of the training list. Each training config
 (`configs/first-grid.json`) replaces keys of the features set's
 `my_model.yaml`:
 

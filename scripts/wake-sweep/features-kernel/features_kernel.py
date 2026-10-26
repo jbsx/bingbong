@@ -318,7 +318,18 @@ config = {
     "negative_clips_test_dir": f"{W}/{MODEL_NAME}_output/{MODEL_NAME}/negative_test",
     "feature_save_dir": f"{W}/{MODEL_NAME}_output/{MODEL_NAME}",
 }
-config.update(DATA["overrides"])
+overrides = dict(DATA["overrides"])
+share = overrides.pop("negative_phrase_share", None)
+config.update(overrides)
+if share:
+    # Upstream voices the custom phrases and its ~n_samples generated
+    # adversarial texts by cycling one list, so each custom phrase is about one
+    # clip in 20,000. Repeat the list, every phrase equally, until the class is
+    # `share` of the adversarial texts.
+    phrases = list(config["custom_negative_phrases"])
+    k = max(1, round(share * config["n_samples"] / (len(phrases) * (1 - share))))
+    config["custom_negative_phrases"] = phrases * k
+    log(f"custom negative phrases x{k}: {len(phrases) * k} of about {len(phrases) * k + config['n_samples']} texts")
 _map = json.load(open(f"{PIPER_MODEL}.json"))["phoneme_id_map"]
 import unicodedata  # noqa: E402
 
