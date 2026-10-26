@@ -7,5 +7,7 @@
   "happened": "ElevenLabs heard 'Page.' for the second half of 'idle page' (batch Scribe: 'Right'); Jev none 0.82",
   "meant": "show the Idle Screen",
   "log": "decision-1793033383382-1.jsonl",
-  "claimedBy": "#471"
+  "claimedBy": "#471",
+  "fixedBy": "6a6f35a1",
+  "ruled": "Orchestrator on the owner's behalf, 2026-10-26 (#471 close): the halves of a split 'idle page'; no whole dump exists to guard it, and the mid-phrase turn cut is out of #471's scope. The keyterm budget's measured 15/95 on the STT gate stands as the bar."
 }
