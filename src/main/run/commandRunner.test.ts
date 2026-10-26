@@ -25,7 +25,7 @@ import { createSiteQuestionDesk, type SiteQuestionDesk } from '../../core/browse
 import { withNextLine } from '../../core/command/tryLine'
 
 /** A failure as the Feed shows it and as it is said (#438): with the line that would have worked. */
-const shown = (line: string, next: string): string => withNextLine(line, next).shown
+const shown = (line: string, next: string | null): string => withNextLine(line, next).shown
 const said = (line: string, next: string): string => withNextLine(line, next).said
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
@@ -943,7 +943,7 @@ describe('the Player (#343)', () => {
     const { events, youtube, runner } = music()
     youtube.watches.set('fJ9rUzIMcZQ', { title: QUEEN, fails: 'error' })
     await runner.run('play bohemian rhapsody')
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: shown(`“${QUEEN}” can't be played.`, 'not that one'), failure: true })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: shown(`“${QUEEN}” can't be played.`, null), failure: true })
   })
 
   it('the element verbs answer from the element', async () => {
@@ -2306,8 +2306,8 @@ describe('a Command whose output is speech', () => {
     }
     await runner.run('open nope.example')
     // Told in plain words (#329), marked a failure for the Feed and the Peek Card; the raw error stays on the tool result.
-    expect(speech.spoken.map((line) => line.text)).toEqual([said("That site can't be found.", 'search nope.example')])
-    expect(events.find((event) => event.type === 'speak')).toMatchObject({ text: said("That site can't be found.", 'search nope.example'), failure: true })
+    expect(speech.spoken.map((line) => line.text)).toEqual([said("That site can't be found.", 'back')])
+    expect(events.find((event) => event.type === 'speak')).toMatchObject({ text: said("That site can't be found.", 'back'), failure: true })
     expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: false, error: 'net::ERR_NAME_NOT_RESOLVED at https://nope.example/' })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
     // The line still sounding counts as the runner's: the Abort Head reaches it, and the next Command silences it.
@@ -3685,7 +3685,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape', 'Escape'])
       // Nothing it opened is left open: the page has its pre-menu refs.
       expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
-      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I couldn't find loop here.", 'search loop')])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I couldn't find loop here.", 'help')])
       const read = decisions(records)
       expect(read.find((record) => record.runnerUp === true)).toMatchObject({ verb: 'menu', target: 2, targetLabel: 'Video player', task: { hop: 3 } })
       expect(read.filter((record) => record.undo === true).map((record) => record.verb)).toEqual(['press', 'press'])
@@ -3701,7 +3701,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(browser.menus).toEqual([1])
       expect(browser.clicks).toEqual([])
       expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
-      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I couldn't find loop here.", 'search loop')])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I couldn't find loop here.", 'help')])
       expect(decisions(records).at(-1)).toMatchObject({ undo: true, ended: 'not_found' })
     })
 
