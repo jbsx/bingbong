@@ -1498,8 +1498,9 @@ function fitDialogText<Q extends CommandQuestions>(budget: number | undefined, f
 
 /** The questions with no dismiss Choice among them. */
 function withoutDismiss<Q extends CommandQuestions>(questions: Q): Q {
-  const { dismiss: _dismiss, ...rest } = questions as Q & { readonly dismiss?: DecisionChoiceQuestion }
-  return rest as Q
+  const rest: Q & { dismiss?: DecisionChoiceQuestion } = { ...questions }
+  delete rest.dismiss
+  return rest
 }
 
 type ActionAnswers = {

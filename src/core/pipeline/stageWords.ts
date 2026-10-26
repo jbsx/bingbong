@@ -25,11 +25,7 @@ export const STAGE_WORDS: Readonly<Record<PipelineStatus, string>> = {
 
 /** An address as a person names it: its host without `www.`; words that are no address, as they are. */
 export function hostOf(address: string): string {
-  try {
-    return new URL(address).hostname.replace(/^www\./, '')
-  } catch {
-    return address.replace(/^www\./, '')
-  }
+  return URL.canParse(address) ? new URL(address).hostname.replace(/^www\./, '') : address.replace(/^www\./, '')
 }
 
 const quoted = (words: string | null | undefined): string => `“${words ?? ''}”`

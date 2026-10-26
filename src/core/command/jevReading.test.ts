@@ -1881,7 +1881,8 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     const linkedBuild = (further: number) => hopQuestions('how do i install it', long, hop, { further })
     const linkedState = (questions: ReturnType<typeof build>) => commandState('how do i install it', long, hop, undefined, undefined, questions)
     const linked = fitCard(undefined, linkedBuild, linkedState)
-    const { dismiss: _dismiss, ...rest } = linked.questions
+    const rest = { ...linked.questions }
+    delete rest.dismiss
     const linkedCut = fitCard(promptChars(linked.state, rest), linkedBuild, linkedState)
     expect(labels(linkedCut.questions, 'open')).toHaveLength(100)
     expect(Object.keys(linkedCut.questions.dismiss?.options ?? {}).filter((label) => label.startsWith('popup-')).length).toBeLessThan(30)
