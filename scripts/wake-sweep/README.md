@@ -13,8 +13,10 @@ pnpm wake:sweep table first                                 # the ranked table s
 makes each features set once, pushes the sweep kernels, polls them every
 2 minutes, pulls every model, prints the ranked table and scores the winner
 on the final half. If the machine or the command stops, run it again: it
-resumes, and nothing finished is pushed twice. It refuses a queue estimated
-above `--max-gpu-hours` (default 4).
+resumes. A kernel it was waiting on is waited on again, a kernel that ended
+before its output came down is pulled, not pushed, and nothing pulled is
+trained twice. It refuses a queue estimated above the queue's
+`max_gpu_hours` (default 4), which `--max-gpu-hours` overrides.
 
 It needs the Kaggle CLI signed in (`kaggle config view`) on an account that
 can turn on kernel internet (phone-verified), `uv`, and the scorer's test
@@ -29,8 +31,9 @@ set (`pnpm wake:score build`).
 - **Features job, one per data config** (`features-kernel/`). Blocks 1–13
   of [`train_wakeword.ipynb`](../wake-train/train_wakeword.ipynb) with the
   data config's overrides on block 10. The output is the four
-  `*_features_*.npy` files plus `my_model.yaml`, which the sweep kernels
-  mount. It fetches 1,500 FMA MP3s out of the remote zip by byte range and
+  `*_features_*.npy` files plus `my_model.yaml`. That output is the
+  reusable features set: the sweep kernels mount it as a kernel source, so
+  it is never copied into a separate dataset. It fetches 1,500 FMA MP3s out of the remote zip by byte range and
   never fetches ACAV, so Kaggle's 20 GB disk is never close to full. It
   runs about 2 h on a T4.
 - **Sweep kernel, many trainings per features set** (`sweep-kernel/`).
@@ -40,8 +43,10 @@ set (`pnpm wake:score build`).
   `results.jsonl` is skipped. The ACAV training negatives (block 9's subset,
   the first tenth of the 17 GB file's rows) are fetched by byte range. A
   sweep estimated over 9 h is split into kernels of at most 9 h each, in
-  config order, under Kaggle's 12 h limit. When a kernel stops early, the
-  driver pushes it again with only the configs left, up to 2 retries.
+  config order, under Kaggle's 12 h limit. When a kernel stops early, or a
+  config in it fails, the driver pushes it again with only the configs not
+  yet trained, up to 2 retries. A failed config stays in the table as
+  FAILED, and running the command again retries it.
 - **Local results**, in `~/.cache/bingbong/wake-sweep/<sweep>/`: one folder
   per training, `<data>.<config>/model.onnx` beside `score.json`. The winner
   goes to `winner/` with `final.json`, `final-card.txt` and
@@ -79,8 +84,11 @@ selection half, ties broken by false wakes per hour at the operating point.
 Configs named `control-*` are the same settings on different seeds. Their
 spread is the noise band. A config ranked above the band beat every control
 seed. One inside the band is a measured tie with the control, not a winner.
-The reported number is the winner's headline on the final half, scored
-again on this machine.
+The winner is the best config above its band. When none is above it, the
+knobs are ties and the best control is the winner, since a measured tie
+goes to the arm cheapest to reverse (AGENTS.md, "Ties are measured"). The
+reported number is the winner's headline on the final half, scored again
+on this machine.
 
 `configs/smoke.json` is a one-training queue, about 20 GPU minutes, that
 checks the whole loop end to end.
@@ -91,6 +99,13 @@ checks the whole loop end to end.
   rounded up from the smoke queue: setup took 0.8 min, and 6,000 steps
   trained and scored in 1.1 min on a T4. `table` shows each training's
   measured minutes.
+- The final half is held out of the ranking, not out of training. The
+  trainer (block 14) still picks its checkpoints by false wakes on the
+  whole 10.7 h validation audio, both halves, as the notebook always has.
+  So the final card's false-wake side is a little optimistic, like the
+  scorer's caveat on notebook models.
+- A features job's 2 h (`FEATURES_JOB_MIN`) is the issue's estimate until
+  one has run at full size.
 - Kaggle's Python is 3.13, so the notebook's pins install as they are. The
   sweep kernel installs only `onnx` and `onnxruntime`, since blocks 14–15
   need nothing else beyond Kaggle's own torch.

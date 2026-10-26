@@ -4,9 +4,11 @@ Blocks 14 (trainer) and 15 (ensemble + ONNX export) of
 scripts/wake-train/train_wakeword.ipynb, in a loop over SWEEP["configs"].
 Each config's .onnx is scored by scripts/wake-score/wake_score.py (uploaded
 with the test set as a dataset and imported, never copied) on SWEEP["split"],
-and one line goes to /kaggle/working/results.jsonl as soon as it is done. A
-config already in results.jsonl is skipped, so a rerun picks up where the
-last one stopped.
+and one line goes to /kaggle/working/results.jsonl as soon as it is done, so
+a kernel stopped at Kaggle's limit still hands back every finished config. A
+config already in results.jsonl is skipped. A new kernel version starts with
+an empty /kaggle/working, so the resume that matters is the driver's: it
+pushes again with only the configs it has not pulled.
 
 The driver (scripts/wake-sweep/wake_sweep.py) writes the real SWEEP line
 below before it pushes this file; run as it stands, it trains nothing.
@@ -90,8 +92,11 @@ def acav_train_subset(dst):
     if dst.exists():
         return np.load(dst)
     from numpy.lib import format as npf
-    head = urllib.request.urlopen(urllib.request.Request(ACAV_URL, headers={"Range": "bytes=0-65535"}),
-                                  timeout=120).read()
+    with urllib.request.urlopen(urllib.request.Request(ACAV_URL, headers={"Range": "bytes=0-65535"}),
+                                timeout=120) as r:
+        # A 200 would be the whole 17 GB file: only a 206 is a byte range.
+        assert r.status == 206, f"ACAV host ignored the byte range (HTTP {r.status})"
+        head = r.read()
     bio = io.BytesIO(head)
     version = npf.read_magic(bio)
     shape, fortran, dtype = (npf.read_array_header_1_0 if version == (1, 0) else npf.read_array_header_2_0)(bio)
@@ -106,6 +111,7 @@ def acav_train_subset(dst):
         try:
             req = urllib.request.Request(ACAV_URL, headers={"Range": f"bytes={offset + pos}-{offset + need - 1}"})
             with urllib.request.urlopen(req, timeout=120) as r:
+                assert r.status == 206, f"ACAV host ignored the byte range (HTTP {r.status})"
                 while pos < need:
                     chunk = r.read(min(8 << 20, need - pos))
                     if not chunk:

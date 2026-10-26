@@ -1,9 +1,9 @@
 {
   "note": "On each Kaggle features set: the old control mix three times (its spread is compared with the first sweep's Colab-features band, 35.6-39.4%), and the first sweep's winner. Mixes are positive/adversarial/ACAV and are written out, so they never depend on which mix the features set's my_model.yaml carries.",
   "configs": [
-    {"name": "control-s0", "control": true, "seed": 0, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
-    {"name": "control-s1", "control": true, "seed": 1, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
-    {"name": "control-s2", "control": true, "seed": 2, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
+    {"name": "control-s0", "seed": 0, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
+    {"name": "control-s1", "seed": 1, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
+    {"name": "control-s2", "seed": 2, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 32, "ACAV100M_sample": 64}}},
     {"name": "mix-32-64-64", "seed": 0, "overrides": {"batch_n_per_class": {"positive": 32, "adversarial_negative": 64, "ACAV100M_sample": 64}}}
   ]
 }

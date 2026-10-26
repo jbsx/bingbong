@@ -1,6 +1,6 @@
 {
   "note": "One short control training: proves upload, push, train, export, score, pull.",
   "configs": [
-    {"name": "control-short", "control": true, "seed": 0, "overrides": {"steps": 2000}}
+    {"name": "control-short", "seed": 0, "overrides": {"steps": 2000}}
   ]
 }

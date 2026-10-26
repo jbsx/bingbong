@@ -234,8 +234,10 @@ class HttpFile(io.RawIOBase):
         end = min(self.size, self.pos + len(b)) - 1
         for attempt in range(6):
             try:
-                r = self.s.get(self.url, headers={"Range": f"bytes={self.pos}-{end}"}, timeout=120)
+                r = self.s.get(self.url, headers={"Range": f"bytes={self.pos}-{end}"}, timeout=120, stream=True)
                 r.raise_for_status()
+                # A 200 would be the whole 8 GB zip: only a 206 is a byte range.
+                assert r.status_code == 206, f"FMA host ignored the byte range (HTTP {r.status_code})"
                 break
             except Exception:
                 if attempt == 5:

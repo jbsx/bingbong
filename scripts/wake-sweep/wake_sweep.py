@@ -49,6 +49,9 @@ MAX_KERNEL_MIN = 9 * 60
 SETUP_MIN = 5
 MIN_PER_20K_STEPS = 5
 RETRIES = 2
+# A full-size features job on a T4: the issue's estimate, unmeasured until the
+# first one runs.
+FEATURES_JOB_MIN = 120
 
 
 def log(msg: str) -> None:
@@ -165,12 +168,18 @@ def zip_features_dataset(state: State, who: str, name: str, zip_path: Path) -> s
 
 # ── Kernels ─────────────────────────────────────────────────────────────────
 
-def kernel_status(slug: str) -> str:
-    out = kaggle("kernels", "status", slug, check=False).lower()
-    for s in ("complete", "error", "cancel", "running", "queued"):
-        if s in out:
-            return s
-    return "unknown: " + out.strip()[-200:]
+KERNEL_ENDS = ("complete", "error", "cancel_acknowledged", "cancel_requested")
+KERNEL_TIMEOUT = 11 * 60     # minutes; under Kaggle's 12 h
+
+
+def kernel_status(slug: str) -> str | None:
+    """The kernel's status word (`running`, `complete`, ...), or None when the CLI could not say."""
+    try:
+        out = kaggle("kernels", "status", slug)
+    except RuntimeError:
+        return None
+    m = re.search(r'has status "(?:KernelWorkerStatus\.)?(\w+)"', out)
+    return m.group(1).lower() if m else None
 
 
 def push_kernel(state: State, slug: str, source: Path, inject: tuple[str, object], datasets: list[str],
@@ -191,24 +200,38 @@ def push_kernel(state: State, slug: str, source: Path, inject: tuple[str, object
     out = kaggle("kernels", "push", "-p", str(build), "-t", str(timeout_min * 60))
     if "error" in out.lower() and "successfully" not in out.lower():
         raise RuntimeError(out)
-    state.d["kernels"][slug] = {"status": "pushed", "pushed_at": time.time()}
+    state.d["kernels"][slug] = {"status": "pushed", "pushed_at": time.time(), "pulled": False}
     state.save()
 
 
 def wait_kernel(state: State, slug: str) -> str:
     # A status read right after a push can still show the previous version.
     time.sleep(60)
-    last = None
+    last, unread = None, 0
     while True:
         s = kernel_status(slug)
-        if s != last:
-            log(f"{slug}: {s}")
-            last = s
-        if s in ("complete", "error", "cancel"):
-            state.d["kernels"][slug]["status"] = s
-            state.save()
-            return s
+        if s is None:
+            # A failed read is not an ended kernel: keep polling, for an hour.
+            unread += 1
+            if unread > 30:
+                raise RuntimeError(f"could not read {slug}'s status for an hour")
+        else:
+            unread = 0
+            if s != last:
+                log(f"{slug}: {s}")
+                last = s
+            if s in KERNEL_ENDS:
+                state.d["kernels"][slug]["status"] = s
+                state.save()
+                return s
         time.sleep(POLL_S)
+
+
+def needs_push(state: State, slug: str, attempt: int) -> bool:
+    """Push unless this kernel is still ours to wait on or pull: a driver that
+    stopped mid-wait, or after the kernel ended but before its output came down."""
+    k = state.d["kernels"].get(slug, {})
+    return bool(attempt) or k.get("status") is None or k.get("pulled", False)
 
 
 def pull_output(slug: str, dest: Path, pattern: str | None = None) -> Path:
@@ -228,13 +251,14 @@ def features_job(state: State, who: str, sweep: str, name: str, overrides: dict)
     if state.d["kernels"].get(slug, {}).get("has_features"):
         return slug
     for attempt in range(RETRIES + 1):
-        # A kernel pushed by a driver that stopped mid-wait is waited on, not pushed again.
-        if attempt or state.d["kernels"].get(slug, {}).get("status") != "pushed":
+        if needs_push(state, slug, attempt):
             push_kernel(state, slug, HERE / "features-kernel" / "features_kernel.py",
-                        ("DATA", {"name": name, "overrides": overrides}), [], [], 11 * 60)
+                        ("DATA", {"name": name, "overrides": overrides}), [], [], KERNEL_TIMEOUT)
         status = wait_kernel(state, slug)
         # my_model.yaml is written after the four arrays, so it marks a whole set.
         out = pull_output(slug, CACHE / sweep / "_features" / name, r"my_model\.yaml$")
+        state.d["kernels"][slug]["pulled"] = True
+        state.save()
         if any(out.rglob("my_model.yaml")):
             state.d["kernels"][slug]["has_features"] = True
             state.save()
@@ -268,7 +292,8 @@ def config_dir(sweep: str, data: str, name: str) -> Path:
 
 
 def collect(sweep: str, data: str, out: Path) -> set[str]:
-    """Move each finished config's model and score line into its own folder."""
+    """Move each finished config's model and score line into its own folder.
+    A config that failed is written too, for the table, but is not done."""
     done = set()
     res = next(out.rglob("results.jsonl"), None)
     if not res:
@@ -284,29 +309,37 @@ def collect(sweep: str, data: str, out: Path) -> set[str]:
             shutil.copy(model, d / "model.onnx")
         r["data"] = data
         (d / "score.json").write_text(json.dumps(r, indent=1))
-        done.add(r["name"])
+        if "score" in r and model:
+            done.add(r["name"])
     return done
+
+
+def is_done(sweep: str, data: str, name: str) -> bool:
+    p = config_dir(sweep, data, name) / "score.json"
+    return p.exists() and "score" in json.loads(p.read_text())
 
 
 def run_sweep(state: State, who: str, sweep: str, data: str, configs: list[dict], split: str,
               datasets: list[str], kernels: list[str]) -> None:
-    done = {c["name"] for c in configs if (config_dir(sweep, data, c["name"]) / "score.json").exists()}
+    done = {c["name"] for c in configs if is_done(sweep, data, c["name"])}
     for i, chunk in enumerate(chunks(configs), 1):
         slug = f"{who}/kachow-sweep-{sweep}-{data}-{i}"
         for attempt in range(RETRIES + 1):
             todo = [c for c in chunk if c["name"] not in done]
             if not todo:
                 break
-            if attempt or state.d["kernels"].get(slug, {}).get("status") != "pushed":
+            if needs_push(state, slug, attempt):
                 est = SETUP_MIN + sum(est_minutes(c) for c in todo)
                 log(f"{slug}: {len(todo)} configs, about {est / 60:.1f} GPU h")
                 push_kernel(state, slug, HERE / "sweep-kernel" / "sweep_kernel.py",
                             ("SWEEP", {"configs": todo, "split": split}), datasets, kernels,
-                            min(11 * 60, int(est * 1.5) + 30))
+                            min(KERNEL_TIMEOUT, int(est * 1.5) + 30))
             status = wait_kernel(state, slug)
             out = CACHE / sweep / "_pulled" / slug.split("/")[1]
             shutil.rmtree(out, ignore_errors=True)
             done |= collect(sweep, data, pull_output(slug, out))
+            state.d["kernels"][slug]["pulled"] = True
+            state.save()
             left = [c["name"] for c in chunk if c["name"] not in done]
             if left:
                 log(f"{slug} ended {status} with {len(left)} configs left: {', '.join(left)}")
@@ -372,24 +405,40 @@ def print_table(sweep: str) -> None:
               f" mean {pct(b['mean']).strip()}")
 
 
+def winner(rows: list[dict], bands: dict[str, dict]) -> tuple[dict | None, str]:
+    """The best config that beat its control seeds' band. With none, the knobs
+    are measured ties, and a tie goes to the arm cheapest to reverse: the
+    best control (AGENTS.md, "Ties are measured")."""
+    ok = [r for r in rows if "score" in r]
+    above = [r for r in ok if verdict(r, bands) == "above band"]
+    if above:
+        return above[0], "beat every control seed"
+    controls = [r for r in ok if r["name"].startswith("control")]
+    if controls:
+        return controls[0], "no config beat the control seeds' band: the knobs are ties and the control stands"
+    return (ok[0], "no control seeds to measure a band against") if ok else (None, "nothing trained")
+
+
 def final_card(sweep: str) -> None:
-    rows, _ = ranked(sweep)
-    rows = [r for r in rows if "score" in r]
-    if not rows:
+    w, why = winner(*ranked(sweep))
+    if w is None:
         return
-    w = rows[0]
-    model = config_dir(sweep, w["data"], w["name"]) / "model.onnx"
+    tag = f"{w['data']}.{w['name']}"
     out = CACHE / sweep / "winner"
-    out.mkdir(parents=True, exist_ok=True)
-    shutil.copy(model, out / f"{w['data']}.{w['name']}.onnx")
-    log(f"winner {w['data']}.{w['name']}: scoring the final half locally")
-    r = subprocess.run(["uv", "run", str(SCORER), "score", str(out / f"{w['data']}.{w['name']}.onnx"),
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    shutil.copy(config_dir(sweep, w["data"], w["name"]) / "model.onnx", out / f"{tag}.onnx")
+    log(f"winner {tag} ({why}): scoring the final half locally")
+    r = subprocess.run(["uv", "run", str(SCORER), "score", str(out / f"{tag}.onnx"),
                         "--split", "final", "--json", str(out / "final.json")],
                        capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"scoring the winner's final half failed:\n{r.stderr[-2000:]}")
     (out / "final-card.txt").write_text(r.stdout)
     (out / "settings.json").write_text(json.dumps(
-        {"data": w["data"], "name": w["name"], "seed": w["seed"], "overrides": w["overrides"]}, indent=1))
-    print(r.stdout or r.stderr)
+        {"data": w["data"], "name": w["name"], "why": why, "seed": w["seed"], "overrides": w["overrides"]},
+        indent=1))
+    print(r.stdout)
 
 
 # ── Commands ────────────────────────────────────────────────────────────────
@@ -409,11 +458,12 @@ def run(args: argparse.Namespace) -> None:
         plan.append((d, configs))
         total += sum(SETUP_MIN + sum(est_minutes(c) for c in ch) for ch in chunks(configs))
         if "job" in d["features"]:
-            total += 120
+            total += FEATURES_JOB_MIN
     log(f"queue {sweep}: {len(plan)} data configs, {sum(len(c) for _, c in plan)} trainings,"
         f" about {total / 60:.1f} GPU h")
-    if total / 60 > args.max_gpu_hours:
-        sys.exit(f"over --max-gpu-hours {args.max_gpu_hours}; cut the queue or raise the cap")
+    cap = args.max_gpu_hours or q.get("max_gpu_hours", 4.0)
+    if total / 60 > cap:
+        sys.exit(f"over the {cap} GPU h cap; cut the queue, or raise max_gpu_hours in it or --max-gpu-hours")
     scorer = scorer_dataset(uploads, who)
     for d, configs in plan:
         f = d["features"]
@@ -437,8 +487,8 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     rp = sub.add_parser("run", help="run a queue to the end (resumes if run again)")
     rp.add_argument("queue")
-    rp.add_argument("--max-gpu-hours", type=float, default=4.0,
-                    help="refuse a queue estimated above this (#452 ruling 4: under 4 GPU h)")
+    rp.add_argument("--max-gpu-hours", type=float,
+                    help="refuse a queue estimated above this; default the queue's max_gpu_hours, else 4")
     tp = sub.add_parser("table", help="print the ranked table of a sweep pulled so far")
     tp.add_argument("sweep")
     args = ap.parse_args()

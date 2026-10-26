@@ -1,9 +1,9 @@
 {
-  "note": "First training sweep (#452 rulings 3 and 4): the control three times on different seeds, then one knob at a time from the control (seed 0). Every overrides object replaces those keys of the features set's my_model.yaml. A batch mix is named positive/adversarial/ACAV, the order of batch_n_per_class read as positive, adversarial_negative, ACAV100M_sample: the control is 32/32/64 and upstream openWakeWord's is 50/50/1024.",
+  "note": "First training sweep (#452 rulings 3 and 4): the control three times on different seeds, then one knob at a time from the control (seed 0). Every overrides object replaces those keys of the features set's my_model.yaml; run 3's carries the control's mix, 32/32/64, so the controls' empty overrides are that mix only on run 3's features. Configs named control-* are the noise band. A batch mix is named positive/adversarial/ACAV, the order of batch_n_per_class read as positive, adversarial_negative, ACAV100M_sample: the control is 32/32/64 and upstream openWakeWord's is 50/50/1024.",
   "configs": [
-    {"name": "control-s0", "control": true, "seed": 0, "overrides": {}},
-    {"name": "control-s1", "control": true, "seed": 1, "overrides": {}},
-    {"name": "control-s2", "control": true, "seed": 2, "overrides": {}},
+    {"name": "control-s0", "seed": 0, "overrides": {}},
+    {"name": "control-s1", "seed": 1, "overrides": {}},
+    {"name": "control-s2", "seed": 2, "overrides": {}},
     {"name": "negw-500", "seed": 0, "overrides": {"max_negative_weight": 500}},
     {"name": "negw-1000", "seed": 0, "overrides": {"max_negative_weight": 1000}},
     {"name": "negw-3000", "seed": 0, "overrides": {"max_negative_weight": 3000}},

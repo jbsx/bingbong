@@ -72,5 +72,26 @@ def test_a_knob_inside_the_control_seeds_spread_is_a_tie_and_above_it_is_not():
     assert v["control-s1"] == ""
 
 
+def test_the_winner_is_the_best_config_above_the_band():
+    write("win", [result("control-s0", 0.40), result("control-s1", 0.44),
+                  result("lucky", 0.43), result("real", 0.46)])
+    w, _ = sw.winner(*sw.ranked("win"))
+    assert w["name"] == "real"
+
+
+def test_with_every_knob_inside_the_band_the_control_stands():
+    write("tie", [result("control-s0", 0.40), result("control-s1", 0.44), result("knob", 0.44, fp=0.1)])
+    w, why = sw.winner(*sw.ranked("tie"))
+    assert w["name"] == "control-s1"
+    assert "control stands" in why
+
+
+def test_a_failed_config_is_not_done_so_a_rerun_trains_it_again():
+    write("redo", [{"name": "broke", "data": "run3", "seed": 0, "overrides": {}, "error": "OOM"},
+                   result("fine", 0.4)])
+    assert not sw.is_done("redo", "run3", "broke")
+    assert sw.is_done("redo", "run3", "fine")
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
