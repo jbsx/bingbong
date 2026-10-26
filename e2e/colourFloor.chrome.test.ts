@@ -27,6 +27,7 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
         '/quiet': page(`<p style="color:#858585">London</p>`),
         '/bubble': page(`<div style="background:rgba(255,255,255,0.04)"><p style="color:#959595">read the page</p></div>`),
         '/faded': page(`<p style="color:#959595;opacity:0.55">click [1]</p>`),
+        '/spinning': page(`<style>@keyframes spin { to { rotate: 1turn } }</style><div style="animation:spin 2s linear infinite"><p style="color:#959595;opacity:0.55">click [1]</p></div>`),
         '/arial': page(`<button style="font-family:Arial;background:none;border:0;color:#fff">Choose…</button>`),
         '/colon': page(`<p>12<span style="color:var(--accent)">:</span>30</p>`),
         '/coral': page(`<p style="color:#ff8f74">Claude</p>`),
@@ -52,6 +53,8 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
     expect(await floor('/quiet')).toEqual([expect.stringMatching(/^contrast 5\.\d\d:1 .*"London"/)])
     expect(await floor('/bubble')).toEqual([expect.stringMatching(/^contrast 6\.\d\d:1 .*"read the page"/)])
     expect(await floor('/faded')).toEqual([expect.stringMatching(/^contrast .*"click \[1\]"/)])
+    // Motion nearby that is not a fade excuses nothing.
+    expect(await floor('/spinning')).toEqual([expect.stringMatching(/^contrast .*"click \[1\]"/)])
   })
 
   it('finds a third typeface', async () => {

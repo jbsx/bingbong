@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
+import { REST_HINT } from '../src/core/voice/voiceHint'
 import { cli } from './cliSupport'
 import { colourFloor } from './colourFloor'
 import { decisionScript, readingOf } from './scriptedJev'
@@ -201,7 +202,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(geometry.homes).toEqual({ weather: 'left full', ...(music ? { music: 'middle full', usage: 'middle small' } : { usage: 'middle full' }), calendar: 'right full', weight: 'right full', news: 'right full' })
     expect(geometry.lines).toEqual(['voice', 'lastPage'])
     expect(geometry.rings).toBe(count)
-    expect(await text('.idle-voice')).toBe('Say “Bing Bong” or start typing')
+    expect(await text('.idle-voice')).toBe(REST_HINT)
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)

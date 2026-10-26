@@ -7,12 +7,18 @@
 // - Every element with its own text is set in Inter or JetBrains Mono.
 // - At rest, the accent marks only what is live: nothing outside the Status
 //   Capsule, the Voice Prompt, the Idle Screen's voice line, a primary button
-//   or the focused control takes the accent's colour.
+//   (Settings' Save, the Prompt Bar's Run) or the control under the keyboard
+//   takes the accent's colour.
 // - No colour sits in the accent's or the failure's hue band without being
 //   that colour, so peach and coral each keep one meaning (a data series is
 //   exempt from the five meaningful colours, never from the bands).
 
-/** Degrees either side of the accent's and the failure's hue that another saturated colour may not take. */
+/**
+ * Degrees either side of the accent's and the failure's hue that another
+ * saturated colour may not take. A guess: wide enough to hold the four
+ * oranges #437 found (11° to 29°) and clear the amber marks (36°+). The
+ * owner telling two hues apart, or not, from the chair would settle it.
+ */
 export const HUE_BAND = 14
 
 export const colourFloor = (rest: boolean): string => `(() => {
@@ -26,7 +32,7 @@ export const colourFloor = (rest: boolean): string => `(() => {
   const dark = matchMedia('(prefers-color-scheme: dark)').matches
   const name = (el) => {
     const cls = typeof el.className === 'string' && el.className !== '' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()
-    const words = (el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40)
+    const words = String(el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40)
     return cls + ' "' + words + '"'
   }
   const shown = (el) => { const box = el.getBoundingClientRect(); const s = getComputedStyle(el); return box.width > 1 && box.height > 1 && s.visibility !== 'hidden' && Number(s.opacity) !== 0 }
@@ -41,6 +47,8 @@ export const colourFloor = (rest: boolean): string => `(() => {
     for (const l of layers.reverse()) base = { r: l.r * l.a + base.r * (1 - l.a), g: l.g * l.a + base.g * (1 - l.a), b: l.b * l.a + base.b * (1 - l.a) }
     return base
   }
+  // A surface without the tokens would read the body's colour as the accent: say so and stop.
+  for (const t of ['--accent', '--fail', '--fail-text']) if (getComputedStyle(document.documentElement).getPropertyValue(t).trim() === '') return ['no ' + t + ' on this surface']
   const accent = token('--accent')
   const fail = token('--fail')
   const failText = token('--fail-text')
@@ -54,7 +62,8 @@ export const colourFloor = (rest: boolean): string => `(() => {
     let moving = false
     for (let n = el; n; n = n.parentElement) {
       opacity *= Number(getComputedStyle(n).opacity)
-      if (n.getAnimations().some((animation) => animation.playState === 'running')) moving = true
+      // Only an animation of opacity excuses a fade (an entry fading in, the ringing Timer's pulse); any other motion nearby does not.
+      if (n.getAnimations().some((animation) => animation.playState === 'running' && animation.effect?.getKeyframes().some((frame) => 'opacity' in frame))) moving = true
     }
     if (opacity < 0.02) continue
     const s = getComputedStyle(el)
@@ -84,7 +93,7 @@ export const colourFloor = (rest: boolean): string => `(() => {
     const drawn = [own ? s.color : null, s.backgroundColor, ...borders, ...marks, el.closest('svg') ? s.fill : null, el.closest('svg') ? s.stroke : null, s.outlineStyle !== 'none' ? s.outlineColor : null, el instanceof HTMLInputElement && ['range', 'checkbox', 'radio'].includes(el.type) ? s.accentColor : null]
       .map(parse)
       .filter((c) => c && c.a > 0.05)
-    if (${rest ? 'true' : 'false'} && !el.closest(LIVE) && el !== document.activeElement && drawn.some((c) => same(c, accent))) issues.push('accent at rest: ' + name(el))
+    if (${rest} && !el.closest(LIVE) && el !== document.activeElement && drawn.some((c) => same(c, accent))) issues.push('accent at rest: ' + name(el))
     const near = drawn.find((c) => inBand(c) && !same(c, accent) && !same(c, fail) && !same(c, failText))
     if (near) issues.push('in the accent or failure hue (' + rgb(near) + '): ' + name(el))
   }
