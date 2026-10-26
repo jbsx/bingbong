@@ -23,6 +23,11 @@ describe('errandMemory (#467): what an Errand carries from step to step', () => 
     expect(memory.steps).toEqual([{ why: 'the Task before this Errand', action: 'searched the web for "same shoes" → it opened duckduckgo.com', class: 'stays', outcome: 'done', seconds: 0 }, { why: 'the Task before this Errand', action: 'the Task stopped', class: 'stays', outcome: 'it ran out of actions, and handed the line to you', seconds: 0 }])
   })
 
+  it('carries what the Task said last into its stop', () => {
+    const memory = errandMemory('Find me a cheaper one of these.', { actions: [], ended: 'unavailable', said: 'No response.' })
+    expect(memory.steps.at(-1)!.outcome).toBe('the Decision Model did not answer, its last Answer "No response.", and handed the line to you')
+  })
+
   it('is the port\'s memory for the Planner: each step its action, why, class, seconds and outcome', () => {
     const memory = withCard(withStep(errandMemory('g'), clicked), 'the card')
     expect(plannerMemoryOf(memory)).toEqual({

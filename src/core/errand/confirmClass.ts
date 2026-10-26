@@ -14,7 +14,8 @@ import { exactSiteAnswer } from '../command/siteQuestion'
 /** The words a control's label carries when its click or its Enter leaves the appliance (orchestrator ruling 5, #467). */
 export const LEAVING_WORDS = ['post', 'send', 'pay', 'buy', 'order', 'delete', 'submit', 'publish', 'reply', 'comment', 'subscribe'] as const
 
-const LEAVING = new RegExp(`\\b(${LEAVING_WORDS.join('|')})\\b`, 'i')
+// "Unsubscribe" carries subscribe: it changes the account the world sees as surely.
+const LEAVING = new RegExp(`\\b((?:un)?subscribe|${LEAVING_WORDS.filter((word) => word !== 'subscribe').join('|')})\\b`, 'i')
 
 /**
  * The leaving word a control's label carries, as the bare word: "Comment"

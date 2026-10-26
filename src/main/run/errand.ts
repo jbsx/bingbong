@@ -1,12 +1,12 @@
 import { describeCommand, targetLabel, type Command } from '../../core/command/command'
-import type { ErrandRecord, TaskEnded } from '../../core/command/decisionRecord'
+import type { ErrandRecord } from '../../core/command/decisionRecord'
 import type { AppState } from '../../core/command/appOp'
 import { confirmLine, confirmOf, isYes, type Typed } from '../../core/errand/confirmClass'
 import { errandClock, type ErrandClock } from '../../core/errand/errandClock'
-import { askedStep, capLine, confirmStep, errandMemory, plannerMemoryOf, unansweredLine, unavailableLine, withCapture, withCard, withStep, type ErrandMemory, type ErrandStep } from '../../core/errand/errandMemory'
+import { askedStep, capLine, confirmStep, errandMemory, plannerMemoryOf, unansweredLine, unavailableLine, withCapture, withCard, withStep, type ErrandMemory, type ErrandStep, type TaskHandOff } from '../../core/errand/errandMemory'
 import { errandVerbs, resolveAction, type ErrandCard } from '../../core/errand/plannerCommand'
 import { plannerStepSpan, type ErrandOutcome, type PlannerStepDetail } from '../../core/planner/plannerSpan'
-import type { PlannerAction, PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
+import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
 
 // The Errand loop (#467, ADR 0095): one spoken outcome carried across as
 // many steps as it takes, under the Planner. Each step the card is built
@@ -55,6 +55,8 @@ export interface ErrandDeps {
   act(turnId: string, why: string, command: Command, card: ErrandCard, step: number): Promise<ActedStep>
   /** A part of the page's text, read into the memory, never aloud; null when it cannot be read. */
   readPart(turnId: string, why: string, part: number, step: number): Promise<string | null>
+  /** A step that fired nothing on its own turn (done, asked, unanswered): its stage ends with it. */
+  settle(turnId: string): void
   /** A step that fired nothing (refused, or said no to): greyed in the Feed with what it came to. */
   drop(turnId: string, why: string, what: string, step: number): void
   /** The confirm or the question said by the Site Question's road; resolves the next line, or null when none came in the Hot Listen window or it was superseded. */
@@ -74,16 +76,11 @@ export interface ErrandStart {
   readonly goalLine: string
   readonly source: 'spoken' | 'typed'
   /** A Task that ended not done, handing its line over (#467): its "Done so far" lines and how it ended. */
-  readonly handOff?: { readonly actions: readonly string[]; readonly ended: TaskEnded }
+  readonly handOff?: TaskHandOff
 }
 
 /** How much of a page's text one read puts in the memory. */
 const READ_PART_CHARS = 6_000
-
-/** The action as the memory tells it: the Command's own line, or the Planner's words for one that made none. */
-function actionWords(action: PlannerAction): string {
-  return JSON.stringify(action)
-}
 
 export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<ErrandOutcome> {
   const { planner } = deps
@@ -92,12 +89,19 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
   let memory: ErrandMemory = errandMemory(start.goalLine, start.handOff)
   const visited: string[] = []
   /** What the Errand last typed, and into which field: what an Enter or a send button carries away. */
-  let typed: Typed | null = null
+  let typed: (Typed & { readonly url: string }) | null = null
+  /** The step whose stage is up and whose turn no action has ended yet: it is ended before the person is asked, and at the end. */
+  let openTurn: string | null = null
+  const close = (): void => {
+    if (openTurn !== null) deps.settle(openTurn)
+    openTurn = null
+  }
   let said: string | undefined
   /** Whether the last reply was none of the answers: a second in a row ends the Errand. */
   let slipped = false
 
   const end = (outcome: ErrandOutcome): ErrandOutcome => {
+    close()
     const seconds = clock.elapsed() / 1000
     const steps = memory.steps.map(({ why, action, class: stepClass, outcome: came, seconds: took }) => ({ why, action, class: stepClass, outcome: came, seconds: took }))
     deps.span(Math.max(0, deps.now() - startedAt), { steps: steps.length, outcome, model: planner.model, thinking: planner.thinking, workMs: Math.round(clock.elapsed()) })
@@ -140,6 +144,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     const turnId = deps.mintTurnId()
     const began = clock.elapsed()
     deps.planning(turnId, step)
+    openTurn = turnId
     const card = await deps.card(start.goalLine, step, visited)
     if (deps.superseded()) return end('superseded')
     if (visited.at(-1) !== card.page.url && card.page.url !== '') visited.push(card.page.url)
@@ -161,6 +166,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       if ((result.reason === 'malformed' || result.reason === 'unparsable') && !slipped) {
         slipped = true
         memory = withStep(memory, { why: 'your last reply', action: 'a reply that was none of the answers', class: 'stays', outcome: `refused: ${result.message}`, seconds: since(began) })
+        close()
         continue
       }
       return ending('unavailable', unavailableLine(memory), true)
@@ -169,17 +175,20 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     const { answer } = result
     if (answer.next === 'done') return ending('done', answer.sentence, false)
     if (answer.next === 'ask') {
+      close()
       const reply = await askPerson(answer.question, 'question')
       if (deps.superseded()) return end('superseded')
       if (reply === null) return ending('unsure', unansweredLine(answer.question), true)
       memory = withStep(memory, askedStep(answer.question, reply, since(began)))
       continue
     }
-    const why = answer.why || actionWords(answer.action)
+    const why = answer.why || JSON.stringify(answer.action)
     const resolved = resolveAction(answer.action, card, deps.app?.())
+    // Each of these ends the step's turn itself.
+    openTurn = null
     if (resolved.kind === 'refused') {
       deps.drop(turnId, why, `refused: ${resolved.reason}`, step)
-      memory = withStep(memory, { why, action: actionWords(answer.action), class: answer.class, outcome: `refused: ${resolved.reason}`, seconds: since(began) })
+      memory = withStep(memory, { why, action: JSON.stringify(answer.action), class: answer.class, outcome: `refused: ${resolved.reason}`, seconds: since(began) })
       continue
     }
     if (resolved.kind === 'read') {
@@ -191,7 +200,8 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     }
     const { command } = resolved
     const action = describeCommand(command, card.page)
-    const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed })
+    // What was typed on another page is no longer what an Enter or a send carries away.
+    const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed: typed?.url === card.page.url ? typed : null })
     const stepClass = confirm === null ? 'stays' : 'leaves'
     if (confirm !== null) {
       // The confirm class (#467): said back by the Site Question's road, answered by the next line; only a yes fires it.
@@ -209,7 +219,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     const done: ErrandStep = { why, action, class: stepClass, outcome: acted.outcome, ...(acted.said !== undefined ? { said: acted.said } : {}), seconds: since(began) }
     memory = withStep(memory, done)
     if (acted.capture !== undefined) memory = withCapture(memory, acted.capture)
-    if (command.verb === 'type' && command.slot !== null) typed = { text: command.slot, into: targetLabel(command, card.page) }
+    if (command.verb === 'type' && command.slot !== null) typed = { text: command.slot, into: targetLabel(command, card.page), url: card.page.url }
   }
 }
 

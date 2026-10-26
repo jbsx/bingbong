@@ -169,6 +169,23 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(asked[1]!.memory.steps.at(-1)!.outcome).toBe('the person answered: "the white ones"')
   })
 
+  it('every turn whose stage went up is ended, so the Status Capsule never holds an Errand that is over', async () => {
+    const { planner } = scriptedPlanner(
+      { next: 'act', action: { kind: 'click', ref: 99 }, class: 'stays', why: 'a ref that is not there' },
+      { next: 'ask', question: 'Which one?' },
+      { next: 'done', sentence: 'Opened the right one.' },
+    )
+    const { events, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 60_000 } })
+    const errand = runner.run('errand open the right one', { turnId: 'line-1' })
+    await until(() => events.some((event) => event.type === 'site_question'))
+    await runner.run('the second')
+    await errand
+    const staged = new Set(events.flatMap((event) => (event.type === 'status' ? [event.turnId] : [])))
+    const ended = new Set(events.flatMap((event) => (event.type === 'done' ? [event.turnId] : [])))
+    expect([...staged].filter((turnId) => !ended.has(turnId))).toEqual([])
+    expect(staged.size).toBeGreaterThanOrEqual(4)
+  })
+
   it('Escape while the question waits ends the Errand, saying nothing more', async () => {
     const { planner } = scriptedPlanner({ next: 'ask', question: 'Which shoes?' })
     const { events, records, spoken, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 60_000 } })
@@ -189,7 +206,7 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(spoken).toEqual(['The page ends with the credits.'])
     expect(asked[0]!.goalLine).toBe('keep going down the page')
     expect(asked[0]!.memory.steps).toHaveLength(6)
-    expect(asked[0]!.memory.steps.at(-1)).toMatchObject({ action: 'the Task stopped — the Task before this Errand', outcome: 'it ran out of actions, and handed the line to you' })
+    expect(asked[0]!.memory.steps.at(-1)).toMatchObject({ action: 'the Task stopped — the Task before this Errand', outcome: 'it ran out of actions, its last Answer "Scrolled down.", and handed the line to you' })
     expect(errandOf(records)).toMatchObject({ handedFrom: 'cap' })
   })
 

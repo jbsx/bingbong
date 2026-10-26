@@ -658,7 +658,7 @@ async function createWindow(): Promise<BrowserWindow> {
     // The page's own question (#423): said when it opens; the next line answers it.
     siteQuestions,
     // The Errand (#467, ADR 0095): armed by BINGBONG_ERRAND=1 alone until #468 routes; the kiosk never sets it.
-    ...(errandArmed(process.env) ? { errand: { planner: errandPlanner, answerWindowMs: () => settingsStore.get().hotListenSilenceMs } } : {}),
+    ...(errandArmed(currentEnv()) ? { errand: { planner: errandPlanner, answerWindowMs: () => settingsStore.get().hotListenSilenceMs } } : {}),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.

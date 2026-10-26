@@ -30,6 +30,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
   const said: { text: string; failure: boolean }[] = []
   const spoken: { text: string; kind: string }[] = []
   const dropped: string[] = []
+  const settled: string[] = []
   const records: ErrandRecord[] = []
   const spans: Record<string, unknown>[] = []
   const replies = [...(options.replies ?? [])]
@@ -67,6 +68,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
     },
     readPart: async () => 'the page text (part 1 of 1)',
     drop: (_turnId, _why, what) => dropped.push(what),
+    settle: (turnId) => settled.push(turnId),
     ask: async (text, kind) => {
       spoken.push({ text, kind })
       now += 20_000
@@ -77,7 +79,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
     span: (_ms, detail) => spans.push(detail),
     log: (record) => records.push(record),
   }
-  return { deps, asked, fired, said, spoken, dropped, records, spans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
+  return { deps, asked, fired, said, spoken, dropped, settled, records, spans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
 }
 
 describe('runErrand (#467): the Errand loop', () => {
@@ -127,6 +129,8 @@ describe('runErrand (#467): the Errand loop', () => {
     const w = world([{ next: 'ask', question: 'Which shoes?' }], { replies: [] })
     expect(await runErrand(w.deps, w.start)).toBe('unsure')
     expect(w.said).toEqual([{ text: 'Which shoes? Ending there.', failure: true }])
+    // The asking step's stage was ended before the person was asked.
+    expect(w.settled).toEqual(['turn-0'])
   })
 
   it('the Planner gone ends it saying so, and what was done so far', async () => {

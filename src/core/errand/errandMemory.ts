@@ -34,6 +34,8 @@ export interface ErrandMemory {
 export interface TaskHandOff {
   readonly actions: readonly string[]
   readonly ended: TaskEnded
+  /** The last Answer it left, shown and perhaps said: "No response.", a page's line. */
+  readonly said?: string
 }
 
 const HANDED = 'the Task before this Errand'
@@ -50,7 +52,13 @@ export function errandMemory(goalLine: string, handOff?: TaskHandOff): ErrandMem
       ? []
       : [
           ...handOff.actions.map((action) => ({ why: HANDED, action, class: 'stays' as const, outcome: 'done', seconds: 0 })),
-          { why: HANDED, action: 'the Task stopped', class: 'stays', outcome: `${ENDED_WORDS[handOff.ended] ?? `it ended ${handOff.ended}`}, and handed the line to you`, seconds: 0 },
+          {
+            why: HANDED,
+            action: 'the Task stopped',
+            class: 'stays',
+            outcome: `${ENDED_WORDS[handOff.ended] ?? `it ended ${handOff.ended}`}${handOff.said !== undefined ? `, its last Answer ${JSON.stringify(handOff.said)}` : ''}, and handed the line to you`,
+            seconds: 0,
+          },
         ]
   return { goalLine, steps, captures: [], card: null }
 }

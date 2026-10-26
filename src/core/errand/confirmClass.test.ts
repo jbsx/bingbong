@@ -28,6 +28,7 @@ describe('leavingWordOf (#467): the words that make a control leave the applianc
     ['Reply', 'reply'],
     ['Comment', 'comment'],
     ['SUBSCRIBE', 'subscribe'],
+    ['Unsubscribe', 'unsubscribe'],
   ])('%j carries %j', (label, word) => {
     expect(leavingWordOf(label)).toBe(word)
   })
