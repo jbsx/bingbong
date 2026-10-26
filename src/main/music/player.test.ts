@@ -4,6 +4,7 @@ import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
+import { loudnessFactor } from '../../core/music/loudness'
 import { createPlayer, type SongMemory } from './player'
 import { ScriptedYouTube, videoItem } from './scriptedYouTube'
 
@@ -386,6 +387,9 @@ describe('the level heard carries into the next song (#460)', () => {
     return w
   }
 
+  const AF = loudnessFactor(5.22)
+  const BF = loudnessFactor(5.25)
+
   /** A `volume` Media Op (ADR 0080, #408): the element alone, YouTube's player never told. */
   const mediaOp = (youtube: ScriptedYouTube, to: number): void => {
     youtube.element = { ...youtube.element, volume: to }
@@ -394,7 +398,7 @@ describe('the level heard carries into the next song (#460)', () => {
   it('a Media Op\'s 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s, about 19.9', async () => {
     const { youtube, perform } = loud()
     await perform({ kind: 'search', place: 'now' }, 'song a')
-    expect(youtube.element.volume).toBeCloseTo(54.83, 1)
+    expect(youtube.element.volume).toBeCloseTo(100 * AF, 1)
     await perform({ kind: 'search', place: 'end' }, 'song b')
     mediaOp(youtube, 20)
     await perform({ kind: 'skip' })
@@ -418,9 +422,9 @@ describe('the level heard carries into the next song (#460)', () => {
     const { youtube, perform } = loud()
     await perform({ kind: 'search', place: 'now' }, 'song a')
     youtube.playerVolume = 50
-    youtube.element = { ...youtube.element, volume: 50 * 0.5483 }
+    youtube.element = { ...youtube.element, volume: 50 * AF }
     await perform({ kind: 'search', place: 'now' }, 'song b')
-    expect(youtube.element.volume).toBeCloseTo(50 * 0.5464, 1)
+    expect(youtube.element.volume).toBeCloseTo(50 * BF, 1)
   })
 
   it('with no loudness in either response the level carries as it is', async () => {
@@ -448,13 +452,13 @@ describe('the level heard carries into the next song (#460)', () => {
     // The next page opens on an ad (the scripted page shows it from the leaving read on, so the poll's read is the one carried).
     youtube.adShowing = true
     await perform({ kind: 'search', place: 'now' }, 'song b')
-    expect(youtube.element.volume).toBeCloseTo(54.64, 1)
+    expect(youtube.element.volume).toBeCloseTo(100 * BF, 1)
     youtube.adShowing = false
-    youtube.element = { ...youtube.element, volume: 100 * 0.5464 }
+    youtube.element = { ...youtube.element, volume: 100 * BF }
     await player.check()
     expect(youtube.element.volume).toBeCloseTo(19.93, 1)
     // YouTube puts its own level back as the song starts: the poll puts the matched one back over it.
-    youtube.element = { ...youtube.element, volume: 100 * 0.5464, currentTime: 0.5 }
+    youtube.element = { ...youtube.element, volume: 100 * BF, currentTime: 0.5 }
     await player.check()
     expect(youtube.element.volume).toBeCloseTo(19.93, 1)
     // Heard playing at it, the song is the person's again: a level set now stands.
@@ -473,9 +477,44 @@ describe('the level heard carries into the next song (#460)', () => {
     await player.duck(true)
     expect(youtube.element.volume).toBe(6)
     await perform({ kind: 'search', place: 'now' }, 'song b')
-    expect(youtube.element.volume).toBeCloseTo(40 * (0.5464 / 0.5483) * 0.15, 1)
+    expect(youtube.element.volume).toBeCloseTo(40 * (BF / AF) * 0.15, 1)
     await player.duck(false)
     expect(youtube.element.volume).toBeCloseTo(39.86, 1)
+  })
+
+  it('a Media Op as the song opens stands: the poll puts the carried level back over YouTube\'s own alone', async () => {
+    const { youtube, player, perform } = loud()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    mediaOp(youtube, 20)
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    mediaOp(youtube, 50)
+    await player.check()
+    expect(youtube.element.volume).toBe(50)
+  })
+
+  it('a `volume` verb as the song opens stands, though YouTube plays it at its own level', async () => {
+    const { youtube, player, perform } = loud()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    mediaOp(youtube, 20)
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    await perform({ kind: 'volume', to: 30 })
+    // YouTube's setVolume plays the element at its level × the track's factor (measured 2026-10-26).
+    youtube.element = { ...youtube.element, volume: 30 * BF }
+    await player.check()
+    expect(youtube.element.volume).toBeCloseTo(30 * BF, 1)
+  })
+
+  it('a `skip` as the song opens carries the level set on it, not the one it was carrying', async () => {
+    const { youtube, player, perform } = loud()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await perform({ kind: 'search', place: 'end' }, 'song c')
+    mediaOp(youtube, 20)
+    await perform({ kind: 'skip' })
+    mediaOp(youtube, 50)
+    await perform({ kind: 'skip' })
+    expect(player.queue().current?.id).toBe('ccccccccccc')
+    expect(youtube.element.volume).toBeCloseTo(50 / BF, 1)
   })
 })
 

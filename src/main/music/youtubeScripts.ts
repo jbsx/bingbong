@@ -47,32 +47,36 @@ export interface WatchStatus {
   readonly prompt: boolean
   /** The track's `loudnessDb` from the player's response; null when it carries none (#460). */
   readonly loudnessDb: number | null
+  /** YouTube's remembered level, 0–100, as its player gives it; null when it gives none (#460). */
+  readonly playerVolume: number | null
 }
 
-/** Reads the player response's `loudnessDb`: `loudnessOf(player)`, null when there is none. */
+/** Reads the player response's `loudnessDb` and the player's remembered level: `loudnessOf(player)`, `playerVolumeOf(player)`, null when there is none. */
 const LOUDNESS_READER = `const loudnessOf = (player) => {
     const response = player && typeof player.getPlayerResponse === 'function' ? player.getPlayerResponse() : null
     const db = response && response.playerConfig && response.playerConfig.audioConfig ? response.playerConfig.audioConfig.loudnessDb : null
     return typeof db === 'number' && isFinite(db) ? db : null
+  }
+  const playerVolumeOf = (player) => {
+    const level = player && typeof player.getVolume === 'function' ? player.getVolume() : null
+    return typeof level === 'number' && isFinite(level) ? level : null
   }`
 
-/** The watch page's element level as the Player carries it into the next song (#460): unrounded, beside the track's loudness. */
-export interface LevelRead {
-  readonly id: string | null
-  readonly ad: boolean
-  /** 0–100, unrounded. */
-  readonly volume: number
-  readonly loudnessDb: number | null
-}
+/** The watch page's element level as the Player carries it into the next song (#460): unrounded, beside the track's loudness and YouTube's own level. */
+export type LevelRead = Pick<WatchStatus, 'id' | 'ad' | 'volume' | 'loudnessDb' | 'playerVolume'>
 
-/** Reads `#movie_player video`'s level and its track's loudness; null off a watch page's player. */
+/**
+ * Reads `#movie_player video`'s level, unrounded, with its track's
+ * loudness; null off a watch page's player. Apart from the watch script,
+ * which takes the end it heard: a page left on a `skip` keeps its own.
+ */
 export const LEVEL_SCRIPT = `(() => {
   /* YT_LEVEL */
   const player = document.querySelector('#movie_player')
   const video = player ? player.querySelector('video') : null
   if (!video) return null
   ${LOUDNESS_READER}
-  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player) }
+  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player), playerVolume: playerVolumeOf(player) }
 })()`
 
 /** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
@@ -149,6 +153,7 @@ export const WATCH_SCRIPT = `(() => {
     muted: video ? video.muted : false,
     prompt: continuePrompt() !== null,
     loudnessDb: loudnessOf(player),
+    playerVolume: playerVolumeOf(player),
   }
 })()`
 

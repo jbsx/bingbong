@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { loudnessFactor } from '../src/core/music/loudness'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { decisionScript, readingOf } from './scriptedJev'
@@ -205,8 +206,6 @@ const LEVEL_FACTS = `(() => {
   }
 })()`
 
-const factorOf = (db: number | null): number => (db === null ? 1 : Math.min(1, 10 ** (-db / 20)))
-
 describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries into the next song (#460, network)', () => {
   let harness: Harness
   let userDataDir = ''
@@ -249,13 +248,13 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
   it('a `volume` Media Op to 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s: about 19.9', async () => {
     expect(await cli(harness, `play ${LOUD.words}`, /^(playing: id=|No videos|.*can't be played|error:)/)).toMatch(new RegExp(`^playing: id=${LOUD.id}`))
     expect(await cli(harness, `queue ${LOUDER.words}`, /^(queued: id=|No videos|Couldn't search|error:)/)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
-    const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1)
+    const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1, 90_000)
     expect(await cli(harness, SET_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume \d+% → 20%$/)
     expect((await level()).volume).toBeCloseTo(20, 1)
     expect(await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/)).toMatch(new RegExp(`^playing: id=${LOUDER.id}`))
     // Past any ad and the song's first second, where YouTube may put its own level back.
     const after = await levelUntil((facts) => facts.id === LOUDER.id && !facts.ad && facts.currentTime > 2.5, 90_000)
-    const expected = 20 * (factorOf(after.loudnessDb) / factorOf(before.loudnessDb))
+    const expected = 20 * (loudnessFactor(after.loudnessDb) / loudnessFactor(before.loudnessDb))
     console.log(`#460 carry: ${LOUD.id} loudnessDb=${before.loudnessDb} → ${LOUDER.id} loudnessDb=${after.loudnessDb}; element ${after.volume.toFixed(2)}, expected ${expected.toFixed(2)}`)
     expect(after.volume).toBeCloseTo(expected, 0)
     // The issue's tracks at 5.22 and 5.25 dB: about 19.9.

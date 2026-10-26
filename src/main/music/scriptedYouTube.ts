@@ -111,7 +111,7 @@ export class ScriptedYouTube {
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return null
-    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id) }
+    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
   }
 
   private watchStatus(): WatchStatus {
@@ -120,7 +120,7 @@ export class ScriptedYouTube {
     const ended = this.ended
     this.ended = null
     const element = this.element
-    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id) }
+    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
   }

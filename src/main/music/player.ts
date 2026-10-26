@@ -10,7 +10,7 @@ import { reportFault } from '../../core/trace/fault'
 import { WithheldResourceError, type BrowserCustody } from '../../core/browser/unsettledAction'
 import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
-import { matchedLevel } from '../../core/music/loudness'
+import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { CONTINUE_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
@@ -128,6 +128,15 @@ const DUCK_SHARE = 0.15
 
 /** How far into a newly opened song (s) its carried level is put back over YouTube's own (#460). */
 const CARRIED_S = 1
+/** How near two levels (0–100) are the same: a watch read rounds to a whole one. */
+const LEVEL_TOLERANCE = 0.5
+
+/** A level on the element and its track's loudness: what the next song is matched to (#460). */
+type HeardLevel = Pick<LevelRead, 'volume' | 'loudnessDb'>
+
+/** The element plays at YouTube's own level — its remembered level × the track's loudness factor — not one set on the element alone (#460). */
+const youTubesOwn = (read: LevelRead): boolean =>
+  read.playerVolume !== null && Math.abs(read.volume - read.playerVolume * loudnessFactor(read.loudnessDb)) <= LEVEL_TOLERANCE
 
 const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 const clampVolume = (volume: number): number => Math.max(0, Math.min(100, Math.round(volume)))
@@ -159,9 +168,9 @@ export function createPlayer(deps: PlayerDeps): Player {
    * (#460): what the next song is matched to — however it was set, the
    * Player's verb, a Media Op, or YouTube's own slider.
    */
-  let heard: { volume: number; loudnessDb: number | null } | null = null
-  /** A song just opened (#460): the level carried into it, until it is heard playing at it. */
-  let carrying: { id: string; from: { volume: number; loudnessDb: number | null } } | null = null
+  let heard: HeardLevel | null = null
+  /** A song just opened (#460): the level carried into it, put back over YouTube's own until the song has played a moment. */
+  let carrying: { id: string; from: HeardLevel } | null = null
   /** The ducks and restores, one after the other. */
   let ducking: Promise<void> = Promise.resolve()
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
@@ -278,13 +287,15 @@ export function createPlayer(deps: PlayerDeps): Player {
   /**
    * The level heard on the song being left, read as the page is left (#460):
    * a Media Op set it on the element alone a moment ago, and the poll may
-   * not have read it yet. While ducked, the level the duck puts back; while
-   * that song's own carried level has not taken yet, the one it carries.
+   * not have read it yet. While ducked, the level the duck puts back. A song
+   * whose carried level YouTube has put its own back over, not yet carried
+   * again, keeps the level it carries.
    */
   async function readLeaving(leaving: Song | null): Promise<void> {
-    if (leaving === null || carrying?.id === leaving.id) return
+    if (leaving === null) return
     const read = await evaluate<LevelRead>(LEVEL_SCRIPT)
     if (read === null || read.id !== leaving.id || read.ad) return
+    if (carrying?.id === leaving.id && ducked === null && youTubesOwn(read)) return
     heard = { volume: ducked?.restore ?? read.volume, loudnessDb: read.loudnessDb }
   }
 
@@ -294,19 +305,19 @@ export function createPlayer(deps: PlayerDeps): Player {
    * while ducked, the duck then putting it back. Whether the read let it:
    * not off this song's page, nor over an ad.
    */
-  async function carry(read: Pick<LevelRead, 'id' | 'ad' | 'volume' | 'loudnessDb'> | null): Promise<boolean> {
+  async function carry(read: LevelRead | null): Promise<boolean> {
     const to = carrying
     if (to === null || read === null || read.id !== to.id || read.ad) return false
     const level = matchedLevel(to.from.volume, to.from.loudnessDb, read.loudnessDb)
     knownVolume = level
     if (ducked !== null) ducked = { restore: level }
     const want = ducked !== null ? floorOf(level) : level
-    if (Math.abs(read.volume - want) > 0.5) await control({ op: 'level', to: want })
+    if (Math.abs(read.volume - want) > LEVEL_TOLERANCE) await control({ op: 'level', to: want })
     return true
   }
 
   /** Open a song's watch page, leaving `leaving`; the queue moves on to it only when it landed. */
-  async function open(song: Song, current: () => boolean, leaving: Song | null = state.current): Promise<'opened' | 'failed' | 'superseded'> {
+  async function open(song: Song, current: () => boolean, leaving: Song | null): Promise<'opened' | 'failed' | 'superseded'> {
     let landed: boolean | 'elsewhere' | 'superseded'
     try {
       await readLeaving(leaving)
@@ -357,7 +368,7 @@ export function createPlayer(deps: PlayerDeps): Player {
    * opened or failed; one a later Command overtook leaves it as it was.
    */
   async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song)): Promise<PlayerOutcome> {
-    const opened = await open(song, current)
+    const opened = await open(song, current, state.current)
     if (opened === 'superseded') return superseded
     state = then()
     if (opened === 'failed') return failedToOpen(song)
@@ -541,6 +552,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     const element = await control(op)
     if (element === null || !element.found) return { result: 'no video on the page', answer: 'Nothing is playing.', failure: true }
     if (ducked === null) knownVolume = element.volume
+    // A level the person set (#460): YouTube's own from here, never the carried one put back over it.
+    if (op.op === 'volume' || op.op === 'nudge') carrying = null
     muted = element.muted
     state = then(state)
     return { result: `${op.op}: paused=${element.paused} loop=${element.loop} volume=${element.volume} muted=${element.muted}`, answer: answer(element) }
@@ -580,14 +593,14 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (song === null || status.id !== song.id || !status.hasVideo || status.ad) return
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
-    if (carrying?.id === song.id) {
-      // YouTube may put its own level back as the song starts (#460): carried again until it is heard playing at it.
-      await carry(status)
-      if (status.elapsed >= CARRIED_S) carrying = null
-    } else if (ducked === null) {
+    const opening = carrying?.id === song.id
+    // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since.
+    if (opening && youTubesOwn(status)) await carry(status)
+    else if (ducked === null) {
       knownVolume = status.volume
       heard = { volume: status.volume, loudnessDb: status.loudnessDb }
     } else if (status.volume > floorOf(ducked.restore)) await control({ op: 'level', to: floorOf(ducked.restore) })
+    if (opening && status.elapsed >= CARRIED_S) carrying = null
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes.
     if (status.paused && !state.paused && status.prompt) await evaluate<boolean>(CONTINUE_SCRIPT)
   }
