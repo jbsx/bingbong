@@ -101,6 +101,9 @@ export const capLine = (memory: ErrandMemory): string => `${doneSoFar(memory)} R
 /** The Planner gone, or past its 30 s (#467): that, then done so far. */
 export const unavailableLine = (memory: ErrandMemory): string => `The planner did not answer. ${doneSoFar(memory)}`
 
+/** A step that broke (#467): what happened, then done so far — never silence. */
+export const faultLine = (memory: ErrandMemory): string => `That stopped on an error. ${doneSoFar(memory)}`
+
 /** The question back let go (#467): the question again, then that the Errand ends there. */
 export function unansweredLine(question: string): string {
   const asked = question.trim()

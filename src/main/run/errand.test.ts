@@ -168,6 +168,20 @@ describe('runErrand (#467): the Errand loop', () => {
     expect(w.asked[1]!.memory.steps[0]!.outcome).toBe('refused: click-99 is not on the card')
   })
 
+  it('a step that throws ends the Errand aloud and on the record, never in silence', async () => {
+    const w = world([typeComment, clickComment])
+    let cards = 0
+    const card = w.deps.card
+    w.deps.card = async (...args) => {
+      cards += 1
+      if (cards === 2) throw new Error('the page went away')
+      return card(...args)
+    }
+    expect(await runErrand(w.deps, w.start)).toBe('unavailable')
+    expect(w.said).toEqual([{ text: 'That stopped on an error. Done so far: typed into “Add a comment…”.', failure: true }])
+    expect(w.records[0]).toMatchObject({ outcome: 'unavailable', said: 'That stopped on an error. Done so far: typed into “Add a comment…”.' })
+  })
+
   it('a later line ends it at once, saying nothing', async () => {
     const w = world([typeComment, clickComment])
     w.deps.act = async (_turnId, _why, command) => {

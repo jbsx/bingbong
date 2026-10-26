@@ -3,10 +3,11 @@ import type { ErrandRecord } from '../../core/command/decisionRecord'
 import type { AppState } from '../../core/command/appOp'
 import { confirmLine, confirmOf, isYes, type Typed } from '../../core/errand/confirmClass'
 import { errandClock, type ErrandClock } from '../../core/errand/errandClock'
-import { askedStep, capLine, confirmStep, errandMemory, plannerMemoryOf, unansweredLine, unavailableLine, withCapture, withCard, withStep, type ErrandMemory, type ErrandStep, type TaskHandOff } from '../../core/errand/errandMemory'
+import { askedStep, capLine, confirmStep, errandMemory, faultLine, plannerMemoryOf, unansweredLine, unavailableLine, withCapture, withCard, withStep, type ErrandMemory, type ErrandStep, type TaskHandOff } from '../../core/errand/errandMemory'
 import { errandVerbs, resolveAction, type ErrandCard } from '../../core/errand/plannerCommand'
 import { plannerStepSpan, type ErrandOutcome, type PlannerStepDetail } from '../../core/planner/plannerSpan'
 import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
+import { reportFault } from '../../core/trace/fault'
 
 // The Errand loop (#467, ADR 0095): one spoken outcome carried across as
 // many steps as it takes, under the Planner. Each step the card is built
@@ -138,88 +139,93 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     }
   }
 
-  for (let step = 1; ; step += 1) {
-    if (deps.superseded()) return end('superseded')
-    if (clock.spent()) return ending('cap', capLine(memory), true)
-    const turnId = deps.mintTurnId()
-    const began = clock.elapsed()
-    deps.planning(turnId, step)
-    openTurn = turnId
-    const card = await deps.card(start.goalLine, step, visited)
-    if (deps.superseded()) return end('superseded')
-    if (visited.at(-1) !== card.page.url && card.page.url !== '') visited.push(card.page.url)
-    memory = withCard(memory, card.text)
-    // The call's own cap, or what is left of the Errand's: whichever comes first is the call's end.
-    const budget = AbortSignal.timeout(Math.max(1, clock.callBudget()))
-    const result = await planner.plan({
-      goalLine: start.goalLine,
-      memory: plannerMemoryOf(memory),
-      page: { url: card.page.url, title: card.page.title },
-      verbs: errandVerbs(card),
-      signal: AbortSignal.any([deps.signal, budget]),
-    })
-    deps.stepSpan(turnId, result.status === 'answered' ? plannerStepSpan(result, result.answer.next) : plannerStepSpan(result, 'unavailable', budget.aborted && result.reason === 'cancelled' ? 'timeout' : result.reason))
-    if (deps.superseded()) return end('superseded')
-    if (result.status === 'unavailable') {
+  try {
+    for (let step = 1; ; step += 1) {
+      if (deps.superseded()) return end('superseded')
       if (clock.spent()) return ending('cap', capLine(memory), true)
-      // A reply that was none of the answers goes back to the Planner as a step, once: a weaker model's slip is not the Errand's end.
-      if ((result.reason === 'malformed' || result.reason === 'unparsable') && !slipped) {
-        slipped = true
-        memory = withStep(memory, { why: 'your last reply', action: 'a reply that was none of the answers', class: 'stays', outcome: `refused: ${result.message}`, seconds: since(began) })
+      const turnId = deps.mintTurnId()
+      const began = clock.elapsed()
+      deps.planning(turnId, step)
+      openTurn = turnId
+      const card = await deps.card(start.goalLine, step, visited)
+      if (deps.superseded()) return end('superseded')
+      if (visited.at(-1) !== card.page.url && card.page.url !== '') visited.push(card.page.url)
+      memory = withCard(memory, card.text)
+      // The call's own cap, or what is left of the Errand's: whichever comes first is the call's end.
+      const budget = AbortSignal.timeout(Math.max(1, clock.callBudget()))
+      const result = await planner.plan({
+        goalLine: start.goalLine,
+        memory: plannerMemoryOf(memory),
+        page: { url: card.page.url, title: card.page.title },
+        verbs: errandVerbs(card),
+        signal: AbortSignal.any([deps.signal, budget]),
+      })
+      deps.stepSpan(turnId, result.status === 'answered' ? plannerStepSpan(result, result.answer.next) : plannerStepSpan(result, 'unavailable', budget.aborted && result.reason === 'cancelled' ? 'timeout' : result.reason))
+      if (deps.superseded()) return end('superseded')
+      if (result.status === 'unavailable') {
+        if (clock.spent()) return ending('cap', capLine(memory), true)
+        // A reply that was none of the answers goes back to the Planner as a step, once: a weaker model's slip is not the Errand's end.
+        if ((result.reason === 'malformed' || result.reason === 'unparsable') && !slipped) {
+          slipped = true
+          memory = withStep(memory, { why: 'your last reply', action: 'a reply that was none of the answers', class: 'stays', outcome: `refused: ${result.message}`, seconds: since(began) })
+          close()
+          continue
+        }
+        return ending('unavailable', unavailableLine(memory), true)
+      }
+      slipped = false
+      const { answer } = result
+      if (answer.next === 'done') return ending('done', answer.sentence, false)
+      if (answer.next === 'ask') {
         close()
+        const reply = await askPerson(answer.question, 'question')
+        if (deps.superseded()) return end('superseded')
+        if (reply === null) return ending('unsure', unansweredLine(answer.question), true)
+        memory = withStep(memory, askedStep(answer.question, reply, since(began)))
         continue
       }
-      return ending('unavailable', unavailableLine(memory), true)
-    }
-    slipped = false
-    const { answer } = result
-    if (answer.next === 'done') return ending('done', answer.sentence, false)
-    if (answer.next === 'ask') {
-      close()
-      const reply = await askPerson(answer.question, 'question')
-      if (deps.superseded()) return end('superseded')
-      if (reply === null) return ending('unsure', unansweredLine(answer.question), true)
-      memory = withStep(memory, askedStep(answer.question, reply, since(began)))
-      continue
-    }
-    const why = answer.why || JSON.stringify(answer.action)
-    const resolved = resolveAction(answer.action, card, deps.app?.())
-    // Each of these ends the step's turn itself.
-    openTurn = null
-    if (resolved.kind === 'refused') {
-      deps.drop(turnId, why, `refused: ${resolved.reason}`, step)
-      memory = withStep(memory, { why, action: JSON.stringify(answer.action), class: answer.class, outcome: `refused: ${resolved.reason}`, seconds: since(began) })
-      continue
-    }
-    if (resolved.kind === 'read') {
-      const text = await deps.readPart(turnId, why, resolved.part, step)
-      if (deps.superseded()) return end('superseded')
-      const outcome = text === null ? `part ${resolved.part} could not be read` : text.length > READ_PART_CHARS ? `${text.slice(0, READ_PART_CHARS)}…` : text
-      memory = withStep(memory, { why, action: `read part ${resolved.part} of the page's text`, class: 'stays', outcome, seconds: since(began) })
-      continue
-    }
-    const { command } = resolved
-    const action = describeCommand(command, card.page)
-    // What was typed on another page is no longer what an Enter or a send carries away.
-    const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed: typed?.url === card.page.url ? typed : null })
-    const stepClass = confirm === null ? 'stays' : 'leaves'
-    if (confirm !== null) {
-      // The confirm class (#467): said back by the Site Question's road, answered by the next line; only a yes fires it.
-      const reply = await askPerson(confirmLine(confirm), 'confirm')
-      if (deps.superseded()) return end('superseded')
-      const yes = reply !== null && isYes(reply)
-      memory = withStep(memory, confirmStep(confirm, reply, yes, since(began)))
-      if (!yes) {
-        deps.drop(turnId, why, `not done: ${reply === null ? 'no answer' : 'the answer was not yes'}`, step)
+      const why = answer.why || JSON.stringify(answer.action)
+      const resolved = resolveAction(answer.action, card, deps.app?.())
+      // Each of these ends the step's turn itself.
+      openTurn = null
+      if (resolved.kind === 'refused') {
+        deps.drop(turnId, why, `refused: ${resolved.reason}`, step)
+        memory = withStep(memory, { why, action: JSON.stringify(answer.action), class: answer.class, outcome: `refused: ${resolved.reason}`, seconds: since(began) })
         continue
       }
+      if (resolved.kind === 'read') {
+        const text = await deps.readPart(turnId, why, resolved.part, step)
+        if (deps.superseded()) return end('superseded')
+        const outcome = text === null ? `part ${resolved.part} could not be read` : text.length > READ_PART_CHARS ? `${text.slice(0, READ_PART_CHARS)}…` : text
+        memory = withStep(memory, { why, action: `read part ${resolved.part} of the page's text`, class: 'stays', outcome, seconds: since(began) })
+        continue
+      }
+      const { command } = resolved
+      const action = describeCommand(command, card.page)
+      // What was typed on another page is no longer what an Enter or a send carries away.
+      const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed: typed?.url === card.page.url ? typed : null })
+      const stepClass = confirm === null ? 'stays' : 'leaves'
+      if (confirm !== null) {
+        // The confirm class (#467): said back by the Site Question's road, answered by the next line; only a yes fires it.
+        const reply = await askPerson(confirmLine(confirm), 'confirm')
+        if (deps.superseded()) return end('superseded')
+        const yes = reply !== null && isYes(reply)
+        memory = withStep(memory, confirmStep(confirm, reply, yes, since(began)))
+        if (!yes) {
+          deps.drop(turnId, why, `not done: ${reply === null ? 'no answer' : 'the answer was not yes'}`, step)
+          continue
+        }
+      }
+      const acted = await deps.act(turnId, why, command, card, step)
+      if (acted.superseded || deps.superseded()) return end('superseded')
+      const done: ErrandStep = { why, action, class: stepClass, outcome: acted.outcome, ...(acted.said !== undefined ? { said: acted.said } : {}), seconds: since(began) }
+      memory = withStep(memory, done)
+      if (acted.capture !== undefined) memory = withCapture(memory, acted.capture)
+      if (command.verb === 'type' && command.slot !== null) typed = { text: command.slot, into: targetLabel(command, card.page), url: card.page.url }
     }
-    const acted = await deps.act(turnId, why, command, card, step)
-    if (acted.superseded || deps.superseded()) return end('superseded')
-    const done: ErrandStep = { why, action, class: stepClass, outcome: acted.outcome, ...(acted.said !== undefined ? { said: acted.said } : {}), seconds: since(began) }
-    memory = withStep(memory, done)
-    if (acted.capture !== undefined) memory = withCapture(memory, acted.capture)
-    if (command.verb === 'type' && command.slot !== null) typed = { text: command.slot, into: targetLabel(command, card.page), url: card.page.url }
+  } catch (error) {
+    // A step that threw ends the Errand aloud and on the record, never in silence: the card, the action or the reading broke.
+    reportFault('run.errand.step', error)
+    return ending('unavailable', faultLine(memory), true)
   }
 }
-

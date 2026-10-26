@@ -270,7 +270,7 @@ function heard(output: string): { said: string[]; asked: string[] } {
 /** The app of the case running now, so a run past its bound can be killed. */
 let liveApp: LaunchedApp | null = null
 
-async function runCase(goal: GoalCase, plannerModel: string | undefined): Promise<{ run: GoalRun; records: unknown[]; limited: number }> {
+async function runCase(goal: GoalCase, plannerModel: string | undefined): Promise<{ run: GoalRun; records: unknown[]; limited: number; output: string }> {
   const boundS = errandArm ? ERRAND_RUN_BOUND_S : GOAL_RUN_BOUND_S
   const profile = mkdtempSync(join(tmpdir(), 'bingbong-goal-gate-'))
   const shelf = join(profile, 'shelf')
@@ -339,7 +339,8 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
       timedOut: !finished,
       ...(boundS !== GOAL_RUN_BOUND_S ? { boundS } : {}),
     }
-    return { run, records: task.records, limited: task.limited }
+    // What the harness printed for the line, kept beside the run: an `error:` line is otherwise lost with the profile.
+    return { run, records: task.records, limited: task.limited, output: app.stdoutRaw().slice(from).slice(-6_000) }
   } finally {
     liveApp = null
     await app.quit().catch(() => {})
@@ -447,9 +448,9 @@ for (const model of rejudge !== undefined ? [] : models.length === 0 ? [undefine
           ran = await runBounded(goal, model)
         }
         limited += ran.limited
-        const { run, records } = ran
+        const { run, records, output } = ran
         score = await judge(judgeChat, run)
-        if (keep !== undefined) writeFileSync(join(keep, `${goal.id}${model === undefined ? '' : `-${model}`}-${n}.json`), `${JSON.stringify({ run, score, records }, null, 2)}\n`)
+        if (keep !== undefined) writeFileSync(join(keep, `${goal.id}${model === undefined ? '' : `-${model}`}-${n}.json`), `${JSON.stringify({ run, score, records, output }, null, 2)}\n`)
       } catch (error) {
         score = { verdict: null, why: `run failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`, seconds: null, ended: null }
       }
