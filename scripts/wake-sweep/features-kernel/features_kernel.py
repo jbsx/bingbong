@@ -300,7 +300,8 @@ config = {
     "n_blocks": 1,
     "model_input_shape": [16, 96],
     "n_classes": 1,
-    "batch_n_per_class": {"ACAV100M_sample": 64, "adversarial_negative": 32, "positive": 32},
+    # positive/adversarial/ACAV 32/64/64: the #452 first sweep's winner.
+    "batch_n_per_class": {"ACAV100M_sample": 64, "adversarial_negative": 64, "positive": 32},
     "background_paths": [fma_wav],
     "background_paths_duplication_rate": [1],
     "rir_paths": [rir_dir],

@@ -1,0 +1,8 @@
+{
+  "sweep": "features",
+  "note": "#452 orchestrator ruling 2026-10-26: features made on Kaggle. aug2 is run 3's data settings regenerated, the Kaggle-native control every later data config compares to (and a parity check against the Colab features). aug3 is augmentation_rounds 3, else the same.",
+  "data": [
+    {"name": "aug2", "features": {"job": {"augmentation_rounds": 2}}, "training": "features-grid.json"},
+    {"name": "aug3", "features": {"job": {"augmentation_rounds": 3}}, "training": "features-grid.json"}
+  ]
+}
