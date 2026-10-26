@@ -1,6 +1,7 @@
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { App } from 'electron'
+import { quitFromApp } from './quitBound'
 import {
   GPU_DISABLE_SWITCH,
   gpuDisableRelaunchArgs,
@@ -88,7 +89,7 @@ export function attachGpuStability(deps: GpuStabilityDeps): void {
       log('[gpu] GPU crash loop — relaunching with hardware acceleration disabled')
       reportFault('app.attachGpuStability.crashLoopRelaunch', 'GPU crash loop — relaunching with hardware acceleration disabled')
       deps.app.relaunch({ args: gpuDisableRelaunchArgs(deps.argv) })
-      deps.app.quit()
+      quitFromApp(deps.app)
     }
   })
 }

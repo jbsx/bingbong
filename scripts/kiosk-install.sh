@@ -93,6 +93,16 @@ RestartSec=2
 # An update installed at the Idle Screen exits $RELAUNCH_EXIT_CODE: not a failure, and started again.
 SuccessExitStatus=$RELAUNCH_EXIT_CODE
 RestartForceExitStatus=$RELAUNCH_EXIT_CODE
+# A stop is a quit of the app alone (#434). The AppImage runtime beside it
+# serves the app's FUSE mount: a SIGTERM to it at the same moment took the
+# mount from under the quitting app (SIGBUS, a core dump per stop). ExecStop
+# signals the app, waits for it to go, then gives the runtime a second to
+# unmount; KillMode=mixed sends the rest SIGKILL only after that (no dead
+# mount left in /tmp). The app bounds its own quit at 5 s; TimeoutStopSec
+# bounds the whole stop, so nothing waits 90 s.
+ExecStop=/bin/sh -c 'kill -TERM \$MAINPID; while kill -0 \$MAINPID 2>/dev/null; do sleep 0.1; done; sleep 1'
+KillMode=mixed
+TimeoutStopSec=15
 EOF
 systemctl --user daemon-reload
 say "wrote $UNIT_DIR/$SERVICE.service"

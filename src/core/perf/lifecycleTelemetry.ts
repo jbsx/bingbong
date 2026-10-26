@@ -48,6 +48,8 @@ export interface QuitTrace {
   event(step: string): void
   /** Wraps a quit hook so its own time is recorded beside the events. */
   hook<A extends unknown[]>(name: string, fn: (...args: A) => void): (...args: A) => void
+  /** The last step recorded (`hook <name>` for a hook), or null before the quit: what a quit past its bound sat after (#434). */
+  lastStep(): string | null
 }
 
 /**
@@ -57,6 +59,7 @@ export interface QuitTrace {
 export function createQuitTrace(write: (durMs: number, detail: Record<string, unknown>) => void, now: () => number): QuitTrace {
   let askedAt: number | null = null
   const counts = new Map<string, number>()
+  let last: string | null = null
   const since = (at: number): number => Math.round(at - (askedAt ?? at))
   return {
     event(step) {
@@ -64,6 +67,7 @@ export function createQuitTrace(write: (durMs: number, detail: Record<string, un
       askedAt ??= at
       const n = (counts.get(step) ?? 0) + 1
       counts.set(step, n)
+      last = step
       write(0, { step, sinceAskedMs: since(at), ...(n > 1 ? { n } : {}) })
     },
     hook(name, fn) {
@@ -73,10 +77,12 @@ export function createQuitTrace(write: (durMs: number, detail: Record<string, un
           fn(...args)
         } finally {
           const end = now()
+          last = `hook ${name}`
           write(end - start, { step: 'hook', hook: name, sinceAskedMs: since(end) })
         }
       }
     },
+    lastStep: () => last,
   }
 }
 

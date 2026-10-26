@@ -3,6 +3,7 @@ import electronUpdater from 'electron-updater'
 import { reportFault } from '../../core/trace/fault'
 import type { IdleShown } from '../../core/idle/ipcChannels'
 import { createIdleInstall } from './idleInstall'
+import { markQuitFromApp } from '../quitBound'
 
 // The kiosk follows the Releases (#419, ADR 0090): every hour the packaged
 // app asks GitHub for a newer Release of the `production` branch, downloads
@@ -46,6 +47,8 @@ export function attachUpdater(options: { windows(): readonly IdleShown[]; env: R
         event.preventDefault()
         app.exit(RELAUNCH_EXIT_CODE)
       })
+      // The install's quit is the app's own (#434): a hook may take it over, within the quit's bound.
+      markQuitFromApp()
       autoUpdater.quitAndInstall(true, !underSystemd)
     },
   })

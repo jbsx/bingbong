@@ -62,6 +62,7 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
+import { createQuitBound, QUIT_BOUND_MS, quitFromApp, quitIsFromApp } from './quitBound'
 import { attachPlaybackWatch, startBootClock, startCpuSampler, startQuitTrace, trackSurface, writeRunStamp } from './perf/attachAppTelemetry'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { voiceProcessStarter } from './voice/startVoiceProcess'
@@ -210,7 +211,24 @@ const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
 // SIGTERM into this same quit (measured 2026-10-25): a Node signal listener
 // would never run. Node's `exit` comes just before Electron's `quit`.
 const quitTrace = startQuitTrace(perfTracer)
-app.on('before-quit', () => quitTrace.event('before-quit'))
+// The whole quit is bounded (#434): past QUIT_BOUND_MS from the first
+// before-quit the app exits anyway, and the overrun is a fault naming the
+// step it sat after. The kiosk unit's TimeoutStopSec sits above the bound.
+const quitBound = createQuitBound({
+  boundMs: QUIT_BOUND_MS,
+  now: () => performance.now(),
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  exit: (code) => app.exit(code),
+  onPast: (sinceAskedMs) => {
+    const after = quitTrace.lastStep()
+    quitTrace.event('bound-passed')
+    reportFault('app.quitBound', `the quit passed its ${QUIT_BOUND_MS} ms bound after ${sinceAskedMs} ms, at ${after ?? 'no step'}; exiting`)
+  },
+})
+app.on('before-quit', () => {
+  quitTrace.event('before-quit')
+  quitBound.asked()
+})
 app.on('will-quit', () => quitTrace.event('will-quit'))
 app.on('quit', () => quitTrace.event('quit'))
 process.on('exit', () => quitTrace.event('exit'))
@@ -325,10 +343,10 @@ function startCliHarness(runner: CommandRunner, subscribe: (listener: (event: Pi
     subscribe,
     input: process.stdin,
     output: process.stdout,
-    exit: () => app.quit(),
+    exit: () => quitFromApp(app),
   }).catch((err: unknown) => {
     process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
-    app.quit()
+    quitFromApp(app)
   })
 }
 
@@ -732,7 +750,7 @@ app.whenReady().then(async () => {
     },
   })
   registerHostChecksIpc(hostFindings)
-  nightDim = attachNightDim({ settings: settingsStore, idleUp: () => [...idleWindows.values()].some((shown) => shown.up), userDataDir: app.getPath('userData'), env: process.env })
+  nightDim = attachNightDim({ quitIsFromApp, settings: settingsStore, idleUp: () => [...idleWindows.values()].some((shown) => shown.up), userDataDir: app.getPath('userData'), env: process.env })
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The Log Bucket (#418): on a machine that names itself, the logs dir is
@@ -815,5 +833,5 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') quitFromApp(app)
 })

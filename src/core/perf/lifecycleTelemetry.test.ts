@@ -45,12 +45,15 @@ describe('createQuitTrace', () => {
     const scale = quit.hook('scale', () => {
       now += 40
     })
+    expect(quit.lastStep()).toBeNull()
     quit.event('before-quit')
     now += 5_000
     quit.event('before-quit')
     quit.event('will-quit')
     scale()
+    expect(quit.lastStep()).toBe('hook scale')
     quit.event('quit')
+    expect(quit.lastStep()).toBe('quit')
     expect(written).toEqual([
       [0, { step: 'before-quit', sinceAskedMs: 0 }],
       [0, { step: 'before-quit', sinceAskedMs: 5_000, n: 2 }],

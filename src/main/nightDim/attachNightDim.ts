@@ -24,7 +24,14 @@ export interface NightDimGlue {
   idleChanged(): void
 }
 
-export function attachNightDim(options: { settings: SettingsStore; idleUp: () => boolean; userDataDir: string; env: NodeJS.ProcessEnv }): NightDimGlue {
+export function attachNightDim(options: {
+  /** The quit under way was asked by the app's code (#434): only that quit waits for the restore. */
+  quitIsFromApp: () => boolean
+  settings: SettingsStore
+  idleUp: () => boolean
+  userDataDir: string
+  env: NodeJS.ProcessEnv
+}): NightDimGlue {
   const { settings, idleUp } = options
   const send = (dimmed: boolean): void => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -52,11 +59,14 @@ export function attachNightDim(options: { settings: SettingsStore; idleUp: () =>
   settings.subscribe(update)
   const tick = setInterval(update, TICK_MS)
 
-  // Quitting at night puts the day level back first; each call is bounded, so the quit is too.
+  // The app's own quit at night puts the day level back first; each call is
+  // bounded, and so is the whole quit (quitBound.ts). A quit from the OS (a
+  // systemd stop) is never taken over (#434): the recovery record puts the
+  // level back at the next boot.
   let restoredForQuit = false
   app.on('before-quit', (event) => {
     clearInterval(tick)
-    if (restoredForQuit || (!dim.dimmed() && !dim.busy())) return
+    if (!options.quitIsFromApp() || restoredForQuit || (!dim.dimmed() && !dim.busy())) return
     event.preventDefault()
     dim
       .restore()

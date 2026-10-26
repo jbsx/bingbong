@@ -109,9 +109,13 @@ describe('night dim monitor e2e', () => {
     expect(JSON.parse(await readFile(join(userDataDir, 'night-dim.json'), 'utf8'))).toEqual({ ...PANEL, backlight: 'intel_backlight', dayLevel: 96000 })
   })
 
-  it('restores the day level when the app quits at night', async () => {
+  // Only the app's own quit waits for the restore (#434): the window closing
+  // is one. A quit from the OS (systemd's SIGTERM) leaves it to the next boot.
+  it('restores the day level when the app quits itself at night', async () => {
     const since = (await calls()).length
     quit = true
+    await harness.dashboardEval('window.close()').catch(() => {})
+    await callsEnd(since, ['backlight set intel_backlight 96000'])
     await harness.quit()
     expect((await calls()).slice(since)).toEqual(['backlight set intel_backlight 96000'])
     expect(existsSync(join(userDataDir, 'night-dim.json'))).toBe(false)

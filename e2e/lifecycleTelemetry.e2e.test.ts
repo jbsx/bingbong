@@ -1,8 +1,10 @@
+import { appendFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildAppReport, formatAppReport } from '../src/core/perf/appTelemetry'
+import { QUIT_BOUND_MS } from '../src/main/quitBound'
 import type { PerfSpanRecord } from '../src/core/perf/perfTracer'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
@@ -62,11 +64,20 @@ describe('lifecycle telemetry e2e (#429)', () => {
     expect(detail.longTasks).toEqual({ dashboard: { count: expect.any(Number), ms: expect.any(Number) }, pane: expect.anything() })
   }, 40000)
 
-  it('leaves every quit step to the exit, and the report prints them', async () => {
-    await harness!.quit()
+  // The kiosk's road (#434): systemd's stop is a SIGTERM to the app, which
+  // Electron turns into the ordinary quit; it reaches `exit` within the bound.
+  it('leaves every quit step to the exit on a SIGTERM, within the quit bound, and the report prints them', async () => {
+    const askedAt = Date.now()
+    await harness!.quit({ signal: 'SIGTERM' })
+    const wallMs = Date.now() - askedAt
     harness = null
     const records = await appRecords(userDataDir)
-    const steps = records.filter((r) => r.stage === 'quit').map((r) => (r.detail?.step === 'hook' ? `hook ${String(r.detail.hook)}` : String(r.detail?.step)))
+    const quitRecords = records.filter((r) => r.stage === 'quit')
+    if (process.env.BINGBONG_QUIT_MEASURE) appendFileSync(process.env.BINGBONG_QUIT_MEASURE, `[quit] SIGTERM to process exit ${wallMs} ms; steps ${quitRecords.map((r) => `${r.detail?.step === 'hook' ? `hook ${String(r.detail.hook)} ${r.durMs.toFixed(1)}ms` : String(r.detail?.step)} +${String(r.detail?.sinceAskedMs)}`).join(', ')}\n`)
+    expect(quitRecords.map((r) => r.detail?.step)).not.toContain('bound-passed')
+    expect(Number(quitRecords.at(-1)?.detail?.sinceAskedMs)).toBeLessThan(QUIT_BOUND_MS)
+    expect(wallMs).toBeLessThan(QUIT_BOUND_MS)
+    const steps = quitRecords.map((r) => (r.detail?.step === 'hook' ? `hook ${String(r.detail.hook)}` : String(r.detail?.step)))
     expect(steps[0]).toBe('before-quit')
     // Electron runs Node's `exit` before its own `quit` event: those two close the quit.
     expect(steps.slice(1, -2)).toEqual(expect.arrayContaining(['will-quit', 'hook cpu-sampler', 'hook scale', 'hook adblock']))

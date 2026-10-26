@@ -17,7 +17,8 @@ export interface LaunchedApp {
   stdoutText(): string
   /** The most recent stderr, bounded at {@link STDERR_LIMIT} characters. */
   stderrTail(): string
-  quit(): Promise<void>
+  /** Quits through CDP's Browser.close, or by `signal` sent to the app (a SIGTERM is a systemd stop, #434). */
+  quit(options?: { signal?: NodeJS.Signals }): Promise<void>
 }
 
 export interface LaunchOptions {
@@ -153,9 +154,10 @@ export async function launchApp({
         ),
       stdoutLineCount: () => stdoutLines.length,
       stdoutText: () => stdoutLines.join('\n'),
-      async quit() {
+      async quit(options) {
         // Browser.close often never replies — the browser process exits first.
-        cdp.send('Browser.close').catch(() => {})
+        if (options?.signal) proc.kill(options.signal)
+        else cdp.send('Browser.close').catch(() => {})
         const outcome = await Promise.race([
           exited.then(() => 'exited' as const),
           sleep(10000).then(() => 'timeout' as const),

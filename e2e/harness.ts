@@ -81,7 +81,8 @@ export interface Harness {
   focusPane(): Promise<void>
   /** The app's most recent stderr (bounded) — what a launch failure or a capture retains. */
   stderrTail(): string
-  quit(): Promise<void>
+  /** Quits through CDP's Browser.close, or by `signal` sent to the app (a SIGTERM is a systemd stop, #434). */
+  quit(options?: { signal?: NodeJS.Signals }): Promise<void>
 }
 
 /** One real keypress: DOM `key`, plus the CDP fields optional keys need. */
@@ -269,9 +270,9 @@ export async function startHarness(
     startupTimeoutMs: options?.startupTimeoutMs,
     env: productionDefaults ? { ...options?.env } : { ...hermeticEnvTemplate(fixture, userDataDir), ...options?.env },
   })
-  const teardown = async () => {
+  const teardown = async (quitOptions?: { signal?: NodeJS.Signals }) => {
     try {
-      await app.quit()
+      await app.quit(quitOptions)
     } finally {
       if (ownsFixture) await fixture.close().catch(() => {})
       if (ownsUserDataDir) await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
@@ -289,7 +290,7 @@ async function buildHarness(
   app: LaunchedApp,
   fixture: FixtureServer,
   userDataDir: string,
-  teardown: () => Promise<void>,
+  teardown: (options?: { signal?: NodeJS.Signals }) => Promise<void>,
   wakeFromBootIdle: boolean,
   startupTimeoutMs = 15000,
 ): Promise<Harness> {
