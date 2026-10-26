@@ -1,11 +1,11 @@
-import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { appProcesses, cpuTicks, percentOfCore } from './processCpu'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
@@ -21,43 +21,7 @@ import { waitFor } from './waitFor'
 // The numbers (% of one core, by process type) land in the file the variable names.
 
 const out = process.env.BINGBONG_IDLE_CPU
-const USER_HZ = 100
 const SAMPLE_S = 20
-
-/** The app's processes, as every Electron process under this test's own: Chromium's sandboxed children hide their environ. */
-function appProcesses(): Map<number, string> {
-  const rows = execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' })
-    .trim()
-    .split('\n')
-    .map((line) => {
-      const [, pid, ppid, args] = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)!
-      return { pid: Number(pid), ppid: Number(ppid), args }
-    })
-  const ours = new Set([process.pid])
-  for (let grew = true; grew; ) {
-    grew = false
-    for (const row of rows)
-      if (ours.has(row.ppid) && !ours.has(row.pid)) {
-        ours.add(row.pid)
-        grew = true
-      }
-  }
-  const processes = new Map<number, string>()
-  for (const row of rows) {
-    if (!ours.has(row.pid) || !row.args.includes('electron')) continue
-    const type = row.args.match(/--type=(\S+)/)?.[1] ?? 'browser'
-    const sub = row.args.match(/--utility-sub-type=(\S+)/)?.[1]
-    processes.set(row.pid, sub ? `${type}:${sub}` : type)
-  }
-  return processes
-}
-
-async function cpuTicks(pid: number): Promise<number> {
-  const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '')
-  if (stat === '') return 0
-  const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
-  return Number(fields[11]) + Number(fields[12])
-}
 
 describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
   let harness: Harness
@@ -74,8 +38,8 @@ describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
     const row: Record<string, number> = {}
     let total = 0
     for (const [pid, type] of processes) {
-      const percent = (((await cpuTicks(pid)) - before.get(pid)!) / USER_HZ / SAMPLE_S) * 100
-      if (percent >= 0.1) row[`${type}#${pid}`] = Math.round(percent * 10) / 10
+      const percent = percentOfCore((await cpuTicks(pid)) - before.get(pid)!, SAMPLE_S)
+      if (percent >= 0.1) row[`${type}#${pid}`] = percent
       total += percent
     }
     row.total = Math.round(total * 10) / 10

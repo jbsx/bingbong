@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
-import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
 import { reportRendererFault } from './diagnostics'
-
-const TARGET_RATE = 16000
-const FRAME = VAD_FRAME_SAMPLES
-const FRAMES_PER_CHUNK = 4
+import { openMicCapture } from './micCapture'
 
 export interface VoiceApi {
   /** True while the main-process session accepts mic audio (hotkey or confirmation window). */
@@ -45,8 +41,9 @@ async function preferC920(micId: string): Promise<string> {
  * main-process session, and the mic opens whenever the session says it is
  * listening — for the hotkey or the wake word. With wake monitoring enabled the mic simply stays
  * open: the session endpoints an utterance after each activation, then falls
- * back to listening for the wake word. The AudioContext resamples to 16 kHz;
- * the worklet downmixes to mono and whole 512-sample frames go over IPC.
+ * back to listening for the wake word. The capture graph is `openMicCapture`
+ * (micCapture.ts): a 16 kHz context with no output device, a worklet that
+ * downmixes to mono, and whole 512-sample frames over IPC.
  */
 export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
@@ -74,52 +71,14 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     startingRef.current = true
     try {
       const micId = await preferC920(depsRef.current.getMicId())
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          ...(micId === 'default' || micId === '' ? {} : { deviceId: { exact: micId } }),
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+      captureRef.current = await openMicCapture(micId, {
+        getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+        createContext: (options) => new AudioContext(options),
+        createWorkletNode: (context, name) => new AudioWorkletNode(context, name),
+        workletUrl: new URL('./micCaptureWorklet.js', import.meta.url),
+        send: (samples) => window.bingbong.voice.sendAudio(samples),
+        onFault: reportRendererFault,
       })
-      const context = new AudioContext({ sampleRate: TARGET_RATE })
-      try {
-        await context.audioWorklet.addModule(new URL('./micCaptureWorklet.js', import.meta.url))
-      } catch (error) {
-        reportRendererFault('voice.audioWorklet.addModule', error)
-        stream.getTracks().forEach((track) => track.stop())
-        await context.close()
-        throw new Error('mic capture worklet failed to load')
-      }
-      const source = context.createMediaStreamSource(stream)
-      const node = new AudioWorkletNode(context, 'bingbong-capture')
-      source.connect(node)
-
-      // Buffer whole frames so IPC chunks are always a multiple of 512 samples.
-      let carry = new Float32Array(0)
-      node.port.onmessage = (event: MessageEvent<Float32Array>) => {
-        const merged = new Float32Array(carry.length + event.data.length)
-        merged.set(carry)
-        merged.set(event.data, carry.length)
-        const frames = Math.floor(merged.length / FRAME)
-        if (frames >= FRAMES_PER_CHUNK) {
-          const send = frames * FRAME
-          window.bingbong.voice.sendAudio(merged.subarray(0, send))
-          carry = merged.slice(send)
-        } else {
-          carry = merged
-        }
-      }
-
-      captureRef.current = {
-        stop: () => {
-          node.port.onmessage = null
-          source.disconnect()
-          node.disconnect()
-          stream.getTracks().forEach((track) => track.stop())
-          void context.close()
-        },
-      }
     } catch (err) {
       // The one renderer→history call the app had (#187): a mic failure
       // is a swallowed failure like any other, so it now takes the
