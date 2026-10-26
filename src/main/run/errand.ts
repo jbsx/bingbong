@@ -80,7 +80,7 @@ export interface ErrandStart {
   readonly handOff?: TaskHandOff
 }
 
-/** How much of a page's text one read puts in the memory. */
+/** How much of a page's text one read puts in the memory. A guess (#467): no span yet says what a Planner reads well. */
 const READ_PART_CHARS = 6_000
 
 export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<ErrandOutcome> {
@@ -98,7 +98,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
     openTurn = null
   }
   let said: string | undefined
-  /** Whether the last reply was none of the answers: a second in a row ends the Errand. */
+  /** Whether the last reply was none of the answers: a second in a row ends the Errand. One retry is a guess (#467), unmeasured. */
   let slipped = false
 
   const end = (outcome: ErrandOutcome): ErrandOutcome => {
