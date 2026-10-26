@@ -188,7 +188,7 @@ describe('the ledger folder', () => {
   })
 
   it('refuses an unknown stage, a bad claim, a new entry missing a line, a turn the logs do not hold, and a file that is not an entry', () => {
-    expect(addFailedLine(logs, dir, 't1', { stage: 'vibes', happened: 'h', meant: 'm' })).toEqual({ error: '"vibes" is not a stage: stt, turn, local_match, reading, missing_option, runner, player or page' })
+    expect(addFailedLine(logs, dir, 't1', { stage: 'vibes', happened: 'h', meant: 'm' })).toEqual({ error: '"vibes" is not a stage: stt, turn, local_match, reading, missing_option, runner, player, page or goal' })
     expect(addFailedLine(logs, dir, 't1', { stage: 'stt', happened: 'h', meant: 'm', claimedBy: '371' })).toEqual({ error: '"371" is not #<issue>' })
     expect(addFailedLine(logs, dir, 't1', { stage: 'stt', happened: 'h' })).toEqual({ error: 'no entry for t1 yet: --stage, --happened and --meant are needed' })
     expect(addFailedLine(logs, dir, 't9', { stage: 'stt', happened: 'h', meant: 'm' })).toEqual({ error: `no decision record for t9 in ${logs}` })

@@ -14,9 +14,11 @@
  * transcript; the turn split; the Local Match; Jev's reading (a wrong pick
  * among options that existed); a missing option (no Appliance Verb, op or
  * verb could do it); the runner's hop policy (cap, unchanged, undo,
- * Verdict); the Player; the page itself (a stale label, late hydration).
+ * Verdict); the Player; the page itself (a stale label, late hydration);
+ * and a Goal Line (#465, ADR 0095) no Task or Errand carried to what was
+ * meant, so the goal corpus grows from use.
  */
-export const FAILED_LINE_STAGES = ['stt', 'turn', 'local_match', 'reading', 'missing_option', 'runner', 'player', 'page'] as const
+export const FAILED_LINE_STAGES = ['stt', 'turn', 'local_match', 'reading', 'missing_option', 'runner', 'player', 'page', 'goal'] as const
 export type FailedLineStage = (typeof FAILED_LINE_STAGES)[number]
 
 export const STAGE_MEANING: Readonly<Record<FailedLineStage, string>> = {
@@ -28,6 +30,7 @@ export const STAGE_MEANING: Readonly<Record<FailedLineStage, string>> = {
   runner: 'the hop policy: the cap, unchanged, undo, the Verdict, what was said',
   player: 'the Player did the wrong thing with the right op',
   page: 'the page itself: a stale label, late hydration, a wall',
+  goal: 'a Goal Line no Task or Errand carried to what was meant',
 }
 
 export interface FailedLine {

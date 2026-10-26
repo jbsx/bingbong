@@ -14,7 +14,8 @@ words said), `turn` (the Utterance cut or joined wrong), `local_match`
 wrong among options that existed), `missing_option` (no Appliance Verb, op or
 verb could do it), `runner` (the hop policy: cap, unchanged, undo, the
 Verdict, what was said), `player`, `page` (a stale label, late
-hydration, a wall).
+hydration, a wall), `goal` (a Goal Line no Task or Errand carried to
+what was meant, #465; these grow `fixtures/goal-cases/` from use).
 
 - `pnpm bugs` prints the ledger: a count per stage, then every line under
   its stage, open and unclaimed first.

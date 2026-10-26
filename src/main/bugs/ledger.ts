@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isStage, readFailedLine, whenOf, type FailedLine, type FailedLineStage } from '../../core/bugs/failedLine.ts'
+import { FAILED_LINE_STAGES, isStage, readFailedLine, whenOf, type FailedLine, type FailedLineStage } from '../../core/bugs/failedLine.ts'
 import type { CommandLogRecord, DecisionRecord, FlagRecord, MisfireSignal, TaskEnded } from '../../core/command/decisionRecord'
 import { toErrorMessage } from '../../core/errors.ts'
 import { reportFault } from '../../core/trace/fault.ts'
@@ -219,7 +219,7 @@ export interface FailedLineFields {
  * An update takes any field. Nothing is written for an unknown stage.
  */
 export function addFailedLine(logsDir: string, dir: string, turnId: string, fields: FailedLineFields): { path: string; replaced: boolean } | { error: string } {
-  if (fields.stage !== undefined && !isStage(fields.stage)) return { error: `"${fields.stage}" is not a stage: stt, turn, local_match, reading, missing_option, runner, player or page` }
+  if (fields.stage !== undefined && !isStage(fields.stage)) return { error: `"${fields.stage}" is not a stage: ${FAILED_LINE_STAGES.slice(0, -1).join(', ')} or ${FAILED_LINE_STAGES.at(-1)}` }
   if (fields.claimedBy !== undefined && !/^#\d+$/.test(fields.claimedBy)) return { error: `"${fields.claimedBy}" is not #<issue>` }
   const path = join(dir, `${turnId}.json`)
   const existing = readLedger(dir).find((entry) => entry.name === turnId)

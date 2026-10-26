@@ -31,6 +31,14 @@ read the copy and the shot, then `bugs:add <taskId> --stage <s> --meant
 "…"` — the hint stands for `--happened` when none is given, and the copy
 stands for the decision log once that has rolled away.
 
+## Goal Lines
+
+A Goal Line (CONTEXT.md) that no Task or Errand carried to what was meant
+takes the stage `goal` (#465, ADR 0095), whatever stage under it broke
+first: the line is the unit, and the goal corpus (`fixtures/goal-cases/`,
+run by `pnpm goal:gate`) grows from these entries, each promoted by hand
+with its `start` and `meant`.
+
 ## After a post mortem
 
 End it by adding its failed lines to the ledger, one `bugs:add` per line,

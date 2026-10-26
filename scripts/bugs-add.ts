@@ -17,7 +17,7 @@
 import { FAILED_LINES_DIR, addFailedLine, type FailedLineFields } from '../src/main/bugs/ledger.ts'
 import { resolvePerfLogsDir } from '../src/main/perf/collectPerfRecords.ts'
 
-const USAGE = 'usage: pnpm bugs:add <turnId> [--stage stt|turn|local_match|reading|missing_option|runner|player|page] [--happened "…"] [--meant "…"] [--claimed #NNN] [--fixed <sha>] [--case <name>] [--ruled "…"] [--logs <dir>] [--ledger <dir>]'
+const USAGE = 'usage: pnpm bugs:add <turnId> [--stage stt|turn|local_match|reading|missing_option|runner|player|page|goal] [--happened "…"] [--meant "…"] [--claimed #NNN] [--fixed <sha>] [--case <name>] [--ruled "…"] [--logs <dir>] [--ledger <dir>]'
 
 const FLAGS: Readonly<Record<string, keyof FailedLineFields | 'logs' | 'ledger'>> = {
   '--stage': 'stage',

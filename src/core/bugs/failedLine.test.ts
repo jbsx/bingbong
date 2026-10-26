@@ -29,7 +29,7 @@ describe('readFailedLine', () => {
     [{ ...line({ turnId: 't1' }), meant: 3 }, 'meant is not a non-empty string'],
     [{ ...line({ turnId: 't1' }), at: 'now' }, 'at is not a number'],
     [{ ...line({ turnId: 't1' }), source: 'sung' }, 'source is not spoken or typed'],
-    [{ ...line({ turnId: 't1' }), stage: 'vibes' }, 'stage is not one of stt, turn, local_match, reading, missing_option, runner, player, page'],
+    [{ ...line({ turnId: 't1' }), stage: 'vibes' }, 'stage is not one of stt, turn, local_match, reading, missing_option, runner, player, page, goal'],
     [{ ...line({ turnId: 't1' }), claimedBy: '371' }, 'claimedBy is not #<issue>'],
     [{ ...line({ turnId: 't1' }), fixedBy: '' }, 'fixedBy is not a non-empty string'],
     ['a string', 'not an object'],
