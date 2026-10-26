@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { earPhase, partialSpans, quietLine, wordlessLine } from './voicePrompt'
+import { earPhase, earWaitLine, earWaitParts, partialSpans, quietLine, waitSeconds, wordlessLine } from './voicePrompt'
 
 // The Voice Prompt's live words (#359): the partial transcript, a Page Term in it marked.
 
@@ -67,5 +67,58 @@ describe('wordlessLine', () => {
     expect(wordlessLine('listening')).toBe('say a command')
     expect(wordlessLine('hearing')).toBe('…')
     expect(wordlessLine('transcribing')).toBe('…')
+  })
+})
+
+describe('earPhase at the cold start (#442)', () => {
+  const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>, loading?: 'ear' | 'words') => ({
+    listening: open.listening ?? false,
+    transcribing: open.transcribing ?? false,
+    monitoring: open.monitoring ?? false,
+    hearing: false,
+    ...(loading !== undefined ? { loading } : {}),
+  })
+
+  it('is starting while the ear cannot hear yet, whatever it is open for', () => {
+    expect(earPhase(ear({ monitoring: true }, 'ear'))).toBe('starting')
+    expect(earPhase(ear({ listening: true }, 'ear'))).toBe('starting')
+  })
+
+  it('is off, not starting, with the microphone off: nothing loads until it opens', () => {
+    expect(earPhase(ear({}, 'ear'))).toBe('off')
+  })
+
+  it('hears as ever while only the transcriber is loading, and holds a line taken then as still starting', () => {
+    expect(earPhase(ear({ monitoring: true }, 'words'))).toBe('rest')
+    expect(earPhase(ear({ listening: true, monitoring: true }, 'words'))).toBe('listening')
+    expect(earPhase(ear({ transcribing: true, monitoring: true }, 'words'))).toBe('starting')
+    expect(earPhase(ear({ transcribing: true, monitoring: true }))).toBe('transcribing')
+  })
+})
+
+describe('waitSeconds', () => {
+  it('counts whole seconds from the phase start on the caller’s clock, never below zero', () => {
+    expect(waitSeconds(10_000, 12_999)).toBe(2)
+    expect(waitSeconds(10_000, 9_000)).toBe(0)
+    expect(waitSeconds(undefined, 12_999)).toBe(0)
+  })
+})
+
+describe('earWaitLine (#442)', () => {
+  it('names the ear loading and its seconds at the cold start', () => {
+    expect(earWaitLine('starting', { partial: '', since: 1_000 }, 4_200)).toBe('loading the ear · 3s')
+  })
+
+  it('names the words being read, or "your words", with the seconds in the phase', () => {
+    expect(earWaitLine('transcribing', { partial: 'what about the weather', since: 1_000 }, 2_100)).toBe('“what about the weather” · 1s')
+    expect(earWaitLine('transcribing', { partial: '', since: 1_000 }, 1_400)).toBe('your words · 0s')
+  })
+
+  it('names the line a starting ear holds, with the seconds since its Endpoint', () => {
+    expect(earWaitLine('starting', { partial: '', transcribing: true, since: 1_000 }, 3_000)).toBe('your words · 2s')
+  })
+
+  it('keeps the seconds apart from the object, so a short line ellipsizes the words and never the count', () => {
+    expect(earWaitParts('transcribing', { partial: 'next song', since: 0 }, 12_000)).toEqual({ object: '“next song”', tail: ' · 12s' })
   })
 })

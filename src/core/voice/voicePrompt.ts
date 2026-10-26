@@ -3,6 +3,8 @@
 // partial words with a Page Term in peach. Pure: words and terms in,
 // spans out.
 
+import type { EarLoading } from './ipcChannels'
+
 export interface PartialSpan {
   text: string
   /** The span is a Page Term the page shows. */
@@ -35,16 +37,21 @@ export function partialSpans(text: string, terms: readonly string[]): PartialSpa
 }
 
 /** The ear's real state, as the Voice Prompt says it (CONTEXT.md). */
-export type EarPhase = 'rest' | 'listening' | 'hearing' | 'transcribing' | 'off'
+export type EarPhase = 'starting' | 'rest' | 'listening' | 'hearing' | 'transcribing' | 'off'
 
 /**
- * What the ear is doing: open for an Utterance, hearing one being spoken
- * (#441), reading one it took, waiting for the wake word (at rest), or
- * nothing at all — the microphone off. Before main has said, at rest.
+ * What the ear is doing: starting (#442) — open but unable to hear yet, or
+ * holding a line it took until it can read it; open for an Utterance,
+ * hearing one being spoken (#441), reading one it took, waiting for the
+ * wake word (at rest), or nothing at all — the microphone off. Before main
+ * has said, at rest.
  */
-export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean } | null): EarPhase {
+export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; loading?: EarLoading } | null): EarPhase {
   if (voice === null) return 'rest'
-  if (voice.transcribing) return 'transcribing'
+  // The models that hear load as the microphone opens: shut, it is off, not starting.
+  if (voice.loading === 'ear' && (voice.listening || voice.transcribing || voice.monitoring)) return 'starting'
+  // A line taken before the transcriber is in waits for it: still the ear's cold start, counted from the Endpoint.
+  if (voice.transcribing) return voice.loading === 'words' ? 'starting' : 'transcribing'
   if (voice.listening) return voice.hearing ? 'hearing' : 'listening'
   return voice.monitoring ? 'rest' : 'off'
 }
@@ -56,6 +63,30 @@ export function earPhase(voice: { listening: boolean; transcribing: boolean; mon
  */
 export function wordlessLine(phase: EarPhase): string {
   return phase === 'listening' ? 'say a command' : '…'
+}
+
+/** Whole seconds from a phase's start to `now`, both on the caller's clock (#442); 0 before main has said when it began. */
+export function waitSeconds(since: number | undefined, now: number): number {
+  return since === undefined ? 0 : Math.floor(Math.max(0, now - since) / 1000)
+}
+
+/**
+ * The ear's wait narrated (#442, UI principle 2), in two parts: what it is
+ * on — the part a short line ellipsizes — and its seconds in this phase,
+ * counted on the renderer's clock, which stay in sight. Starting with no
+ * line, the ear loading; with one, and transcribing, the words — the last
+ * partial, or "your words" with none. The person's words, never a model's
+ * name.
+ */
+export function earWaitParts(phase: 'starting' | 'transcribing', voice: { partial: string; transcribing?: boolean; since?: number }, now: number): { object: string; tail: string } {
+  const object = phase === 'starting' && voice.transcribing !== true ? 'loading the ear' : voice.partial === '' ? 'your words' : `“${voice.partial}”`
+  return { object, tail: ` · ${waitSeconds(voice.since, now)}s` }
+}
+
+/** The wait as one line: {@link earWaitParts} joined. */
+export function earWaitLine(phase: 'starting' | 'transcribing', voice: { partial: string; transcribing?: boolean; since?: number }, now: number): string {
+  const { object, tail } = earWaitParts(phase, voice, now)
+  return `${object}${tail}`
 }
 
 /** What ends the Utterance being taken (#357): the turn check when the words are done, else the Pause cap of quiet, in seconds. */

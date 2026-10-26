@@ -67,16 +67,38 @@ export function createRunProgressTracker(): {
 }
 
 /** The state the Status Capsule's pill names: the voice states outrank the Command's stage. */
-export type CapsuleStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
+export type CapsuleStatus = 'idle' | 'starting' | 'listening' | 'transcribing' | PipelineStatus
 
 /**
- * How long one stage runs before the hint names the wait (#428). A guess,
- * the cheapest to reverse: a stage-length distribution from the kiosk's
- * perf logs would settle it.
+ * What a Loading stage loads, as its detail (#442): the host of the
+ * address a navigation goes to — every navigation, by kind — with no
+ * `www.`; none for an address that is not a web page.
  */
-export const STUCK_STAGE_MS = 5_000
+export function loadingDetail(url: string | null | undefined): string | undefined {
+  if (url == null || !URL.canParse(url)) return undefined
+  const { protocol, hostname } = new URL(url)
+  return (protocol === 'http:' || protocol === 'https:') && hostname !== '' ? hostname.replace(/^www\./, '') : undefined
+}
 
-/** The line a stage past {@link STUCK_STAGE_MS} carries: which wait it is. */
+/**
+ * How long each stage runs before the hint names the wait (#428, #442):
+ * the stage's p95 on the dev PC (owner ruling 4 on #442). A GUESS until
+ * the stage spans settle it: no log had a per-stage length when this was
+ * set, so each is the dev `pnpm perf:report` p95 (2026-10-26, 84 files) of
+ * the span that holds the stage — thinking and acting both fall inside
+ * `reaction` (Endpoint to first effect, p95 1711 ms), loading inside
+ * `task` (p95 7192 ms). Re-dated from the `stage-*` spans' p95, and then
+ * from the kiosk baseline's (#439). Speaking names no wait.
+ */
+export const STUCK_STAGE_MS: Readonly<Record<PipelineStatus, number | null>> = {
+  thinking: 1_711,
+  acting: 1_711,
+  loading: 7_192,
+  speaking: null,
+  cancelled: null,
+}
+
+/** The line a stage past its {@link STUCK_STAGE_MS} carries: which wait it is. */
 const STUCK_LINES: Readonly<Record<PipelineStatus, string | null>> = {
   thinking: 'still thinking',
   acting: 'still acting',
@@ -95,7 +117,8 @@ const STUCK_LINES: Readonly<Record<PipelineStatus, string | null>> = {
 export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; tail: string } {
   const elapsed = Math.max(0, now - progress.startedAt)
   const seconds = Math.floor(elapsed / 1000)
-  const stuck = elapsed >= STUCK_STAGE_MS ? STUCK_LINES[progress.stage] : null
+  const threshold = STUCK_STAGE_MS[progress.stage]
+  const stuck = threshold !== null && elapsed >= threshold ? STUCK_LINES[progress.stage] : null
   const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
   const detail = progress.detail === undefined || progress.detail === '' ? null : progress.stage === 'thinking' ? `“${progress.detail}”` : progress.detail
   return {

@@ -1,4 +1,5 @@
 import type { Transcriber } from '../../core/ports/stt'
+import { timeModelLoad } from '../perf/modelLoads'
 
 /** A scripted utterance: the transcript, optionally held for a delay, optionally heard in partials first. */
 interface ScriptedUtterance {
@@ -31,9 +32,12 @@ function isEntry(t: unknown): t is string | ScriptedUtterance {
  * transcribing-state test needs the window to last — and `partials` are
  * emitted while the utterance is spoken, one every
  * {@link SCRIPTED_PARTIAL_STRIDE_FRAMES} pushed frames, the way Moonshine
- * streams them (#326). The PCM content is ignored.
+ * streams them (#326). The PCM content is ignored. With `loadMs`
+ * (BINGBONG_STT_LOAD_MS, #442) it "loads" for that long from its prepare,
+ * timed as the `stt` load the real engine is, and a finish() waits for
+ * it: a line taken before the transcriber is in is held behind it.
  */
-export function createScriptedTranscriber(scriptJson: string): Transcriber {
+export function createScriptedTranscriber(scriptJson: string, loadMs?: number): Transcriber {
   const parsed: unknown = JSON.parse(scriptJson)
   if (!Array.isArray(parsed) || !parsed.every(isEntry)) {
     throw new Error('BINGBONG_STT_SCRIPT must be a JSON array of strings or { text, delayMs, partials } objects')
@@ -43,8 +47,11 @@ export function createScriptedTranscriber(scriptJson: string): Transcriber {
   // Frames pushed in the capture under way, and how many of its partials are out.
   let pushed = 0
   let emitted = 0
+  let loaded: Promise<void> | null = null
+  const prepare = (): Promise<void> => (loaded ??= timeModelLoad('stt', new Promise<void>((resolve) => setTimeout(resolve, loadMs))))
 
   return {
+    ...(loadMs !== undefined ? { prepare } : {}),
     begin() {
       pushed = 0
       emitted = 0
@@ -65,6 +72,7 @@ export function createScriptedTranscriber(scriptJson: string): Transcriber {
       }
     },
     async finish() {
+      if (loadMs !== undefined) await prepare()
       const next = script.shift() ?? { text: '' }
       if (next.delayMs && next.delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, next.delayMs))

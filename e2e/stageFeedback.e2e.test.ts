@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
+import { STUCK_STAGE_MS } from '../src/core/pipeline/runProgress'
 
 // The stages a Command passes through (#428): the Status Capsule says
 // "Thinking…" from the moment a line is taken, before any Command is read,
@@ -56,7 +57,9 @@ describe('stage feedback e2e (#428): the Capsule over the Idle Screen while a li
       return shown?.hint.includes('still thinking') === true ? shown : undefined
     }, { timeoutMs: 8000, intervalMs: 100 })
     expect(stuck.pill).toBe('Thinking…')
-    expect(stuck.hint).toMatch(/still thinking · [5-9]s$/)
+    // Past thinking's own bound (#442), never before it.
+    expect(stuck.hint).toMatch(/still thinking · \d+s$/)
+    expect(Number(/(\d+)s$/.exec(stuck.hint)?.[1])).toBeGreaterThanOrEqual(Math.floor(STUCK_STAGE_MS.thinking! / 1000))
     // The screen never names the model that decides.
     expect(`${stuck.pill} ${stuck.hint}`).not.toMatch(/jev|decision/i)
 

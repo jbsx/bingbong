@@ -5,7 +5,8 @@ import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
 import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import type { VoiceSession } from '../../core/voice/voiceSession'
-import { createVoiceChainClient, type ChainBias, type VoiceChainClient, type VoiceChainEvents, type VoiceChainLink } from '../../core/voice/voiceChain'
+import { createVoiceChainClient, type ChainBias, type ChainModelLoad, type VoiceChainClient, type VoiceChainEvents, type VoiceChainLink } from '../../core/voice/voiceChain'
+import { createEarState, type EarLoads } from '../../core/voice/earState'
 import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { forwardFault, reportFault } from '../../core/trace/fault'
@@ -25,6 +26,8 @@ import type { VoiceProcessConfig } from './voiceProcessConfig'
 // Status Capsule can show them.
 
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
+// The ear's state as each window's screen reads it (#442): the session's, with what a cold ear waits for and its phase's start.
+const shownStates = new WeakMap<BrowserWindow, () => VoiceState>()
 // A wake listen's opening, until the dashboard says it painted Listening (#429).
 const wakeOpenings = new WeakMap<BrowserWindow, { tracer: PerfTracer; at: number | null }>()
 // The hearing receipt (#441): when each chunk not yet scored arrived, oldest first, and the arrival of the one
@@ -79,7 +82,9 @@ export function registerVoiceIpc(): void {
   })
 
   ipcMain.handle(VOICE_IPC.getState, (event) => {
-    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const shown = win ? shownStates.get(win) : undefined
+    return shown?.() ?? { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
   })
 }
 
@@ -89,6 +94,17 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   if (receipt) hearingReceipts.set(win, receipt)
   let wasListening = false
   const tracer = deps.tracer
+  // The cold ear (#442): what it waits for, told by the voice process's model loads; the screen reads the session's state through it.
+  const ear = createEarState(deps.earLoads ?? { vad: false, wake: false, stt: false }, Date.now)
+  let raw: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
+  const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: ear.show(raw) })
+  const onModelLoad = (load: ChainModelLoad): void => {
+    recordModelLoad(load)
+    const told = ear.modelLoaded(load)
+    if (told.changed) publishState()
+    // The cold start is said aloud only to a wake that came in while the words loaded (owner ruling 3, #442).
+    if (told.sayReady) void deps.tts.speak('I’m ready').catch((error: unknown) => reportFault('voice.attachVoice.ready', error))
+  }
   const session = createVoiceChainClient<VoiceProcessConfig>({
     start: deps.startVoiceProcess,
     config: deps.config,
@@ -103,7 +119,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     ...(deps.getBiasPhrases ? { bias: deps.getBiasPhrases } : {}),
     ...(deps.speaking ? { waitIdle: () => deps.speaking!.waitIdle() } : {}),
     ...(tracer ? { tracer, tracerEpochMs: performance.timeOrigin + performance.now() - tracer.now() } : {}),
-    onModelLoad: (load) => recordModelLoad(load),
+    onModelLoad,
     onFault: (report) => forwardFault(report),
     onWakeGate: (count) => wakeGate.record(count),
     callbacks: {
@@ -145,7 +161,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
         deps.ducking?.voiceState(state)
         // Open from the listen's start through its STT window: `listening` alone is false while it transcribes.
         deps.onEar?.(state.listening || state.transcribing)
-        deps.publisher.publish({ source: 'voice-state', state })
+        raw = state
+        publishState()
       },
       onHeard: (heard) => {
         const stamped = { ...heard, at: Date.now() }
@@ -159,8 +176,10 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   })
 
   sessions.set(win, session)
+  shownStates.set(win, () => ear.show(session.getState()))
   win.on('closed', () => {
     sessions.delete(win)
+    shownStates.delete(win)
     session.stop()
   })
   // The always-on ear (T10): monitoring starts with the window when a wake
@@ -174,9 +193,11 @@ export interface AttachVoiceDeps {
   startVoiceProcess(events: VoiceChainEvents): VoiceChainLink<VoiceProcessConfig>
   /** What the voice process builds its models from. */
   config: VoiceProcessConfig
-  tts: Pick<TtsSpeaker, 'stop'>
+  tts: Pick<TtsSpeaker, 'stop' | 'speak'>
   /** A wake word is configured: the ear monitors from the start; false means hotkey-only. */
   wakeEnabled: boolean
+  /** Which of the ear's models load in this run (#442): the screen says the ear is starting until they are in; absent waits on none. */
+  earLoads?: EarLoads
   /** Live wake threshold, so the slider applies to the next 80 ms chunk. */
   getWakeThreshold?(): number
   /** Audible activation cue; playback failures are the caller's problem. */

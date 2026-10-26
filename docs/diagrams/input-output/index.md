@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-26, base `9db2d2ba` + #438](versions/2026-10-26-9db2d2ba-narrated/chart.html), in which the Capsule says each stage in the Feed's words and what it is on (“Opening… example.com · 3s”), and every failure and “No response” ends with a line to try (#438). [Overview](versions/2026-10-26-9db2d2ba-narrated/overview.png) · [changes](versions/2026-10-26-9db2d2ba-narrated/changes.md)
+**Latest:** [2026-10-26, base `815d4c6c` + #442](versions/2026-10-26-815d4c6c-ear-waits/chart.html), in which the ear's cold start is a narrated wait: “Starting · loading the ear · Ns” until it can hear, a line held until the transcriber is in, and Transcribing with its words and seconds (#442). [Voice view](versions/2026-10-26-815d4c6c-ear-waits/voice.png) · [changes](versions/2026-10-26-815d4c6c-ear-waits/changes.md)
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-26 | `815d4c6c` + #442 | [chart](versions/2026-10-26-815d4c6c-ear-waits/chart.html) | New states before selection: Starting (“loading the ear · Ns”, never “Say Bing Bong”, the empty Feed's hint blank) until the VAD is in; `ready` waits for it; a line taken before the transcriber is in is held as Starting; “I'm ready” only for a wake heard during that load; Transcribing names the words and counts; Loading names its host; per-stage “still …” bounds. [changes](versions/2026-10-26-815d4c6c-ear-waits/changes.md) |
 | 2026-10-26 | `9db2d2ba` + #438 | [chart](versions/2026-10-26-9db2d2ba-narrated/chart.html) | No transition changes. The pill says the stage's word (“Opening…”, “Loading…”) and the hint its object in your words; the Feed's stage lines are the same words; a failure's Answer and spoken line end “Try “…”.”; “No response” gives its reason without naming Jev and a Try line; a Command keeps one time in the Feed. [changes](versions/2026-10-26-9db2d2ba-narrated/changes.md) |
 | 2026-10-26 | `3a8c5d2f` + #436 | [chart](versions/2026-10-26-3a8c5d2f-glance/chart.html) | No transition changes. With the panel shut the Capsule keeps the last spoken sentence (a read's first part, a Task's closing line, a page's question) until the next line; the live words still win. [changes](versions/2026-10-26-3a8c5d2f-glance/changes.md) |
 | 2026-10-26 | `4af7377e` + #441 | [chart](versions/2026-10-26-4af7377e-hearing/chart.html) | No transition changes. While listening, “say a command” becomes “…” on the frame speech is confirmed (Voice Prompt, Idle Screen, Capsule hint), still under “Listening”; the first partial comes at 0.5 s of speech, not 1 s; a `speech-to-hearing` perf span. [changes](versions/2026-10-26-4af7377e-hearing/changes.md) |

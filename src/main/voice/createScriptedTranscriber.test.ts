@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createScriptedTranscriber, SCRIPTED_PARTIAL_STRIDE_FRAMES } from './createScriptedTranscriber'
+import { setModelLoadSink } from '../perf/modelLoads'
 
 // BINGBONG_STT_SCRIPT's double: plain-string entries feed transcripts one per
 // utterance; { text, delayMs } entries additionally hold the promise so e2e
@@ -37,6 +38,32 @@ describe('createScriptedTranscriber', () => {
     await vi.advanceTimersByTimeAsync(1)
     await expect(pending).resolves.toBe('open the fixture page')
     expect(settled).toBe(true)
+  })
+
+  it('holds a line behind its load, timed as the stt model load, when given one (#442)', async () => {
+    vi.useFakeTimers()
+    const loads: { model: string; durMs: number }[] = []
+    setModelLoadSink((load) => loads.push(load))
+    try {
+      const transcriber = createScriptedTranscriber(JSON.stringify(['next song']), 200)
+      void transcriber.prepare?.()
+      const pending = transcriber.finish(new Float32Array(512))
+      let settled = false
+      void pending.then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(199)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(pending).resolves.toBe('next song')
+      expect(loads.map((load) => load.model)).toEqual(['stt'])
+    } finally {
+      setModelLoadSink(null)
+    }
+  })
+
+  it('has nothing to prepare with no load', () => {
+    expect(createScriptedTranscriber('[]').prepare).toBeUndefined()
   })
 
   it('rejects entries without a string text', () => {

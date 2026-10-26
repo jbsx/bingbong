@@ -165,9 +165,9 @@ body,
   border-top: 1px solid var(--hair);
 }
 
+/* The open ear is live; a read is a wait, counted, not tinted (#437, #442). */
 .voice-prompt--listening,
-.voice-prompt--hearing,
-.voice-prompt--transcribing {
+.voice-prompt--hearing {
   border-top-color: var(--accent-edge);
   background: var(--accentq);
 }
@@ -181,7 +181,8 @@ body,
   box-shadow: 0 0 0 5px var(--accentq);
 }
 
-.voice-orb--off {
+.voice-orb--off,
+.voice-prompt--starting .voice-orb {
   background: var(--idle);
   box-shadow: none;
 }
@@ -202,6 +203,11 @@ body,
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+/* Not live yet (#442): the accent is kept for an ear that hears. */
+.voice-prompt--starting .voice-prompt-state {
+  color: var(--fg2);
 }
 
 .voice-prompt-hint {

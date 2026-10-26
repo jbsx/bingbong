@@ -6,6 +6,8 @@ import { createTaskActivityTracker, routesDownload } from '../core/downloads/tas
 import { createSiteQuestionDesk } from '../core/browser/siteQuestionDesk'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../core/pipeline/events'
+import { createStageSpans } from '../core/pipeline/stageSpans'
+import { APP_TURN_ID } from '../core/perf/appTelemetry'
 import { attachAdblock } from './browser/attachAdblock'
 import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessGuard'
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
@@ -64,7 +66,7 @@ import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/brow
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { createQuitBound, QUIT_BOUND_MS, quitFromApp, quitIsFromApp } from './quitBound'
 import { attachPlaybackWatch, startBootClock, startCpuSampler, startQuitTrace, trackSurface, writeRunStamp } from './perf/attachAppTelemetry'
-import { resolveVoiceConfig } from './voice/voiceConfig'
+import { resolveVoiceConfig, voiceLoads } from './voice/voiceConfig'
 import { voiceProcessStarter } from './voice/startVoiceProcess'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
 import { createBiasUnion } from '../core/voice/biasUnion'
@@ -292,14 +294,23 @@ const wakeConfig = resolveWakeConfig(bootEnv, appDirs)
 const wakeEnabled = wakeConfig.engine !== 'off'
 // The boot milestones (#429): the run is ready once the dashboard has painted
 // and, with the wake models, they are in and the ear can hear them (a
-// scripted or Python wake loads no model of its own). From ready the STT
-// engine loads in the voice process (#430), so the first line pays no load.
+// scripted or Python wake loads no model of its own) — the VAD too, which
+// gates the wake (#435), so `ready` means speaking now is heard (owner
+// ruling 1 on #442); with no wake the VAD loads at the first listen. From
+// ready the STT engine loads in the voice process (#430), so the first line
+// pays no load.
 let onBootReady: () => void = () => {}
 const bootReady = new Promise<void>((resolve) => {
   onBootReady = resolve
 })
 const wakeLoads = wakeConfig.engine === 'node' && wakeConfig.wakeScript === undefined
-const boot = startBootClock(perfTracer, wakeLoads ? ['dashboard-painted', 'wake-loaded'] : ['dashboard-painted'], () => onBootReady())
+// What the cold ear waits for (#442), said on the screen until each is in.
+const earLoads = { ...voiceLoads(voiceConfig), wake: wakeLoads }
+const boot = startBootClock(
+  perfTracer,
+  ['dashboard-painted', ...(wakeLoads ? ['wake-loaded'] : []), ...(wakeEnabled && earLoads.vad ? ['vad-loaded'] : [])],
+  () => onBootReady(),
+)
 boot.mark('main-loaded')
 const chimeWav = createChimeWav()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
@@ -569,11 +580,14 @@ async function createWindow(): Promise<BrowserWindow> {
   // The app itself on the card (#420, ADR 0091): its panel, views and settings.
   const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
   win.on('closed', appControl.detach)
+  // Each Status Capsule stage timed (#442): the p95s that date its "still …" bound.
+  const stageSpans = createStageSpans((stage, durMs, detail) => perfTracer.span(APP_TURN_ID, stage, durMs, detail))
   const commandRunner = createCommandRunner({
     browser: controller,
     decisionModel,
     publish: (event) => {
       eventPublisher.publish({ source: 'run', event })
+      stageSpans(event)
       for (const listener of [...commandListeners]) listener(event)
     },
     now: systemClock.now,
@@ -684,6 +698,7 @@ async function createWindow(): Promise<BrowserWindow> {
     pageTerms: () => biasUnion.pageTerms(),
     tts: speakingGate.tts,
     wakeEnabled,
+    earLoads,
     // The settings slider applies to the next 80 ms chunk.
     getWakeThreshold: () => settingsStore.get().wakeWordThreshold,
     chime: () => {

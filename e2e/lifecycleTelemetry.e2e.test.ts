@@ -133,10 +133,83 @@ describe('boot ready with the ear open on a silent mic (#435)', () => {
       { timeoutMs: 30_000, intervalMs: 250 },
     )
     const since = (m: string): number => Number(records.find((r) => r.stage === 'boot' && r.detail?.milestone === m)?.detail?.sinceStartMs)
-    if (process.env.BINGBONG_QUIT_MEASURE) appendFileSync(process.env.BINGBONG_QUIT_MEASURE, `[ear] wake-loaded ${since('wake-loaded')} ms, ready ${since('ready')} ms\n`)
-    expect(milestones(records)).toEqual(expect.arrayContaining(['wake-loaded', 'ready']))
+    if (process.env.BINGBONG_QUIT_MEASURE) appendFileSync(process.env.BINGBONG_QUIT_MEASURE, `[ear] wake-loaded ${since('wake-loaded')} ms, vad-loaded ${since('vad-loaded')} ms, ready ${since('ready')} ms\n`)
+    expect(milestones(records)).toEqual(expect.arrayContaining(['wake-loaded', 'vad-loaded', 'ready']))
     expect(since('wake-loaded')).toBeLessThanOrEqual(since('ready'))
+    // `ready` means speaking now is heard (owner ruling 1, #442): the VAD that gates the wake is in.
+    expect(since('vad-loaded')).toBeLessThanOrEqual(since('ready'))
     // The bound #429 measured before the gate: 5.6–6.8 s on the kiosk; well under it on dev.
     expect(since('ready')).toBeLessThan(15_000)
   }, 40_000)
+})
+
+// The ear's cold start (#442): until the models that hear are in, the screen
+// says the ear is starting with its seconds and never invites speech; it ends
+// at `vad-loaded`, `ready` comes after it, and the transcriber loads from
+// `ready`. The scripted VAD "loads" for a while so the window can be read.
+describe('the ear starting at boot (#442)', () => {
+  let harness: Harness | null = null
+  let userDataDir: string
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-lifecycle-cold-ear-'))
+    harness = await startHarness({
+      userDataDir,
+      wakeFromBootIdle: false,
+      env: {
+        BINGBONG_WAKE_ENGINE: 'node',
+        BINGBONG_WAKE_SCRIPT: '[0.01]',
+        BINGBONG_VAD_SCRIPT: '[0.01]',
+        BINGBONG_VAD_LOAD_MS: '9000',
+        BINGBONG_STT_SCRIPT: '[]',
+        BINGBONG_STT_LOAD_MS: '1500',
+      },
+      startupTimeoutMs: 60_000,
+    })
+  }, 90_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('says Starting with its seconds, never "Bing Bong", until vad-loaded; ready after it, then the transcriber', async () => {
+    const state = (): Promise<{ loading?: string; since?: number }> => harness!.dashboardEval('window.bingbong.voice.getState()')
+    const screen = (): Promise<string> => harness!.dashboardEval<string>('document.body.innerText')
+    expect((await state()).loading).toBe('ear')
+    const cold = await waitFor(
+      async () => {
+        const words = await screen()
+        return /loading the ear\s*· \d+s/.test(words) ? words : undefined
+      },
+      { timeoutMs: 5_000, intervalMs: 100 },
+    )
+    expect(cold).not.toMatch(/Bing Bong/)
+    expect(cold).toMatch(/Starting/i)
+
+    const records = await waitFor(
+      async () => {
+        const all = await appRecords(userDataDir)
+        return milestones(all).includes('stt-loaded') ? all : undefined
+      },
+      { timeoutMs: 30_000, intervalMs: 250 },
+    )
+    const since = (m: string): number => Number(records.find((r) => r.stage === 'boot' && r.detail?.milestone === m)?.detail?.sinceStartMs)
+    expect(since('vad-loaded')).toBeLessThanOrEqual(since('ready'))
+    expect(since('ready')).toBeLessThanOrEqual(since('stt-loaded'))
+    const warmState = await state()
+    expect(warmState.loading).toBeUndefined()
+    // Starting ended at vad-loaded: the phase after it began there, on main's wall clock, as the milestone was written.
+    const vadAt = records.find((r) => r.stage === 'boot' && r.detail?.milestone === 'vad-loaded')?.at ?? 0
+    expect(Math.abs((warmState.since ?? 0) - vadAt)).toBeLessThan(1_000)
+    const warm = await waitFor(
+      async () => {
+        const words = await screen()
+        return /Bing Bong/.test(words) ? words : undefined
+      },
+      { timeoutMs: 5_000, intervalMs: 100 },
+    )
+    expect(warm).not.toMatch(/loading the ear/)
+    if (process.env.BINGBONG_QUIT_MEASURE) appendFileSync(process.env.BINGBONG_QUIT_MEASURE, `[cold ear] vad-loaded ${since('vad-loaded')} ms, ready ${since('ready')} ms, stt-loaded ${since('stt-loaded')} ms\n`)
+  }, 60_000)
 })

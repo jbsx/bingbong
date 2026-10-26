@@ -41,7 +41,19 @@ export interface VoiceState {
    * before the first partial lands.
    */
   hearing: boolean
+  /**
+   * What the ear still waits for at its cold start (#442), main's to say:
+   * `ear` until the models it hears with are in, so nothing said is heard;
+   * `words` from then until the transcriber is, so a line taken is held.
+   * Absent once nothing is loading.
+   */
+  loading?: EarLoading
+  /** When the ear's phase began, on main's wall clock (#442): the screen counts a wait's seconds from it on its own. */
+  since?: number
 }
+
+/** What a cold ear waits for (#442): the models that hear, then the one that reads the words. */
+export type EarLoading = 'ear' | 'words'
 
 export interface VoiceHeardEvent {
   text: string

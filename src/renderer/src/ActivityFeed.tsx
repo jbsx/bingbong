@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { headlineAnswerId, type FeedEntry } from '../../core/feed/feedProjection'
 import { describeProgress, moveOf } from '../../core/pipeline/taskProgress'
 import { REST_HINT } from '../../core/voice/voiceHint'
+import { earPhase } from '../../core/voice/voicePrompt'
 import { ChromeIcon } from './ChromeIcon'
 import { FeedMarkdown } from './FeedMarkdown'
 
@@ -231,6 +232,17 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
   )
 }
 
+/** Whether the ear is starting (#442), as main says it: it cannot hear yet, so nothing here invites speech. */
+function useEarStarting(): boolean {
+  const [starting, setStarting] = useState(false)
+  useEffect(() => {
+    const apply = (state: Parameters<typeof earPhase>[0]): void => setStarting(earPhase(state) === 'starting')
+    void window.bingbong.voice.getState().then(apply)
+    return window.bingbong.voice.onState(apply)
+  }, [])
+  return starting
+}
+
 export function ActivityFeed({
   entries,
   liveRunId,
@@ -245,6 +257,7 @@ export function ActivityFeed({
   footer?: React.ReactNode
 }) {
   const listRef = useRef<HTMLDivElement>(null)
+  const earStarting = useEarStarting()
   const headline = headlineAnswerId(entries)
   // The Command being worked on: the newest one, while a run is live.
   const working = liveRunId == null ? null : (entries.findLast((entry) => entry.role === 'user')?.id ?? null)
@@ -261,7 +274,8 @@ export function ActivityFeed({
         {headerActions ? <span className="feed-header-actions">{headerActions}</span> : null}
       </div>
       <div className="feed-list" ref={listRef} aria-live="polite">
-        {entries.length === 0 ? <p className="feed-empty">{REST_HINT}</p> : null}
+        {/* The rest hint invites speech, so a cold ear blanks it (#442): the Voice Prompt below says why. */}
+        {entries.length === 0 && !earStarting ? <p className="feed-empty">{REST_HINT}</p> : null}
         {foldRuns(entries).map((item) =>
           item.item === 'run' ? (
             <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />

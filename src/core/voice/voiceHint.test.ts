@@ -6,8 +6,21 @@ import { REST_HINT, voiceHint } from './voiceHint'
 const quiet = { transcribing: false, listening: false, hearing: false, monitoring: false, partial: '' }
 
 describe('voiceHint', () => {
-  it('says nothing while transcribing — the pill already reads Transcribing…', () => {
-    expect(voiceHint({ ...quiet, transcribing: true, listening: true })).toBeNull()
+  it('carries the words being read and the seconds since the Endpoint while transcribing — the pill says Transcribing… (#442)', () => {
+    expect(voiceHint({ ...quiet, transcribing: true, listening: true, partial: 'next song', since: 1_000 }, { now: 3_500 })).toEqual({ kind: 'transcribing', text: '“next song” · 2s' })
+  })
+
+  it('says a line held behind the transcriber’s load is the ear still starting, with its words and seconds (#442)', () => {
+    expect(voiceHint({ ...quiet, transcribing: true, loading: 'words', since: 1_000 }, { now: 1_000 })).toEqual({ kind: 'starting', text: 'your words · 0s' })
+  })
+
+  it('says the ear is loading, with its seconds, while it cannot hear yet — never the wake word (#442)', () => {
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'ear', since: 1_000 }, { now: 4_000 })).toEqual({ kind: 'starting', text: 'loading the ear · 3s' })
+  })
+
+  it('leaves the waits to the Voice Prompt while it is on screen', () => {
+    expect(voiceHint({ ...quiet, transcribing: true }, { promptShown: true })).toBeNull()
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'ear' }, { promptShown: true })).toBeNull()
   })
 
   it('asks for a command while listening, without saying listening again', () => {

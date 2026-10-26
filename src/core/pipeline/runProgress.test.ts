@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from './events'
-import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress } from './runProgress'
+import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress, loadingDetail } from './runProgress'
 
 // The Status Capsule names each state once (#331): the pill says the state,
 // so the run hint beside it carries only what the pill does not — the
@@ -9,12 +9,12 @@ import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress } from '.
 
 describe('describeRunProgress', () => {
   it('is the stage\'s own seconds alone when the pill already names the stage and there is no detail', () => {
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 3_400, 'acting')).toBe('2s')
+    expect(describeRunProgress({ stage: 'speaking', startedAt: 1_000 }, 3_400, 'speaking')).toBe('2s')
   })
 
   it('names the stage by its word when the pill shows another state (the mic opened mid-run)', () => {
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 3_400, 'listening')).toBe('Acting — 2s')
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, word: 'Opening', detail: 'example.com' }, 3_400, 'listening')).toBe('Opening — example.com · 2s')
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000 }, 2_400, 'listening')).toBe('Acting — 1s')
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, word: 'Opening', detail: 'example.com' }, 2_400, 'listening')).toBe('Opening — example.com · 1s')
     expect(describeRunProgress({ stage: 'loading', startedAt: 1_000, word: 'Opening', detail: 'example.com' }, 3_400, 'listening')).toBe('Loading — example.com · 2s')
   })
 
@@ -31,16 +31,24 @@ describe('describeRunProgress', () => {
   })
 
   it('names the Hop past the first', () => {
-    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, detail: 'click "Sign in"', hop: 2 }, 4_000, 'acting')).toBe('click "Sign in" · hop 2 · 3s')
+    expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, detail: 'click "Sign in"', hop: 2 }, 2_500, 'acting')).toBe('click "Sign in" · hop 2 · 1s')
     expect(describeRunProgress({ stage: 'thinking', startedAt: 1_000, hop: 1 }, 1_500, 'thinking')).toBe('hop 1 · 0s')
   })
 
-  it('names a stuck stage once it has run past the bound, and not before', () => {
+  it('names a stuck stage once it has run past its own bound, and not before (#442)', () => {
     const at = (ms: number) => 1_000 + ms
-    expect(describeRunProgress({ stage: 'thinking', startedAt: 1_000, hop: 1 }, at(STUCK_STAGE_MS - 1), 'thinking')).toBe('hop 1 · 4s')
-    expect(describeRunProgress({ stage: 'thinking', startedAt: 1_000, hop: 1 }, at(STUCK_STAGE_MS), 'thinking')).toBe('hop 1 · still thinking · 5s')
-    expect(describeRunProgress({ stage: 'loading', startedAt: 1_000, hop: 0 }, at(7_000), 'loading')).toBe('page still loading · 7s')
+    const thinking = STUCK_STAGE_MS.thinking!
+    const loading = STUCK_STAGE_MS.loading!
+    expect(describeRunProgress({ stage: 'thinking', startedAt: 1_000, hop: 1 }, at(thinking - 1), 'thinking')).not.toMatch(/still/)
+    expect(describeRunProgress({ stage: 'thinking', startedAt: 1_000, hop: 1 }, at(thinking), 'thinking')).toMatch(/^hop 1 · still thinking · \d+s$/)
+    expect(describeRunProgress({ stage: 'loading', startedAt: 1_000, hop: 0, detail: 'example.com' }, at(loading - 1), 'loading')).not.toMatch(/still/)
+    expect(describeRunProgress({ stage: 'loading', startedAt: 1_000, hop: 0, detail: 'example.com' }, at(loading), 'loading')).toMatch(/^example\.com · page still loading · \d+s$/)
     expect(describeRunProgress({ stage: 'acting', startedAt: 1_000, detail: 'open youtube.com', hop: 0 }, at(6_000), 'acting')).toBe('open youtube.com · still acting · 6s')
+  })
+
+  it('bounds each stage apart: a page load runs longer than a thought before it is called slow, and speaking is never stuck', () => {
+    expect(STUCK_STAGE_MS.loading!).toBeGreaterThan(STUCK_STAGE_MS.thinking!)
+    expect(describeRunProgress({ stage: 'speaking', startedAt: 0, hop: 0 }, 60_000, 'speaking')).toBe('60s')
   })
 
   it('never names the Decision Model', () => {
@@ -97,5 +105,15 @@ describe('createRunProgressTracker', () => {
     tracker.onEvent(status('t2', 'thinking', 1_200, { hop: 1 }))
     tracker.onEvent(status('t2', 'loading', 1_500, { hop: 1 }))
     expect(tracker.current()).toEqual({ stage: 'loading', startedAt: 1_500, hop: 1 })
+  })
+})
+
+describe('loadingDetail (#442)', () => {
+  it('names the host a navigation loads, without www., and nothing for an address that is no web page', () => {
+    expect(loadingDetail('https://www.youtube.com/watch?v=x')).toBe('youtube.com')
+    expect(loadingDetail('http://127.0.0.1:4173/story')).toBe('127.0.0.1')
+    expect(loadingDetail('about:blank')).toBeUndefined()
+    expect(loadingDetail(null)).toBeUndefined()
+    expect(loadingDetail('not a url')).toBeUndefined()
   })
 })

@@ -3,6 +3,7 @@ import type { OrbStatus } from './useAssistant'
 import { runProgressParts, type RunProgress } from '../../core/pipeline/runProgress'
 import { stageWord } from '../../core/pipeline/stageWords'
 import type { TaskProgress } from '../../core/pipeline/taskProgress'
+import { earWaitParts } from '../../core/voice/voicePrompt'
 
 /**
  * The Task's progress bar (#375): a track along the capsule's foot that
@@ -40,6 +41,8 @@ export function StatusOrb({ status }: { status: OrbStatus }) {
  */
 const PILL_LABELS: Record<OrbStatus, string> = {
   idle: 'Ready',
+  // The ear cannot hear yet (#442): never "Ready" while speaking would go unheard.
+  starting: 'Starting…',
   thinking: 'Thinking…',
   acting: 'Acting…',
   loading: 'Loading…',
@@ -54,7 +57,8 @@ const PILL_LABELS: Record<OrbStatus, string> = {
  * Bing Bong works — thinking, acting, transcribing, speaking — or listens.
  */
 export function capsuleTone(status: OrbStatus): 'ready' | 'working' | 'listening' | 'stopped' {
-  if (status === 'idle') return 'ready'
+  // A starting ear is not live (#442): quiet, as Ready is, so the accent never marks an ear that cannot hear.
+  if (status === 'idle' || status === 'starting') return 'ready'
   if (status === 'cancelled') return 'stopped'
   if (status === 'listening') return 'listening'
   return 'working'
@@ -81,6 +85,30 @@ export function StatusPill({ status, progress = null }: { status: OrbStatus; pro
   return (
     <span className={`status-pill status-pill--${status}`} role="status">
       {progress !== null && progress.stage === status && status !== 'cancelled' ? `${stageWord(progress)}…` : PILL_LABELS[status]}
+    </span>
+  )
+}
+
+/**
+ * The ear's wait narrated (#442): what it is on and its seconds since the
+ * phase began, counted on this renderer's clock as the run hint counts —
+ * a count that stops is the one true sign of a hang. The tick lives in
+ * this leaf alone, so the second redraws only the words.
+ */
+export function EarWait({ phase, voice }: { phase: 'starting' | 'transcribing'; voice: { partial: string; transcribing?: boolean; since?: number } }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [])
+  const { object, tail } = earWaitParts(phase, voice, now)
+
+  // The words ellipsize on a short line; the seconds never do.
+  return (
+    <span className="ear-wait">
+      <span className="ear-wait-object">{object}</span>
+      <span className="ear-wait-tail">{tail}</span>
     </span>
   )
 }

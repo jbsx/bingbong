@@ -93,8 +93,8 @@ const CHECK_SCRIPT = `(() => {
     if (!el.closest('[data-display]')) sizes.add(style.fontSize + ' ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
-    // The live words and the kept result in the capsule (#331, #436), and a stage's long detail beside its seconds (#428), ellipsize by design: the clips allowed.
-    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail')) issues.push('clipped across: ' + name(el))
+    // The live words and the kept result in the capsule (#331, #436), a stage's long detail beside its seconds (#428), and the words an ear's wait is on beside its seconds (#442), ellipsize by design: the clips allowed.
+    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .ear-wait-object')) issues.push('clipped across: ' + name(el))
     if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
@@ -145,7 +145,7 @@ interface Run {
   issues: Map<string, string[]>
 }
 
-async function launch(theme: Theme, env: Record<string, string> = {}): Promise<Run> {
+async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = []): Promise<Run> {
   const fixture = await startFixtureServer()
   // The owner's two providers, so the Idle Screen's middle Column is laid out as on the appliance.
   const usage = await startUsageStandIn(2)
@@ -156,7 +156,7 @@ async function launch(theme: Theme, env: Record<string, string> = {}): Promise<R
   const harness = await startHarness({
     fixture,
     userDataDir,
-    launchArgs: ['--mute-audio'],
+    launchArgs: ['--mute-audio', ...launchArgs],
     // A wake ear that never fires, so the Voice Prompt waits for "Bing Bong" as the appliance does.
     env: { DISPLAY: screen?.display, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile(userDataDir), ...env },
   })
@@ -432,6 +432,70 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
   await shoot(run, '31-listening-collapsed', false)
 }
 
+/**
+ * The ear's waits narrated (#442): the cold start — the scripted VAD "loading"
+ * — on the Voice Prompt, the Capsule and the Idle Screen, never inviting
+ * speech; a line taken while the transcriber still loads, held and said so;
+ * then a slow read, Transcribing with the words and their count, on the
+ * Capsule and the Voice Prompt.
+ */
+async function walkTheEarWaits(run: Run): Promise<void> {
+  const { harness } = run
+  const shown = async (evaluate: (expression: string) => Promise<boolean>, selector: string, state: string, timeoutMs = 15_000): Promise<void> => {
+    await waitFor(async () => ((await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`)) ? true : undefined), { timeoutMs, intervalMs: 100 }).catch(async (error: unknown) => {
+      await shoot(run, `no-${state}`)
+      throw error
+    })
+  }
+  const onDashboard = (expression: string): Promise<boolean> => harness.dashboardEval<boolean>(expression)
+  const onPanel = (expression: string): Promise<boolean> => harness.overlayEval<boolean>(expression)
+  const words = (evaluate: (expression: string) => Promise<string>, selector: string): Promise<string> => evaluate(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`)
+
+  // The cold start: the Voice Prompt in the open panel, the Capsule with the panel shut, the Idle Screen.
+  await harness.ensurePanelOpen()
+  await shown(onPanel, '.voice-prompt--starting', 'ear-starting')
+  expect.soft(await words((e) => harness.overlayEval<string>(e), '.voice-prompt'), 'the Voice Prompt names the ear loading and its seconds').toMatch(/Starting.*loading the ear · \d+s/)
+  expect.soft(await harness.overlayEval<string>('document.body.innerText'), 'nothing in the panel invites speech').not.toMatch(/Bing Bong|\bsay\b/i)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.status-capsule'), 'nor in the Capsule').not.toMatch(/Ready|Bing Bong/)
+  await shoot(run, '32-ear-starting')
+  // A typed line goes on while the ear loads; its page is what a tap on the Idle Screen wakes to.
+  await command(run, `navigate ${run.fixture.url('/story')}`)
+  await clickPanel(run, '[aria-label="Collapse the feed panel"]')
+  await shown(onDashboard, '.voice-hint--starting', 'ear-starting-capsule')
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.status-capsule'), 'the Capsule says Starting, the ear loading and its seconds').toMatch(/Starting….*loading the ear · \d+s/)
+  await shoot(run, '33-ear-starting-capsule')
+  await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+  await shown(onDashboard, '.idle-voice--starting', 'ear-starting-idle')
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line never says Bing Bong while the ear cannot hear').toMatch(/^loading the ear · \d+sStarting$/)
+  await shoot(run, '34-ear-starting-idle')
+
+  // The ear hears: from here the mic's frames play the script over the Idle Screen, which stays up through
+  // them — the wake, then a line taken while the transcriber still loads, held: the ear still starting, its
+  // words and their count.
+  await shown(onDashboard, '.idle-voice--listening, .idle-voice--hearing', 'woken', 30_000)
+  await shown(onDashboard, '.idle-voice--starting', 'held')
+  await sleep(2_200)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'a held line is the ear still starting, its words and its count climbing').toMatch(/^“what about” · [2-9]sStarting$/)
+  await shoot(run, '35-ear-held-idle')
+  // Read once the transcriber is in; the Hot Listen listens again.
+  await shown(onDashboard, '.idle-voice--listening', 'listening-again', 30_000)
+
+  // The second line of the Hot Listen, read slowly: the Idle Screen, then — a tap wakes the page under it —
+  // the Capsule and the Voice Prompt, each with the words and their count.
+  await shown(onDashboard, '.idle-voice--transcribing', 'transcribing-idle', 30_000)
+  await sleep(2_200)
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line carries the words being read and their seconds').toMatch(/^“zorblax the quux” · [2-9]sTranscribing$/)
+  await shoot(run, '36-transcribing-idle')
+  await harness.clickDashboardElement('.idle-date')
+  await shown(onDashboard, '.voice-hint--transcribing', 'transcribing-capsule')
+  expect.soft(await words((e) => harness.dashboardEval<string>(e), '.voice-hint'), 'the Capsule carries them').toMatch(/^“zorblax the quux” · \d+s$/)
+  await shoot(run, '37-transcribing-capsule')
+  await harness.ensurePanelOpen()
+  await shown(onPanel, '.voice-prompt--transcribing', 'transcribing-prompt')
+  expect.soft(await words((e) => harness.overlayEval<string>(e), '.voice-prompt-said'), 'and so does the Voice Prompt').toMatch(/^“zorblax the quux” · \d+s$/)
+  await shoot(run, '38-transcribing-voice-prompt')
+}
+
 function expectClean(run: Run): void {
   for (const [state, issues] of run.issues) expect.soft(issues, `${run.theme} ${state}`).toEqual([])
 }
@@ -458,6 +522,34 @@ describe('the states screenshot review (#359)', () => {
         expectClean(run)
       }
     }, 400_000)
+
+    it(`shoots the ear's waits — starting, held behind its load, transcribing — in ${theme}`, async () => {
+      // Chromium's fake mic feeds frames at the mic's pace, one VAD score each, from the moment the ear is in:
+      // the wake, quiet in the open listen, a line (held behind the transcriber still loading), then about 15 s
+      // of quiet — the hold, and the dashboard woken — and a second line of the same Hot Listen, read slowly.
+      const run = await launch(
+        theme,
+        {
+          BINGBONG_WAKE_ENGINE: 'node',
+          BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
+          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 60), ...frames(SPEECH, 40), ...frames(QUIET, 466), ...frames(SPEECH, 40), QUIET]),
+          // The ear "loads" long enough to be read three ways, and the transcriber after it long enough to hold a line.
+          BINGBONG_VAD_LOAD_MS: '20000',
+          BINGBONG_STT_LOAD_MS: '15000',
+          BINGBONG_STT_SCRIPT: JSON.stringify([
+            { text: '', partials: ['what about'] },
+            { text: '', delayMs: 14_000, partials: ['zorblax the quux'] },
+          ]),
+        },
+        ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+      )
+      try {
+        await walkTheEarWaits(run)
+      } finally {
+        await close(run)
+        expectClean(run)
+      }
+    }, 200_000)
 
     it(`shoots the Voice Prompt taking an Utterance in ${theme}`, async () => {
       const run = await launch(theme, {

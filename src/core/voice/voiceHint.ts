@@ -1,12 +1,15 @@
 // The Status Capsule's voice hint (#331): the pill beside it names the
-// state, so the hint carries only instruction or the live words — never
-// the state word a second time. Transcribing has nothing to add. While
-// the Voice Prompt is on screen (#359) the Prompt carries the hint and the
-// live words, and the capsule says only the state. Otherwise the last
-// spoken result (#436) takes the instruction's place until the next input:
-// speech cannot be scrolled back by ear, and the live words still win.
+// state, so the hint carries only instruction, the live words or a wait's
+// object and seconds — never the state word a second time. Transcribing
+// carries the words being read and its count, and a cold ear its own
+// (#442). While the Voice Prompt is on screen (#359) the Prompt carries the
+// hint and the live words, and the capsule says only the state. Otherwise
+// the last spoken result (#436) takes the instruction's place until the
+// next input: speech cannot be scrolled back by ear, and the live words
+// still win.
 
-import { wordlessLine } from './voicePrompt'
+import type { EarLoading } from './ipcChannels'
+import { earPhase, earWaitLine, wordlessLine } from './voicePrompt'
 
 /**
  * The rest hint (#437, principle 9): one wording for the same state on every
@@ -27,15 +30,22 @@ export interface VoiceHintInput {
   monitoring: boolean
   /** The live partial transcript (#324); empty before the first words. */
   partial: string
+  /** What a cold ear still waits for (#442). */
+  loading?: EarLoading
+  /** When the ear's phase began, on main's wall clock (#442). */
+  since?: number
 }
 
 export interface VoiceHint {
-  kind: 'listening' | 'monitoring' | 'result'
+  kind: 'listening' | 'monitoring' | 'result' | 'starting' | 'transcribing'
   text: string
 }
 
-export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean; result?: string | null } = {}): VoiceHint | null {
-  if (voice.transcribing || options.promptShown === true) return null
+export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean; result?: string | null; now?: number } = {}): VoiceHint | null {
+  if (options.promptShown === true) return null
+  const phase = earPhase(voice)
+  const now = options.now ?? Date.now()
+  if (phase === 'starting' || phase === 'transcribing') return { kind: phase, text: earWaitLine(phase, voice, now) }
   if (voice.listening) {
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
   }

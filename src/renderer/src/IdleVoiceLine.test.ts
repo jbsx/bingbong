@@ -33,10 +33,22 @@ describe('the idle Voice Prompt', () => {
     expect(text(hearing)).toBe('… Listening')
   })
 
-  it('says Transcribing while the words are read, and says the microphone is off when nothing listens', () => {
-    expect(text(render({ ...AT_REST, transcribing: true, partial: 'play some jazz' }))).toBe('“play some jazz…” Transcribing')
+  it('says Transcribing while the words are read, with their seconds (#442), and says the microphone is off when nothing listens', () => {
+    expect(text(render({ ...AT_REST, transcribing: true, partial: 'play some jazz', since: Date.now() }))).toBe('“play some jazz” · 0s Transcribing')
+    expect(text(render({ ...AT_REST, transcribing: true, since: Date.now() - 2_500 }))).toBe('your words · 2s Transcribing')
     const off = render({ ...AT_REST, monitoring: false })
     expect(text(off)).toBe('Microphone off — start typing')
     expect(off).not.toContain('voice-wave')
+  })
+
+  it('never invites speech while the ear cannot hear yet: STARTING, the ear loading and its seconds, no waveform (#442)', () => {
+    const starting = render({ ...AT_REST, loading: 'ear', since: Date.now() - 3_200 })
+    expect(text(starting)).toBe('loading the ear · 3s Starting')
+    expect(starting).not.toContain('Bing Bong')
+    expect(starting).not.toContain('voice-wave')
+  })
+
+  it('holds a line taken before the ear can read it as STARTING, with its words and seconds (#442)', () => {
+    expect(text(render({ ...AT_REST, transcribing: true, loading: 'words', since: Date.now() - 1_100 }))).toBe('your words · 1s Starting')
   })
 })

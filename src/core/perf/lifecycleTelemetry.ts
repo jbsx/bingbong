@@ -1,6 +1,9 @@
 import type { PerfSpanRecord } from './perfTracer'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
+/** The capsule's stage spans (#442): each stage's length in the perf log, `stage-<status>`, which `pnpm perf:report` prints per stage. */
+export const STAGE_SPAN_PREFIX = 'stage-'
+
 // The run from start to quit in the perf log (#429): when each part of the
 // app came up, how long each model took to load, each step of the quit, and
 // what the machine was doing between lines. Advisory like every perf record:
@@ -213,6 +216,8 @@ export interface LifecycleReport {
   wakeToListening: { count: number; p50: number; p95: number } | null
   /** Speech start to the dashboard's hearing frame (#441): the onset chunk's arrival in main to its paint. */
   speechToHearing: { count: number; p50: number; p95: number } | null
+  /** Each Status Capsule stage's length (#442), from its `stage-<status>` spans: what its "still …" bound is dated from. */
+  stages: { stage: string; count: number; p50: number; p95: number }[]
 }
 
 const isApp = (record: PerfSpanRecord, stage: string): boolean => record.turnId === 'app' && record.stage === stage && record.detail !== undefined
@@ -225,7 +230,20 @@ function percentiles(values: number[]): { p50: number; p95: number; max: number 
 }
 
 export function buildLifecycleReport(records: readonly PerfSpanRecord[]): LifecycleReport {
-  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: spanReport(records, 'wake-to-listening'), speechToHearing: spanReport(records, 'speech-to-hearing') }
+  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: spanReport(records, 'wake-to-listening'), speechToHearing: spanReport(records, 'speech-to-hearing'), stages: stageReport(records) }
+}
+
+function stageReport(records: readonly PerfSpanRecord[]): LifecycleReport['stages'] {
+  const byStage = new Map<string, number[]>()
+  for (const record of records) {
+    if (record.turnId !== 'app' || !record.stage.startsWith(STAGE_SPAN_PREFIX)) continue
+    const stage = record.stage.slice(STAGE_SPAN_PREFIX.length)
+    byStage.set(stage, [...(byStage.get(stage) ?? []), record.durMs])
+  }
+  return [...byStage].map(([stage, spans]) => {
+    const { p50, p95 } = percentiles(spans)
+    return { stage, count: spans.length, p50, p95 }
+  })
 }
 
 function bootReport(records: readonly PerfSpanRecord[]): LifecycleReport['boot'] {
@@ -419,6 +437,9 @@ export function formatLifecycleReport(report: LifecycleReport): string[] {
   if (report.speechToHearing !== null) {
     const h = report.speechToHearing
     lines.push(`speech-to-hearing: ×${h.count} p50 ${formatMs(h.p50)} p95 ${formatMs(h.p95)}`)
+  }
+  if (report.stages.length > 0) {
+    lines.push(`capsule stages: ${report.stages.map((s) => `${s.stage} ×${s.count} p50 ${formatMs(s.p50)} p95 ${formatMs(s.p95)}`).join(', ')}`)
   }
   return lines
 }

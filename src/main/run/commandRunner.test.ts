@@ -5021,10 +5021,10 @@ describe('the stages a Command passes through (#428)', () => {
     expect(stages(events)).toEqual([
       { status: 'thinking', hop: 0, detail: 'sign me in please' },
       { status: 'acting', hop: 0, detail: '“Sign in”' },
-      { status: 'loading', hop: 0 },
+      { status: 'loading', hop: 0, detail: 'example.com' },
       { status: 'thinking', hop: 1 },
       { status: 'acting', hop: 1 },
-      { status: 'loading', hop: 1 },
+      { status: 'loading', hop: 1, detail: 'example.com' },
       { status: 'thinking', hop: 2 },
     ])
   })
@@ -5051,7 +5051,22 @@ describe('the stages a Command passes through (#428)', () => {
     expect(stages(events)).toEqual([
       { status: 'thinking', hop: 0, detail: 'navigate youtube.com' },
       { status: 'acting', hop: 0, detail: 'youtube.com' },
-      { status: 'loading', hop: 0 },
+      { status: 'loading', hop: 0, detail: 'youtube.com' },
+    ])
+  })
+
+  it('a click that navigates names the host it lands on, once its landing says where (#442)', async () => {
+    const { browser, events, observe, land, runner } = harness()
+    browser.click = async () => {
+      observe('navigation')
+      browser.snapshot = { ...browser.snapshot, url: 'https://www.other.org/story' }
+      land('loaded')
+      return 'clicked'
+    }
+    await runner.run('click 2')
+    expect(stages(events).filter((stage) => stage.status === 'loading' && stage.hop === 0)).toEqual([
+      { status: 'loading', hop: 0, detail: 'example.com' },
+      { status: 'loading', hop: 0, detail: 'other.org' },
     ])
   })
 

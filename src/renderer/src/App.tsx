@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { ChromeIcon } from './ChromeIcon'
-import { capsuleTone, RunHint, StatusOrb, StatusPill, TaskBar, VoiceWave } from './AssistantPanel'
+import { capsuleTone, EarWait, RunHint, StatusOrb, StatusPill, TaskBar, VoiceWave } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { IdlePrompt } from './IdlePrompt'
 import { usePaneHasPage } from './usePaneHasPage'
@@ -28,6 +28,7 @@ import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 import { voiceHint } from '../../core/voice/voiceHint'
+import { earPhase } from '../../core/voice/voicePrompt'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { AppView } from '../../core/command/appOp'
 
@@ -133,11 +134,14 @@ export function App() {
 
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
-  const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  // A cold ear outranks the ear's own states (#442), and a line it holds outranks a Command; a typed Command's stage still shows while the ear loads.
+  const ear = earPhase(voice)
+  const status = ear === 'starting' && (voice.transcribing || assistant.status === 'idle') ? 'starting' : voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
   // Never go idle over a running command, an open mic, the STT window, or
   // the settings page — the timer must not unmount a form mid-edit. Once
   // up, the Idle Screen stays up through them until something wakes it.
-  const quiet = status === 'idle' && !voice.listening && !voice.transcribing
+  // A cold ear is no activity: the Idle Screen comes up over it and says so (#442).
+  const quiet = (status === 'idle' || status === 'starting') && !voice.listening && !voice.transcribing
   const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current)
   idleUp.current = showIdle
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
@@ -224,7 +228,8 @@ export function App() {
                 transcript (#324) — never the pill's state word again (#331). */}
             {hint ? (
               <span className={`voice-hint voice-hint--${hint.kind}`} role="status">
-                {hint.text}
+                {/* A wait counts its own seconds (#442); every other hint is still words. */}
+                {hint.kind === 'starting' || hint.kind === 'transcribing' ? <EarWait phase={hint.kind} voice={{ ...voice, partial: voice.lastWords }} /> : hint.text}
               </span>
             ) : null}
             {/* The Task's progress bar (#375) along the capsule's foot: it

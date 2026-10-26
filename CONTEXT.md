@@ -645,7 +645,15 @@ peach, and how much quiet ends it. The Prompt Bar is drawn as one; the
 Idle Screen's first Clock Line is one (#360): `Say "Bing Bong" or start
 typing` beside a still waveform at rest, the live words with `LISTENING`
 while an Utterance is taken and `TRANSCRIBING` while they are read, and
-`Microphone off — start typing` with the orb grey.
+`Microphone off — start typing` with the orb grey. A wait counts its
+seconds on the screen's own clock (#442): `TRANSCRIBING` with the words
+being read — the Utterance's last partial in quotes, or `your words` — and
+the seconds since its Endpoint. At a cold start the ear is `STARTING`
+until the models that hear are in — `loading the ear` and its seconds,
+the orb grey, never `Say "Bing Bong"`; a line taken after that but before
+the transcriber is in is held, `STARTING` with its words and the seconds
+since its Endpoint. Only a wake heard while the transcriber loaded hears
+"I'm ready" when it is in.
 _Avoid_: voice line (that is the Spoken Rendering), input box, omnibar
 
 **Feed**:
@@ -1335,11 +1343,14 @@ A Command's stages are Thinking (from the moment its line is taken, the heard
 words beside it, over the page read and every ask), Acting (named by the
 action's own word — Opening, Searching, Clicking, Playing — with what it is
 on in the person's words: the host, the terms, the label; never the action
-line), Loading (the action's wait for its navigation or settle, on the same
-object, until the next Hop reads the page) and Speaking. The pill says the
-stage's word and the Feed's Run Detail the same words (#438). Past the first Hop the hint names the
-Hop, and the seconds are the stage's own. A stage that runs past 5 s names its
-wait ("still thinking", "page still loading"). The screen never names the
+line), Loading (the action's wait for its navigation or settle, on the host
+it loads (#442), until the next Hop reads the page) and Speaking. The pill
+says the stage's word and the Feed's Run Detail the same words (#438). Past
+the first Hop the hint names the Hop, and the seconds are the stage's own. A
+stage that runs past its own bound, its p95 (#442), names its wait ("still
+thinking", "page still loading"). The ear's states lead the Command's:
+Starting while the ear cannot hear yet — quiet, never Ready — and
+Transcribing, each with its words and seconds in the hint. The screen never names the
 Decision Model (owner ruling 2026-10-25, #428). Its orb is the feed's assistant mark: one visual
 identity for "this is Bing Bong" — save that a failed Command's mark (the
 Peek Card's dot, the Feed Answer's mark and rail) takes the failure colour,

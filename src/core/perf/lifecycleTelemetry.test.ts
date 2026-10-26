@@ -178,3 +178,14 @@ describe('buildLifecycleReport', () => {
     expect(formatAppReport(report)).toEqual(['cpu (% of all CPUs, 1 samples): p50 20% p95 20% max 20% | p50 by process Tab 20%'])
   })
 })
+
+describe('the capsule stages (#442)', () => {
+  it('reports each stage\'s length from its stage spans, the bound its "still …" line is dated from', () => {
+    const report = buildLifecycleReport([app('stage-thinking', { hop: 0 }, 400), app('stage-thinking', { hop: 1 }, 1_200), app('stage-loading', { hop: 0 }, 3_000), app('stt', {}, 999)])
+    expect(report.stages).toEqual([
+      { stage: 'thinking', count: 2, p50: 400, p95: 1_200 },
+      { stage: 'loading', count: 1, p50: 3_000, p95: 3_000 },
+    ])
+    expect(formatLifecycleReport(report).at(-1)).toBe('capsule stages: thinking ×2 p50 400ms p95 1200ms, loading ×1 p50 3000ms p95 3000ms')
+  })
+})

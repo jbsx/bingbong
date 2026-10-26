@@ -11,6 +11,7 @@ import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } 
 import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
 import { REST_HINT_MORE, REST_HINT_SAY, REST_HINT_WAKE } from '../../core/voice/voiceHint'
 import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
+import type { EarLoading } from '../../core/voice/ipcChannels'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
 import { defaultWeightSettings, type WeightSettings } from '../../core/scale/weightSettings'
@@ -23,7 +24,7 @@ import type { UsageState } from './useUsage'
 import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
-import { RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
+import { EarWait, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import type { RunProgress } from '../../core/pipeline/runProgress'
 import { GlobeIcon } from './WeatherIcon'
@@ -170,10 +171,16 @@ export interface IdleVoice {
   hearing: boolean
   /** The live words of the Utterance being taken; empty before the first. */
   partial: string
+  /** The Utterance's last words, kept through its read after the live partial clears (#442). */
+  lastWords?: string
+  /** What a cold ear still waits for (#442). */
+  loading?: EarLoading
+  /** When the ear's phase began, on main's wall clock (#442). */
+  since?: number
 }
 
 // Hearing keeps the pill's word (#441): the said-line's "…" is what changes when speech starts.
-const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
+const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { starting: 'Starting', listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
 
 /**
  * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb and the
@@ -181,12 +188,16 @@ const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { listening:
  * for the wake word, the orb and the hint with the waveform still;
  * `LISTENING` with the waveform live and the live words only while an
  * Utterance is taken — "…" from the frame speech starts until the first
- * partial (#441); `TRANSCRIBING` while its words are read; with the
- * microphone off, it says so.
+ * partial (#441); `TRANSCRIBING` while its words are read, with their
+ * seconds (#442); with the microphone off, it says so. While the ear
+ * cannot hear yet it is `STARTING`, the ear loading and its seconds, and
+ * never invites speech; a line it took before it can read is `STARTING`
+ * too, with its words (#442). A wait draws no waveform: the line's room
+ * goes to its seconds.
  */
 export function VoiceLine({ voice }: { voice: IdleVoice }) {
   const phase = earPhase(voice)
-  const taking = phase === 'listening' || phase === 'hearing' || phase === 'transcribing'
+  const taking = phase === 'starting' || phase === 'listening' || phase === 'hearing' || phase === 'transcribing'
   return (
     <div className={`idle-line idle-voice idle-voice--${phase}`} role="status" aria-label={taking ? EAR_WORD[phase] : phase === 'off' ? 'microphone off' : 'waiting for the wake word'}>
       <span className="idle-voice-orb" aria-hidden="true" />
@@ -194,6 +205,10 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
         <>
           <span className="idle-voice-hint">Microphone off</span> <span className="idle-voice-more">— start typing</span>
         </>
+      ) : phase === 'starting' || phase === 'transcribing' ? (
+        <span className="idle-voice-said">
+          <EarWait phase={phase} voice={{ ...voice, partial: voice.lastWords ?? voice.partial }} />
+        </span>
       ) : taking ? (
         <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? wordlessLine(phase) : `“${voice.partial}…”`}</span>
       ) : (
@@ -204,7 +219,7 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
           <span className="idle-voice-more">{REST_HINT_MORE}</span>
         </>
       )}
-      {phase !== 'off' ? (
+      {phase !== 'off' && phase !== 'starting' && phase !== 'transcribing' ? (
         <>
           <span className="idle-line-sep" aria-hidden="true" />
           <VoiceWave bars={6} />
@@ -443,7 +458,7 @@ function useFitZoom(): number {
  * The ear's own states are the Voice Prompt's to say.
  */
 function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProgress | null }) {
-  if (status === 'idle' || status === 'listening' || status === 'transcribing') return null
+  if (status === 'idle' || status === 'starting' || status === 'listening' || status === 'transcribing') return null
   return (
     <div className="status-capsule idle-status">
       <StatusOrb status={status} />

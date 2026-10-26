@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
+import type { EarLoading, VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
 import { reportRendererFault } from './diagnostics'
 import { openMicCapture } from './micCapture'
 
@@ -16,6 +16,12 @@ export interface VoiceApi {
   monitoring: boolean
   /** The live partial transcript while the user speaks (#324); '' between Utterances. */
   partial: string
+  /** The Utterance's last words, kept through its read after the live partial clears (#442); '' with none. */
+  lastWords: string
+  /** What a cold ear still waits for (#442); absent once nothing is loading. */
+  loading?: EarLoading
+  /** When the ear's phase began, on main's wall clock (#442). */
+  since?: number
 }
 
 export interface UseVoiceDeps {
@@ -54,6 +60,11 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
   const [monitoring, setMonitoring] = useState(false)
   const [partial, setPartial] = useState('')
+  // The Utterance's last words, kept past the Endpoint's clear for its read to name (#442); the next one's speech clears them.
+  const [lastWords, setLastWords] = useState('')
+  const hearingRef = useRef(false)
+  const [loading, setLoading] = useState<EarLoading | undefined>(undefined)
+  const [since, setSince] = useState<number | undefined>(undefined)
 
   // Latest deps without resubscribing when callers rebuild the object.
   const depsRef = useRef(deps)
@@ -101,8 +112,12 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
       setListening(state.listening)
       setTranscribing(state.transcribing)
       setHearing(state.hearing)
+      if (state.hearing && !hearingRef.current) setLastWords('')
+      hearingRef.current = state.hearing
       setReason(state.reason)
       setMonitoring(state.monitoring)
+      setLoading(state.loading)
+      setSince(state.since)
       // The mic also stays up through the STT window: a discarded blip
       // returns to listening, and re-acquiring the device would eat the
       // first frames of whatever the user says next (#38).
@@ -119,7 +134,10 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     const unsubscribeError = window.bingbong.voice.onError((error) =>
       depsRef.current.onError(error.message, error.at),
     )
-    const unsubscribePartial = window.bingbong.voice.onPartial((event) => setPartial(event.text))
+    const unsubscribePartial = window.bingbong.voice.onPartial((event) => {
+      setPartial(event.text)
+      if (event.text !== '') setLastWords(event.text)
+    })
     return () => {
       unsubscribeState()
       unsubscribeHeard()
@@ -130,5 +148,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, hearing, reason, monitoring, partial }
+  return { listening, transcribing, hearing, reason, monitoring, partial, lastWords, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
 }

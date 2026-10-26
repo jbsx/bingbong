@@ -5,6 +5,7 @@ import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionMo
 import { askImageFile, type AskKind } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import { loadingDetail } from '../../core/pipeline/runProgress'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import { actingWords } from '../../core/pipeline/stageWords'
 import { nextLine, withNextLine } from '../../core/command/tryLine'
@@ -615,6 +616,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     } catch (error) {
       reportFault('run.commandRunner.reactionSpan', error, { turnId })
     }
+  }
+
+  /** A Loading stage's detail (#442): the host of the page the pane is on, which the action left it loading. */
+  function loadingOn(): { detail?: string } {
+    const detail = loadingDetail(browser.state().url)
+    return detail !== undefined ? { detail } : {}
   }
 
   /** The page the Command is read against: the one prepared at speech start while it is fresh, else one collected now. */
@@ -1290,17 +1297,27 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // Loading (#428): once the action shows its first effect — the document left, the page changed — what is left of it is the wait for its navigation or settle.
     let performing = true
     let loading = false
+    // What it loads (#442): the address the action goes to, else the page the pane is on now.
+    let loadingHost: string | undefined
+    const sayLoading = (detail: string | undefined): void => {
+      loadingHost = detail
+      publish({ type: 'status', turnId, status: 'loading', hop: task.hop, ...(detail !== undefined ? { detail } : {}), at: at() })
+    }
     const release = deps.onEffect?.((effect) => {
       if (current() && speech === undefined) react(effect)
       if (current() && speech === undefined && performing && !loading) {
         loading = true
-        publish({ type: 'status', turnId, status: 'loading', hop: task.hop, at: at() })
+        sayLoading(loadingDetail(typeof args.url === 'string' ? args.url : browser.state().url))
       }
     })
     // How its navigation landed (#328), heard while it is the Command in flight.
     let landing: PageLanding | undefined
     const releaseLanding = deps.onLanding?.((landed) => {
-      if (current()) landing = landed
+      if (!current()) return
+      landing = landed
+      // A click's navigation is known by its landing: the host it loads, if not the one first named; the stage's seconds go on.
+      const landedHost = loadingDetail(browser.state().url)
+      if (loading && performing && landedHost !== undefined && landedHost !== loadingHost) sayLoading(landedHost)
     })
     let unchanged = false
     /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
@@ -1931,7 +1948,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return { ended }
       }
       // Loading (#428): the page the move left is read before the next one.
-      publish({ type: 'status', turnId: stepTurnId, status: 'loading', hop, at: at() })
+      publish({ type: 'status', turnId: stepTurnId, status: 'loading', hop, ...loadingOn(), at: at() })
       const after = await collectPage(null)
       const stillOpen = after.refs.some((ref) => opened.appeared.includes(ref.label))
       task.actions.push(`${doneAction(command, now)} (${stillOpen ? 'it is still open' : 'what it opened closed'})`)
@@ -2021,7 +2038,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading = { turnId, submission: task.submission }
       // Loading (#428): the last hop's action waits for the page it left to settle and draw, before this hop reads it — that hop's stage, not this one's.
       const firedHop = hop - 1
-      if (task.pending !== undefined && !superseded(task)) publish({ type: 'status', turnId, status: 'loading', hop: firedHop, at: at() })
+      if (task.pending !== undefined && !superseded(task)) publish({ type: 'status', turnId, status: 'loading', hop: firedHop, ...loadingOn(), at: at() })
       // A re-read (the page moved under the reading) comes back here too, so it waits for the page to draw as the hop did.
       const page = superseded(task) ? blankPage(browser) : await drawn(task, await withResults(task, await collectPage(null)))
       visit(task, page.url)

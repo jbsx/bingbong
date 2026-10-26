@@ -464,6 +464,28 @@ body {
   white-space: pre;
 }
 
+/* The ear's wait (#442): its words ellipsize on a short line, its seconds
+   never do — a count out of sight cannot say the ear is alive. */
+.ear-wait {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: bottom;
+}
+
+.ear-wait-object {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ear-wait-tail {
+  flex: none;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The voice hint: instruction, the live words, or the last spoken result
    kept until the next input (#436), the quiet layer — shown in the capsule
    only while no Voice Prompt is on screen (#359). */
@@ -2628,7 +2650,9 @@ button.idle-line {
   box-shadow: 0 0 0 5px var(--accentq);
 }
 
-.idle-voice--off .idle-voice-orb {
+/* An ear that cannot hear yet (#442) is drawn as dead as one switched off: no accent until it is live. */
+.idle-voice--off .idle-voice-orb,
+.idle-voice--starting .idle-voice-orb {
   background: var(--fg3);
   box-shadow: none;
 }
@@ -2794,6 +2818,11 @@ button.idle-line {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+/* Not live yet (#442): the accent is kept for an ear that hears. */
+.idle-voice--starting .idle-voice-state {
+  color: var(--fg2);
 }
 
 /* ---- Now Playing (#365): the middle Column's card while a song is held ---- */
