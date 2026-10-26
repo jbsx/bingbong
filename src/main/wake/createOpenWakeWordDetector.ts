@@ -1,5 +1,5 @@
-import type { WakeScores, WakeWordDetector } from '../../core/ports/wake'
-import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake'
+import type { WakeScores, WakeWordDetector } from '../../core/ports/wake.ts'
+import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake.ts'
 import { ortSessionOptions, type OrtSessionOptions } from '../ortSessionOptions.ts'
 import { timeModelLoad } from '../perf/modelLoads.ts'
 
@@ -46,6 +46,13 @@ const MEL_BUFFER_MAX_FRAMES = 970 // 10 s × 97 frames (reference comment)
 const EMBEDDING_DIM = 96
 const FEATURE_WINDOW = 16
 const FEATURE_BUFFER_MAX = 120 // ~10 s of embeddings (reference)
+/**
+ * Unscored chunks the melspec reruns before a score (#435): the 16
+ * embeddings the classifiers read span 76 + 15 × 8 = 196 mel frames, the
+ * scored chunk's 8 and 23.5 chunks before it; 25 keeps a chunk in hand,
+ * and one more before them lends its lookback tail.
+ */
+const MEL_BACKFILL_CHUNKS = 25
 /** The first 5 chunks after a reset never fire (reference prediction_buffer warm-up). */
 const WARMUP_CHUNKS = 5
 /** The melspec model was trained on int16-valued floats, not [-1, 1]. */
@@ -73,8 +80,11 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
   let melRows: Float32Array[] = []
   let featureRows: Float32Array[] = []
   let chunksSinceReset = 0
+  // Chunks heard unscored since the last score (#435), oldest first, at most 26.
+  let missed: Float32Array[] = []
 
   function resetState(): void {
+    missed = []
     rawTail = new Float32Array(0)
     melRows = Array.from({ length: MEL_WINDOW_FRAMES }, () => new Float32Array(MEL_BINS).fill(1))
     // The reference seeds the feature buffer with embeddings of random noise;
@@ -100,10 +110,10 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
     return { ort, ...(await sessionsReady) }
   }
 
-  async function scoreChunk(chunk: Float32Array): Promise<WakeScores> {
-    const { ort: runtime, melspec, embedding, heads } = await ensureSessions()
+  type Sessions = Awaited<ReturnType<typeof ensureSessions>>
 
-    // Melspectrogram: lookback tail + chunk, int16-valued floats in.
+  /** Melspectrogram: lookback tail + chunk, int16-valued floats in; the rows go on the mel buffer. */
+  async function melStep({ ort: runtime, melspec }: Sessions, chunk: Float32Array): Promise<void> {
     const input = new Float32Array(rawTail.length + chunk.length)
     input.set(rawTail)
     input.set(chunk, rawTail.length)
@@ -119,27 +129,62 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
       melRows.push(row)
     }
     if (melRows.length > MEL_BUFFER_MAX_FRAMES) melRows = melRows.slice(melRows.length - MEL_BUFFER_MAX_FRAMES)
+  }
 
-    // Speech embedding over the trailing 76-frame window.
+  /** Speech embedding over the trailing 76-frame window, onto the feature buffer. */
+  async function embeddingStep({ ort: runtime, embedding }: Sessions): Promise<void> {
     const window = melRows.slice(melRows.length - MEL_WINDOW_FRAMES)
     const embeddingInput = new Float32Array(MEL_WINDOW_FRAMES * MEL_BINS)
     window.forEach((row, f) => embeddingInput.set(row, f * MEL_BINS))
     const embOut = await embedding.run({
       input_1: new runtime.Tensor('float32', embeddingInput, [1, MEL_WINDOW_FRAMES, MEL_BINS, 1]),
     })
-    featureRows.push(Float32Array.from(firstOutput(embOut)))
+    pushFeature(Float32Array.from(firstOutput(embOut)))
+  }
+
+  function pushFeature(row: Float32Array): void {
+    featureRows.push(row)
     if (featureRows.length > FEATURE_BUFFER_MAX) featureRows = featureRows.slice(featureRows.length - FEATURE_BUFFER_MAX)
+  }
+
+  /**
+   * The chunks heard unscored since the last score (#435), computed now as
+   * if each had been: the melspec over the last 25 (the 26th from the end
+   * only lends its lookback tail), the embedding over the last 15 — with the
+   * chunk being scored, the 76 mel frames under each of the 16 embeddings
+   * the classifiers read. An older embedding is never read again, so it
+   * stands as a zero row; older mel rows sit outside every window read.
+   */
+  async function catchUp(sessions: Sessions): Promise<void> {
+    if (missed.length === 0) return
+    const chunks = missed
+    missed = []
+    const melFrom = Math.max(0, chunks.length - MEL_BACKFILL_CHUNKS)
+    if (melFrom > 0) rawTail = chunks[melFrom - 1].slice(WAKE_CHUNK_SAMPLES - MEL_LOOKBACK_SAMPLES)
+    const embeddingFrom = chunks.length - (FEATURE_WINDOW - 1)
+    for (let i = melFrom; i < chunks.length; i++) {
+      await melStep(sessions, chunks[i])
+      if (i >= embeddingFrom) await embeddingStep(sessions)
+      else pushFeature(new Float32Array(EMBEDDING_DIM))
+    }
+  }
+
+  async function scoreChunk(chunk: Float32Array): Promise<WakeScores> {
+    const sessions = await ensureSessions()
+    await catchUp(sessions)
+    await melStep(sessions, chunk)
+    await embeddingStep(sessions)
 
     // One classifier per head over the trailing 16 embeddings.
     const features = featureRows.slice(featureRows.length - FEATURE_WINDOW)
     const classifierInput = new Float32Array(FEATURE_WINDOW * EMBEDDING_DIM)
     features.forEach((row, f) => classifierInput.set(row, f * EMBEDDING_DIM))
-    const scores = {} as WakeScores
+    const scores: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
     for (const head of WAKE_HEADS) {
-      const session = heads[head]
+      const session = sessions.heads[head]
       const inputName = session.inputNames[0] ?? 'input'
       const out = await session.run({
-        [inputName]: new runtime.Tensor('float32', classifierInput, [1, FEATURE_WINDOW, EMBEDDING_DIM]),
+        [inputName]: new sessions.ort.Tensor('float32', classifierInput, [1, FEATURE_WINDOW, EMBEDDING_DIM]),
       })
       scores[head] = Number(firstOutput(out)[0])
     }
@@ -159,6 +204,16 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
         for (const head of WAKE_HEADS) max[head] = Math.max(max[head], scores[head])
       }
       return max
+    },
+
+    skip(chunk) {
+      assertWakeChunk(chunk)
+      for (let offset = 0; offset < chunk.length; offset += WAKE_CHUNK_SAMPLES) {
+        missed.push(chunk.slice(offset, offset + WAKE_CHUNK_SAMPLES))
+        if (missed.length > MEL_BACKFILL_CHUNKS + 1) missed.shift()
+        // The warm-up counts every chunk heard, scored or not.
+        chunksSinceReset += 1
+      }
     },
 
     reset: resetState,

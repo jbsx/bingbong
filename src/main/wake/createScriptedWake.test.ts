@@ -26,4 +26,12 @@ describe('scripted wake detector', () => {
     expect(() => createScriptedWake('{"wake": ["loud"]}')).toThrow(/BINGBONG_WAKE_SCRIPT/)
     expect(() => createScriptedWake('{}')).toThrow(/BINGBONG_WAKE_SCRIPT/)
   })
+
+  it('spends a chunk heard behind a shut gate as if it were scored (#435)', async () => {
+    const detector = createScriptedWake('[0.1, 0.2, 0.9]')
+
+    detector.skip!(new Float32Array(1280))
+    detector.skip!(new Float32Array(1280))
+    expect(await detector.score(new Float32Array(1280))).toEqual({ wake: 0.9, abort: 0, holdOn: 0 })
+  })
 })

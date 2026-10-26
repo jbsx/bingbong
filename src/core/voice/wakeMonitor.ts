@@ -1,7 +1,7 @@
-import type { VadScorer } from '../ports/stt'
-import type { WakeWordDetector } from '../ports/wake'
-import { WAKE_CHUNK_SAMPLES } from '../ports/wake'
-import { VAD_FRAME_SAMPLES } from './vadEndpointing'
+import type { VadScorer } from '../ports/stt.ts'
+import type { WakeWordDetector } from '../ports/wake.ts'
+import { WAKE_CHUNK_SAMPLES } from '../ports/wake.ts'
+import { VAD_FRAME_SAMPLES } from './vadEndpointing.ts'
 
 /** Recent VAD frames the gate looks at: 16 × 32 ms ≈ 0.5 s of speech history. */
 const VAD_GATE_WINDOW_FRAMES = 16
@@ -61,6 +61,11 @@ export interface WakeMonitor {
  * activation; the abort head doesn't latch (the session's interrupt handler
  * is idempotent and no-ops while idle). The "hold on" head is scored but
  * fires nothing — unwired in favor of wake-pauses-run (ADR 0024).
+ *
+ * The gate is read before the chunk is scored (#435): with it shut no head
+ * can fire, so a detector that can skip only hears the chunk, and scores
+ * the chunks it missed the moment the gate opens — the same scores, on
+ * every chunk that could fire, at a fraction of the work in a quiet room.
  */
 export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
   const vadGate = deps.vadGate ?? DEFAULT_VAD_GATE
@@ -95,8 +100,12 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     while (wakeCarry.length >= WAKE_CHUNK_SAMPLES && latched === null) {
       const chunk = wakeCarry.slice(0, WAKE_CHUNK_SAMPLES)
       wakeCarry = wakeCarry.slice(WAKE_CHUNK_SAMPLES)
-      const scores = await deps.detector.score(chunk)
       const gateMax = recentVad.length > 0 ? Math.max(...recentVad) : 0
+      if (gateMax < vadGate && deps.detector.skip) {
+        deps.detector.skip(chunk)
+        continue
+      }
+      const scores = await deps.detector.score(chunk)
       const threshold = deps.getThreshold()
       const cleared = scores.wake >= threshold && gateMax >= vadGate
       if (cleared) {

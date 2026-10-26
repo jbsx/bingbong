@@ -605,6 +605,15 @@ export class FakeWakeDetector implements WakeWordDetector {
   }
 }
 
+/** A FakeWakeDetector that can hear a chunk unscored (#435): skipped chunks are kept, in order. */
+export class SkippingFakeWakeDetector extends FakeWakeDetector {
+  readonly skipped: Float32Array[] = []
+
+  skip(chunk: Float32Array): void {
+    this.skipped.push(chunk)
+  }
+}
+
 export const silentTts: TtsSpeaker = {
   async speak() {
     return { ok: true as const }

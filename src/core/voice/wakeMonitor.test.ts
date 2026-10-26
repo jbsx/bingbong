@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { WAKE_CHUNK_SAMPLES } from '../ports/wake'
-import { FakeVad, FakeWakeDetector } from '../testing/doubles'
+import { FakeVad, FakeWakeDetector, SkippingFakeWakeDetector } from '../testing/doubles'
 import { VAD_FRAME_SAMPLES } from './vadEndpointing'
 import { createWakeMonitor } from './wakeMonitor'
 
@@ -197,5 +197,47 @@ describe('wake monitor', () => {
     await harness.pushFrames([SPEECH, SPEECH])
 
     expect(harness.errors).toEqual(['silero model missing'])
+  })
+
+  describe('behind a shut gate (#435)', () => {
+    it('only hears a chunk while the gate is shut, and scores it once speech opens the gate', async () => {
+      const detector = new SkippingFakeWakeDetector([0.9])
+      const harness = createMonitor({ detector })
+
+      // Five silent frames: two wake chunks, neither scored.
+      await harness.pushFrames([SILENCE, SILENCE, SILENCE, SILENCE, SILENCE])
+      expect(detector.skipped).toHaveLength(2)
+      expect(detector.chunks).toHaveLength(0)
+      expect(harness.wakes).toBe(0)
+
+      // The first scored chunk wakes, and the latch holds the second.
+      await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+      expect(detector.chunks).toHaveLength(1)
+      expect(harness.wakes).toBe(1)
+    })
+
+    it('scores every chunk when the detector cannot skip', async () => {
+      const harness = createMonitor({ detector: new FakeWakeDetector([0.9]) })
+
+      await harness.pushFrames([SILENCE, SILENCE, SILENCE, SILENCE, SILENCE])
+
+      expect(harness.detector.chunks).toHaveLength(2)
+      expect(harness.wakes).toBe(0)
+    })
+
+    it('keeps the order the chunks were heard in, skipped and scored', async () => {
+      const detector = new SkippingFakeWakeDetector()
+      const harness = createMonitor({ detector })
+      const audio = new Float32Array(4 * WAKE_CHUNK_SAMPLES).map((_, i) => i)
+
+      // Two chunks are five VAD frames.
+      harness.vad.queue.push(...Array.from({ length: 5 }, () => SILENCE))
+      await harness.monitor.pushAudio(audio.subarray(0, 2 * WAKE_CHUNK_SAMPLES).slice())
+      harness.vad.queue.push(...Array.from({ length: 5 }, () => SPEECH))
+      await harness.monitor.pushAudio(audio.subarray(2 * WAKE_CHUNK_SAMPLES).slice())
+
+      expect(detector.skipped.map((chunk) => chunk[0])).toEqual([0, WAKE_CHUNK_SAMPLES])
+      expect(detector.chunks.map((chunk) => chunk[0])).toEqual([2 * WAKE_CHUNK_SAMPLES, 3 * WAKE_CHUNK_SAMPLES])
+    })
   })
 })

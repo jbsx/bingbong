@@ -47,6 +47,14 @@ three phrases.
    reuses the session's shared Silero instance instead of loading a second
    one, gating on the max of the trailing 16 × 32 ms frames (~0.5 s). Same
    intent — speech must be present around the scored audio — tuned window.
+   The gate is read before the chunk is scored (#435): while it is shut no
+   head can fire, so the stack does not run; the detector keeps the raw
+   chunks it missed (26) and, when the gate opens, reruns the melspec over
+   the last 25 and the embedding over the last 15 before scoring, which is
+   every frame the 16 classified embeddings read. The scores are the
+   ungated port's to the bit on every gate-open chunk
+   (`src/main/wake/gatedWake.models.test.ts`); `pnpm wake:cpu` measures the
+   saving.
 3. **Multi-chunk `score()`**: like the reference's group prediction, the port
    scores each 80 ms sub-chunk and returns the max. The monitor only ever
    feeds single chunks, so this path exists for completeness.

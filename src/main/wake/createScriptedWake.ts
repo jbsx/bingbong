@@ -45,15 +45,23 @@ export function createScriptedWake(scoresJson: string): WakeWordDetector {
     holdOn: scripts.holdOn[scripts.holdOn.length - 1],
   }
 
+  function next(): WakeScores {
+    const scores = {} as WakeScores
+    for (const head of HEADS) {
+      const queue = queues[head]
+      if (queue.length > 0) lasts[head] = queue.shift() ?? lasts[head]
+      scores[head] = lasts[head]
+    }
+    return scores
+  }
+
   return {
     score() {
-      const scores = {} as WakeScores
-      for (const head of HEADS) {
-        const queue = queues[head]
-        if (queue.length > 0) lasts[head] = queue.shift() ?? lasts[head]
-        scores[head] = lasts[head]
-      }
-      return Promise.resolve(scores)
+      return Promise.resolve(next())
+    },
+    // A chunk heard behind a shut gate still takes its place in the script (#435).
+    skip() {
+      next()
     },
     reset() {},
   }

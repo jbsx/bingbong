@@ -18,6 +18,13 @@ export interface WakeWordDetector {
    * (0..1). Adapter failures (missing model, dead sidecar) reject.
    */
   score(chunk: Float32Array): Promise<WakeScores>
+  /**
+   * Hears one chunk without scoring it (the VAD gate is shut, so no head
+   * could fire, #435). The detector keeps what it needs so the next
+   * score() returns exactly what it would have had every chunk been
+   * scored. Absent, the caller scores every chunk.
+   */
+  skip?(chunk: Float32Array): void
   /** Clears feature buffers between listening episodes. */
   reset(): void
 }

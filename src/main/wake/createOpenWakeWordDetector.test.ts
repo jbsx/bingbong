@@ -241,4 +241,66 @@ describe('openWakeWord detector', () => {
     expect(scores.slice(0, 5).map((s) => s.wake)).toEqual([0, 0, 0, 0, 0])
     expect(scores[5].wake).toBeCloseTo(0.7, 5)
   })
+
+  describe('chunks heard unscored (#435)', () => {
+    it('runs nothing on a skipped chunk', async () => {
+      const runtime = createFakeRuntime()
+      const detector = createDetector(runtime)
+
+      for (let i = 0; i < 40; i++) detector.skip!(new Float32Array(CHUNK))
+
+      expect(runtime.melspec.feeds).toHaveLength(0)
+      expect(runtime.embedding.feeds).toHaveLength(0)
+    })
+
+    it('reruns the last 25 skipped chunks through the melspec and the last 15 through the embedding before a score', async () => {
+      const runtime = createFakeRuntime()
+      const detector = createDetector(runtime)
+
+      for (let i = 0; i < 40; i++) detector.skip!(new Float32Array(CHUNK).fill(i / 100))
+      await detector.score(new Float32Array(CHUNK))
+
+      expect(runtime.melspec.feeds).toHaveLength(26)
+      expect(runtime.embedding.feeds).toHaveLength(16)
+      expect(runtime.heads.wake.feeds).toHaveLength(1)
+      // The 15th chunk from the end (index 15) is the first rerun; the one before it lends its tail.
+      const first = runtime.melspec.feeds[0].input
+      expect(first.dims).toEqual([1, CHUNK + 480])
+      expect(first.data[0]).toBeCloseTo((14 / 100) * 32767, 0)
+      expect(first.data[480]).toBeCloseTo((15 / 100) * 32767, 0)
+    })
+
+    it('reruns every skipped chunk since a reset when there are fewer, from no lookback', async () => {
+      const runtime = createFakeRuntime()
+      const detector = createDetector(runtime)
+
+      for (let i = 0; i < 3; i++) detector.skip!(new Float32Array(CHUNK))
+      await detector.score(new Float32Array(CHUNK))
+
+      expect(runtime.melspec.feeds).toHaveLength(4)
+      expect(runtime.embedding.feeds).toHaveLength(4)
+      expect(runtime.melspec.feeds[0].input.dims).toEqual([1, CHUNK])
+    })
+
+    it('counts skipped chunks into the warm-up', async () => {
+      const runtime = createFakeRuntime({ headScores: { wake: [0.7, 0.7] } })
+      const detector = createDetector(runtime)
+
+      for (let i = 0; i < 4; i++) detector.skip!(new Float32Array(CHUNK))
+      // The fifth chunk heard is still warm-up; the sixth reads.
+      expect((await detector.score(new Float32Array(CHUNK))).wake).toBe(0)
+      expect((await detector.score(new Float32Array(CHUNK))).wake).toBeCloseTo(0.7, 5)
+    })
+
+    it('forgets the skipped chunks at a reset', async () => {
+      const runtime = createFakeRuntime()
+      const detector = createDetector(runtime)
+
+      for (let i = 0; i < 10; i++) detector.skip!(new Float32Array(CHUNK))
+      detector.reset()
+      await detector.score(new Float32Array(CHUNK))
+
+      expect(runtime.melspec.feeds).toHaveLength(1)
+    })
+  })
 })
