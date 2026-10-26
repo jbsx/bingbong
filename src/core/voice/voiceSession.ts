@@ -100,6 +100,8 @@ export interface VoiceSessionDeps {
    */
   onUtteranceDropped?(): void
   getRunState(): CommandRunState
+  /** Each wake chunk the ear heard, and whether its gate was open (#435); the cpu record's gate-open share. */
+  onWakeChunk?(scored: boolean): void
   onAbort(): void
   onStateChange(state: VoiceState): void
   onHeard(event: VoiceHeardEvent): void
@@ -305,6 +307,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         // interrupt() lands only while a Command runs or a Hot Listen is open:
         // outside those the head is not scored at all (#435).
         abortWanted: () => deps.getRunState() !== 'idle' || hot,
+        // The wake corpus grows from daily use (#435): the last ~2 s at each wake, under the dump flag.
+        ...(deps.onWakeChunk ? { onChunk: deps.onWakeChunk } : {}),
+        ...(deps.dumper?.enabled ? { onWakeAudio: (pcm: Float32Array) => deps.dumper?.dump(pcm, 'wake') } : {}),
         onError: (message) => {
           deps.onError(message)
           // A dead detector would re-fail on every chunk — drop the ear

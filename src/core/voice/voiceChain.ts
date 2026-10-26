@@ -4,6 +4,7 @@ import type { PerfTracer } from '../perf/perfTracer'
 import type { Clock } from '../ports/clock'
 import type { Transcriber, TurnDetector, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
+import type { WakeGateCount } from '../perf/lifecycleTelemetry'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
 import { reportFault, type FaultReport } from '../trace/fault'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
@@ -73,7 +74,8 @@ export interface ChainModelLoad {
 
 export type FromVoiceChain =
   | { type: 'ready' }
-  | { type: 'scored'; seq: number }
+  /** `wake`: the wake chunks heard and scored since the last reply (#435), when any were heard. */
+  | { type: 'scored'; seq: number; wake?: WakeGateCount }
   | { type: 'state'; state: VoiceState; hot: boolean }
   | { type: 'partial'; text: string }
   | { type: 'speechStart' }
@@ -135,6 +137,8 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
   let idleWaiters: (() => void)[] = []
   let submitSeq = 0
   const tasks = new Map<number, () => void>()
+  // The wake chunks since the last reply: the gate-open share rides the next `scored` (#435).
+  let wakeGate: WakeGateCount = { heard: 0, scored: 0 }
 
   function setContext(next: VoiceChainContext): void {
     context = next
@@ -197,6 +201,10 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
       onPartial: (text) => deps.send({ type: 'partial', text }),
       onUtteranceDropped: () => deps.send({ type: 'utteranceDropped' }),
       getRunState: () => context.runState,
+      onWakeChunk: (scored) => {
+        wakeGate.heard += 1
+        if (scored) wakeGate.scored += 1
+      },
       onAbort: () => deps.send({ type: 'abort' }),
       onStateChange: (state) => deps.send({ type: 'state', state, hot: session?.isHotListenOpen() ?? false }),
       onHeard: (event) => deps.send({ type: 'heard', event }),
@@ -210,7 +218,15 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
       case 'audio': {
         setContext(message.context)
         const { seq } = message
-        void live.pushAudio(message.chunk).then(() => deps.send({ type: 'scored', seq }))
+        void live.pushAudio(message.chunk).then(() => {
+          const wake = wakeGate
+          if (wake.heard === 0) {
+            deps.send({ type: 'scored', seq })
+            return
+          }
+          wakeGate = { heard: 0, scored: 0 }
+          deps.send({ type: 'scored', seq, wake })
+        })
         return
       }
       case 'context':
@@ -331,6 +347,8 @@ export interface VoiceChainClientDeps<C> {
   onModelLoad?(load: ChainModelLoad): void
   /** A fault the voice process reported. */
   onFault?(report: FaultReport): void
+  /** The wake chunks the ear heard and scored (#435), as each batch comes back. */
+  onWakeGate?(count: WakeGateCount): void
   clock?: Clock
   /** The wait before the first restart, doubled for each that follows in quick succession; 1 s by default. */
   restartDelayMs?: number
@@ -404,6 +422,7 @@ export function createVoiceChainClient<C>(deps: VoiceChainClientDeps<C>): VoiceC
       case 'ready':
         return
       case 'scored':
+        if (message.wake) deps.onWakeGate?.(message.wake)
         pending.get(message.seq)?.()
         pending.delete(message.seq)
         return

@@ -1141,6 +1141,36 @@ describe('voice session — utterance audio dumps (#34)', () => {
     expect(harness.dumps).toHaveLength(1)
     expect(harness.errors).toEqual(['stt model missing'])
   })
+  it('with the flag set, a wake dumps the ear\'s last ~2 s as wake-<timestamp>-<sequence>.wav, the firing chunk last (#435)', async () => {
+    const detector = new FakeWakeDetector([0.1, 0.1, 0.9])
+    const harness = await createSession({ wake: { detector }, audioDump: true })
+    harness.session.enableWakeMonitoring()
+
+    for (let i = 0; i < 8; i++) {
+      harness.vad.queue.push(0.95)
+      await harness.session.pushAudio(new Float32Array(512).fill((i + 1) / 10))
+    }
+
+    expect(harness.dumps.map((dump) => dump.path)).toEqual([`/user-data/audio-dumps/wake-${PERF_WALL_ORIGIN}-0001.wav`])
+    // Three chunks heard, the third fired: 3 × 1280 samples, ending at 3840 of the 4096 pushed.
+    const dumped = pcmFromWav(harness.dumps[0].bytes)
+    expect(dumped.length).toBe(3 * 1280)
+    expect(dumped.at(-1)).toBeCloseTo(0.8, 3)
+  })
+
+  it('with the flag unset, a wake dumps nothing', async () => {
+    const detector = new FakeWakeDetector([0.9])
+    const harness = await createSession({ wake: { detector }, audioDump: false })
+    harness.session.enableWakeMonitoring()
+
+    for (let i = 0; i < 3; i++) {
+      harness.vad.queue.push(0.95)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+
+    expect(harness.states.at(-1)?.listening).toBe(true)
+    expect(harness.dumps).toEqual([])
+  })
 })
 
 // The ear's Host Trace records (#186, ADR 0031). Host-scoped by the

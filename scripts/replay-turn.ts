@@ -22,6 +22,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
+import { WAKE_DUMP_PREFIX } from '../src/core/voice/utteranceDump.ts'
 import { createUtteranceEndpointer, vadDefaults, VAD_FRAME_MS, VAD_FRAME_SAMPLES, type UtteranceEnd } from '../src/core/voice/vadEndpointing.ts'
 import { createSileroVad } from '../src/main/voice/createSileroVad.ts'
 import { createSmartTurn } from '../src/main/voice/createSmartTurn.ts'
@@ -32,7 +33,7 @@ const TAIL_MS = 2_200
 
 const files = existsSync(dumpsDir)
   ? readdirSync(dumpsDir)
-      .filter((name) => name.endsWith('.wav'))
+      .filter((name) => name.endsWith('.wav') && !name.startsWith(WAKE_DUMP_PREFIX))
       .sort()
   : []
 if (files.length === 0) {

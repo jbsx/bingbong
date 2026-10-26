@@ -7,6 +7,7 @@ import {
   LONG_TASKS_SCRIPT,
   createBootClock,
   createLagMeter,
+  createWakeGateMeter,
   createQuitTrace,
   parseMeminfo,
   type BootClock,
@@ -50,6 +51,9 @@ const LONG_TASKS_DEADLINE_MS = 1_000
 
 /** How far the voice chain runs behind the audio handed to it (#429): fed by the ears, drained by each sample. */
 export const vadLag = createLagMeter()
+
+/** The ear's wake chunks heard and scored (#435): the gate-open share, fed by the voice chain, drained by each sample. */
+export const wakeGate = createWakeGateMeter()
 
 /** The surfaces whose renderers the sample names and reads long tasks in (#429); dropped once destroyed. */
 const surfaces = new Map<string, WebContents>()
@@ -120,8 +124,9 @@ export function startCpuSampler(tracer: PerfTracer, metrics: () => readonly Proc
     const delay = { p50: ms(loop.percentile(50)), p99: ms(loop.percentile(99)), max: ms(loop.max) }
     loop.reset()
     const lag = vadLag.drain()
+    const gate = wakeGate.drain()
     const [memory, longTasks] = await Promise.all([readMachineMemory(), readLongTasks()])
-    write(tracer, 'cpu', { ...cpuSampleOf(processes, loadavg()[0] ?? 0, { loop: delay, memory, longTasks, vadLag: lag }) }, 'perf.appTelemetry.cpu')
+    write(tracer, 'cpu', { ...cpuSampleOf(processes, loadavg()[0] ?? 0, { loop: delay, memory, longTasks, vadLag: lag, wakeGate: gate }) }, 'perf.appTelemetry.cpu')
   }
   const timer = setInterval(() => {
     sample().catch((error: unknown) => reportFault('perf.appTelemetry.cpu', error))

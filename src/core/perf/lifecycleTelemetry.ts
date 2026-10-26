@@ -114,6 +114,36 @@ export function createLagMeter(): LagMeter {
   }
 }
 
+/** The ear's wake chunks between two samples (#435): how many it heard, how many the gate let it score. */
+export interface WakeGateCount {
+  heard: number
+  scored: number
+}
+
+export interface WakeGateMeter {
+  record(count: WakeGateCount): void
+  /** What was recorded since the last drain; null when no chunk was heard. */
+  drain(): WakeGateCount | null
+}
+
+export function createWakeGateMeter(): WakeGateMeter {
+  let heard = 0
+  let scored = 0
+  return {
+    record(count) {
+      heard += count.heard
+      scored += count.scored
+    },
+    drain() {
+      if (heard === 0) return null
+      const count = { heard, scored }
+      heard = 0
+      scored = 0
+      return count
+    },
+  }
+}
+
 export interface MachineMemory {
   availableMb: number
   swapUsedMb: number
@@ -177,6 +207,8 @@ export interface LifecycleReport {
     swapMaxMb: number | null
     longTasks: Record<string, { count: number; ms: number; worstSampleMs: number }>
     vadLag: { p50: number; max: number } | null
+    /** The share of wake chunks the gate let the ear score (#435), over every sample that heard one. */
+    wakeGate: WakeGateCount | null
   } | null
   wakeToListening: { count: number; p50: number; p95: number } | null
 }
@@ -274,6 +306,8 @@ function steadyReport(records: readonly PerfSpanRecord[]): LifecycleReport['stea
   const tasks = new Map<string, { count: number; ms: number; worstSampleMs: number }>()
   const lagP50: number[] = []
   let lagMax: number | null = null
+  let gateHeard = 0
+  let gateScored = 0
   let samples = 0
   for (const record of records) {
     if (!isApp(record, 'cpu')) continue
@@ -311,9 +345,16 @@ function steadyReport(records: readonly PerfSpanRecord[]): LifecycleReport['stea
       lagP50.push(lag.p50)
       lagMax = Math.max(lagMax ?? 0, num(lag.max) ?? 0)
     }
+    const wake = detail.wakeGate as WakeGateCount | null | undefined
+    const heard = num(wake?.heard)
+    const scored = num(wake?.scored)
+    if (heard !== null && scored !== null) {
+      gateHeard += heard
+      gateScored += scored
+    }
     samples += 1
   }
-  if (samples === 0 || (loop.length === 0 && memory.size === 0 && available.length === 0 && tasks.size === 0 && lagP50.length === 0)) return null
+  if (samples === 0 || (loop.length === 0 && memory.size === 0 && available.length === 0 && tasks.size === 0 && lagP50.length === 0 && gateHeard === 0)) return null
   const memoryP50: Record<string, number> = {}
   const memoryMax: Record<string, number> = {}
   for (const [type, values] of [...memory.entries()].sort(([a], [b]) => a.localeCompare(b))) {
@@ -329,6 +370,7 @@ function steadyReport(records: readonly PerfSpanRecord[]): LifecycleReport['stea
     swapMaxMb: swap.length > 0 ? Math.max(...swap) : null,
     longTasks: Object.fromEntries([...tasks.entries()].sort(([a], [b]) => a.localeCompare(b))),
     vadLag: lagP50.length > 0 ? { p50: percentiles(lagP50).p50, max: lagMax ?? 0 } : null,
+    wakeGate: gateHeard > 0 ? { heard: gateHeard, scored: gateScored } : null,
   }
 }
 
@@ -363,6 +405,9 @@ export function formatLifecycleReport(report: LifecycleReport): string[] {
     const tasks = Object.entries(s.longTasks).map(([surface, t]) => `${surface} ${t.count} for ${formatMs(t.ms)} (worst sample ${formatMs(t.worstSampleMs)})`)
     if (tasks.length > 0) parts.push(`long tasks ${tasks.join(', ')}`)
     if (s.vadLag !== null) parts.push(`vad lag p50 ${formatMs(s.vadLag.p50)} max ${formatMs(s.vadLag.max)}`)
+    if (s.wakeGate !== null && s.wakeGate.heard > 0) {
+      parts.push(`wake gate open ${String(Math.round((1000 * s.wakeGate.scored) / s.wakeGate.heard) / 10)} % (${String(s.wakeGate.scored)} of ${String(s.wakeGate.heard)} chunks scored)`)
+    }
     lines.push(`steady: ${parts.join(' | ')}`)
   }
   if (report.wakeToListening !== null) {

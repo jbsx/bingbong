@@ -1,5 +1,5 @@
 import type { PerfSpanRecord } from './perfTracer'
-import { buildLifecycleReport, formatLifecycleReport, type LagSummary, type LifecycleReport, type LongTasks, type MachineMemory } from './lifecycleTelemetry.ts'
+import { buildLifecycleReport, formatLifecycleReport, type LagSummary, type LifecycleReport, type LongTasks, type MachineMemory, type WakeGateCount } from './lifecycleTelemetry.ts'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
 // The app's own records in the perf log, beside the turns' (kiosk telemetry
@@ -56,6 +56,8 @@ export interface SampleExtras {
   longTasks?: Record<string, LongTasks | null>
   /** How far the voice chain ran behind the audio it was handed. */
   vadLag?: LagSummary | null
+  /** The wake chunks heard and scored (#435): the gate-open share. */
+  wakeGate?: WakeGateCount | null
 }
 
 /** One CPU sample: every process's share summed, and by kind, in percent of all the machine's CPUs (see ProcessCpu). */
@@ -69,6 +71,7 @@ export interface CpuSample {
   loop?: LoopDelay
   longTasks?: Record<string, LongTasks | null>
   vadLag?: LagSummary | null
+  wakeGate?: WakeGateCount | null
 }
 
 export function cpuSampleOf(processes: readonly ProcessCpu[], load1: number, extras: SampleExtras = {}): CpuSample {
@@ -90,6 +93,7 @@ export function cpuSampleOf(processes: readonly ProcessCpu[], load1: number, ext
     ...(extras.loop ? { loop: extras.loop } : {}),
     ...(extras.longTasks ? { longTasks: extras.longTasks } : {}),
     ...(extras.vadLag !== undefined ? { vadLag: extras.vadLag } : {}),
+    ...(extras.wakeGate !== undefined ? { wakeGate: extras.wakeGate } : {}),
   }
 }
 

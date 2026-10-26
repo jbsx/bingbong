@@ -57,13 +57,25 @@ export interface UtteranceDumpWriter {
   writeFile(path: string, bytes: Uint8Array): void
 }
 
+/**
+ * What a dump holds: an endpointed `utterance`, or the ear's last ~2 s at a
+ * `wake` (#435), so a wake corpus grows from daily use. The kind leads the
+ * file name, so a replay of utterances leaves the wakes out.
+ */
+export type AudioDumpKind = 'utterance' | 'wake'
+
+/** The prefix of a wake dump's file name; the utterance replays skip it. */
+export const WAKE_DUMP_PREFIX = 'wake-'
+
 export interface UtteranceDumper {
-  /** Writes one utterance as a WAV; never throws — dumps are advisory. */
-  dump(pcm: Float32Array): void
+  /** The flag is on: a caller that must gather audio for a dump does so only then. */
+  readonly enabled: boolean
+  /** Writes one dump as a WAV, an utterance unless said; never throws — dumps are advisory. */
+  dump(pcm: Float32Array, kind?: AudioDumpKind): void
 }
 
 /**
- * One dumper per app. Files are named `utterance-<wall-ms>-<seq>.wav` —
+ * One dumper per app. Files are named `<kind>-<wall-ms>-<seq>.wav` —
  * the timestamp orders dumps across runs, the per-boot sequence disambiguates
  * same-millisecond utterances. With the flag off (the default) the writer
  * is never touched, not even for the directory.
@@ -82,7 +94,8 @@ export function createUtteranceDumper(deps: {
   let broken = false
 
   return {
-    dump(pcm) {
+    enabled,
+    dump(pcm, kind = 'utterance') {
       if (!enabled || broken) return
       sequence += 1
       try {
@@ -90,7 +103,7 @@ export function createUtteranceDumper(deps: {
           deps.writer.mkdir(deps.dir)
           dirReady = true
         }
-        deps.writer.writeFile(`${deps.dir}/utterance-${now()}-${String(sequence).padStart(4, '0')}.wav`, encodeUtteranceWav(pcm))
+        deps.writer.writeFile(`${deps.dir}/${kind}-${now()}-${String(sequence).padStart(4, '0')}.wav`, encodeUtteranceWav(pcm))
       } catch (error) {
         reportFault('voice.utteranceDump.dump', error)
         // A failed dump must never break the turn it records. A dir that

@@ -11,7 +11,7 @@ import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { forwardFault, reportFault } from '../../core/trace/fault'
 import type { Ducking } from '../../core/music/ducking'
 import { APP_TURN_ID } from '../../core/perf/appTelemetry'
-import { vadLag } from '../perf/attachAppTelemetry'
+import { vadLag, wakeGate } from '../perf/attachAppTelemetry'
 import { recordModelLoad } from '../perf/modelLoads'
 import type { VoiceProcessConfig } from './voiceProcessConfig'
 
@@ -85,6 +85,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     ...(tracer ? { tracer, tracerEpochMs: performance.timeOrigin + performance.now() - tracer.now() } : {}),
     onModelLoad: (load) => recordModelLoad(load),
     onFault: (report) => forwardFault(report),
+    onWakeGate: (count) => wakeGate.record(count),
     callbacks: {
       stopSpeech: () => deps.tts.stop(),
       chime: () => deps.chime?.(),

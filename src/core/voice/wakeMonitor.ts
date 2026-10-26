@@ -7,6 +7,8 @@ import { VAD_FRAME_SAMPLES } from './vadEndpointing.ts'
 const VAD_GATE_WINDOW_FRAMES = 16
 /** Minimum recent speech probability for a detection to count. */
 const DEFAULT_VAD_GATE = 0.5
+/** The wake dump's length: 25 × 80 ms = 2 s, the phrase and the breath before it. */
+const WAKE_AUDIO_CHUNKS = 25
 
 /**
  * What one detection cleared, handed to the callback that fires on it
@@ -42,6 +44,13 @@ export interface WakeMonitorDeps {
    * scored whenever `onAbort` is wired.
    */
   abortWanted?(): boolean
+  /**
+   * The ear's last ~2 s at each wake, the firing chunk last (#435): the
+   * wake corpus's dump. Absent, the monitor keeps no audio for it.
+   */
+  onWakeAudio?(pcm: Float32Array): void
+  /** Each wake chunk heard, and whether the gate let it be scored (#435): the gate-open share. */
+  onChunk?(scored: boolean): void
   onError(message: string): void
 }
 
@@ -81,6 +90,8 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
   let wakeCarry: Float32Array = new Float32Array(0)
   let recentVad: number[] = []
   let latched: 'fired' | 'error' | null = null
+  // The chunks heard last, for the wake dump; kept only when one is wanted.
+  let recentChunks: Float32Array[] = []
   // The heads a score is asked for (#435): the wake always; the abort while
   // one would land; "hold on" never, it fires nothing (ADR 0024).
   const wanted: WakeHeadWanted = (head) =>
@@ -90,6 +101,12 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     const merged = new Float32Array(a.length + b.length)
     merged.set(a)
     merged.set(b, a.length)
+    return merged
+  }
+
+  function concatAll(chunks: Float32Array[]): Float32Array {
+    const merged = new Float32Array(chunks.length * WAKE_CHUNK_SAMPLES)
+    chunks.forEach((chunk, i) => merged.set(chunk, i * WAKE_CHUNK_SAMPLES))
     return merged
   }
 
@@ -111,8 +128,14 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     while (wakeCarry.length >= WAKE_CHUNK_SAMPLES && latched === null) {
       const chunk = wakeCarry.slice(0, WAKE_CHUNK_SAMPLES)
       wakeCarry = wakeCarry.slice(WAKE_CHUNK_SAMPLES)
+      if (deps.onWakeAudio) {
+        recentChunks.push(chunk)
+        if (recentChunks.length > WAKE_AUDIO_CHUNKS) recentChunks.shift()
+      }
       const gateMax = recentVad.length > 0 ? Math.max(...recentVad) : 0
-      if (gateMax < vadGate && deps.detector.skip) {
+      const shut = gateMax < vadGate
+      deps.onChunk?.(!shut)
+      if (shut && deps.detector.skip) {
         deps.detector.skip(chunk)
         continue
       }
@@ -121,7 +144,10 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
       const cleared = scores.wake >= threshold && gateMax >= vadGate
       if (cleared) {
         latched = 'fired'
+        // Taken before the wake is told (its listen may reset the monitor), handed over after it.
+        const heard = deps.onWakeAudio ? concatAll(recentChunks) : null
         deps.onWake({ score: scores.wake, threshold, gateMax, gate: vadGate })
+        if (heard !== null) deps.onWakeAudio?.(heard)
         continue
       }
       // Interrupt head: same gate, no latch — the session's interrupt
@@ -150,6 +176,7 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
       vadCarry = new Float32Array(0)
       wakeCarry = new Float32Array(0)
       recentVad = []
+      recentChunks = []
       latched = null
       deps.detector.reset()
     },

@@ -32,6 +32,7 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SttModel } from '../src/core/settings/settings.ts'
 import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
+import { WAKE_DUMP_PREFIX } from '../src/core/voice/utteranceDump.ts'
 import { formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
 import { VAD_FRAME_SAMPLES, VAD_FRAME_MS } from '../src/core/voice/vadEndpointing.ts'
 import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
@@ -58,7 +59,7 @@ const biasPhrases: BiasInput = pageTerms.length === 0 ? seedLexicon : [{ phrases
 function wavFiles(dir: string): string[] {
   if (!existsSync(dir)) return []
   return readdirSync(dir)
-    .filter((name) => name.endsWith('.wav'))
+    .filter((name) => name.endsWith('.wav') && !name.startsWith(WAKE_DUMP_PREFIX))
     .sort()
     .map((name) => join(dir, name))
 }

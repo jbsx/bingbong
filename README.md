@@ -117,7 +117,7 @@ BINGBONG_WAKE_ABORT_MODEL=…            # override the "abort" head path
 
 # Diagnostics
 BINGBONG_BROWSER_SUBSPANS=0            # turn off the sub-spans inside browser actions (on by default)
-BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offline STT A/B
+BINGBONG_AUDIO_DUMP=1                  # dump each utterance, and ~2 s at each wake, as WAVs for offline replay
 
 # Scripted doubles — replace the real engines; used by the e2e suite
 BINGBONG_VAD_SCRIPT='[0.01, 0.99]'     # VAD probabilities
@@ -316,7 +316,10 @@ as `runs:`, `cpu` and `playback:` lines.
 `BINGBONG_AUDIO_DUMP=1` writes every detected utterance to `audio-dumps/`
 under the profile as a 16 kHz mono WAV — the artifact shape offline STT
 benchmarks replay. Replay them against the shipped engine with
-`pnpm stt:replay`.
+`pnpm stt:replay`. Each wake also writes the ear's last ~2 s there as
+`wake-<ms>-<seq>.wav` (#435), so a wake corpus grows from daily use; the
+utterance replays skip those. `pnpm wake:cpu` measures what the ear costs
+at rest.
 
 ## Architecture
 

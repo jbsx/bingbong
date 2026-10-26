@@ -297,4 +297,66 @@ describe('wake monitor', () => {
       expect(aborts).toBe(0)
     })
   })
+
+  describe('the wake dump (#435)', () => {
+    it('hands over the last 25 chunks heard, skipped ones too, the firing chunk last', async () => {
+      // The tenth chunk scored fires.
+      const detector = new SkippingFakeWakeDetector([...Array.from({ length: 9 }, () => 0), 0.9])
+      const audio: Float32Array[] = []
+      const vad = new FakeVad()
+      const monitor = createWakeMonitor({
+        vad,
+        detector,
+        getThreshold: () => 0.5,
+        onWake: () => {},
+        onWakeAudio: (pcm) => audio.push(pcm),
+        onError: () => {},
+      })
+
+      // Two chunks a push (five VAD frames), the n-th chunk filled with n; the first 20 behind a shut gate.
+      for (let push = 0; push < 20; push++) {
+        vad.queue.push(...Array.from({ length: 5 }, () => (push < 10 ? SILENCE : SPEECH)))
+        const frame = new Float32Array(2 * WAKE_CHUNK_SAMPLES)
+        frame.fill(2 * push, 0, WAKE_CHUNK_SAMPLES)
+        frame.fill(2 * push + 1, WAKE_CHUNK_SAMPLES)
+        await monitor.pushAudio(frame)
+      }
+
+      expect(detector.skipped.length).toBeGreaterThan(0)
+      expect(audio).toHaveLength(1)
+      expect(audio[0].length).toBe(25 * WAKE_CHUNK_SAMPLES)
+      const firstOf = (k: number): number => audio[0][k * WAKE_CHUNK_SAMPLES]
+      // Chunk 29 fired (20 skipped, then the tenth scored): chunks 5..29 are in the dump.
+      expect(detector.skipped).toHaveLength(20)
+      expect(firstOf(0)).toBe(5)
+      expect(firstOf(24)).toBe(29)
+    })
+
+    it('hands the audio over even when the wake resets the monitor (a wake inside a Hot Listen)', async () => {
+      const audio: Float32Array[] = []
+      const vad = new FakeVad(Array.from({ length: 10 }, () => SPEECH))
+      const monitor = createWakeMonitor({
+        vad,
+        detector: new FakeWakeDetector([0.9]),
+        getThreshold: () => 0.5,
+        onWake: () => monitor.reset(),
+        onWakeAudio: (pcm) => audio.push(pcm),
+        onError: () => {},
+      })
+
+      await monitor.pushAudio(new Float32Array(WAKE_CHUNK_SAMPLES).fill(0.25))
+
+      expect(audio).toHaveLength(1)
+      expect(audio[0]).toHaveLength(WAKE_CHUNK_SAMPLES)
+      expect(audio[0][0]).toBe(0.25)
+    })
+
+    it('keeps no audio when no dump wants it', async () => {
+      const harness = createMonitor({ detector: new FakeWakeDetector([0.9]) })
+
+      await harness.pushFrames([SPEECH, SPEECH, SPEECH])
+
+      expect(harness.wakes).toBe(1)
+    })
+  })
 })

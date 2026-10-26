@@ -103,8 +103,8 @@ describe('buildLifecycleReport', () => {
       app('model-load', { model: 'wake', first: true }, 1_200),
       app('model-load', { model: 'stt', first: true }, 6_800),
       app('model-load', { model: 'stt', first: false, failed: true }, 30),
-      app('cpu', { total: 80, byType: {}, load1: 1, loop: { p50: 1, p99: 40, max: 300 }, memoryMb: { Browser: 900, pane: 200 }, availableMb: 700, swapUsedMb: 500, longTasks: { dashboard: { count: 2, ms: 180 }, pane: null }, vadLag: { count: 50, p50: 4, max: 90 } }),
-      app('cpu', { total: 80, byType: {}, load1: 1, loop: { p50: 1, p99: 20, max: 60 }, memoryMb: { Browser: 1_000, pane: 210 }, availableMb: 650, swapUsedMb: 520, longTasks: { dashboard: { count: 1, ms: 60 }, pane: { count: 3, ms: 400 } }, vadLag: { count: 50, p50: 6, max: 30 } }),
+      app('cpu', { total: 80, byType: {}, load1: 1, loop: { p50: 1, p99: 40, max: 300 }, memoryMb: { Browser: 900, pane: 200 }, availableMb: 700, swapUsedMb: 500, longTasks: { dashboard: { count: 2, ms: 180 }, pane: null }, vadLag: { count: 50, p50: 4, max: 90 }, wakeGate: { heard: 187, scored: 0 } }),
+      app('cpu', { total: 80, byType: {}, load1: 1, loop: { p50: 1, p99: 20, max: 60 }, memoryMb: { Browser: 1_000, pane: 210 }, availableMb: 650, swapUsedMb: 520, longTasks: { dashboard: { count: 1, ms: 60 }, pane: { count: 3, ms: 400 } }, vadLag: { count: 50, p50: 6, max: 30 }, wakeGate: { heard: 188, scored: 47 } }),
       app('run', { version: '0.1.4' }),
       app('boot', { milestone: 'app-ready', sinceStartMs: 600 }),
       app('boot', { milestone: 'ready', sinceStartMs: 11_000 }),
@@ -128,13 +128,14 @@ describe('buildLifecycleReport', () => {
       swapMaxMb: 520,
       longTasks: { dashboard: { count: 3, ms: 240, worstSampleMs: 180 }, pane: { count: 3, ms: 400, worstSampleMs: 400 } },
       vadLag: { p50: 4, max: 90 },
+      wakeGate: { heard: 375, scored: 47 },
     })
     expect(report.wakeToListening).toEqual({ count: 1, p50: 120, p95: 120 })
     expect(report.quit).toBeNull()
     expect(formatLifecycleReport(report)).toEqual([
       'boot (ms since start, p50/max): app-ready 400ms/600ms, ready 9000ms/11000ms',
       'model loads: stt ×1 p50 6800ms max 6800ms, stt (again) ×0 p50 0ms max 0ms (1 failed), wake ×1 p50 1200ms max 1200ms',
-      'steady: main loop delay p99 p50 20ms p95 40ms max 40ms | memory p50/max Browser 900/1000MB, pane 200/210MB | machine available min 650MB, swap max 520MB | long tasks dashboard 3 for 240ms (worst sample 180ms), pane 3 for 400ms (worst sample 400ms) | vad lag p50 4ms max 90ms',
+      'steady: main loop delay p99 p50 20ms p95 40ms max 40ms | memory p50/max Browser 900/1000MB, pane 200/210MB | machine available min 650MB, swap max 520MB | long tasks dashboard 3 for 240ms (worst sample 180ms), pane 3 for 400ms (worst sample 400ms) | vad lag p50 4ms max 90ms | wake gate open 12.5 % (47 of 375 chunks scored)',
       'wake-to-listening: ×1 p50 120ms p95 120ms',
     ])
   })

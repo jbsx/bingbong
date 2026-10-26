@@ -15,6 +15,7 @@ import {
 } from './voiceChain'
 import type { SubmittedCommand } from './voiceSession'
 import { WAKE_CHUNK_SAMPLES } from '../ports/wake'
+import type { WakeGateCount } from '../perf/lifecycleTelemetry'
 
 // The voice chain's message contract (#430): the voice session runs in the
 // voice process (the host) and main holds a VoiceSession that only routes
@@ -74,6 +75,7 @@ function wire(options?: { vad?: () => number[]; wake?: () => FakeWakeDetector | 
   const spans: { stage: string; detail?: Record<string, unknown> }[] = []
   const loads: ChainModelLoad[] = []
   const forwarded: FaultReport[] = []
+  const gates: WakeGateCount[] = []
   const context: VoiceChainContext = { speaking: false, runState: 'idle' as CommandRunState, wakeThreshold: 0.5 }
 
   const client = createVoiceChainClient<{ name: string }>({
@@ -85,6 +87,7 @@ function wire(options?: { vad?: () => number[]; wake?: () => FakeWakeDetector | 
     tracerEpochMs: 0,
     onModelLoad: (load) => loads.push(load),
     onFault: (report) => forwarded.push(report),
+    onWakeGate: (count) => gates.push(count),
     callbacks: {
       stopSpeech: () => {},
       chime: () => chimes.push(1),
@@ -149,7 +152,7 @@ function wire(options?: { vad?: () => number[]; wake?: () => FakeWakeDetector | 
 
   /** The mic's frames, `n` VAD frames in one chunk, as the renderer sends them. */
   const frames = (n: number): Promise<void> => client.pushAudio(new Float32Array(n * VAD_FRAME_SAMPLES))
-  return { client, clock, processes, states, heard, errors, partials, submitted, chimes, spans, loads, forwarded, context, frames }
+  return { client, clock, processes, states, heard, errors, partials, submitted, chimes, spans, loads, forwarded, gates, context, frames }
 }
 
 describe('the voice chain across the process boundary (#430)', () => {
@@ -191,6 +194,20 @@ describe('the voice chain across the process boundary (#430)', () => {
     await settle()
     expect(chain.chimes).toHaveLength(1)
     expect(chain.client.getState()).toMatchObject({ listening: true, reason: 'wake' })
+  })
+
+  it('the wake chunks heard and scored ride back with each scored batch: the gate-open share (#435)', async () => {
+    const chain = wire({ vad: () => [...Array.from({ length: 5 }, () => SILENCE), ...Array.from({ length: 5 }, () => SPEECH)], wake: () => new FakeWakeDetector([0.01]) })
+    chain.client.enableWakeMonitoring()
+    await settle()
+    await chain.client.pushAudio(new Float32Array(2 * WAKE_CHUNK_SAMPLES))
+    await chain.client.pushAudio(new Float32Array(2 * WAKE_CHUNK_SAMPLES))
+    await chain.client.pushAudio(new Float32Array(100))
+    await settle()
+    expect(chain.gates).toEqual([
+      { heard: 2, scored: 0 },
+      { heard: 2, scored: 2 },
+    ])
   })
 
   it('what the session reads off the app rides with the frames: speech under a line playing is no Command', async () => {

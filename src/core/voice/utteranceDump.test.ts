@@ -100,6 +100,20 @@ describe('createUtteranceDumper', () => {
     decoded.forEach((sample, i) => expect(sample).toBeCloseTo([0, 0.5, -0.5][i], 4))
   })
 
+  it('names a wake dump by its kind, on the same sequence (#435)', () => {
+    const writer = new RecordingWriter()
+    const dumper = createUtteranceDumper({ dir: '/data/audio-dumps', writer, enabled: true, now: () => WALL_MS })
+
+    dumper.dump(new Float32Array([0.5]))
+    dumper.dump(new Float32Array([0.5]), 'wake')
+
+    expect(dumper.enabled).toBe(true)
+    expect(writer.files.map((file) => file.path.split('/').pop())).toEqual([
+      'utterance-1700000000000-0001.wav',
+      'wake-1700000000000-0002.wav',
+    ])
+  })
+
   it('writes nothing — not even the dir — while the flag is off', () => {
     const writer = new RecordingWriter()
     const dumper = createUtteranceDumper({ dir: '/data/audio-dumps', writer })
