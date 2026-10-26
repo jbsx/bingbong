@@ -270,15 +270,16 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
  * asked as many cases at once as it lets fly; or why one cannot be reached.
  */
 function chatModelsOf(deps: GateDeps, ids: readonly string[]): { models: readonly DecisionModel[]; casesAtOnce: number } | string {
-  if (deps.chatModels !== undefined) return { models: deps.chatModels, casesAtOnce: 4 }
+  // One limiter for every id, set from the env's limits: the model is the only thing a column swaps.
+  const shared = resolvePlannerRouting(deps.env)
+  const casesAtOnce = shared.configured ? shared.inFlight : 1
+  if (deps.chatModels !== undefined) return { models: deps.chatModels, casesAtOnce: Math.max(2, casesAtOnce) }
   let limiter: PlannerLimiter | undefined
-  let casesAtOnce = 1
   const models: DecisionModel[] = []
   for (const id of ids) {
     const routing = resolvePlannerRouting({ ...deps.env, BINGBONG_PLANNER_MODEL: id })
     if (!routing.configured) return `jev:gate --chat cannot reach ${id} — ${routing.reason}`
     limiter ??= createPlannerLimiter({ perSecond: routing.perSecond, inFlight: routing.inFlight })
-    casesAtOnce = routing.inFlight
     models.push(chatDecisionModel(plannerChatClient(routing, limiter), deps))
   }
   return { models, casesAtOnce }

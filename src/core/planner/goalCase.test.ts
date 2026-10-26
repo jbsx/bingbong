@@ -32,6 +32,7 @@ describe('the goal gate’s judge (#465): told what was meant and what came of i
     const { system, user } = goalJudgeMessages({ ...run, asked: ['Post this comment?'], declined: true, shelf: ['thumb.jpg'], clipboard: 'npm init playwright@latest' })
     expect(system).toMatch(/exactly one JSON object/)
     expect(system).toMatch(/declines every confirm/)
+    expect(system).toMatch(/a cookie or consent wall is no such wall/)
     expect(user.split('\n')).toEqual([
       'Goal Line: Open the comments and read me the top one.',
       'Meant: the first comment’s text spoken aloud',
@@ -78,17 +79,21 @@ describe('formatGoalGate (#465): one row per case, the judge’s id in the heade
           { id: 'goal-01-comment', runs: [{ verdict: 'miss', why: 'no comment box opened', seconds: 8.24, ended: 'unsure' }] },
           { id: 'goal-04-read', runs: [{ verdict: 'done', why: 'read aloud', seconds: 6.4, ended: 'done' }] },
           { id: 'goal-03-like', runs: [{ verdict: 'wall', why: 'sign-in wall', seconds: 4, ended: 'wall' }] },
+          { id: 'goal-08-weather', runs: [{ verdict: null, why: 'judge unavailable: timeout', seconds: 12, ended: 'cap' }] },
+          { id: 'goal-09-mkbhd', runs: [{ verdict: null, why: 'run failed: the CLI harness never prompted', seconds: null, ended: null }] },
         ],
         { arm: 'Task loop', judge: 'glm-5.3-flash' },
       ),
     ).toBe(
       [
-        'goal:gate — Task loop, judge glm-5.3-flash, 3 cases × 1',
+        'goal:gate — Task loop, judge glm-5.3-flash, 5 cases × 1',
         'case             right  seconds  ended   judge',
         'goal-01-comment  no        8.2s  unsure  no comment box opened',
         'goal-04-read     yes       6.4s  done    read aloud',
         'goal-03-like     wall      4.0s  wall    sign-in wall',
-        'done-right 1/3, walls 1 | seconds p50 6.4s p95 8.2s',
+        'goal-08-weather  ?        12.0s  cap     judge unavailable: timeout',
+        'goal-09-mkbhd    ?            —  —       run failed: the CLI harness never prompted',
+        'done-right 1/5, walls 1, unjudged 2 | seconds p50 6.4s p95 12.0s over 4 runs',
       ].join('\n'),
     )
   })
@@ -115,7 +120,7 @@ describe('formatGoalGate (#465): one row per case, the judge’s id in the heade
         'case             right  seconds  ended  judge',
         'goal-04-read     2/3       7.0s  done   read aloud',
         'goal-08-weather  0/3      11.0s  cap    one city (1 unjudged)',
-        'done-right 2/6, walls 0 | seconds p50 9.0s p95 12.0s',
+        'done-right 2/6, walls 0, unjudged 1 | seconds p50 9.0s p95 12.0s over 6 runs',
       ].join('\n'),
     )
   })

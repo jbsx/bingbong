@@ -1,7 +1,3 @@
-import type { PerfSpanRecord } from './perfTracer'
-import { NO_COUNT_BAND, TOKEN_BANDS, tokenBandOf } from './commandReport.ts'
-import { formatMs, nearestRankPercentile } from '../report/stats.ts'
-
 // The Planner half of `pnpm perf:report` (#465, ADR 0095): every
 // `planner-step` span's latency by model, thinking and the host's
 // prompt-token band — the bands the `decision` span got in #440 — and what
@@ -9,6 +5,10 @@ import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 // their seconds and how they ended. Only an answered call's latency is
 // banded: a timeout says nothing of what its ask cost. Pure functions over
 // parsed records.
+
+import type { PerfSpanRecord } from './perfTracer'
+import { NO_COUNT_BAND, TOKEN_BANDS, tokenBandOf } from './commandReport.ts'
+import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
 export interface PlannerLatencyRow {
   readonly model: string

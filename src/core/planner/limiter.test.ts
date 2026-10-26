@@ -84,6 +84,16 @@ describe('the Planner limiter (#465): 2 calls a second, 4 in flight', () => {
     expect(await limiter.acquire(AbortSignal.abort())).toBeNull()
   })
 
+  it('lets a call through at a rate under one a second: the bucket holds at least one token', async () => {
+    const limiter = createPlannerLimiter({ perSecond: 0.5, inFlight: 4 })
+    expect(await settled(limiter.acquire())).toBe(true)
+    const second = limiter.acquire()
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(await settled(second)).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await settled(second)).toBe(true)
+  })
+
   it('a release called twice frees one slot', async () => {
     const limiter = createPlannerLimiter({ perSecond: 100, inFlight: 1 })
     const release = await limiter.acquire()

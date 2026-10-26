@@ -11,8 +11,10 @@
 // (BINGBONG_PLANNER_* host and key, GLM on Z.ai by default) through the
 // appliance's limiter, each with its pass count and latency p50/p95 —
 // arm D's number in ADR 0095 — and every call is a `planner-step` span in
-// the perf log (`--logs <dir>`, else the app's), which `pnpm perf:report`
-// reads. --chat alone asks no decision model unless --models names some.
+// a perf log of the gate's own (`--logs <dir>`, else `gate/` under the
+// app's logs, so the daily report never mixes a gate run in), which
+// `pnpm perf:report <dir>` reads. --chat alone asks no decision model
+// unless --models names some.
 // Node runs this .ts directly via type stripping (#36), so .ts-extension
 // imports here and on its runtime graph.
 //
@@ -22,6 +24,7 @@
 // The host, key and other settings come from BINGBONG_DECISION_* in the
 // env, as for jev:replay; the gate overrides only the model per column.
 
+import { join } from 'node:path'
 import { createPerfTracer } from '../src/core/perf/perfTracer.ts'
 import { PLANNER_STEP_STAGE } from '../src/core/planner/plannerSpan.ts'
 import { GATE_MODELS_ENV_KEY, gateCorpus, JEV_CORPUS_DIR } from '../src/main/decision/jevCorpus.ts'
@@ -40,7 +43,7 @@ const chat = ids(valueOf('--chat'))
 const models = ids(valueOf('--models') ?? (chat.length > 0 ? undefined : process.env[GATE_MODELS_ENV_KEY]))
 const withJev = args.includes('--with-jev')
 const dir = args.filter((arg, index) => !VALUED.includes(arg) && !VALUED.includes(args[index - 1] ?? '') && arg !== '--with-jev')[0] ?? JEV_CORPUS_DIR
-const logs = chat.length > 0 ? resolvePerfLogsDir([valueOf('--logs') ?? ''], process.env) : undefined
+const logs = chat.length > 0 ? (valueOf('--logs') ?? join(resolvePerfLogsDir([], process.env), 'gate')) : undefined
 const tracer = logs === undefined ? undefined : createPerfTracer({ sink: createJsonlPerfSink(logs) })
 const run = tracer?.mintTurnId()
 const gate = await gateCorpus(

@@ -1,5 +1,5 @@
 // The appliance's own rate limit on Planner calls (#465, ADR 0095): a
-// token bucket of `perSecond` calls a second, holding at most that many,
+// token bucket of `perSecond` calls a second, holding at most that many (one at least),
 // beside a cap of `inFlight` calls at once. The owner's ruling
 // (2026-10-26): at most 2 a second and 4 in flight, by env, reverted if it
 // bites; it binds the gate, never a normal day. A call spends its token
@@ -35,7 +35,9 @@ interface Waiter {
 export function createPlannerLimiter(options: PlannerLimiterOptions): PlannerLimiter {
   const { perSecond, inFlight } = options
   const now = options.now ?? (() => performance.now())
-  let tokens = perSecond
+  // A bucket holds at least one token, or a rate under one a second would never let a call through.
+  const capacity = Math.max(1, perSecond)
+  let tokens = capacity
   let filledAt = now()
   let running = 0
   const queue: Waiter[] = []
@@ -43,7 +45,7 @@ export function createPlannerLimiter(options: PlannerLimiterOptions): PlannerLim
 
   const refill = (): void => {
     const at = now()
-    tokens = Math.min(perSecond, tokens + ((at - filledAt) * perSecond) / 1000)
+    tokens = Math.min(capacity, tokens + ((at - filledAt) * perSecond) / 1000)
     filledAt = at
   }
 

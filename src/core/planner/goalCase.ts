@@ -65,7 +65,7 @@ export const GOAL_JUDGE_INSTRUCTIONS = [
   'You judge whether a voice-controlled web browser did what its user meant. You are told the Goal Line the user spoke, what done-right means for it, and everything the run left: the final page, its text in view, what the browser said aloud, what the page asked, the files on the Shelf (the appliance\'s downloads folder) and the clipboard.',
   'The gate declines every confirm the page asks, so nothing ever posts, sends or orders: when what was meant needs the user\'s yes, reaching that confirm with the right content is done-right.',
   'Where done-right is a question back to the user, the right question said aloud is done-right and a guess is not.',
-  'Answer "wall" when a sign-in wall stopped the run before what was meant could be done; "done" when what was meant was done; "miss" otherwise.',
+  'Answer "wall" only when a sign-in wall (the site wants an account) stopped the run before what was meant could be done; a cookie or consent wall is no such wall, the browser is expected to pass it. Answer "done" when what was meant was done; "miss" otherwise.',
   'Reply with exactly one JSON object and nothing else: {"verdict": "done" | "miss" | "wall", "why": "<one line>"}',
 ].join('\n')
 
@@ -100,11 +100,11 @@ export function readGoalVerdict(content: string): GoalVerdict | null {
   return { verdict, why: typeof raw.why === 'string' ? raw.why.replace(/\s+/g, ' ').trim() : '' }
 }
 
-/** One run as the table keeps it: the verdict, or null when the judge gave none (its reason in `why`). */
+/** One run as the table keeps it: the verdict, or null when the judge gave none (its reason in `why`); no seconds for a run that failed to run. */
 export interface GoalRunScore {
   readonly verdict: GoalVerdictKind | null
   readonly why: string
-  readonly seconds: number
+  readonly seconds: number | null
   readonly ended: string | null
 }
 
@@ -121,6 +121,9 @@ function nearestRank(values: readonly number[], percent: number): number {
 
 const seconds = (value: number): string => `${value.toFixed(1)}s`
 
+/** The seconds of the runs that ran: a run that failed to start has none to count. */
+const timesOf = (runs: readonly GoalRunScore[]): number[] => runs.flatMap((run) => (run.seconds === null ? [] : [run.seconds]))
+
 /** The table: one row per case, the arm and the judge's id in the header, the tally under it. */
 export function formatGoalGate(rows: readonly GoalRow[], context: { readonly arm: string; readonly judge: string }): string {
   const repeat = Math.max(1, ...rows.map((row) => row.runs.length))
@@ -129,9 +132,10 @@ export function formatGoalGate(rows: readonly GoalRow[], context: { readonly arm
     const last = row.runs.at(-1)!
     const judged = row.runs.filter((run) => run.verdict !== null)
     const unjudged = row.runs.length - judged.length
-    const right = repeat === 1 ? (last.verdict === 'done' ? 'yes' : last.verdict === 'wall' ? 'wall' : 'no') : `${done}/${row.runs.length}`
+    const right = repeat === 1 ? (last.verdict === null ? '?' : last.verdict === 'done' ? 'yes' : last.verdict === 'wall' ? 'wall' : 'no') : `${done}/${row.runs.length}`
     const why = (judged.at(-1) ?? last).why + (repeat > 1 && unjudged > 0 ? ` (${unjudged} unjudged)` : '')
-    return [row.id, right, seconds(nearestRank(row.runs.map((run) => run.seconds), 50)), last.ended ?? '—', why]
+    const timed = timesOf(row.runs)
+    return [row.id, right, timed.length === 0 ? '—' : seconds(nearestRank(timed, 50)), last.ended ?? '—', why]
   })
   const headers = ['case', 'right', 'seconds', 'ended', 'judge']
   const widths = headers.map((header, i) => Math.max(header.length, ...cells.map((row) => row[i]!.length)))
@@ -143,7 +147,10 @@ export function formatGoalGate(rows: readonly GoalRow[], context: { readonly arm
   const runs = rows.flatMap((row) => row.runs)
   const done = runs.filter((run) => run.verdict === 'done').length
   const walls = runs.filter((run) => run.verdict === 'wall').length
-  const all = runs.map((run) => run.seconds)
-  const tally = runs.length === 0 ? 'no runs' : `done-right ${done}/${runs.length}, walls ${walls} | seconds p50 ${seconds(nearestRank(all, 50))} p95 ${seconds(nearestRank(all, 95))}`
+  const unjudged = runs.filter((run) => run.verdict === null).length
+  const all = timesOf(runs)
+  const counts = `done-right ${done}/${runs.length}, walls ${walls}${unjudged > 0 ? `, unjudged ${unjudged}` : ''}`
+  const times = all.length === 0 ? 'no seconds' : `seconds p50 ${seconds(nearestRank(all, 50))} p95 ${seconds(nearestRank(all, 95))} over ${all.length} runs`
+  const tally = runs.length === 0 ? 'no runs' : `${counts} | ${times}`
   return [`goal:gate — ${context.arm}, judge ${context.judge}, ${rows.length} cases × ${repeat}`, line(headers), ...cells.map(line), tally].join('\n')
 }

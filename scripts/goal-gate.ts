@@ -19,11 +19,14 @@
 //
 // Usage:
 //   pnpm goal:gate [--repeat N] [--models id,id] [--judge id] [--cases substr,substr] [--keep dir]
+//   pnpm goal:gate --rejudge dir [--judge id]
 //
 // --models names the Planner model(s) under test as jev:gate takes them,
 // one table each; accepted now, the Planner joins the run in #467. The
 // Decision Model and the Planner's key come from the env (the root .env).
-// --keep writes each run as the judge saw it, and its verdict, to the dir.
+// --keep writes each run as the judge saw it, and its verdict, to the dir;
+// --rejudge scores a kept dir's runs again, none run live: a judge's change
+// is read on the same runs.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -80,6 +83,7 @@ const models = list(valueOf('--models'))
 const judgeId = valueOf('--judge') ?? PLANNER_GATE_MODEL
 const only = list(valueOf('--cases'))
 const keep = valueOf('--keep')
+const rejudge = valueOf('--rejudge')
 if (keep !== undefined) mkdirSync(keep, { recursive: true })
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -308,7 +312,7 @@ if (typeof cases === 'string') {
   console.error(`goal:gate: ${cases}`)
   process.exit(2)
 }
-if (!existsSync(join(REPO, 'out', 'main', 'index.js'))) {
+if (rejudge === undefined && !existsSync(join(REPO, 'out', 'main', 'index.js'))) {
   console.error('goal:gate runs the built app: pnpm build first (pnpm goal:gate does)')
   process.exit(2)
 }
@@ -321,8 +325,25 @@ const judgeChat = plannerChatClient(judgeRouting, createPlannerLimiter({ perSeco
 const decision = resolveDecisionRouting(process.env)
 const decisionName = decision.configured ? decision.endpoint.model : `no Decision Model (${decision.reason})`
 
+/** Every kept run in the dir scored again, a table per arm as kept (one row per case, its runs in order). */
+async function rejudgeKept(dir: string): Promise<boolean> {
+  const rows = new Map<string, GoalRunScore[]>()
+  for (const file of readdirSync(dir).filter((name) => name.endsWith('.json')).sort()) {
+    const { run } = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { run: GoalRun }
+    const id = file.replace(/-\d+\.json$/, '')
+    const score = await judge(judgeChat, run)
+    console.error(`${id}: ${score.verdict ?? 'unjudged'} — ${score.why}`)
+    rows.set(id, [...(rows.get(id) ?? []), score])
+  }
+  console.log(formatGoalGate([...rows].map(([id, runs]) => ({ id, runs })), { arm: `kept runs in ${dir}, judged again`, judge: judgeChat.model }))
+  return [...rows.values()].every((runs) => runs.every((run) => run.verdict === 'done'))
+}
+
 let allDone = true
-for (const model of models.length === 0 ? [undefined] : models) {
+if (rejudge !== undefined) {
+  allDone = await rejudgeKept(rejudge)
+}
+for (const model of rejudge !== undefined ? [] : models.length === 0 ? [undefined] : models) {
   const rows: GoalRow[] = []
   for (const goal of cases) {
     const runs: GoalRunScore[] = []
@@ -333,9 +354,9 @@ for (const model of models.length === 0 ? [undefined] : models) {
         score = await judge(judgeChat, run)
         if (keep !== undefined) writeFileSync(join(keep, `${goal.id}${model === undefined ? '' : `-${model}`}-${n}.json`), `${JSON.stringify({ run, score, records }, null, 2)}\n`)
       } catch (error) {
-        score = { verdict: null, why: `run failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`, seconds: 0, ended: null }
+        score = { verdict: null, why: `run failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`, seconds: null, ended: null }
       }
-      console.error(`${goal.id} ${n}/${repeat}: ${score.verdict ?? 'unjudged'} in ${score.seconds.toFixed(1)}s (${score.ended ?? '—'}) — ${score.why}`)
+      console.error(`${goal.id} ${n}/${repeat}: ${score.verdict ?? 'unjudged'} in ${score.seconds?.toFixed(1) ?? '—'}s (${score.ended ?? '—'}) — ${score.why}`)
       runs.push(score)
     }
     if (runs.some((run) => run.verdict !== 'done')) allDone = false
