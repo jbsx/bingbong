@@ -150,7 +150,7 @@
     --fg3: #959595;
     --hair: #3a3a3a;
     --hair2: #555;
-    --frame-hair: #3a3a3a;
+    --frame-hair: var(--hair);
     --track: #2b2b2b;
     --surface: transparent;
     --raise: rgba(255, 255, 255, 0.04);
@@ -341,9 +341,9 @@ body {
 /* The Status Capsule: the one thing on the Toolbar read from the chair —
    the state in 65 px (#436), peach while Bing Bong works or listens. The hooks
    inside (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
-   observation points and must survive any restyle. Bounded by its column
-   (#331): a long hint or partial transcript ellipsizes instead of growing
-   into the back control. */
+   observation points and must survive any restyle. Bounded by the left
+   group (#331, #453): a long hint or partial transcript ellipsizes instead
+   of growing into the back control. */
 .status-capsule {
   position: relative;
   flex: 0 1 auto;
@@ -361,8 +361,9 @@ body {
 }
 
 /* In dark the state word and its dot are the mark (#453): no pill outline,
-   which on black was brighter than the state it framed. The live tint's
-   wash keeps the capsule's shape while Bing Bong works or listens. */
+   live or at rest — on black it was brighter than the state it framed. The
+   live tint's wash keeps the capsule's shape while Bing Bong works or
+   listens, so the accent edge above is light's alone. */
 @media (prefers-color-scheme: dark) {
   :root .status-capsule {
     border-color: transparent;
@@ -665,10 +666,6 @@ body {
   .toolbar-widget-text {
     display: none;
   }
-
-  .url-form {
-    min-width: 0;
-  }
 }
 
 /* A very narrow window: the Timer's glyph alone, so the address field keeps
@@ -731,18 +728,25 @@ body {
 
 /* The address: the host in the primary ink, the rest quiet. The input
    holds the value; while it is not being edited a drawn copy of the same
-   words sits over it, split at the host. */
-/* It takes the room between the left group and the icons, 320 to 640 px
-   (#453), measured from the window, never from what the capsule says: 640
-   on the appliance's 1920, 320 from 1600 down, leaving the hint its line on
-   a laptop. The 1280 px the window keeps for the rest is a guess — the hint
-   ("Say “Bing Bong” or start typing") beside "Ready" needs about 620; a
-   look at a laptop's shots would settle it. */
+   words sits over it, split at the host. It takes the room between the
+   left group and the icons, 320 to 640 px (#453), measured from the
+   window, never from what the capsule says: 640 on the appliance's 1920,
+   320 from 1600 down, leaving the hint its line on a laptop. The 1280 px
+   the window keeps for the rest is a guess — the hint ("Say “Bing Bong” or
+   start typing") beside "Ready" needs about 620; a look at a laptop's
+   shots would settle it. Under 960 px it lets go of its floor before the
+   state word is cut. */
 .url-form {
   position: relative;
   flex: 0 1 clamp(320px, 100vw - 1280px, 640px);
   min-width: 320px;
   height: 48px;
+}
+
+@media (max-width: 960px) {
+  .url-form {
+    min-width: 0;
+  }
 }
 
 .url-input {
