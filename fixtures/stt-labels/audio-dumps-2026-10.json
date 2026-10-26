@@ -1,5 +1,5 @@
 {
-  "source": "Each dump matched 1:1 by time to a decision record (2026-10-17 logs: ~/.claude/jobs/07c4ba48/tmp/today-logs/decision-1792244719460-1.jsonl and the decision-1792245564371 records in ~/.claude/jobs/c8172ccb/tmp/all2.jsonl; 2026-10-24: ~/.config/bingbong/logs/decision-1792854534608-1.jsonl); a label is kept only where the Command was accepted (the next line built on it) or a retry chain, the ledger, a post mortem or the owner's own words make the words sure, with the live decode and the 2026-10-17 Small/Base replays (session 8245387d) used only as corroboration. Lower case, no punctuation except the apostrophe inside a word.",
+  "source": "Each dump matched 1:1 by time to a decision record (2026-10-17 logs: ~/.claude/jobs/07c4ba48/tmp/today-logs/decision-1792244719460-1.jsonl and the decision-1792245564371 records in ~/.claude/jobs/c8172ccb/tmp/all2.jsonl; 2026-10-24: ~/.config/bingbong/logs/decision-1792854534608-1.jsonl); a label is kept only where the Command was accepted (the next line built on it) or a retry chain, the ledger, a post mortem or the owner's own words make the words sure, with the live decode and the 2026-10-17 Small/Base replays (session 8245387d) used only as corroboration. Lower case, no punctuation except the apostrophe inside a word. The #463 labels (kiosk dumps of 2026-10-23..26) follow the same rule from the kiosk decision logs and the ledger; a label with `ledger` and `names` is a ledger `stt` clip, scored on those names.",
   "labels": {
     "utterance-1792244719141-0001.wav": {
       "said": "youtube",
@@ -155,7 +155,173 @@
     },
     "utterance-1792854730054-0011.wav": {
       "said": "what's the weather like in gurgaon",
+      "ledger": "turn-mvmjezbb-k",
+      "names": [
+        "gurgaon"
+      ],
       "evidence": "turn-mvmjezbb-k heard 'Gergan'; ledger fixtures/failed-lines/turn-mvmjezbb-k.json: the owner said the Gurgaon line again (stage stt)"
+    },
+    "utterance-1792930327570-0001.wav": {
+      "said": "play highs and lows by kanye west",
+      "ledger": "turn-mvnsfarj-1",
+      "names": [
+        "kanye west"
+      ],
+      "evidence": "ledger turn-mvnsfarj-1: Parakeet heard 'Kanye Rest' for 'Kanye West', meant 'play Highs and Lows by Kanye West'"
+    },
+    "utterance-1792941416662-0001.wav": {
+      "said": "play tum se tum tak by niyam",
+      "ledger": "turn-mvnz0z5j-1",
+      "names": [
+        "tum se tum tak",
+        "niyam"
+      ],
+      "evidence": "ledger turn-mvnz0z5j-1: Parakeet heard 'Play Tum Se Tum Tak by Niyam' as 'Play Tum Setum Tuck Bai Diamo'; the owner typed 'play tum se tum tak by niyam' 31 s later"
+    },
+    "utterance-1793008098894-0004.wav": {
+      "said": "loop this song",
+      "ledger": "turn-mvp2q7gx-v2",
+      "names": [
+        "loop"
+      ],
+      "evidence": "ledger turn-mvp2q7gx-v2: Parakeet heard 'Look this song.' for 'Loop this song'"
+    },
+    "utterance-1793008283882-0019.wav": {
+      "said": "loop this song",
+      "ledger": "turn-mvp2u67g-va",
+      "names": [
+        "loop"
+      ],
+      "evidence": "ledger turn-mvp2u67g-va: Parakeet heard 'Look there some' for 'Loop this song'"
+    },
+    "utterance-1793011417842-0042.wav": {
+      "said": "open side panel",
+      "ledger": "turn-mvp4pcdw-vo",
+      "names": [
+        "open",
+        "side panel"
+      ],
+      "evidence": "ledger turn-mvp4pcdw-vo: Parakeet heard 'Hope side banner.' for 'Open side panel.'; the owner's next line 'Open side panel.' worked"
+    },
+    "utterance-1793017797487-0002.wav": {
+      "said": "play tum se tum tak by niyam",
+      "ledger": "turn-mvp8i345-1",
+      "names": [
+        "tum se tum tak",
+        "niyam"
+      ],
+      "evidence": "ledger turn-mvp8i345-1: final 'Platum Setum Tuck Bai Nium' for 'Play Tum Se Tum Tak by Niyam'"
+    },
+    "utterance-1793017815531-0004.wav": {
+      "said": "play tum se tum tak by niyam",
+      "ledger": "turn-mvp8igvj-v2",
+      "names": [
+        "tum se tum tak",
+        "niyam"
+      ],
+      "evidence": "ledger turn-mvp8igvj-v2: Parakeet heard 'Niyam' as 'Neon' in 'Play Tum See Tum Tuck by Neon'"
+    },
+    "utterance-1793017860524-0013.wav": {
+      "said": "play tum se tum tak by niyam",
+      "ledger": "turn-mvp8jflc-v7",
+      "names": [
+        "tum se tum tak",
+        "niyam"
+      ],
+      "evidence": "ledger turn-mvp8jflc-v7: 'Platum Setum Tuck Bai Neom' for 'Play Tum Se Tum Tak by Niyam'"
+    },
+    "utterance-1793017893436-0018.wav": {
+      "said": "play tum se tum tak by niyam",
+      "ledger": "turn-mvp8k4v2-2",
+      "names": [
+        "tum se tum tak",
+        "niyam"
+      ],
+      "evidence": "ledger turn-mvp8k4v2-2: final 'Play tum se tum tak bai niyum.' for 'Play Tum Se Tum Tak by Niyam'"
+    },
+    "utterance-1793017975096-0024.wav": {
+      "said": "loop this song",
+      "ledger": "turn-mvp8lvzu-vg",
+      "names": [
+        "loop"
+      ],
+      "evidence": "ledger turn-mvp8lvzu-vg: Parakeet heard 'Look this song.' for 'Loop this song.'"
+    },
+    "utterance-1793017982924-0025.wav": {
+      "said": "loop this song",
+      "ledger": "turn-mvp8m1th-3",
+      "names": [
+        "loop"
+      ],
+      "evidence": "ledger turn-mvp8m1th-3: final 'Loop this song.' (right; the partial 'Nope.' fired the Early Fire)"
+    },
+    "utterance-1793008064408-0002.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp2pgv5-v1 heard 'Clay tum se tum takbai niyum.' and the next lines run on the watch page of Tum Se Tum Tak - Niyam (ledger turn-mvp2q7gx-v2); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793008137506-0008.wav": {
+      "said": "increase music volume",
+      "evidence": "turn-mvp2r19i-v5 fired the music volume; the owner's next lines go on setting it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793008177311-0013.wav": {
+      "said": "set music volume to fifty percent",
+      "evidence": "turn-mvp2rvzb-v7 fired the volume; next line sets it again to seventy; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793008198690-0015.wav": {
+      "said": "set music volume to seventy percent",
+      "evidence": "turn-mvp2sch1-v8 fired the volume and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793008273547-0017.wav": {
+      "said": "play the song from the beginning",
+      "evidence": "turn-mvp2ty8d-v9 fired the media op and nothing retried it; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793008469400-0024.wav": {
+      "said": "loop this song",
+      "evidence": "turn-mvp2y5cq-vd fired from the Local Match (ledger turn-mvp2q7gx-v2 names it)"
+    },
+    "utterance-1793008486229-0027.wav": {
+      "said": "play it from the beginning",
+      "evidence": "turn-mvp2yicf-vf fired the media op, the retry of 'Blade from the beginning.'; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793011426981-0043.wav": {
+      "said": "open side panel",
+      "evidence": "turn-mvp4pjfu-vp worked (ledger turn-mvp4pcdw-vo)"
+    },
+    "utterance-1793017831693-0006.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp8itd3-v3 'Play Tum Se Tum Tuck by Neon', inside the retry chain ledger turn-mvp8igvj-v2 states (Tum Se Tum Tak by Niyam)"
+    },
+    "utterance-1793017874442-0014.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp8jqbz-v8 'Play Tum See Tum Tuck by Neom', the retry of ledger turn-mvp8jflc-v7"
+    },
+    "utterance-1793017900129-0019.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp8ka5g-vc 'Play tum se tum takbai niyum.', the retry of ledger turn-mvp8k4v2-2"
+    },
+    "utterance-1793017910437-0020.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp8ki3t-vd 'Play Tumse Tum Tuk by Neo', the same retry chain (ledger turn-mvp8k4v2-2)"
+    },
+    "utterance-1793017925023-0021.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvp8ktd1-ve 'Play tum se tum tak bai nium.', the same retry chain"
+    },
+    "utterance-1793017934378-0022.wav": {
+      "said": "play tum se tum tak by niyam n i y a m",
+      "evidence": "turn-mvp8l0ku-vf 'Play tum se tum tuk by nium n i y a m': the chain's last retry, the name spelled out"
+    },
+    "utterance-1793017989495-0026.wav": {
+      "said": "loop this song",
+      "evidence": "turn-mvp8m31x-4 'Loop this song.', the retry after ledger turn-mvp8m1th-3"
+    },
+    "utterance-1793017997664-0027.wav": {
+      "said": "loop l o o p this song",
+      "evidence": "turn-mvp8mdeu-vj 'Loop L O O P this song.' fired the loop and ended the chain; kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
+    },
+    "utterance-1793030019176-0062.wav": {
+      "said": "play tum se tum tak by niyam",
+      "evidence": "turn-mvpfs19n-v19 'Play tum se tum takbai niyong.': the owner's standing line for this song (ledger turn-mvp8igvj-v2's chain); kiosk decision logs ~/.config/bingbong/logs on archbox, copied 2026-10-26 (#463)"
     }
   },
   "unlabelled": {
