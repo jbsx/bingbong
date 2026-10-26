@@ -47,12 +47,21 @@ export interface GoalRun {
   /** How the Task ended, from its last record; null when none was recorded. */
   readonly ended: string | null
   readonly seconds: number
-  /** Still running at the 90 s bound. */
+  /** Still running at the bound. */
   readonly timedOut: boolean
+  /** The bound it was given, when not {@link GOAL_RUN_BOUND_S}: an Errand's run (#467). */
+  readonly boundS?: number
 }
 
 /** The bound a run is given before it is read as it stands. */
 export const GOAL_RUN_BOUND_S = 90
+
+/**
+ * The bound an Errand's run is given (#467): its 90 s of work, the
+ * questions and confirms it waits on the person (a Hot Listen window
+ * each), and the page loads between.
+ */
+export const ERRAND_RUN_BOUND_S = 180
 
 export type GoalVerdictKind = 'done' | 'miss' | 'wall'
 
@@ -63,7 +72,7 @@ export interface GoalVerdict {
 
 export const GOAL_JUDGE_INSTRUCTIONS = [
   'You judge whether a voice-controlled web browser did what its user meant. You are told the Goal Line the user spoke, what done-right means for it, and everything the run left: the final page, its text in view, what the browser said aloud, what the page asked, the files on the Shelf (the appliance\'s downloads folder) and the clipboard.',
-  'The gate declines every confirm the page asks, so nothing ever posts, sends or orders: when what was meant needs the user\'s yes, reaching that confirm with the right content is done-right.',
+  'The gate declines every confirm put to the user — the page\'s own, and the browser\'s own "This will …: … Yes or no?" said back before an action that leaves it — so nothing ever posts, sends or orders: when what was meant needs the user\'s yes, reaching that confirm with the right content is done-right.',
   'Where done-right is a question back to the user, the right question said aloud is done-right and a guess is not.',
   'Answer "wall" only when a sign-in wall (the site wants an account) stopped the run before what was meant could be done; a cookie or consent wall is no such wall, the browser is expected to pass it. Answer "done" when what was meant was done; "miss" otherwise.',
   'Reply with exactly one JSON object and nothing else: {"verdict": "done" | "miss" | "wall", "why": "<one line>"}',
@@ -73,7 +82,7 @@ const quoted = (texts: readonly string[]): string => (texts.length === 0 ? 'noth
 
 /** The judge's two messages: the Goal Line and the meant outcome each on a labelled line, then the run. */
 export function goalJudgeMessages(run: GoalRun): { system: string; user: string } {
-  const ended = run.timedOut ? `still running at the ${GOAL_RUN_BOUND_S} s bound` : `${run.ended ?? 'no record'}, after ${run.seconds.toFixed(1)} s`
+  const ended = run.timedOut ? `still running at the ${run.boundS ?? GOAL_RUN_BOUND_S} s bound` : `${run.ended ?? 'no record'}, after ${run.seconds.toFixed(1)} s`
   const asked = run.asked.length === 0 ? 'nothing' : `${quoted(run.asked)}${run.declined ? ' — declined by the gate, as it declines every confirm' : ''}`
   const user = [
     `Goal Line: ${run.transcript}`,
@@ -82,7 +91,7 @@ export function goalJudgeMessages(run: GoalRun): { system: string; user: string 
     `Final page: ${run.url} — ${JSON.stringify(run.title)}`,
     `The Task ended: ${ended}`,
     `Said aloud: ${quoted(run.said)}`,
-    `The page asked: ${asked}`,
+    `Confirms put to the user: ${asked}`,
     `On the Shelf: ${run.shelf.length === 0 ? 'nothing' : run.shelf.join(', ')}`,
     `On the clipboard: ${run.clipboard === null || run.clipboard === '' ? 'nothing' : JSON.stringify(run.clipboard)}`,
     'Text in view on the final page:',

@@ -117,6 +117,9 @@ import { attachAppearance } from './attachAppearance'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createDecisionModelSource } from './decision/createDecisionModel'
+import { createPlannerModel } from './planner/createPlannerModel'
+import type { PlannerModel } from '../core/ports/plannerModel'
+import { errandArmed } from '../core/errand/errandLine'
 import { createConsentChooser } from '../core/browser/consentChooser'
 import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
 import { onWindowClosed } from './onWindowClosed'
@@ -354,6 +357,15 @@ const weatherFacts = registerWeatherIpc()
 // unchanged. Null when no key is configured — the runner then fires the
 // Local Match's best guess for what the Local Match cannot settle.
 export const decisionModel = createDecisionModelSource(currentEnv)
+
+// The Planner (#465, #467): made once from the env when the first Errand
+// asks for it, so its limiter is shared by every Errand after. Null while
+// no key is configured.
+let plannerModel: PlannerModel | null | undefined
+function errandPlanner(): PlannerModel | null {
+  if (plannerModel === undefined) plannerModel = createPlannerModel(currentEnv())
+  return plannerModel
+}
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
@@ -645,6 +657,8 @@ async function createWindow(): Promise<BrowserWindow> {
     knownAddress: (word) => knownAddresses.addressOf(word),
     // The page's own question (#423): said when it opens; the next line answers it.
     siteQuestions,
+    // The Errand (#467, ADR 0095): armed by BINGBONG_ERRAND=1 alone until #468 routes; the kiosk never sets it.
+    ...(errandArmed(process.env) ? { errand: { planner: errandPlanner, answerWindowMs: () => settingsStore.get().hotListenSilenceMs } } : {}),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.

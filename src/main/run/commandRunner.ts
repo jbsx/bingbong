@@ -98,6 +98,12 @@ import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars } from '../../
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
+import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
+import { HANDS_OFF, errandGoalOf } from '../../core/errand/errandLine'
+import { errandCard, type ErrandCard } from '../../core/errand/plannerCommand'
+import { NO_PLANNER_LINE } from '../../core/errand/errandMemory'
+import { ERRAND_STAGE, PLANNER_STEP_STAGE } from '../../core/planner/plannerSpan'
+import { runErrand, type ActedStep, type ErrandStart } from './errand'
 
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
 // lands and becomes one Command. The Local Match first — the CLI grammar,
@@ -284,6 +290,17 @@ export interface CommandRunnerDeps {
   siteQuestions?: Pick<SiteQuestionDesk, 'open' | 'answer' | 'subscribe'>
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
+  /**
+   * The Errand (#467, ADR 0095), armed by BINGBONG_ERRAND=1 until #468
+   * routes: `errand <words>` starts one, and a Task that ends cap, unsure
+   * or unavailable hands its line to one. Absent, neither is read.
+   */
+  errand?: {
+    /** The Planner the env names; null when it has no key. */
+    planner(): PlannerModel | null
+    /** The Hot Listen window (#326): how long the confirm and the question back wait for the next line. */
+    answerWindowMs(): number
+  }
 }
 
 /**
@@ -520,8 +537,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let sounding = 0
   /** The last submission made with nothing in flight, being read or sounding (#343): a `stop` it carries pauses the music. */
   let idleAt = -1
-  /** Nothing in flight, being read or sounding: what the run state calls idle. */
-  const idle = (): boolean => inFlight === null && reading === null && sounding === 0
+  /**
+   * The Errand under way (#467): its id, the submission it started at (a
+   * later one ends it), what aborts its Planner call, and the confirm or
+   * question waiting on the next line, if one is.
+   */
+  let errand: { readonly id: string; readonly submission: number; readonly source: CommandSource; readonly controller: AbortController; wait: ((line: string | null) => void) | null } | null = null
+  /** The Errand's step turns (#467): their actions speak nothing — aloud only the confirm, the question and the outcome — and their Answers are kept for "done so far". */
+  const quietTurns = new Map<string, string | null>()
+  /** Nothing in flight, being read, sounding or carried by an Errand: what the run state calls idle. */
+  const idle = (): boolean => inFlight === null && reading === null && sounding === 0 && errand === null
 
   /**
    * What the appliance holds for the card's Appliance Verbs (#374): whether
@@ -557,6 +582,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   function log(record: CommandLogRecord): void {
     if (record.type === 'decision') taskSeen(record.task?.id ?? record.turnId, record.at, record.verb)
+    // An Errand (#467) is what "flag that" means after it, as a Task is.
+    if (record.type === 'errand') taskSeen(record.turnId, record.at, 'none')
     try {
       deps.decisionLog?.write(record)
     } catch (error) {
@@ -646,6 +673,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** A Command's one Answer (#333), unless its turn already has one; `tone` marks a failure, or a Stop's grey. */
   function answer(turnId: string, text: string, tone?: 'failure' | 'muted'): void {
     if (answeredTurn === turnId) return
+    if (quietTurns.has(turnId)) quietTurns.set(turnId, text)
     answeredTurn = turnId
     publish({ type: 'display', turnId, text, ...(tone === 'failure' ? { failure: true } : tone === 'muted' ? { muted: true } : {}), at: at() })
   }
@@ -680,6 +708,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** Speak a Command's text (#327): one `speak` event carries it — marked when it tells a failure (#329) — and it counts as the runner's until it ends. */
   function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, options: { onFirstSound?: () => void; failure?: boolean } = {}): Promise<SpeakOutcome> {
     const { onFirstSound, failure } = options
+    // An Errand's step says nothing of its own (#467, docs/agents/ui.md): its Answer is shown, and the Errand's end is what is said.
+    if (quietTurns.has(turnId)) return Promise.resolve({ ok: true })
     publish({ type: 'speak', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
     sounding += 1
     return speech
@@ -1255,6 +1285,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
      * on leaves the pop-up to its next hop's Verdict and Step Aside (#354).
      */
     readonly tellsPopup?: true
+    /** An Errand's step (#467): its Acting stage is the Errand's, on the Planner's why, never the action's own word. */
+    readonly stage?: { readonly word: string; readonly object: string }
   }
 
   /**
@@ -1323,7 +1355,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return { outcome: 'landed' }
     }
     // Acting (#428): the stage names the action by its own word and its object in the person's words (#438), and its Hop.
-    const acting = actingWords(command, page)
+    const acting = reacting.stage ?? actingWords(command, page)
     publish({ type: 'status', turnId, status: 'acting', hop: task.hop, word: acting.word, ...(acting.object !== undefined && acting.object !== '' ? { detail: acting.object } : {}), at: at() })
     const callId = `${turnId}-1`
     // `resume` decides once, here, whether it is a navigate: the tool the Feed names and the action performed agree.
@@ -1777,7 +1809,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** Whether a later submission (a Command, an Early Fire) or an abort has superseded the Task. */
-  const superseded = (task: Task): boolean => task.submission !== submitted
+  const superseded = (task: Pick<Task, 'submission'>): boolean => task.submission !== submitted
 
   /** How a continuing hop's action came out, for the Task (#328): its end, or null when it goes on. */
   function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
@@ -1857,6 +1889,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   function endLineOf(task: Task, ended: TaskEnded, hops: number): { text: string; failure: boolean } | null {
     if (superseded(task)) return null
+    // Handed to an Errand (#467): the Errand's end is what is said, never "I couldn't finish that".
+    if (handsOff(ended)) return null
     if (ended === 'done' && task.passage !== undefined) return { text: task.passage, failure: false }
     if (ended === 'done') return task.actions.length > 1 && (task.step === undefined || task.step.step === task.step.of) ? { text: DONE_LINE, failure: false } : null
     if (ended === 'cap' || (ended === 'unavailable' && hops > 1)) return { text: SPOKEN_FAILURES.notFinished, failure: true }
@@ -1910,7 +1944,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * wait runs out, or the Task is superseded. Any other page — a site's
    * own, a landing with a dialog over it — is taken as it stands.
    */
-  async function withResults(task: Task, page: CommandPage): Promise<CommandPage> {
+  async function withResults(task: Pick<Task, 'submission'>, page: CommandPage): Promise<CommandPage> {
     let current = page
     for (let polls = Math.floor(RESULTS_WAIT_MS / RESULTS_POLL_MS); polls > 0; polls -= 1) {
       if (!isWebEngineSearch(current.url) || !isSearchLanding(current.url) || current.dialog !== undefined || resultRefsOf(current.refs, current.url).length > 0) break
@@ -1926,7 +1960,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * poll while it is still mounting, until it is not, the wait runs out or
    * the Task is superseded. A page that has drawn is taken as it stands.
    */
-  async function drawn(task: Task, page: CommandPage): Promise<CommandPage> {
+  async function drawn(task: Pick<Task, 'submission'>, page: CommandPage): Promise<CommandPage> {
     let current = page
     for (let polls = Math.floor(MOUNTING_WAIT_MS / RESULTS_POLL_MS); polls > 0 && isMounting(current); polls -= 1) {
       await sleep(RESULTS_POLL_MS)
@@ -2245,7 +2279,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           continue
         }
         log({ ...record, ended })
-        if (ended === 'unsure') answerFailure(turnId, SPOKEN_FAILURES.unsure)
+        if (ended === 'unsure' && !handsOff(ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
         // A sure yes speaks the block Jev surely picked beside it (#401, ADR 0087); with no sure pick it ends as before.
         if (ended === 'done') endDone(turnId, task, placed, page, readPassage(result.answers, page, context), firedAt)
         else dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
@@ -2463,6 +2497,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly did: string
     /** Whether its end said a line of its own (#399). */
     readonly said?: true
+    /** Its "Done so far" lines, for an Errand it hands its line to (#467). */
+    readonly actions?: readonly string[]
   }
 
   /**
@@ -2589,7 +2625,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const ended = settleHop(task, record, ending === 'local_match' && result.suspect !== undefined ? null : ending, command, heard.page, result)
     const outcome = result.outcome
     const end = ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1)
-    return { ended: end, outcome, did: did(), ...(task.saidEnd === true ? { said: true as const } : {}) }
+    return { ended: end, outcome, did: did(), actions: [...task.actions], ...(task.saidEnd === true ? { said: true as const } : {}) }
   }
 
   /** Whether a Step's Task ended done (#364): a sure yes, the page already what was asked, or a one-Command Task whose action landed. */
@@ -2613,7 +2649,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (end.ended === 'superseded' || line.submission !== submitted) return
     const turnId = tracer?.mintTurnId() ?? `${lineId}-step${next}`
     publish({ type: 'command', turnId, text: line.text, action: `Step ${next} not run`, dropped: true, task: { id: lineId, hop: 0, step: next, of }, at: at() })
-    if (ENDS_UNSAID.has(end.ended) && end.said !== true) answerFailure(turnId, SPOKEN_FAILURES.unsure)
+    if (ENDS_UNSAID.has(end.ended) && end.said !== true && !handsOff(end.ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
     publish({ type: 'done', turnId, outcome: 'done', at: at() })
   }
 
@@ -2627,10 +2663,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Command or an abort supersedes every Step still to come. The first
    * Step's record names the ask that split the line.
    */
-  async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null, extra: Partial<DecisionRecord>): Promise<void> {
+  async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null, extra: Partial<DecisionRecord>): Promise<StepEnd | null> {
     const done: string[] = []
     for (let index = 0; index < words.length; index += 1) {
-      if (line.submission !== submitted) return
+      if (line.submission !== submitted) return null
       const first = index === 0
       const step: StepContext = { line: line.text, step: index + 1, of: words.length, done: [...done] }
       const stepTurnId = first ? turnId : (tracer?.mintTurnId() ?? `${turnId}-step${index + 1}`)
@@ -2644,10 +2680,177 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const end = await runStep(line, stepTurnId, words[index]!, heard, first ? { ...extra, ...split } : {}, { measured: first, step, taskId: turnId })
       if (!stepDone(end)) {
         stopSteps(line, turnId, end, index + 2, words.length)
-        return
+        // What the Steps before it did goes to an Errand with it, when the line is handed over (#467).
+        return { ...end, actions: [...done, ...(end.actions ?? [])] }
       }
       done.push(`Step ${index + 1} ${JSON.stringify(words[index])}: ${end.did}`)
     }
+    return null
+  }
+
+  /** Whether a Task that ends cap, unsure or unavailable hands its line to an Errand (#467): the Errand is armed and a Planner configured. */
+  const handsOff = (ended: TaskEnded): boolean => HANDS_OFF.has(ended) && deps.errand?.planner() != null
+
+  /** The Errand's stage word (#467): the Status Capsule's pill while a step is planned or acted. */
+  const ERRAND_WORD = 'Errand'
+
+  /** The card an Errand step is planned over (#467): a fresh snapshot, drawn, through the builder Jev's card comes from, cut to Jev's own Card Budget. */
+  async function errandCardNow(run: { readonly submission: number }, goalLine: string, step: number, visited: readonly string[], turnId: string): Promise<ErrandCard> {
+    const page = await drawn(run, await withResults(run, await collectPage(null)))
+    const links = await wholePageLinks(turnId)
+    const model = deps.decisionModel()
+    const context: HopContext = { hop: step, visited: [...visited], actions: [], links, setAside: [], searched: [], terms: [] }
+    const ownAppliance = appliance()
+    return errandCard(goalLine, page, context, { ...(ownAppliance !== undefined ? { appliance: ownAppliance } : {}), budgetChars: cardBudgetChars(model?.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS) })
+  }
+
+  /** What a capture step took (#467): what it was, and its text when the card held it whole. */
+  function capturedBy(command: Command, page: CommandPage): PlannerCapture | undefined {
+    const capture = command.capture
+    if (command.verb !== 'capture' || capture === undefined) return undefined
+    const what = describeCommand(command, page)
+    if (capture.kind === 'page') return { what, text: `${page.title}\n${page.url}` }
+    if (capture.block !== undefined) return { what, text: capture.block.text }
+    const href = page.refs.find((ref) => ref.ref === command.target)?.href
+    return href != null ? { what, text: href } : { what }
+  }
+
+  /** One Errand step's action (#467), fired as any Command's is, its turn quiet, its Acting the Errand's on the Planner's why. */
+  async function errandAct(run: NonNullable<typeof errand>, turnId: string, why: string, command: Command, card: ErrandCard, step: number): Promise<ActedStep> {
+    quietTurns.set(turnId, null)
+    try {
+      const fired = await fire(turnId, why, run.source, command, card.page, 'local_match', null, at(), { react: () => {}, settled: () => summarize(turnId), stage: { word: ERRAND_WORD, object: why } }, { id: run.id, hop: step })
+      const said = quietTurns.get(turnId) ?? undefined
+      const failed = fired.outcome === 'wall' ? ` — it failed${said !== undefined ? `: ${said}` : fired.error !== undefined ? `: ${fired.error}` : ''}` : ''
+      const capture = fired.outcome === 'landed' ? capturedBy(command, card.page) : undefined
+      return {
+        superseded: fired.outcome === 'superseded' || run.submission !== submitted,
+        outcome: `${doneLine(command, card.page, doneResult(card.page, fired))}${failed}`,
+        ...(said !== undefined ? { said } : {}),
+        ...(capture !== undefined ? { capture } : {}),
+      }
+    } finally {
+      quietTurns.delete(turnId)
+    }
+  }
+
+  /** A step that fired nothing (#467): its why greyed in the Feed with what it came to. */
+  function errandDrop(run: NonNullable<typeof errand>, turnId: string, why: string, what: string, step: number): void {
+    publish({ type: 'command', turnId, text: why, action: what, dropped: true, task: { id: run.id, hop: step }, at: at() })
+    publish({ type: 'done', turnId, outcome: 'done', at: at() })
+  }
+
+  /** A part of the page's text read into the Errand's memory (#467): shown as a step, never spoken. */
+  async function errandRead(run: NonNullable<typeof errand>, turnId: string, why: string, part: number, step: number): Promise<string | null> {
+    publish({ type: 'command', turnId, text: why, action: `read part ${part} of the page`, keepsIdle: true, task: { id: run.id, hop: step }, at: at() })
+    publish({ type: 'status', turnId, status: 'acting', hop: step, word: ERRAND_WORD, detail: why, at: at() })
+    try {
+      return await browser.readPage(part)
+    } catch (error) {
+      reportFault('run.commandRunner.errandRead', error, { turnId })
+      return null
+    } finally {
+      publish({ type: 'done', turnId, outcome: 'done', at: at() })
+    }
+  }
+
+  /**
+   * The confirm or the question back (#467), by the Site Question's road:
+   * said and kept on screen as the page's question is, the ear left open,
+   * and the next line its answer — none in the Hot Listen window, or a
+   * later Command, Escape or the Abort Head, is no answer.
+   */
+  async function errandAsk(run: NonNullable<typeof errand>, text: string, kind: 'confirm' | 'question'): Promise<string | null> {
+    if (run.submission !== submitted) return null
+    const answered = new Promise<string | null>((resolve) => {
+      run.wait = resolve
+    })
+    publish({ type: 'site_question', text, errand: kind, at: at() })
+    const spoken = deps.speech?.speak(text).catch((error: unknown): SpeakOutcome => {
+      reportFault('run.commandRunner.errandSpeak', error)
+      return { ok: false, error: String(error) }
+    })
+    // The window opens once the line is said: the person cannot answer what they have not heard.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    void Promise.resolve(spoken).then(() => {
+      if (run.wait !== null) timer = setTimeout(() => run.wait?.(null), deps.errand?.answerWindowMs() ?? 0)
+    })
+    try {
+      return await answered
+    } finally {
+      run.wait = null
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }
+
+  /**
+   * An Errand (#467, ADR 0095) from its start to its end: the Planner the
+   * env names drives it, each step through this runner's own executor.
+   * Without a Planner it says so and ends. Resolves when it ends.
+   */
+  async function startErrand(start: ErrandStart, submission: number): Promise<void> {
+    const planner = deps.errand?.planner() ?? null
+    if (planner === null) {
+      answerFailure(start.id, NO_PLANNER_LINE)
+      publish({ type: 'done', turnId: start.id, outcome: 'failed', at: at() })
+      return
+    }
+    const run: NonNullable<typeof errand> = { id: start.id, submission, source: start.source, controller: new AbortController(), wait: null }
+    errand = run
+    let steps = 0
+    try {
+      await runErrand(
+        {
+          planner,
+          now: monotonic,
+          wallNow: at,
+          mintTurnId: () => {
+            steps += 1
+            return tracer?.mintTurnId() ?? `${start.id}-errand${steps}`
+          },
+          superseded: () => run.submission !== submitted,
+          signal: run.controller.signal,
+          card: (goalLine, step, visited) => errandCardNow(run, goalLine, step, visited, start.id),
+          app: () => deps.app?.state(),
+          // The Errand's stage while the Planner thinks (#467): stage Errand, on the Goal Line, the step its Hop; seconds count from it.
+          planning: (turnId, step) => publish({ type: 'status', turnId, status: 'thinking', hop: step, word: ERRAND_WORD, detail: start.goalLine, at: at() }),
+          act: (turnId, why, command, card, step) => errandAct(run, turnId, why, command, card, step),
+          readPart: (turnId, why, part, step) => errandRead(run, turnId, why, part, step),
+          drop: (turnId, why, what, step) => errandDrop(run, turnId, why, what, step),
+          ask: (text, kind) => errandAsk(run, text, kind),
+          say: (text, failure) => {
+            publish({ type: 'display', turnId: start.id, text, ...(failure ? { failure: true } : {}), at: at() })
+            if (deps.speech !== undefined) void say(deps.speech, start.id, text, { failure })
+          },
+          stepSpan: (turnId, { durMs, detail }) => {
+            try {
+              tracer?.span(turnId, PLANNER_STEP_STAGE, durMs, { ...detail })
+            } catch (error) {
+              reportFault('run.commandRunner.plannerStepSpan', error, { turnId })
+            }
+          },
+          span: (durMs, detail) => {
+            try {
+              tracer?.span(start.id, ERRAND_STAGE, durMs, detail)
+            } catch (error) {
+              reportFault('run.commandRunner.errandSpan', error, { turnId: start.id })
+            }
+          },
+          log,
+        },
+        start,
+      )
+    } finally {
+      if (errand === run) errand = null
+      publish({ type: 'done', turnId: start.id, outcome: 'done', at: at() })
+    }
+  }
+
+  /** A later line, Escape or the Abort Head ends the Errand (#467): its Planner call is cancelled, and a confirm or question waiting gets no answer. */
+  function endErrand(): void {
+    if (errand === null) return
+    errand.controller.abort()
+    errand.wait?.(null)
   }
 
   return {
@@ -2661,13 +2864,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A reading under way is stale from here: when its answer comes, it fires nothing — and it reads stopped now, never still thinking (#428).
       submitted += 1
       stoppedAt.add(submitted)
+      // An Errand ends like a Task (#467): Escape and the Abort Head stop it where it stands.
+      const errandWas = errand !== null
+      endErrand()
       if (reading !== null) publish({ type: 'status', turnId: reading.turnId, status: 'cancelled', at: at() })
       reading = null
       cancelInFlight('stopped')
       silence()
       // A Command in flight or being read may be waiting on a page still loading: the load ends with it.
       if (acting) stopLoading()
-      return had
+      return had || errandWas
     },
 
     prepare() {
@@ -2687,7 +2893,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     async consider(partial) {
       const words = partial.trim()
       // A Site Question open (#423): the Endpoint's line answers it, and no partial fires before.
-      if (words === '' || words === lastPartial || deps.siteQuestions?.open() != null) return
+      if (words === '' || words === lastPartial || deps.siteQuestions?.open() != null || errand?.wait != null) return
       lastPartial = words
       if (firedIn(utterance)) return
       if (considering) {
@@ -2751,6 +2957,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // An Errand's confirm or question open (#467): this line is its answer, before anything else reads it, and the Errand goes on.
+      const waiting = errand?.wait ?? null
+      if (waiting !== null) {
+        if (source === 'spoken') observeTerms(trimmed)
+        publish({ type: 'command', turnId, text: trimmed, action: 'answer the errand', keepsIdle: true, task: { id: turnId, hop: 0 }, at: at() })
+        waiting(trimmed)
+        publish({ type: 'done', turnId, outcome: 'done', at: at() })
+        if (options?.turnId !== undefined) summarize(options.turnId)
+        return true
+      }
       // Thinking (#428): the line is taken, before anything reads it — the page read and every ask after it are under way,
       // so the Status Capsule never says Ready while it is read. The heard words ride it, so the user sees they were heard right.
       const thinking = (): void => publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: trimmed, at: at() })
@@ -2777,21 +2993,34 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // This submission: a reading still under way for an earlier one is stale now.
       const wasIdle = idle()
       submitted += 1
+      // A later line ends an Errand under way (#467), as it supersedes a Task.
+      endErrand()
       const submission = submitted
       if (wasIdle) idleAt = submission
       reading = { turnId, submission }
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared
       prepared = null
+      // `errand <words>` (#467, ruling 1): an exact grammar line, read only while the Errand is armed.
+      const goal = deps.errand !== undefined ? errandGoalOf(trimmed) : null
 
       const perform = async (): Promise<void> => {
+        if (goal !== null) {
+          reading = null
+          if (source === 'spoken') observeTerms(trimmed)
+          publish({ type: 'command', turnId, text: trimmed, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
+          span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'errand', effect: 'settled', reading: 'local_match', source })
+          await startErrand({ id: turnId, goalLine: goal, source }, submission)
+          return
+        }
         const heard = await read(turnId, trimmed, pending, source === 'spoken')
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
         const extra = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
-        if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, extra)
-        else await runStep(line, turnId, trimmed, heard, extra, { measured: true })
+        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending, extra) : await runStep(line, turnId, trimmed, heard, extra, { measured: true })
+        // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
+        if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: trimmed, source, handOff: { actions: end.actions ?? [], ended: end.ended } }, submission)
       }
       await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
       return true

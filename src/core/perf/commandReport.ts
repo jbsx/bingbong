@@ -225,7 +225,8 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       continue
     }
     // A Flag (#421) is the user's word on a Task, no Command: `pnpm bugs:candidates` reads it.
-    if (record.type === 'flag' || record.type === 'site_answer') continue
+    // An Errand (#467) is its own record, its steps no Commands of the Decision Model's: the `errand` span counts it.
+    if (record.type === 'flag' || record.type === 'site_answer' || record.type === 'errand') continue
     report.commands += 1
     if (record.task !== undefined) {
       const key = record.task.step === undefined ? record.task.id : `${record.task.id}#${record.task.step}`

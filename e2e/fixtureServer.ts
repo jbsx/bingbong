@@ -1514,6 +1514,18 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       )
       return
     }
+    // An Errand's two-step goal (#467): a comment field and the button that would post it, which records itself if it ever fires.
+    if (req.url === '/errand') {
+      res.end(
+        page(`<main style="color:#fff">
+  <h1>A video</h1>
+  <label>Add a comment <input type="text" id="comment" aria-label="Add a comment"></label>
+  <button type="button" id="post" onclick="window.__posted = document.getElementById('comment').value">Comment</button>
+  <script>window.__posted = null; document.title = 'A video'</script>
+</main>`),
+      )
+      return
+    }
     if (req.url === '/upload') {
       res.end(
         page(`<main style="color:#fff">

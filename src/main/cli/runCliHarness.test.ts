@@ -344,6 +344,65 @@ describe('runCliHarness', () => {
     await cli.done
   })
 
+  it('an Errand\'s confirm (#467) is printed as one and declined by the gate like the page\'s', async () => {
+    let publish: (event: PipelineEvent) => void = () => {}
+    const lines: string[] = []
+    let answer: () => void = () => {}
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    const cli = harnessWith({
+      confirmAnswer: 'no',
+      run: async (line, options) => {
+        lines.push(line)
+        if (line === 'no') {
+          answer()
+          return true
+        }
+        publish({ type: 'command', turnId: options.turnId!, text: line, action: 'errand: comment', at: 1 })
+        publish({ type: 'site_question', text: 'This will comment: this is great. Yes or no?', errand: 'confirm', at: 2 })
+        await answered
+        return true
+      },
+    })
+    publish = cli.publish
+    cli.input.write('errand comment this is great\n')
+    await cli.expectOutput('answered: no')
+    expect(cli.readOutput()).toContain('confirm: This will comment: this is great. Yes or no?')
+    expect(lines).toEqual(['errand comment this is great', 'no'])
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
+  it('an Errand\'s question back (#467) is never the gate\'s to answer: the next typed line answers it, past the queue', async () => {
+    let publish: (event: PipelineEvent) => void = () => {}
+    const lines: string[] = []
+    let answer: () => void = () => {}
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    const cli = harnessWith({
+      confirmAnswer: 'no',
+      run: async (line, options) => {
+        lines.push(line)
+        if (line === 'the white ones') {
+          answer()
+          return true
+        }
+        publish({ type: 'command', turnId: options.turnId!, text: line, action: 'errand: order', at: 1 })
+        publish({ type: 'site_question', text: 'Which shoes?', errand: 'question', at: 2 })
+        await answered
+        return true
+      },
+    })
+    publish = cli.publish
+    cli.input.write('errand order the same shoes\n')
+    await cli.expectOutput('asks back: Which shoes?')
+    cli.input.write('the white ones\n')
+    await cli.expectOutput('bingbong> ')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(lines).toEqual(['errand order the same shoes', 'the white ones'])
+    expect(cli.readOutput()).not.toContain('answered: no')
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
   it('resolves when stdin closes without quit', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')

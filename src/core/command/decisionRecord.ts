@@ -282,7 +282,29 @@ export interface SiteAnswerRecord {
   readonly ask?: string
 }
 
-export type CommandLogRecord = DecisionRecord | MisfireRecord | FlagRecord | SiteAnswerRecord
+/**
+ * One Errand (#467, ADR 0095), written when it ends: its Goal Line, each
+ * step (the Planner's why, the action, its class, what it came to, its
+ * seconds), how it ended, its working seconds, and the Planner that drove
+ * it; `handedFrom` when a Task that ended not done handed it the line.
+ */
+export interface ErrandRecord {
+  readonly type: 'errand'
+  readonly turnId: string
+  readonly at: number
+  readonly source: CommandSource
+  readonly goalLine: string
+  readonly outcome: 'done' | 'unsure' | 'cap' | 'unavailable' | 'declined' | 'superseded'
+  /** What the Errand said as it ended: the Planner's own sentence when done. */
+  readonly said?: string
+  readonly steps: readonly { readonly why: string; readonly action: string; readonly class: 'stays' | 'leaves'; readonly outcome: string; readonly seconds: number }[]
+  readonly seconds: number
+  readonly model: string
+  readonly thinking: boolean
+  readonly handedFrom?: TaskEnded
+}
+
+export type CommandLogRecord = DecisionRecord | MisfireRecord | FlagRecord | SiteAnswerRecord | ErrandRecord
 
 /** The next Command this long after one reads as its recovery. */
 export const MISFIRE_WINDOW_MS = 3_000

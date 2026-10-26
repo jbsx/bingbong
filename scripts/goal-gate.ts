@@ -18,12 +18,18 @@
 // a search). Node runs this .ts directly via type stripping (#36).
 //
 // Usage:
-//   pnpm goal:gate [--repeat N] [--models id,id] [--judge id] [--cases substr,substr] [--keep dir]
+//   pnpm goal:gate [--repeat N] [--models id,id] [--errand] [--thinking on|off] [--judge id] [--cases substr,substr] [--keep dir]
 //   pnpm goal:gate --rejudge dir [--judge id]
 //
 // --models names the Planner model(s) under test as jev:gate takes them,
-// one table each; accepted now, the Planner joins the run in #467. The
-// Decision Model and the Planner's key come from the env (the root .env).
+// one table each, and runs each case as an Errand (#467): the app is armed
+// with BINGBONG_ERRAND=1 and the line typed is `errand <transcript>`.
+// --errand alone does the same under the Planner the env names;
+// --thinking sets its thinking switch (BINGBONG_PLANNER_THINKING), the
+// env's when absent. The Decision Model and the Planner's key come from
+// the env (the root .env). A run that met a 429 — the Decision Model's
+// host, or the Planner's — is run again, twice at most, and the 429s are
+// counted under the table.
 // --keep writes each run as the judge saw it, and its verdict, to the dir;
 // --rejudge scores a kept dir's runs again, none run live: a judge's change
 // is read on the same runs.
@@ -37,7 +43,7 @@ import { fileURLToPath } from 'node:url'
 import type { CdpClient } from '../e2e/cdpClient.ts'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from '../e2e/electronApp.ts'
 import { resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
-import { formatGoalGate, GOAL_RUN_BOUND_S, goalJudgeMessages, readGoalCase, readGoalVerdict, type GoalCase, type GoalRow, type GoalRun, type GoalRunScore } from '../src/core/planner/goalCase.ts'
+import { ERRAND_RUN_BOUND_S, formatGoalGate, GOAL_RUN_BOUND_S, goalJudgeMessages, readGoalCase, readGoalVerdict, type GoalCase, type GoalRow, type GoalRun, type GoalRunScore } from '../src/core/planner/goalCase.ts'
 import { createPlannerLimiter } from '../src/core/planner/limiter.ts'
 import { PLANNER_GATE_MODEL, resolvePlannerRouting } from '../src/core/planner/plannerRouting.ts'
 import type { ChatClient } from '../src/main/planner/chatCompletion.ts'
@@ -80,6 +86,15 @@ if (!Number.isInteger(repeat) || repeat < 1) {
   process.exit(2)
 }
 const models = list(valueOf('--models'))
+/** Each case an Errand (#467): under the named models, or under the env's Planner with --errand. */
+const errandArm = models.length > 0 || args.includes('--errand')
+const thinking = valueOf('--thinking')
+if (thinking !== undefined && thinking !== 'on' && thinking !== 'off') {
+  console.error(`--thinking takes on or off, got ${thinking}`)
+  process.exit(2)
+}
+/** How many times a run that met a 429 is run again. */
+const RATE_LIMIT_RETRIES = 2
 const judgeId = valueOf('--judge') ?? PLANNER_GATE_MODEL
 const only = list(valueOf('--cases'))
 const keep = valueOf('--keep')
@@ -87,6 +102,8 @@ const rejudge = valueOf('--rejudge')
 if (keep !== undefined) mkdirSync(keep, { recursive: true })
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+/** The 429s the judge met in this table, waited out and asked again (#467). */
+let judgeLimited = 0
 
 function readCases(): GoalCase[] | string {
   const cases: GoalCase[] = []
@@ -170,27 +187,46 @@ async function readPane(cdp: CdpClient): Promise<{ url: string; title: string; t
   return { url: pane.url, title: read?.title ?? '', text: (read?.text ?? '').slice(0, TEXT_IN_VIEW_CHARS) }
 }
 
-/** The decision records of the line's Task (`cli-<n>-…`), and how it ended: the last of them that carries an ending. */
-function taskRecords(logsDir: string, lineNumber: number): { ended: string | null; records: unknown[] } {
-  const records: unknown[] = []
-  if (!existsSync(logsDir)) return { ended: null, records }
-  let ended: string | null = null
-  for (const file of readdirSync(logsDir).filter((name) => /^decision-.*\.jsonl$/.test(name)).sort()) {
+/** Every JSON line of the logs dir's files whose name matches. */
+function jsonLines(logsDir: string, pattern: RegExp): Record<string, unknown>[] {
+  if (!existsSync(logsDir)) return []
+  const out: Record<string, unknown>[] = []
+  for (const file of readdirSync(logsDir).filter((name) => pattern.test(name)).sort()) {
     for (const line of readFileSync(join(logsDir, file), 'utf8').split('\n')) {
       if (line.trim() === '') continue
-      let record: { type?: string; turnId?: string; task?: { id?: string }; ended?: string }
       try {
-        record = JSON.parse(line) as typeof record
+        out.push(JSON.parse(line) as Record<string, unknown>)
       } catch {
         continue
       }
-      const turn = record.task?.id ?? record.turnId ?? ''
-      if (record.type !== 'decision' || !turn.startsWith(`cli-${lineNumber}-`)) continue
-      records.push(record)
-      if (typeof record.ended === 'string') ended = record.ended
     }
   }
-  return { ended, records }
+  return out
+}
+
+/**
+ * The records of the line's Task (`cli-<n>-…`) and of an Errand it became
+ * (#467), and how it ended: the Errand's outcome when one ran, else the
+ * last decision record that carries an ending; and the 429s the run met,
+ * the Decision Model's and the Planner's.
+ */
+function taskRecords(logsDir: string, lineNumber: number): { ended: string | null; records: unknown[]; limited: number } {
+  const records: unknown[] = []
+  let ended: string | null = null
+  let errandEnded: string | null = null
+  let limited = 0
+  for (const record of jsonLines(logsDir, /^decision-.*\.jsonl$/) as { type?: string; turnId?: string; task?: { id?: string }; ended?: string; outcome?: string; jev?: { httpStatus?: number } }[]) {
+    const turn = record.task?.id ?? record.turnId ?? ''
+    if (record.jev?.httpStatus === 429) limited += 1
+    if ((record.type !== 'decision' && record.type !== 'errand') || !turn.startsWith(`cli-${lineNumber}-`)) continue
+    records.push(record)
+    if (record.type === 'errand' && typeof record.outcome === 'string') errandEnded = `errand ${record.outcome}`
+    else if (typeof record.ended === 'string') ended = record.ended
+  }
+  for (const span of jsonLines(logsDir, /^perf-.*\.jsonl$/) as { stage?: string; detail?: { httpStatus?: number } }[]) {
+    if (span.stage === 'planner-step' && span.detail?.httpStatus === 429) limited += 1
+  }
+  return { ended: errandEnded ?? ended, records, limited }
 }
 
 /** What the run left on the X clipboard of the Xvfb it ran on. */
@@ -212,11 +248,15 @@ function heard(output: string): { said: string[]; asked: string[] } {
         said.push(line.slice('said: '.length))
       }
     } else if (line.startsWith('page asks: ')) asked.push(line.slice('page asks: '.length))
+    // The Errand's own (#467): its confirm is declined as the page's is; its question back is said aloud.
+    else if (line.startsWith('confirm: ')) asked.push(line.slice('confirm: '.length))
+    else if (line.startsWith('asks back: ')) said.push(line.slice('asks back: '.length))
   }
   return { said, asked }
 }
 
-async function runCase(goal: GoalCase, plannerModel: string | undefined): Promise<{ run: GoalRun; records: unknown[] }> {
+async function runCase(goal: GoalCase, plannerModel: string | undefined): Promise<{ run: GoalRun; records: unknown[]; limited: number }> {
+  const boundS = errandArm ? ERRAND_RUN_BOUND_S : GOAL_RUN_BOUND_S
   const profile = mkdtempSync(join(tmpdir(), 'bingbong-goal-gate-'))
   const shelf = join(profile, 'shelf')
   const start = STARTS[goal.start]!
@@ -242,6 +282,9 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
       BINGBONG_NEWS_WRITER_API_KEY_ENV: 'BINGBONG_GOAL_GATE_NO_NEWS_KEY',
       PULSE_SERVER: 'unix:/nonexistent',
       ...(plannerModel !== undefined ? { BINGBONG_PLANNER_MODEL: plannerModel } : {}),
+      // The Errand's arm (#467): armed, and the thinking switch under test.
+      ...(errandArm ? { BINGBONG_ERRAND: '1' } : {}),
+      ...(thinking !== undefined ? { BINGBONG_PLANNER_THINKING: thinking } : {}),
     },
   })
   try {
@@ -256,9 +299,9 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
     await sleep(SETTLE_MS)
     const from = app.stdoutRaw().length
     const sentAt = performance.now()
-    app.stdin!.write(`${goal.transcript}\n`)
+    app.stdin!.write(`${errandArm ? `errand ${goal.transcript}` : goal.transcript}\n`)
     lines += 1
-    const finished = await waitForPrompts(app, lines + 1, GOAL_RUN_BOUND_S * 1000)
+    const finished = await waitForPrompts(app, lines + 1, boundS * 1000)
     const seconds = (performance.now() - sentAt) / 1000
     const { said, asked } = heard(app.stdoutRaw().slice(from))
     const pane = await readPane(app.cdp)
@@ -276,10 +319,11 @@ async function runCase(goal: GoalCase, plannerModel: string | undefined): Promis
       shelf: existsSync(shelf) ? readdirSync(shelf).sort() : [],
       clipboard: clipboard(),
       ended: task.ended,
-      seconds: finished ? seconds : GOAL_RUN_BOUND_S,
+      seconds: finished ? seconds : boundS,
       timedOut: !finished,
+      ...(boundS !== GOAL_RUN_BOUND_S ? { boundS } : {}),
     }
-    return { run, records: task.records }
+    return { run, records: task.records, limited: task.limited }
   } finally {
     await app.quit().catch(() => {})
     // The app may still be letting go of its profile as it exits.
@@ -299,8 +343,14 @@ async function judge(chat: ChatClient, run: GoalRun): Promise<GoalRunScore> {
       // The judge must read the same run the same way every time.
       { temperature: 0 },
     )
-  const first = await ask()
-  const reply = first.status === 'answered' ? first : await ask()
+  let reply = await ask()
+  // A 429 is waited out and asked again, counted (#467); any other hiccup is asked once more.
+  for (let tries = 0; reply.status === 'unavailable' && reply.httpStatus === 429 && tries < 3; tries += 1) {
+    judgeLimited += 1
+    await sleep(5_000 * (tries + 1))
+    reply = await ask()
+  }
+  if (reply.status === 'unavailable' && reply.httpStatus !== 429) reply = await ask()
   const base = { seconds: run.seconds, ended: run.timedOut ? 'bound' : run.ended }
   if (reply.status === 'unavailable') return { ...base, verdict: null, why: `judge unavailable: ${reply.reason}` }
   const verdict = readGoalVerdict(reply.content)
@@ -345,12 +395,26 @@ if (rejudge !== undefined) {
 }
 for (const model of rejudge !== undefined ? [] : models.length === 0 ? [undefined] : models) {
   const rows: GoalRow[] = []
+  /** The 429s the runs met (the Decision Model's host and the Planner's), and the runs made again for them. */
+  let limited = 0
+  let rerun = 0
+  judgeLimited = 0
   for (const goal of cases) {
     const runs: GoalRunScore[] = []
     for (let n = 1; n <= repeat; n++) {
       let score: GoalRunScore
       try {
-        const { run, records } = await runCase(goal, model)
+        let ran = await runCase(goal, model)
+        // A run that met a 429 measured the host, not the arm: it is run again, twice at most.
+        for (let tries = 0; ran.limited > 0 && tries < RATE_LIMIT_RETRIES; tries += 1) {
+          limited += ran.limited
+          rerun += 1
+          console.error(`${goal.id} ${n}/${repeat}: ${ran.limited} × 429, run again`)
+          await sleep(10_000 * (tries + 1))
+          ran = await runCase(goal, model)
+        }
+        limited += ran.limited
+        const { run, records } = ran
         score = await judge(judgeChat, run)
         if (keep !== undefined) writeFileSync(join(keep, `${goal.id}${model === undefined ? '' : `-${model}`}-${n}.json`), `${JSON.stringify({ run, score, records }, null, 2)}\n`)
       } catch (error) {
@@ -362,7 +426,9 @@ for (const model of rejudge !== undefined ? [] : models.length === 0 ? [undefine
     if (runs.some((run) => run.verdict !== 'done')) allDone = false
     rows.push({ id: goal.id, runs })
   }
-  const arm = model === undefined ? `Task loop under ${decisionName}, no Planner yet` : `Planner ${model}, Task loop under ${decisionName}`
+  const planner = errandArm ? `Errand under Planner ${model ?? process.env.BINGBONG_PLANNER_MODEL ?? 'the env default'}, thinking ${thinking ?? process.env.BINGBONG_PLANNER_THINKING ?? 'the env default'}; ` : ''
+  const arm = errandArm ? `${planner}Decision Model ${decisionName}` : `Task loop under ${decisionName}, no Planner`
   console.log(formatGoalGate(rows, { arm, judge: judgeChat.model }))
+  console.log(`429s: ${limited} met by the runs (${rerun} runs made again), ${judgeLimited} by the judge`)
 }
 process.exitCode = allDone ? 0 : 1

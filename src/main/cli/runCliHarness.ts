@@ -151,9 +151,11 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
     let questionOpen = false
     subscribe((event) => {
       if (event.type !== 'site_question') return
-      write(`${event.alert ? 'page says' : 'page asks'}: ${event.text}\n`)
+      // The appliance's own confirm and question back (#467) are named apart from the page's: the goal gate reads them so.
+      write(`${event.alert ? 'page says' : event.errand === 'confirm' ? 'confirm' : event.errand === 'question' ? 'asks back' : 'page asks'}: ${event.text}\n`)
       if (event.alert === true) return
-      if (confirmAnswer === undefined) {
+      // An Errand's question back (#467) is the person's to answer, never the gate's: the next typed line is its answer, past the queue.
+      if (confirmAnswer === undefined || event.errand === 'question') {
         questionOpen = true
         return
       }

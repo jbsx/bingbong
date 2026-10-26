@@ -27,13 +27,17 @@ export type PlannerAction =
   | { readonly kind: 'media'; readonly ref: number; readonly op: string; readonly amount?: string }
   | { readonly kind: 'capture'; readonly ref: number }
   | { readonly kind: 'verb'; readonly verb: string; readonly words?: string }
+  /** Any line the card offers, by its id (#467): a Show Op, a block's or the page's Capture, a link further down, a Search Op; `text` is the words a typing line takes. */
+  | { readonly kind: 'option'; readonly option: string; readonly text?: string }
 
 export type PlannerActionKind = PlannerAction['kind']
 
-/** One step the Errand has taken: the action as it was told, and the outcome sentence it came to. */
+/** One step the Errand has taken: the action as it was told, and the outcome sentence it came to; its class and its seconds once the Errand loop took it (#467). */
 export interface PlannerStepDone {
   readonly action: string
   readonly outcome: string
+  readonly class?: PlannerActionClass
+  readonly seconds?: number
 }
 
 /** One thing the Errand captured: what it was, and where it is (a Shelf file) or what it says. */

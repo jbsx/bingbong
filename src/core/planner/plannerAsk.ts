@@ -11,38 +11,43 @@
 import { reportFault } from '../trace/fault.ts'
 import type { PlannerAction, PlannerActionKind, PlannerAnswer, PlannerRequest } from '../ports/plannerModel'
 
-const ACTION_KINDS: readonly PlannerActionKind[] = ['click', 'type', 'scroll', 'press', 'navigate', 'back', 'read', 'media', 'capture', 'verb']
+const ACTION_KINDS: readonly PlannerActionKind[] = ['click', 'type', 'scroll', 'press', 'navigate', 'back', 'read', 'media', 'capture', 'verb', 'option']
 
 export const PLANNER_INSTRUCTIONS = [
-  'You drive a voice-controlled web browser for the person who spoke the Goal Line. You see the page as a card of numbered refs, the steps already taken and what was captured. Name the one next thing to do.',
+  'You drive a voice-controlled web browser for the person who spoke the Goal Line. You see the page as a card of numbered refs and the lines it offers, the steps already taken and what was captured. Name the one next thing to do.',
   '',
   'Reply with exactly one JSON object and nothing else, one of:',
-  '{"next": "act", "action": {…}, "class": "stays" | "leaves", "why": "<one line>"}',
+  '{"next": "act", "action": {…}, "class": "stays" | "leaves", "why": "<one short line: what this step is for>"}',
   '{"next": "done", "sentence": "<what came of it, said aloud to the person>"}',
   '{"next": "ask", "question": "<one question back, said aloud>"}',
   '',
   'An action is one of:',
   '{"kind": "click", "ref": N}',
-  '{"kind": "type", "ref": N, "text": "…"}',
+  '{"kind": "type", "ref": N, "text": "…"} (types into a field; press Enter or click its button to send it)',
   '{"kind": "scroll", "direction": "up" | "down"} (add "ref": N to scroll one part of the page)',
   '{"kind": "press", "key": "Enter"}',
   '{"kind": "navigate", "url": "https://…"}',
   '{"kind": "back"}',
-  '{"kind": "read", "part": "<a reading part the card offers>"}',
+  '{"kind": "read", "part": "1"} (the page\'s whole text, a part at a time: the step\'s outcome holds the text and says how many parts there are)',
   '{"kind": "media", "ref": N, "op": "<a media op the ref offers>", "amount": "<how far, when the op takes one>"}',
-  '{"kind": "capture", "ref": N} (puts the ref\'s text or image on the Shelf and the clipboard)',
+  '{"kind": "capture", "ref": N} (puts a link\'s address or an image on the Shelf and the clipboard)',
+  '{"kind": "option", "option": "<an id the card offers>", "text": "<words, for a line that takes them>"} (any line on the card by its id: show-N brings a block into view; capture-text-N, capture-view-N and capture-page copy a block or the page; open-N opens a link further down)',
   '{"kind": "verb", "verb": "<an Appliance Verb>", "words": "<its words>"}',
   '',
-  'class is "leaves" when the action\'s effect leaves the appliance for other people or the world: it posts, sends, pays, deletes or submits. Otherwise "stays". A "leaves" action is said back to the person and waits for their yes.',
-  'Ask back when the Goal Line, the page and what was captured do not say what is meant; never guess at what only the person knows.',
-  'Say done when the Goal Line is carried out, in a sentence that tells the person the outcome itself, not "Done".',
+  'class is "leaves" when the action\'s effect leaves the appliance for other people or the world: it posts, sends, pays, orders, deletes, submits, publishes, replies, comments or subscribes. Otherwise "stays". A "leaves" action is said back to the person and waits for their yes; their answer comes back as a step.',
+  'Ask back when the Goal Line, the page and what was captured do not say what is meant; never guess at what only the person knows. One question at a time.',
+  'Say done when the Goal Line is carried out, or cannot be, in a sentence that tells the person the outcome itself, not "Done". A page that wants a sign-in first cannot be carried further: say done, saying so.',
 ].join('\n')
 
 /** The two messages of one Planner call. */
 export function plannerMessages(request: Omit<PlannerRequest, 'signal'>): { system: string; user: string } {
   const { goalLine, page, verbs, memory } = request
   const verbLines = Object.entries(verbs).map(([name, what]) => (what === null ? `- ${name}` : `- ${name}: ${what}`))
-  const stepLines = memory.steps.map((step, index) => `${index + 1}. ${step.action} → ${step.outcome}`)
+  const stepLines = memory.steps.map((step, index) => {
+    // Its class and its seconds, once the Errand loop took it (#467).
+    const facts = [step.class, step.seconds !== undefined ? `${step.seconds.toFixed(1)} s` : undefined].filter((fact) => fact !== undefined)
+    return `${index + 1}. ${step.action}${facts.length > 0 ? ` (${facts.join(', ')})` : ''} → ${step.outcome}`
+  })
   const captureLines = memory.captures.map((capture) => `- ${capture.what}: ${capture.text !== undefined ? JSON.stringify(capture.text) : `on the Shelf as ${capture.file ?? 'a file'}`}`)
   const section = (title: string, lines: readonly string[], none: string): string => (lines.length === 0 ? `${title}: ${none}` : [`${title}:`, ...lines].join('\n'))
   const user = [
@@ -128,7 +133,7 @@ function readAction(raw: Record<string, unknown>): PlannerAction | string {
     case 'back':
       return { kind: 'back' }
     case 'read': {
-      const part = text(raw.part)
+      const part = typeof raw.part === 'number' ? String(raw.part) : text(raw.part)
       return part === null ? 'read needs a part' : { kind: 'read', part }
     }
     case 'media': {
@@ -136,6 +141,12 @@ function readAction(raw: Record<string, unknown>): PlannerAction | string {
       if (ref === null || op === null) return 'media needs a ref number and its op'
       const amount = text(raw.amount)
       return amount === null ? { kind: 'media', ref, op } : { kind: 'media', ref, op, amount }
+    }
+    case 'option': {
+      const option = text(raw.option)
+      if (option === null) return 'option needs an id the card offers'
+      const typed = typeof raw.text === 'string' && raw.text !== '' ? raw.text : null
+      return typed === null ? { kind: 'option', option } : { kind: 'option', option, text: typed }
     }
     case 'verb': {
       const verb = text(raw.verb)

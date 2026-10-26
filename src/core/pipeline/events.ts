@@ -58,9 +58,12 @@ export type PipelineEvent =
   /**
    * The page spoke for itself (#423), outside any turn: a Site Question
    * (its native confirm) waiting for the user's next line, or, `alert`, an
-   * alert the pane accepted. `text` is the line the app says.
+   * alert the pane accepted. `text` is the line the app says. `errand`
+   * (#467): the appliance's own question by the same road — an Errand's
+   * confirm before an action that leaves the appliance, or its question
+   * back — answered by the next line as the page's is.
    */
-  | { type: 'site_question'; text: string; alert?: true; at: number }
+  | { type: 'site_question'; text: string; alert?: true; errand?: 'confirm' | 'question'; at: number }
 
 /**
  * Derives a run's outcome when its `done` event omits one: a seen cancelled

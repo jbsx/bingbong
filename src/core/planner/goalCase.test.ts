@@ -40,7 +40,7 @@ describe('the goal gate’s judge (#465): told what was meant and what came of i
       'Final page: https://www.youtube.com/watch?v=x — "A video - YouTube"',
       'The Task ended: done, after 6.4 s',
       'Said aloud: "The top comment says: Nice video."',
-      'The page asked: "Post this comment?" — declined by the gate, as it declines every confirm',
+      'Confirms put to the user: "Post this comment?" — declined by the gate, as it declines every confirm',
       'On the Shelf: thumb.jpg',
       'On the clipboard: "npm init playwright@latest"',
       'Text in view on the final page:',
@@ -52,7 +52,7 @@ describe('the goal gate’s judge (#465): told what was meant and what came of i
     const { user } = goalJudgeMessages({ ...run, said: [], ended: null, timedOut: true, seconds: 90, textInView: '' })
     expect(user).toContain('The Task ended: still running at the 90 s bound')
     expect(user).toContain('Said aloud: nothing')
-    expect(user).toContain('The page asked: nothing')
+    expect(user).toContain('Confirms put to the user: nothing')
     expect(user).toContain('On the Shelf: nothing')
     expect(user).toContain('On the clipboard: nothing')
     expect(user).toContain('Text in view on the final page:\n(none)')

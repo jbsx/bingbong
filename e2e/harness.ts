@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
 import { decisionEnvKeys } from '../src/core/decision/decisionRouting'
 import { briefWriterEnvKeys } from '../src/core/news/briefWriterRouting'
+import { plannerEnvKeys } from '../src/core/planner/plannerRouting'
+import { ERRAND_ENV } from '../src/core/errand/errandLine'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { promptBarScript, urlBarNavigationScript } from './scripts'
@@ -116,7 +118,8 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 // writer's env vars are unset by default — each one's only required piece
 // is a key, so an exported TYPESAFE_API_KEY or ZAI_API_KEY alone would
 // otherwise switch it on.
-const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries([...decisionEnvKeys(), ...briefWriterEnvKeys()].map((key) => [key, undefined]))
+// The Planner's too, and the Errand's switch (#467): an exported BINGBONG_ERRAND would arm it under every suite.
+const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries([...decisionEnvKeys(), ...briefWriterEnvKeys(), ...plannerEnvKeys(), ERRAND_ENV].map((key) => [key, undefined]))
 
 // targetInfo.url goes stale after navigations; the predicates only rely on
 // values that never change for a given target (kind of page, initial URL).

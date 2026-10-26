@@ -17,6 +17,8 @@ export interface PlannerStepDetail {
   readonly thinking: boolean
   readonly outcome: PlannerStepOutcome
   readonly reason?: PlannerUnavailableReason
+  /** The host's error status, for an `http` reason (#467): a 429 is the rate limit, counted by the goal gate. */
+  readonly httpStatus?: number
   readonly promptTokens?: number
   readonly completionTokens?: number
   readonly reasoningTokens?: number
@@ -24,7 +26,7 @@ export interface PlannerStepDetail {
 }
 
 /** One `planner-step` span: the call's own ms, and its detail. */
-export function plannerStepSpan(facts: PlannerCallFacts, outcome: PlannerStepOutcome, reason?: PlannerUnavailableReason): { durMs: number; detail: PlannerStepDetail } {
+export function plannerStepSpan(facts: PlannerCallFacts & { readonly httpStatus?: number }, outcome: PlannerStepOutcome, reason?: PlannerUnavailableReason): { durMs: number; detail: PlannerStepDetail } {
   return {
     durMs: facts.latencyMs,
     detail: {
@@ -32,6 +34,7 @@ export function plannerStepSpan(facts: PlannerCallFacts, outcome: PlannerStepOut
       thinking: facts.thinking,
       outcome,
       ...(reason !== undefined ? { reason } : {}),
+      ...(facts.httpStatus !== undefined ? { httpStatus: facts.httpStatus } : {}),
       ...(facts.promptTokens !== undefined ? { promptTokens: facts.promptTokens } : {}),
       ...(facts.completionTokens !== undefined ? { completionTokens: facts.completionTokens } : {}),
       ...(facts.reasoningTokens !== undefined ? { reasoningTokens: facts.reasoningTokens } : {}),

@@ -74,7 +74,8 @@ export function actingWords(command: Command, page?: CommandPage): StageWords {
 
 /** The word a stage goes by (#438): Acting by the action's own word, the rest by the stage's. */
 export function stageWord(progress: { readonly stage: PipelineStatus; readonly word?: string }): string {
-  return progress.stage === 'acting' && progress.word !== undefined ? progress.word : STAGE_WORDS[progress.stage]
+  // An Errand's step (#467) is stage Errand while its Planner thinks, as while it acts.
+  return (progress.stage === 'acting' || progress.stage === 'thinking') && progress.word !== undefined ? progress.word : STAGE_WORDS[progress.stage]
 }
 
 /**
