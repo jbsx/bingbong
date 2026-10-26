@@ -693,7 +693,9 @@ peach, and how much quiet ends it. The Prompt Bar is drawn as one; the
 Idle Screen's first Clock Line is one (#360): `Say "Bing Bong" or start
 typing` beside a still waveform at rest, the live words with `LISTENING`
 while an Utterance is taken and `TRANSCRIBING` while they are read, and
-`Microphone off — start typing` with the orb grey. A wait counts its
+`Microphone off — start typing` with the orb grey. After a Command that
+failed or was read as none, the line keeps its sentence until the next
+input, as the panel's does (#436, #470). A wait counts its
 seconds on the screen's own clock (#442): `TRANSCRIBING` with the words
 being read — the Utterance's last partial in quotes, or `your words` — and
 the seconds since its Endpoint. At a cold start the ear is `STARTING`
@@ -827,6 +829,22 @@ width. Hiding is not a change of its state, so it is not the system opening
 or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
+**Peek Card**:
+The card that reports a Command while the Feed Panel is closed (ADR 0021,
+0026, 0029): the words while it runs, then its Answer, its dot in the
+failure colour when the Command failed (#329). It goes 15 s after the
+Answer's sentence is spoken, a bar draining across that time; a tap ends
+it sooner, and so do the next Command and opening the panel (owner,
+2026-10-26, #470: "i dont want the card to always be on the screen and if
+i want to see the history i will use the activity panel"). The Feed Panel
+is the history; the card is not. It sits bottom-centre over the pane.
+Over the Idle Screen it shows only a failed Command or "No response.", in
+the Weigh-in pop-up's place (the AI Usage chart's), at status size, its
+tap leaving the screen up. It never shows there while the Idle Prompt is
+open, or while the Weigh-in pop-up is up, which outranks it. It is never
+activity.
+_Avoid_: toast, notification, result pop-up
+
 **Idle Screen**:
 What renders while nothing is happening: flat Tiles on a flat near-black
 ground (ADR 0078; the glass bento of #352 before it), in three Columns.
@@ -854,7 +872,9 @@ with the Status Capsule shown on it while they run, so a Command that never
 needs the pane (the Timer, a Stop, `done`, a line read as no Command, and
 every Player verb, `play <words>` included — #344) is heard and performed
 over it: a song is searched for and played in the hidden pane, and the
-music plays on there. A tap, a Command that acts on the pane, or "show the
+music plays on there. One that fails there, or a line read as no Command,
+shows the Peek Card in the AI Usage chart's place, as the Weigh-in pop-up
+does, until it goes (#470). A tap, a Command that acts on the pane, or "show the
 video" / "show it" (the one music line that wakes it, onto the watch page)
 unmounts it; the browser pane is only hidden beneath it, never reset. The
 blank pane is never shown (#361; owner, 2026-10-20: "isnt it always better
