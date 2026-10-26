@@ -6,7 +6,7 @@ import { firstNumber } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
 import { ONE_SCREEN } from './scrollOp'
-import { captureKindOf } from './captureOp'
+import { captureOfRef } from './captureOp'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
 // from the Utterance and the page alone, without asking the Decision Model
@@ -327,8 +327,8 @@ function fromGrammar(parsed: CliCommand, refs: readonly CommandRef[]): Command |
       // The page's capture names it by its title as it fires; a ref's, by its kind — none for a ref of no capturing kind, which is Jev's to read.
       if (parsed.ref === 'page') return command('capture', { capture: { kind: 'page', named: '' } })
       const ref = refs.find((candidate) => candidate.ref === parsed.ref)
-      const kind = ref === undefined ? null : captureKindOf(ref)
-      return ref === undefined || kind === null ? null : command('capture', { target: ref.ref, capture: { kind, named: ref.label !== '' ? ref.label : (ref.href ?? '') } })
+      const capture = ref === undefined ? null : captureOfRef(ref)
+      return ref === undefined || capture === null ? null : command('capture', { target: ref.ref, capture })
     }
     case 'type':
       return command('type', { target: parsed.ref, slot: parsed.text })

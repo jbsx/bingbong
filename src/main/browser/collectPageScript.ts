@@ -606,7 +606,10 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     // on each side, so an icon is no image to take. Images come after every
     // control, in document order, in the room the controls left: no control's
     // number moves for them, and on a full page they give way first.
+    const controls = new Set(taken.map((entry) => entry.el))
     const shownImages = Array.from(document.images).filter((el) => {
+      // An image a cue already took (a zoomable gallery image) is that control, never listed twice.
+      if (controls.has(el)) return false
       if (!(el.currentSrc || el.src) || !el.complete || el.naturalWidth === 0) return false
       if (dialogRoot !== null && !containsDeep(dialogRoot, el)) return false
       const rect = el.getBoundingClientRect()
@@ -868,7 +871,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       // Taken by a frame for the dialog layer alone (#414): the page merge keeps it only there.
       ...(dialogOnly.has(el) ? { dialogOnly: true } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
-      ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {})
+      ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {}),
+      // An image taken for its capture alone (#466).
+      ...(images.has(el) ? { image: true } : {})
     }
   }
   window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())

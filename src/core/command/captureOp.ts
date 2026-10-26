@@ -54,6 +54,12 @@ export function captureKindOf(ref: CommandRef): 'link' | 'image' | null {
   return ref.kind === 'link' && ref.href !== null ? 'link' : null
 }
 
+/** A ref's capture (#466): a link's or an image's, named by its label, a link with no words by its address; null for a control. */
+export function captureOfRef(ref: CommandRef): CaptureAction | null {
+  const kind = captureKindOf(ref)
+  return kind === null ? null : { kind, named: ref.label !== '' ? ref.label : (ref.href ?? '') }
+}
+
 /** What a card label names to capture: a ref by its number, a block off the view by its `[text-N]`, a block in view by its place, or the page. */
 export type CaptureLabel = { readonly of: 'ref' | 'text' | 'view'; readonly n: number } | { readonly of: 'page' }
 
@@ -95,6 +101,8 @@ export interface ImageFetch {
   readonly src: string
   readonly data?: string
   readonly type?: string
+  /** The image drawn as a PNG, in base64, when its own type is no PNG or JPEG: what the clipboard can take. */
+  readonly png?: string
 }
 
 /** An image as the Shelf keeps it: its bytes, its extension, and whether they are the image's own or a screenshot of its box. */
@@ -102,6 +110,8 @@ export interface CapturedImage {
   readonly bytes: Uint8Array
   readonly ext: string
   readonly via: 'fetch' | 'screenshot'
+  /** A PNG of it for the clipboard, when its own type is one the clipboard cannot decode. */
+  readonly png?: Uint8Array
 }
 
 /** The extensions an image's type names, beyond its own subtype. */
@@ -130,7 +140,7 @@ function bytesOf(base64: string): Uint8Array {
 export async function captureImage(fetched: ImageFetch, clip: () => Promise<Uint8Array>): Promise<CapturedImage> {
   const typed = fetched.type ?? ''
   const ext = fetched.data !== undefined && fetched.data !== '' && (typed === '' || /^image\//i.test(typed)) ? imageExtension(typed, fetched.src) : null
-  if (ext !== null && fetched.data !== undefined) return { bytes: bytesOf(fetched.data), ext, via: 'fetch' }
+  if (ext !== null && fetched.data !== undefined) return { bytes: bytesOf(fetched.data), ext, via: 'fetch', ...(fetched.png !== undefined && fetched.png !== '' ? { png: bytesOf(fetched.png) } : {}) }
   return { bytes: await clip(), ext: 'jpg', via: 'screenshot' }
 }
 

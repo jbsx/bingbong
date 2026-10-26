@@ -45,6 +45,8 @@ export interface CollectedElement {
   formHasSearch?: boolean
   /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
   layer?: 'dialog' | 'page'
+  /** An image the collect took for its capture alone (#466), after every control; an `<img>` a cue took is a control. */
+  image?: true
   /** A frame's element taken for the dialog layer alone (#414): below its own frame's fold, or by a cue that holds only there. The page merge keeps it only when its frame sits in the top's open dialog. */
   dialogOnly?: true
   checked?: boolean | null
@@ -354,8 +356,8 @@ const CLICK_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio', 't
 
 export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
-  // An image is a ref for its Capture Op alone (#466).
-  if (element.tag === 'img') return 'image'
+  // An image the collect took for its Capture Op alone (#466); an `<img>` a cue took is a control.
+  if (element.image === true) return 'image'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
   // The collect sends a region's facts only for an element its scroll cue took (#383, ADR 0085).
   if (element.region !== undefined) return 'region'
@@ -572,6 +574,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
       ...(el.dialogOnly === true ? { dialogOnly: true as const } : {}),
+      ...(el.image === true ? { image: true as const } : {}),
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
       ...fileFieldEntry(el.fileField),

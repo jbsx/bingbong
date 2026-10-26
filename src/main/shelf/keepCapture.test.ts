@@ -43,6 +43,14 @@ describe('createCaptureKeeper (#466)', () => {
     expect(clipboard.text).toEqual([path])
   })
 
+  it('puts the PNG the page drew on the clipboard for an image whose own type it cannot decode', async () => {
+    const keep = createCaptureKeeper(() => dir, clipboard)
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d])
+    await keep({ name: 'capture-20261026-090507-pasta.webp', bytes: new Uint8Array([0x52, 0x49, 0x46, 0x46]), png })
+    expect(clipboard.images).toEqual([png])
+    expect(clipboard.text).toEqual([])
+  })
+
   it('never writes over a file already on the Shelf', async () => {
     const keep = createCaptureKeeper(() => dir, clipboard)
     await keep({ name: 'capture-20261026-090507.txt', text: 'one' })

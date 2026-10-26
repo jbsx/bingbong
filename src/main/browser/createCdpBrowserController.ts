@@ -2361,7 +2361,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     const { snapshot, target: ref } = await resolveRef(target.ref)
     const at = addressOfRef(ref.ref)
-    const read = await evaluateInFrame<{ kind: 'link'; href: string } | ({ kind: 'image' } & ImageFetch) | null>(
+    const read = await evaluateInFrame<{ kind: 'link'; href: string } | ({ kind: 'image'; box: { x: number; y: number; width: number; height: number }; view: { width: number; height: number } } & ImageFetch) | null>(
       at.frame,
       `(async () => {
         /* CAPTURE_REF */
@@ -2369,19 +2369,36 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         if (!el || !el.isConnected) return null
         if (el instanceof HTMLImageElement) {
           const src = el.currentSrc || el.src
+          // Its box now, in the view: what the screenshot falls back to, the page having maybe moved since the collect.
+          const box = el.getBoundingClientRect()
+          const at = { box: { x: box.x, y: box.y, width: box.width, height: box.height }, view: { width: window.innerWidth, height: window.innerHeight } }
+          const base64 = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(blob)
+          })
           try {
             const response = await fetch(src)
-            if (!response.ok) return { kind: 'image', src }
+            if (!response.ok) return { kind: 'image', src, ...at }
             const blob = await response.blob()
-            const data = await new Promise((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
-              reader.onerror = () => reject(reader.error)
-              reader.readAsDataURL(blob)
-            })
-            return { kind: 'image', src, data, type: blob.type }
+            const data = await base64(blob)
+            // A type the clipboard cannot decode (a WebP, an AVIF) is drawn once more as a PNG, for the clipboard alone.
+            let png
+            if (!/^image\\/(png|jpeg)$/i.test(blob.type)) {
+              try {
+                // Its own bytes decoded, else the element the page already drew (an SVG makes no bitmap from its bytes).
+                const drawn = await createImageBitmap(blob).catch(() => el)
+                const width = drawn.naturalWidth || drawn.width
+                const height = drawn.naturalHeight || drawn.height
+                const canvas = new OffscreenCanvas(width, height)
+                canvas.getContext('2d').drawImage(drawn, 0, 0, width, height)
+                png = await base64(await canvas.convertToBlob({ type: 'image/png' }))
+              } catch {}
+            }
+            return { kind: 'image', src, data, type: blob.type, ...(png ? { png } : {}), ...at }
           } catch {
-            return { kind: 'image', src }
+            return { kind: 'image', src, ...at }
           }
         }
         const href = typeof el.href === 'string' ? el.href : el.href && typeof el.href.baseVal === 'string' ? new URL(el.href.baseVal, location.href).href : ''
@@ -2392,9 +2409,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // A null comes back as undefined (`evaluateInPage`): either is no link or image.
     if (read == null) throw new Error(`ref ${target.ref} is no link or image`)
     if (read.kind === 'link') return { kind: 'link', text: read.href }
-    // The fallback's region is the image's box as shares of the view, as a magnified capture names one (#195).
-    const { x, y, width, height } = ref.rect
-    const { width: vw, height: vh } = snapshot.viewport
+    // The fallback's region is the image's box as it stands now, as shares of its own view, as a magnified capture names one (#195);
+    // a frame's box is moved by its frame's place in the top's view.
+    const offset = at.frame === null ? { x: 0, y: 0 } : ((await frameOffset(at.frame)) ?? { x: ref.rect.x - read.box.x, y: ref.rect.y - read.box.y })
+    const { x, y, width, height } = { ...read.box, x: read.box.x + offset.x, y: read.box.y + offset.y }
+    const { width: vw, height: vh } = at.frame === null ? read.view : snapshot.viewport
     const image = await captureImage(read, () => screenshot({ region: { left: x / vw, top: y / vh, width: width / vw, height: height / vh }, scale: 2 }))
     return { kind: 'image', image }
   }

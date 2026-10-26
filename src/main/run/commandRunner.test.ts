@@ -293,14 +293,17 @@ describe('a Capture Op (#466, ADR 0095): what a ref, a block or the page holds g
     expect(kept).toEqual([{ name: expect.stringMatching(/^capture-\d{8}-\d{6}-example\.txt$/), text: 'Example\nhttps://example.com/' }])
   })
 
-  it('a capture Jev reads goes on to the next hop, whose "Done so far" names it, and a sure yes ends the Task done', async () => {
+  it('a capture Jev reads is said, goes on to the next hop, whose "Done so far" names it, and a sure yes ends the Task done', async () => {
+    const speech = new FakeSpeech()
     const { kept, keepCapture } = keeper()
-    const { decision, runner } = harness({ keepCapture })
+    const { decision, events, runner } = harness({ keepCapture, speech })
     decision.script.push({ answers: { action: choice('capture-1'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.95), progress: { type: 'noul', noul: 0.9 } } })
     await runner.run('copy the link to home', { source: 'spoken' })
     expect(kept).toHaveLength(1)
     expect(decision.requests).toHaveLength(2)
     expect(decision.requests[1]!.state).toContain('Done so far: copy the link "Home" to the Shelf and the clipboard (done: it is on the Shelf and the clipboard)')
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Copied the link to the Shelf.'])
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Copied the link to the Shelf.'])
   })
 
   it('never takes the same thing twice in a Task: what a capture took leaves the next hop\'s card', async () => {

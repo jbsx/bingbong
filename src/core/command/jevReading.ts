@@ -14,7 +14,7 @@ import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, is
 import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 import { promptChars } from '../decision/cardBudget'
 import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
-import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
+import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureOfRef, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title, the text in
@@ -1793,9 +1793,8 @@ function captureCommand(captured: CaptureLabel, page: CommandPage, texts: readon
     return block === undefined ? null : command(null, { kind: 'text', block, named: block.text })
   }
   const ref = page.refs.find((candidate) => candidate.ref === captured.n)
-  const kind = ref === undefined ? null : captureKindOf(ref)
-  if (ref === undefined || kind === null) return null
-  return command(ref.ref, { kind, named: ref.label !== '' ? ref.label : (ref.href ?? '') })
+  const capture = ref === undefined ? null : captureOfRef(ref)
+  return ref === undefined || capture === null ? null : command(ref.ref, capture)
 }
 
 /** Whether a card label is a verb the card offers as it is. */

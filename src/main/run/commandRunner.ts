@@ -1160,11 +1160,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const capture = command.capture
         if (capture === undefined) throw new Error('a capture Command names nothing to take')
         if (browser.capture === undefined || deps.keepCapture === undefined) throw new Error('no Shelf on this surface')
-        const target = capture.kind === 'page' ? { of: 'page' as const } : capture.block !== undefined ? { of: 'text' as const, block: capture.block } : { of: 'ref' as const, ref: command.target ?? 0 }
+        if (capture.kind !== 'page' && capture.block === undefined && command.target === null) throw new Error('a capture Command names no ref')
+        const target = capture.kind === 'page' ? { of: 'page' as const } : capture.block !== undefined ? { of: 'text' as const, block: capture.block } : { of: 'ref' as const, ref: command.target! }
         const read = await browser.capture(target)
         // The page's file is named by its title as it is now: the grammar's `capture page` reads no page.
         const name = captureFileName(new Date(at()), capture.kind === 'page' ? page.title : capture.named, read.kind === 'image' ? read.image.ext : 'txt')
-        const path = await deps.keepCapture(read.kind === 'image' ? { name, bytes: read.image.bytes } : { name, text: read.text })
+        const path = await deps.keepCapture(read.kind === 'image' ? { name, bytes: read.image.bytes, ...(read.image.png !== undefined ? { png: read.image.png } : {}) } : { name, text: read.text })
         if (target.of === 'ref') flash(target.ref)
         const how = read.kind === 'image' && read.image.via === 'screenshot' ? ' (a screenshot of it: the page would not hand over its bytes)' : ''
         return `captured the ${read.kind}${how}: on the Shelf as ${path}, and on the clipboard`

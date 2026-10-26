@@ -26,6 +26,7 @@ const PAGE = `<!doctype html><html><head><title>Playwright install</title></head
     <a href="/docs/intro">Getting started</a>
     <img src="/pasta.svg" width="120" height="80" alt="A bowl of pasta">
     <button>Copy</button>
+    <img src="/zoom.svg" width="120" height="80" alt="Zoom the photo" style="cursor:zoom-in">
     <img src="/once.svg" width="120" height="80" alt="Served once">
     <pre id="code">${LONG}</pre>
     <div style="height:3000px"></div>
@@ -71,15 +72,11 @@ describe.skipIf(!canDriveChrome)('the Capture Op in a real Chrome (#466)', () =>
     await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
   })
 
-  it('numbers the images drawn in view after every control, and an icon not at all', async () => {
+  it('numbers the images drawn in view after every control, an icon not at all, and an image a cue took as the control it is, once', async () => {
     await chrome.evaluate('window.scrollTo(0, 0)')
     const page = await controller.collectPage()
-    expect(page.refs.map((ref) => [ref.kind, ref.label])).toEqual([
-      ['link', 'Getting started'],
-      ['button', 'Copy'],
-      ['image', 'A bowl of pasta'],
-      ['image', 'Served once'],
-    ])
+    expect(page.refs.map((ref) => ref.label)).toEqual(['Getting started', 'Copy', 'Zoom the photo', 'A bowl of pasta', 'Served once'])
+    expect(page.refs.map((ref) => ref.kind === 'image')).toEqual([false, false, false, true, true])
   })
 
   it('takes a link by its address, and an image by its own bytes, or a screenshot of its box when the page cannot fetch it', async () => {
@@ -87,11 +84,17 @@ describe.skipIf(!canDriveChrome)('the Capture Op in a real Chrome (#466)', () =>
     await controller.collectPage()
     await controller.readPage()
     expect(await controller.capture!({ of: 'ref', ref: 1 })).toEqual({ kind: 'link', text: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/docs\/intro$/) })
-    const pasta = await controller.capture!({ of: 'ref', ref: 3 })
+    const pasta = await controller.capture!({ of: 'ref', ref: 4 })
     expect(pasta.kind === 'image' && { ext: pasta.image.ext, via: pasta.image.via, text: new TextDecoder().decode(pasta.image.bytes) }).toEqual({ ext: 'svg', via: 'fetch', text: SVG })
-    const once = await controller.capture!({ of: 'ref', ref: 4 })
+    // Its own type is no PNG or JPEG: the page draws it once more as a PNG, for the clipboard.
+    expect(pasta.kind === 'image' && [...(pasta.image.png ?? []).slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+    const once = await controller.capture!({ of: 'ref', ref: 5 })
     expect(once.kind === 'image' && { ext: once.image.ext, via: once.image.via, jpeg: [...once.image.bytes.slice(0, 2)] }).toEqual({ ext: 'jpg', via: 'screenshot', jpeg: [0xff, 0xd8] })
     await expect(controller.capture!({ of: 'ref', ref: 2 })).rejects.toThrow(/no link or image/)
+    // The screenshot is of the image's box as it stands now: the page scrolled since the collect still clips it.
+    await chrome.evaluate('window.scrollTo(0, 30)')
+    const moved = await controller.capture!({ of: 'ref', ref: 5 })
+    expect(moved.kind === 'image' && moved.image.via).toBe('screenshot')
   })
 
   it('takes a block in view whole, past the 300 characters the card quotes', async () => {

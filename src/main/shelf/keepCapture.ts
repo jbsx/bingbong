@@ -7,8 +7,8 @@ export interface CaptureClipboard {
   writeImage(bytes: Uint8Array): boolean
 }
 
-/** What a capture took, named: a text, or an image's bytes. */
-export type CaptureKept = { readonly name: string; readonly text: string } | { readonly name: string; readonly bytes: Uint8Array }
+/** What a capture took, named: a text, or an image's bytes — with a PNG of it for the clipboard when its own type is one the clipboard cannot decode. */
+export type CaptureKept = { readonly name: string; readonly text: string } | { readonly name: string; readonly bytes: Uint8Array; readonly png?: Uint8Array }
 
 /** Keeps a capture: on the Shelf as a file, and on the clipboard; resolves to the file's path. */
 export type KeepCapture = (capture: CaptureKept) => Promise<string>
@@ -17,9 +17,10 @@ export type KeepCapture = (capture: CaptureKept) => Promise<string>
  * A capture's keeper (#466, ADR 0095): each capture becomes a file in the
  * Shelf's downloads folder, `bingbong_downloads` — a text with a closing
  * line break, an image as its bytes — and goes on the OS clipboard as text
- * or as an image, always both — an image the clipboard cannot decode (a
- * WebP, an AVIF: Electron reads PNG and JPEG) by its file's path. A name
- * already on the Shelf takes `-2`, `-3`: a capture never writes over a file.
+ * or as an image, always both — a WebP or an AVIF (Electron reads PNG and
+ * JPEG) as the PNG the page drew of it, and one it could not draw by its
+ * file's path. A name already on the Shelf takes `-2`, `-3`: a capture never
+ * writes over a file.
  */
 export function createCaptureKeeper(folder: () => string, clipboard: CaptureClipboard): KeepCapture {
   return async (capture) => {
@@ -37,7 +38,7 @@ export function createCaptureKeeper(folder: () => string, clipboard: CaptureClip
         throw error
       }
       if ('text' in capture) clipboard.writeText(capture.text)
-      else if (!clipboard.writeImage(capture.bytes)) clipboard.writeText(path)
+      else if (!clipboard.writeImage(capture.bytes) && (capture.png === undefined || !clipboard.writeImage(capture.png))) clipboard.writeText(path)
       return path
     }
   }
