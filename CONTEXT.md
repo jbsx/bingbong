@@ -1368,7 +1368,7 @@ state); after a Stop it says "Stopped" in a neutral colour — a Stop is the
 user's own act, not a failure (#334). It is the one thing on the Toolbar
 read from across the room, in peach while Bing Bong works or listens; while
 a Voice Prompt is on screen the live words are the Voice Prompt's, and the
-Capsule says only the state (ADR 0078). A running Task draws its progress
+Capsule says only the state (ADR 0078, ADR 0094). A running Task draws its progress
 bar along the Capsule's foot, inside it, moved by each Hop's Progress Noul
 (#375); the bar stands where the Task left it until the next Command, and
 a Command with no Noul — hop 0 alone, a Local Match — shows none.

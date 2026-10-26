@@ -125,3 +125,94 @@ so the look has a guard beyond the Idle Screen.
   shorter chart parts them further.
 - **No peach on the card.** The song's picture is its only colour, as data
   (E4); the music is not Bing Bong itself.
+
+## Amended 2026-10-25: the full-contrast dark set
+
+Owner ruling 2026-10-25, built on main 9d81986f: the max-contrast Idle
+Screen became the dark set for every surface.
+
+- **The ground is `#000`**, replacing the Decision's near-black `#07090d`
+  (the pane's native ground in `paneBackgrounds.ts` too). Panels no longer
+  lift off it and cast no shadow.
+- **Text is three opaque steps, `#fff` / `#bdbdbd` / `#858585`**, replacing
+  E4's "near-white text never `#fff`" and the #359 amendment's `#fff`-text
+  check. In dark, the guard now fails on any opaque surface larger than a
+  control that is not pure black.
+- **Colours run at full brightness** at their own hues, and the usage chart
+  fills solid. Light is untouched.
+
+## Amended 2026-10-26 (#437, #446, #448, #449): the dark set clears 7:1, and the accent marks only what is live
+
+Ruled by the orchestrator on the owner's behalf under `docs/agents/ui.md`
+(principles 5, 8, 9), newer than this ADR.
+
+- **The quiet grey is #959595.** `--fg3` and `--idle` in the dark set
+  (`styles.css`, the dark `:root` block) move from #858585 to #959595:
+  7.01:1 on #000, where #858585 was 5.69:1. #858585 was the owner's pick
+  of 2026-10-25, made before the 7:1 rule; the rule wins, and the owner
+  may veto. The dark text keeps three opaque steps (`--fg`, `--fg2`
+  #bdbdbd, `--fg3`). Light is unchanged.
+- **The accent is for what is live, and nothing else.** It stays on the
+  voice orb and the voice state, a running Task, a live Weigh-in, the
+  primary buttons, a focused control, and a ringing Timer. It left the
+  clock colon; today's date, weekday and square; the Settings index mark,
+  toggles and sliders (this settles the #359 amendment's "Peach beyond
+  the short list" against them); the Timer while it runs; Up Next's time;
+  the Last Page's go mark; the Weight range chip; the Idle Prompt reply's
+  rail; and an unknown usage provider. Each takes white or a quiet
+  layer. This replaces the Decision's "today, the Timer".
+- **A ringing Timer is live (#446); a running one is not.** Ringing, it is
+  the one thing on the Idle Screen asking for the person's act: "Time's
+  up", its ring, and the Toolbar Timer's mark and words take the accent.
+  The countdown stays white.
+- **Data series do not count toward the five meaningful colours**
+  (principle 8), provided none sits in the accent's hue band or the
+  failure's. The weather, usage and weight series keep their hues. Three
+  hues moved out of the bands: Claude #ff8f74 → lime #b8f27c, Barun's ▲
+  (`--up`) #ffae65 → #ffd166, and the sunset mark #ff7a4d → #ffb340. The
+  temperature scale's heat stops at amber (hue 44° at 25 °C, 36° from
+  35 °C) instead of running to red. A guess, the arm cheapest to
+  reverse (the other jumped to magenta past about 28 °C); a hot day in the
+  owner's eye settles it. The band's width (14°, `HUE_BAND`)
+  is a guess too.
+- **One rest hint.** "Say “Bing Bong” or start typing" (`REST_HINT`,
+  `core/voice/voiceHint.ts`) is the resting line on the Idle Screen, the
+  Status Capsule, the Voice Prompt and the empty Feed. It replaces the
+  #359 amendment's `Say "Bing Bong" or type a command`. Ctrl+Space is
+  named in Settings › Voice, not in the hint. The Voice Prompt's other
+  field lines stand.
+- **Native controls inherit the app's font and colour**, so Inter and
+  JetBrains Mono stay the only faces.
+- **The live tint is one class.** Every surface washed in peach carries
+  `.live-tint`: the working or listening Status Capsule, the working Feed
+  bubble, the live run's summary and the live ear's Voice Prompt. The
+  class carries the wash (`--accentq`), and in dark it sets `--fg3:
+  var(--fg2)`. No wash keeps #959595 at 7:1, because #959595 clears 7:1
+  on pure black and nothing darker; measured on the live Voice Prompt
+  (#448):
+
+  | wash (peach, alpha) | #959595 on it |
+  | --- | --- |
+  | 0.14 (shipped) | 5.77:1 |
+  | 0.06 | 6.57:1 |
+  | 0.02 | 6.87:1 |
+  | 0.005 (rgb 1,1,1) | 6.97:1 |
+  | 0.14, quiet text at `--fg2` #bdbdbd | 9.20:1 |
+
+  The ruling preferred a thinner wash, with #bdbdbd only if none
+  cleared. None does, so the fallback holds, by class and not per surface
+  (#449). Light is unchanged.
+- **The colour floor is the standing measure.** `e2e/colourFloor.ts` runs
+  in every `stateShots` state, dark and light, and in every state
+  `shot:idle` holds. It fails on any of these:
+  - own text under 7:1 over its composited ground in dark (a fade in
+    flight excepted);
+  - a face other than Inter or JetBrains Mono;
+  - the accent at rest outside the live list above;
+  - a colour other than the accent, the failure colour and the failure
+    text inside either hue band;
+  - an `--accentq` wash without `.live-tint`, or a dark `.live-tint`
+    whose `--fg3` is not `--fg2`.
+
+  `stateShots` also asserts one rest hint on all four surfaces, and
+  `e2e/colourFloor.chrome.test.ts` guards the check itself.
