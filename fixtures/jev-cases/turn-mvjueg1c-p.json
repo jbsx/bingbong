@@ -3,7 +3,7 @@
   "transcript": "Go back to YouTube.",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792691782561,
-  "note": "#458 lure: \"go back\" meaning the browser's back, with the Idle Screen line on the card. The logged ask's card (2026-10-20) widened with the facts and the app block as the kiosk's 2026-10-26 card carries them",
+  "note": "#458 lure: \"go back\" meaning the browser's back, with the Idle Screen line on the card. The logged ask's card (2026-10-20) widened with the facts and the app block as the kiosk's 2026-10-26 card carries them; #466: the card widened with its Capture Ops as production writes them",
   "expect": [
     {
       "question": "action",
@@ -126,7 +126,31 @@
           "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
           "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "capture-view-1": "copy the text in view \"youtube.com\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Clear filter to show all search resultsRedo search without this siteBlock this s\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"YouTube\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \"In this video we show the secret to our most popular vinyl liner stairs! Our att\" to the Shelf and the clipboard",
+          "capture-view-5": "copy the text in view \"Created by:All3 Powered by ICF Guru!26K views\" to the Shelf and the clipboard",
+          "capture-1": "copy the link [1] \"DuckDuckGo home DuckDuckGo\" (its address) to the Shelf and the clipboard",
+          "capture-5": "copy the link [5] \"All\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Images\" (its address) to the Shelf and the clipboard",
+          "capture-7": "copy the link [7] \"Videos\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"News\" (its address) to the Shelf and the clipboard",
+          "capture-10": "copy the link [10] \"Duck.ai\" (its address) to the Shelf and the clipboard",
+          "capture-19": "copy the link [19] \"Search domain youtube.com\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"https://www.youtube.com › watch?v=me9l_VSohcI\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"Vinyl Liner Stair Made Easy!!! - YouTube\" (its address) to the Shelf and the clipboard",
+          "capture-23": "copy the link [23] \"Search domain youtube.com\" (its address) to the Shelf and the clipboard",
+          "capture-24": "copy the link [24] \"https://www.youtube.com › watch?v=SxrxU878lLk\" (its address) to the Shelf and the clipboard",
+          "capture-25": "copy the link [25] \"How to Cut Out the Stairs on a New Vinyl Liner Install\" (its address) to the Shelf and the clipboard",
+          "capture-27": "copy the link [27] \"Search domain youtube.com\" (its address) to the Shelf and the clipboard",
+          "capture-28": "copy the link [28] \"https://www.youtube.com › watch?v=uzDae5GpRJE\" (its address) to the Shelf and the clipboard",
+          "capture-29": "copy the link [29] \"2 Types of Steps for an Inground Vinyl Liner Pool - YouTube\" (its address) to the Shelf and the clipboard",
+          "capture-31": "copy the link [31] \"Search domain youtube.com\" (its address) to the Shelf and the clipboard",
+          "capture-32": "copy the link [32] \"https://www.youtube.com › watch?v=vLe8oWuDg_c\" (its address) to the Shelf and the clipboard",
+          "capture-33": "copy the link [33] \"How To Install Vinyl Swimming Pool Liner Stair Flanges\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

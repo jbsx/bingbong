@@ -140,7 +140,44 @@
           "say_time": "appliance: say the time and date — 11:51, Friday 23 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
           "say_playing": "appliance: say the song playing — nothing playing",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"The best place to find government services and information\" to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"View cookies\" (its address) to the Shelf and the clipboard",
+          "capture-4": "copy the link [4] \"Go to the GOV.UK homepage GOV.UK\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] heading \"Popular on GOV.UK\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] heading \"Services and information\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] list item \"Benefits Includes eligibility, appeals, tax credits and Universal Credit\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] list item \"Births, deaths, marriages and care Parenting, civil partnerships, divorce and La\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] list item \"Business and self-employed Tools and guidance for businesses\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] list item \"Childcare and parenting Includes giving birth, fostering, adopting, benefits for\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] list item \"Citizenship and living in the UK Voting, community participation, life in the UK\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] list item \"Crime, justice and the law Legal processes, courts and the police\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] list item \"Disabled people Includes carers, your rights, benefits and the Equality Act\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] list item \"Driving and transport Includes vehicle tax, MOT and driving licences\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] list item \"Education and learning Includes student loans, admissions and apprenticeships\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] list item \"Employing people Includes pay, contracts, hiring and redundancies\" to the Shelf and the clipboard",
+          "capture-text-13": "copy the text [text-13] list item \"Environment and countryside Includes flooding, recycling, farming and wildlife\" to the Shelf and the clipboard",
+          "capture-text-14": "copy the text [text-14] list item \"Housing and local services Owning or renting and council services\" to the Shelf and the clipboard",
+          "capture-text-15": "copy the text [text-15] list item \"Money and tax Includes debt and Self Assessment\" to the Shelf and the clipboard",
+          "capture-text-16": "copy the text [text-16] list item \"Passports, travel and living abroad Includes renewing passports and travel advic\" to the Shelf and the clipboard",
+          "capture-text-17": "copy the text [text-17] list item \"Visas and immigration Apply to visit, work, study, settle or seek asylum in the \" to the Shelf and the clipboard",
+          "capture-text-18": "copy the text [text-18] list item \"Working, jobs and pensions Includes holidays, finding a job and redundancy\" to the Shelf and the clipboard",
+          "capture-text-19": "copy the text [text-19] heading \"Featured\" to the Shelf and the clipboard",
+          "capture-text-20": "copy the text [text-20] \"Search and apply for jobs in England, Scotland and Wales.\" to the Shelf and the clipboard",
+          "capture-text-21": "copy the text [text-21] \"Check your record to see if you can add more contributions.\" to the Shelf and the clipboard",
+          "capture-text-22": "copy the text [text-22] \"Find out what support is available to help with the cost of living.\" to the Shelf and the clipboard",
+          "capture-text-23": "copy the text [text-23] \"Your government services and information, on the go.\" to the Shelf and the clipboard",
+          "capture-text-24": "copy the text [text-24] heading \"Government activity\" to the Shelf and the clipboard",
+          "capture-text-25": "copy the text [text-25] \"Find out what the government is doing\" to the Shelf and the clipboard",
+          "capture-text-26": "copy the text [text-26] list item \"Departments Departments, agencies and public bodies\" to the Shelf and the clipboard",
+          "capture-text-27": "copy the text [text-27] list item \"News News stories, speeches, letters and notices\" to the Shelf and the clipboard",
+          "capture-text-28": "copy the text [text-28] list item \"Guidance and regulation Detailed guidance, regulations and rules\" to the Shelf and the clipboard",
+          "capture-text-29": "copy the text [text-29] list item \"Research and statistics Reports, analysis and official statistics\" to the Shelf and the clipboard",
+          "capture-text-30": "copy the text [text-30] list item \"Policy papers and consultations Consultations and strategy\" to the Shelf and the clipboard",
+          "capture-text-31": "copy the text [text-31] list item \"Transparency documents Data, Freedom of Information releases and corporate repor\" to the Shelf and the clipboard",
+          "capture-text-32": "copy the text [text-32] heading \"More on GOV.UK\" to the Shelf and the clipboard",
+          "capture-text-33": "copy the text [text-33] list item \"HMRC services: sign in\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -202,5 +239,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

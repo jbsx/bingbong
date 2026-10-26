@@ -182,7 +182,46 @@
           "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
           "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "capture-view-1": "copy the text in view \"Tum Se Tum Tak is a song built around the beauty of traditional Indian sounds, b\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Live chat replay\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"See what others said about this video while it was live.\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \"Tum Se Tum Tak\" to the Shelf and the clipboard",
+          "capture-view-5": "copy the text in view \"✨ 10 Songs 💽 You Need on Your Playlist ♡ ✨\" to the Shelf and the clipboard",
+          "capture-view-6": "copy the text in view \"Recommendations not quite right?\" to the Shelf and the clipboard",
+          "capture-view-7": "copy the text in view \"When you turn on watch history, you’ll get more personalized recommendations.\" to the Shelf and the clipboard",
+          "capture-view-8": "copy the text in view \"All Instagram Trending Songs 2026 | Taare x Pal Pal x Aarzu x Bairan x Zulfein \\ud83c\" to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"Niyam\" (its address) to the Shelf and the clipboard",
+          "capture-22": "copy the link [22] \"Niyam\" (its address) to the Shelf and the clipboard",
+          "capture-33": "copy the link [33] \"2:38\" (its address) to the Shelf and the clipboard",
+          "capture-34": "copy the link [34] \"Tum Se Tum Tak 2 minutes, 38 seconds Tum Se Tum Tak\" (its address) to the Shelf and the clipboard",
+          "capture-36": "copy the link [36] \"54:30\" (its address) to the Shelf and the clipboard",
+          "capture-37": "copy the link [37] \"✨ 10 Songs 💽 You Need on Your Playlist ♡ ✨ 54 minutes ✨ 10 Songs 💽 You Need o…\" (its address) to the Shelf and the clipboard",
+          "capture-42": "copy the link [42] \"Mix\" (its address) to the Shelf and the clipboard",
+          "capture-43": "copy the link [43] \"Mix - Tum Se Tum Tak - Niyam\" (its address) to the Shelf and the clipboard",
+          "capture-44": "copy the link [44] \"31:06\" (its address) to the Shelf and the clipboard",
+          "capture-45": "copy the link [45] \"All Instagram Trending Songs 2026 | Taare x Pal Pal x Aarzu x Bairan x Zulfein …\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] heading \"Comments\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] heading \"Mix - Niyam\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] \"Niyam, Roni, AtharvaMusic, and more Playlist\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] heading \"मन को राम में लगा दो | Ram Naam Sankirtan | Peaceful Ram Bhakti Song\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] heading \"Tere Paas Main|Main Vaapas Aaunga|@diljitdosanjh,@ARRahman,Imtiaz Ali,Irshad,Ved\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] heading \"Mix - Barsaat\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] \"Roni, Navjot Ahuja, Mitta Ror, and more Playlist\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] heading \"Iraada - Niyam\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] heading \"Morning Cortisol Detox 🌱 Raag Bhairavi Bansuri 432 Hz for Anxiety Relief, Calm \" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] heading \"2-Tum Se Tum Tak - Niyam [Lyrical]\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] heading \"Hanuman Chalisa 🙏 | Powerful Divine Chant to Remove Negativity | Peace & Protec\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] heading \"Tum Se Tum Tak - Niyam Reaction | AFAIK\" to the Shelf and the clipboard",
+          "capture-text-13": "copy the text [text-13] heading \"Positive Energy Music | Flute Meditation & Yoga for Inner Peace, Healing & Good \" to the Shelf and the clipboard",
+          "capture-text-14": "copy the text [text-14] heading \"Best of Arijit Singh | Super Hit Songs | Romantic & Love Songs | Arijit Singh Ju\" to the Shelf and the clipboard",
+          "capture-text-15": "copy the text [text-15] heading \"All Trending Songs -Barsaat X Varoon X Taare X Majboor X Bairan X Kitaab X Safar\" to the Shelf and the clipboard",
+          "capture-text-16": "copy the text [text-16] heading \"Alfaaz | Hamza Malik x Zain Zohaib | Official Visualiser\" to the Shelf and the clipboard",
+          "capture-text-17": "copy the text [text-17] heading \"Ae Ajnabee (Official Music Video) - Aditya Rikhari, Ravator, Kutle Khan | Coke S\" to the Shelf and the clipboard",
+          "capture-text-18": "copy the text [text-18] heading \"सुबह राम नाम से करें दिन की शुरुआत | Positive Energy & Inner Peace\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -241,5 +280,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

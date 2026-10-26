@@ -110,7 +110,42 @@
           "none": "not a command for this page: a remark, a question, a name, noise",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
-          "queue": "music: find a song by the words and add it to the end of the queue"
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "capture-view-1": "copy the text in view \"Weather for Tower Hamlets, United KingdomChange Location\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Cloudy\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"Tower Hamlets, United Kingdom\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \"12 PM 70% 12°\" to the Shelf and the clipboard",
+          "capture-view-5": "copy the text in view \"3 PM 70% 12°\" to the Shelf and the clipboard",
+          "capture-view-6": "copy the text in view \"6 PM 30% 10°\" to the Shelf and the clipboard",
+          "capture-view-7": "copy the text in view \"9 PM 10°\" to the Shelf and the clipboard",
+          "capture-view-8": "copy the text in view \"12 AM 9°\" to the Shelf and the clipboard",
+          "capture-view-9": "copy the text in view \"3 AM 8°\" to the Shelf and the clipboard",
+          "capture-view-10": "copy the text in view \"6 AM 7°\" to the Shelf and the clipboard",
+          "capture-view-11": "copy the text in view \"9 AM 8°\" to the Shelf and the clipboard",
+          "capture-view-12": "copy the text in view \"Humidity: 88%\" to the Shelf and the clipboard",
+          "capture-view-13": "copy the text in view \"Wind: 8 MPH NW\" to the Shelf and the clipboard",
+          "capture-view-14": "copy the text in view \"Fri\" to the Shelf and the clipboard",
+          "capture-view-15": "copy the text in view \"Sat\" to the Shelf and the clipboard",
+          "capture-view-16": "copy the text in view \"Sun\" to the Shelf and the clipboard",
+          "capture-view-17": "copy the text in view \"Mon\" to the Shelf and the clipboard",
+          "capture-view-18": "copy the text in view \"Tue\" to the Shelf and the clipboard",
+          "capture-view-19": "copy the text in view \"Wed\" to the Shelf and the clipboard",
+          "capture-view-20": "copy the text in view \"Thu\" to the Shelf and the clipboard",
+          "capture-1": "copy the link [1] \"DuckDuckGo home DuckDuckGo\" (its address) to the Shelf and the clipboard",
+          "capture-5": "copy the link [5] \"All\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Images\" (its address) to the Shelf and the clipboard",
+          "capture-7": "copy the link [7] \"News\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Videos\" (its address) to the Shelf and the clipboard",
+          "capture-10": "copy the link [10] \"Duck.ai\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Yellow Warning for Wind - UK Met Office\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] \"13° 9°\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] \"16° 7°\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] \"14° 9°\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] \"17° 9°\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] \"16° 9°\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] \"16° 8°\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] \"Your actual location remains privateSource:\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -187,5 +222,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

@@ -97,7 +97,16 @@
           "queue": "music: find a song by the words and add it to the end of the queue",
           "skip": "music: skip to the next song",
           "previous": "music: go back to the song before",
-          "show": "music: show the video playing on the screen"
+          "show": "music: show the video playing on the screen",
+          "capture-2": "copy the link [2] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-16": "copy the link [16] \"48:15\" (its address) to the Shelf and the clipboard",
+          "capture-17": "copy the link [17] \"Radiohead - Ok Computer Full Album 48 minutes Radiohead - Ok Computer Full Album\" (its address) to the Shelf and the clipboard",
+          "capture-19": "copy the link [19] \"9:08\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Runaway 9 minutes, 8 seconds Runaway\" (its address) to the Shelf and the clipboard",
+          "capture-25": "copy the link [25] \"4:46\" (its address) to the Shelf and the clipboard",
+          "capture-26": "copy the link [26] \"When the Sun Hits 4 minutes, 46 seconds When the Sun Hits\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -140,5 +149,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

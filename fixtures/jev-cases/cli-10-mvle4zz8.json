@@ -1,6 +1,6 @@
 {
   "turnId": "cli-10-mvle4zz8",
-  "note": "Captured for #408 from the yield rerun 2026-10-23 (main 552774da, Mammoth); stored with the volume line and Amount Choice the one-op arm puts on the card.",
+  "note": "Captured for #408 from the yield rerun 2026-10-23 (main 552774da, Mammoth); stored with the volume line and Amount Choice the one-op arm puts on the card.; #466: the card widened with its Capture Ops as production writes them",
   "transcript": "turn it down a bit more",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792785401013,
@@ -170,7 +170,26 @@
           "say_time": "appliance: say the time and date — 20:56, Friday 23 October",
           "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
           "say_playing": "appliance: say the song playing — \"YE - HIGHS AND LOWS - YouTube\", 0:04 of 1:51",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"BULLY DELUXE BY YE OUT NOW STREAM HERE: https://yzy.lnk.to/BULLY-DELUXE\" to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Kanye West\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"Kanye West\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] \"BULLY BY YE OUT NOW STREAM HERE: https://yzy.lnk.to/BULLY …\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] heading \"Mix – YE - HIGHS AND LOWS\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] \"Kanye West, Andre Troutman, Dwele and more Playlist\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] heading \"Mix – Kanye West\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] heading \"Quiet Concentration 🎹 Minimal Piano & Warm Ambient Music for Deep Focus | 8 Hou\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] heading \"YE - PREACHER MAN\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] heading \"Kanye West With ABSOLUTELY Zero Filter\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] heading \"Kanye West - BLKKK SKKKN HEAD (Explicit)\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] heading \"Mix – HIGHS AND LOWS\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] \"Kanye West, Andre Troutman, Cee-Lo Green and more Playlist\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] heading \"Dave - The Boy Who Played the Harp\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] heading \"GENER8ION - STORM starring Yung Lean\" to the Shelf and the clipboard",
+          "capture-text-13": "copy the text [text-13] heading \"Comments\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

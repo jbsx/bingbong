@@ -89,7 +89,22 @@
           "say_time": "appliance: say the time and date — 14:38, Thursday 22 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
           "say_playing": "appliance: say the song playing — nothing playing",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"dev (3.16) 3.15.1 3.14 3.13 3.12 3.11 3.10 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"pprint.pp(object, stream=None, indent=1, width=80, depth=None, *, compact=False,\" to the Shelf and the clipboard",
+          "capture-2": "copy the link [2] \"Python logo\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"print() print\" (its address) to the Shelf and the clipboard",
+          "capture-7": "copy the link [7] \"file-like object\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"sys.stdout sys.stdout\" (its address) to the Shelf and the clipboard",
+          "capture-9": "copy the link [9] \"int int\" (its address) to the Shelf and the clipboard",
+          "capture-10": "copy the link [10] \"int int\" (its address) to the Shelf and the clipboard",
+          "capture-11": "copy the link [11] \"int int\" (its address) to the Shelf and the clipboard",
+          "capture-12": "copy the link [12] \"bool bool\" (its address) to the Shelf and the clipboard",
+          "capture-13": "copy the link [13] \"sequences\" (its address) to the Shelf and the clipboard",
+          "capture-14": "copy the link [14] \"bool bool\" (its address) to the Shelf and the clipboard",
+          "capture-15": "copy the link [15] \"bool bool\" (its address) to the Shelf and the clipboard",
+          "capture-16": "copy the link [16] \"bool bool\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -163,5 +178,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

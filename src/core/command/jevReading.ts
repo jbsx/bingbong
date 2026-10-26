@@ -1262,15 +1262,17 @@ function actionQuestion(
       ...Object.fromEntries(scrolls.map(([op, ref]) => [`${op}-${ref.ref}`, scrollOpDescription(op, ref.ref, ref.label, marked?.has(ref.ref) === true)])),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
-      ...Object.fromEntries(viewCaptures.map((target) => [`capture-view-${target.n}`, captureTextLine(target.block)])),
-      ...Object.fromEntries(refCaptures.map(({ ref, kind }) => [`capture-${ref.ref}`, captureRefLine(kind, ref.ref, shownLabel(ref, pageRead))])),
-      ...Object.fromEntries(textCaptures.map((target) => [`capture-text-${target.n}`, captureTextLine(target.block, target.n)])),
-      ...Object.fromEntries(pageCapture),
       ...Object.fromEntries(verbs),
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
       ...Object.fromEntries(factOptions),
       ...Object.fromEntries(resume),
       ...Object.fromEntries(appOps.map((option) => [option.label, option.line])),
+      // The Capture Ops stand last on the card (#466, measured): between the right-clicks and the verbs they lost
+      // "show it" to a Media Op on Elephant and drew "save the thumbnail" to the page's copy on Mammoth; last, neither.
+      ...Object.fromEntries(viewCaptures.map((target) => [`capture-view-${target.n}`, captureTextLine(target.block)])),
+      ...Object.fromEntries(refCaptures.map(({ ref, kind }) => [`capture-${ref.ref}`, captureRefLine(kind, ref.ref, shownLabel(ref, pageRead))])),
+      ...Object.fromEntries(textCaptures.map((target) => [`capture-text-${target.n}`, captureTextLine(target.block, target.n)])),
+      ...Object.fromEntries(pageCapture),
     },
   }
   return { question, amounts: ops.length > 0 || appOps.some((option) => takesAmount(option.op)) }

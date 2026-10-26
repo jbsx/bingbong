@@ -1,6 +1,6 @@
 {
   "turnId": "cli-19-mvlgab48",
-  "note": "Captured for #408 from a live Mammoth run on the #408 build: \"the first result\" is Jev's, the engine's own Search-domain link beside the result.",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build: \"the first result\" is Jev's, the engine's own Search-domain link beside the result.; #466: the card widened with its Capture Ops as production writes them",
   "transcript": "open the first result",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792789007065,
@@ -105,7 +105,25 @@
           "say_time": "appliance: say the time and date — 21:56, Friday 23 October",
           "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
           "say_playing": "appliance: say the song playing — \"Queen - Bohemian Rhapsody (Lyrics)\" by 7clouds Rock, 0:30 of 5:54",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-1": "copy the link [1] \"DuckDuckGo home DuckDuckGo\" (its address) to the Shelf and the clipboard",
+          "capture-5": "copy the link [5] \"All\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Images\" (its address) to the Shelf and the clipboard",
+          "capture-7": "copy the link [7] \"Shopping\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Videos\" (its address) to the Shelf and the clipboard",
+          "capture-10": "copy the link [10] \"Search Assist\" (its address) to the Shelf and the clipboard",
+          "capture-11": "copy the link [11] \"Duck.ai\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Search domain sportsdirect.com\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"https://www.sportsdirect.com › running › running-shoes\" (its address) to the Shelf and the clipboard",
+          "capture-22": "copy the link [22] \"Running Shoes | Best Running Shoes & Trainers | Sports Direct\" (its address) to the Shelf and the clipboard",
+          "capture-23": "copy the link [23] \"Mens Running Shoes Run faster and further thanks to the high-quality Men's Runn…\" (its address) to the Shelf and the clipboard",
+          "capture-24": "copy the link [24] \"Womens Women's Running Shoes Drive yourself on for longer with a fresh pair of …\" (its address) to the Shelf and the clipboard",
+          "capture-25": "copy the link [25] \"Running Spikes Running Spikes Improve your track running times with a pair of r…\" (its address) to the Shelf and the clipboard",
+          "capture-26": "copy the link [26] \"Kids Running Shoes Kit the little ones out less with our great selection of kid…\" (its address) to the Shelf and the clipboard",
+          "capture-27": "copy the link [27] \"Asics 262 Run in both comfort and style with our extensive range of ASICS runni…\" (its address) to the Shelf and the clipboard",
+          "capture-28": "copy the link [28] \"Nike 330 Get the latest Nike running shoes for men, women and kids at unbelieva…\" (its address) to the Shelf and the clipboard",
+          "capture-30": "copy the link [30] \"Search domain decathlon.co.uk\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

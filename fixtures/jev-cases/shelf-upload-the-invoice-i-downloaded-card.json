@@ -1,7 +1,7 @@
 {
   "recordedAt": 1792900000000,
   "transcript": "upload the invoice I downloaded",
-  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the action card — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured)",
+  "note": "#424 seed, AUTHORED (no real upload line exists yet; the first live upload lines replace it through jev:candidates / jev:case): the action card — the click on the file field, then the Shelf ask over every Shelf file (forks A and B as measured); #466: the card widened with its Capture Ops as production writes them",
   "expect": [
     {
       "question": "action",
@@ -40,7 +40,12 @@
           "read": "read the page aloud or show its contents",
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
-          "none": "not a command for this page: a remark, a question, a name, noise"
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "capture-view-1": "copy the text in view \"New expense claim\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Add a receipt for each expense. Claims are paid with the next payroll.\" to the Shelf and the clipboard",
+          "capture-1": "copy the link [1] \"Dashboard\" (its address) to the Shelf and the clipboard",
+          "capture-2": "copy the link [2] \"My claims\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

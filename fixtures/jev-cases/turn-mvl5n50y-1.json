@@ -205,7 +205,9 @@
           "say_time": "appliance: say the time and date — 16:58, Friday 23 October",
           "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
           "say_playing": "appliance: say the song playing — nothing playing",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"Playwright Test\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Playwright Test is a full-featured test runner built for end-to-end testing. It \" to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -279,5 +281,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

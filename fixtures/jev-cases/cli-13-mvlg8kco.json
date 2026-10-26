@@ -1,6 +1,6 @@
 {
   "turnId": "cli-13-mvlg8kco",
-  "note": "Captured for #408 from a live Mammoth run on the #408 build: an intent line left the grammar for Jev, offered correct.",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build: an intent line left the grammar for Jev, offered correct.; #466: the card widened with its Capture Ops as production writes them",
   "transcript": "not that one",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792788925765,
@@ -124,7 +124,29 @@
           "say_time": "appliance: say the time and date — 21:55, Friday 23 October",
           "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
           "say_playing": "appliance: say the song playing — \"Queen – Bohemian Rhapsody (Official Video Remastered)\" by Queen Official, 0:18 of 5:59",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"Welcome to the official Queen channel. Subscribe today for exclusive Queen video\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"Bohemian Rhapsody - One Billion Views22 videos\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"Queen – Bohemian Rhapsody (Official Video Remastered)\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 . 1 2 3 4 5 6 7 8 9 0 \" to the Shelf and the clipboard",
+          "capture-view-5": "copy the text in view \"1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 1 2 3 4 5 6 7 8 9 0 1 \" to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"Queen Official\" (its address) to the Shelf and the clipboard",
+          "capture-22": "copy the link [22] \"Queen Official\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] \"#BohemianRhapsody #QueenTheGreatest #Remastered\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] \"REMASTERED IN HD TO CELEBRATE ONE BILLION VIEWS! Taken from A Night At The Opera\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] heading \"Queen - Bohemian Rhapsody 1981 Live Video Full HD\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] heading \"Michael Jackson - Thriller (Official 4K Video)\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] heading \"Recommendations not quite right?\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] \"When you turn on watch history, you'll get more personalised recommendations.\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] heading \"Mix – Queen – Bohemian Rhapsody (Official Video Remastered)\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] heading \"Queen - Don't Stop Me Now (Official Video Remastered 4K)\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] heading \"Freddie Mercury DARED Dolly Parton to Sing Bohemian Rhapsody Live — Nobody Was R\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] heading \"You're The One That I Want | Grease | CLIP\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] heading \"Queen - Bohemian Rhapsody (Live Aid 1985)\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] heading \"Comments\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

@@ -3,7 +3,7 @@
   "transcript": "Go back to home page.",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1793011406654,
-  "note": "#458: \"home page\" meant the Idle Screen; read back, which had only the blank start page behind it. Red on both gate models under every wording measured (gate 2026-10-26: arms A, C–M)",
+  "note": "#458: \"home page\" meant the Idle Screen; read back, which had only the blank start page behind it. Red on both gate models under every wording measured (gate 2026-10-26: arms A, C–M); #466: the card widened with its Capture Ops as production writes them",
   "expect": [
     {
       "question": "action",
@@ -105,7 +105,8 @@
           "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
           "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
-          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {

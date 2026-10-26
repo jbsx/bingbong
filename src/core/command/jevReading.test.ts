@@ -418,8 +418,6 @@ describe('the questions', () => {
       'menu-1',
       'menu-2',
       'menu-3',
-      // The link's Capture Op (#466): a link is a capturing kind, the buttons and the field are not; no page to take on a blank pane.
-      'capture-1',
       'navigate',
       'search',
       'scroll_up',
@@ -432,6 +430,8 @@ describe('the questions', () => {
       'clear',
       'stop',
       'none',
+      // The link's Capture Op (#466), last: a link is a capturing kind, the buttons and the field are not; no page to take on a blank pane.
+      'capture-1',
     ])
     expect(questions.action.options['click-2']).toBe('click [2] button "Sign in"')
     expect(Object.keys(questions.slot.options)).toEqual(['none', 's0-0', 's0-1', 's0-2', 's0-3', 's1-1', 's1-2', 's1-3', 's2-2', 's2-3', 's3-3'])
@@ -1276,7 +1276,7 @@ describe('Appliance Verbs (#374)', () => {
     const appliance = { queued: true }
     for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance }), partialQuestions('next song', WATCH, { appliance })]) {
       const labels = Object.keys(questions.action.options)
-      expect(labels).toEqual(['click-4', 'menu-4', 'capture-page', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS])
+      expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS, 'capture-page'])
       for (const verb of APPLIANCE_VERBS) expect(questions.action.options[verb]).toMatch(/^music: /)
       expect(questions.action.instructions).not.toMatch(/music/)
     }
@@ -1327,7 +1327,8 @@ describe('Appliance Verbs (#374)', () => {
         hopQuestions("what's the time", WATCH, HOP, { appliance: { queued: true, facts } }),
         partialQuestions("what's the time", WATCH, { appliance: { queued: true, facts } }),
       ]) {
-        expect(Object.keys(questions.action.options).slice(-(APPLIANCE_VERBS.length + SAYS.length))).toEqual([...APPLIANCE_VERBS, ...SAYS])
+        // The page's capture stands last (#466), after them.
+        expect(Object.keys(questions.action.options).slice(-(APPLIANCE_VERBS.length + SAYS.length + 1))).toEqual([...APPLIANCE_VERBS, ...SAYS, 'capture-page'])
       }
       expect(commandQuestions("what's the time", WATCH, undefined, { appliance: { queued: true, facts } }).action.options.say_time).toBe('appliance: say the time and date — 12:34, Friday 23 October')
       // No Player wired: the facts, and no music verb.

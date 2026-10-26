@@ -86,7 +86,19 @@
           "say_time": "appliance: say the time and date — 00:17, Thursday 22 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
           "say_playing": "appliance: say the song playing — nothing playing",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-1": "copy the link [1] \"Elon Musk's latest claim about 'flying' Tesla roadster leaves people in disbeli…\" (its address) to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"Eyebrows Raise When Elon Musk's Twitter Engagement Shrivels After Destruction o…\" (its address) to the Shelf and the clipboard",
+          "capture-5": "copy the link [5] \"'Dear Prime Minister Ambani': Elon Musk reignites debate over Starlink's pendin…\" (its address) to the Shelf and the clipboard",
+          "capture-7": "copy the link [7] \"More News\" (its address) to the Shelf and the clipboard",
+          "capture-11": "copy the link [11] \"Search domain x.com\" (its address) to the Shelf and the clipboard",
+          "capture-12": "copy the link [12] \"https://x.com › ElonMusk\" (its address) to the Shelf and the clipboard",
+          "capture-13": "copy the link [13] \"Elon Musk (@elonmusk) / X\" (its address) to the Shelf and the clipboard",
+          "capture-14": "copy the link [14] \"Highlights by Elon Musk (@elonmusk) / X Stay updated with Elon Musk's latest hi…\" (its address) to the Shelf and the clipboard",
+          "capture-16": "copy the link [16] \"Search domain economictimes.indiatimes.com\" (its address) to the Shelf and the clipboard",
+          "capture-17": "copy the link [17] \"https://economictimes.indiatimes.com › topic › elon-musk-latest-tweet\" (its address) to the Shelf and the clipboard",
+          "capture-18": "copy the link [18] \"ELON MUSK LATEST TWEET - The Economic Times\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -120,5 +132,6 @@
         "instructions": "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for."
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

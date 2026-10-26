@@ -250,7 +250,27 @@
           "say_time": "appliance: say the time and date — 11:49, Friday 23 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
           "say_playing": "appliance: say the song playing — \"Amazon.co.uk: Low Prices in Electronics, Books, Sports Equipment & more\", 0:05 of 0:08",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"Free delivery on your first order Try us, no delivery fee New customers only. T&\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"New original series Pause Unmute\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"Shop deals ending soon NEEWER ND Filter Set Compatible with DJI Osmo Nano (ND8/1\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \"Everything under £1 The art of spending less Play\" to the Shelf and the clipboard",
+          "capture-1": "copy the link [1] \"Amazon.co.uk .co.uk\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Choose a language for shopping in Amazon United Kingdom. The current selection …\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Hello, sign in Account & Lists\" (its address) to the Shelf and the clipboard",
+          "capture-10": "copy the link [10] \"Returns & Orders\" (its address) to the Shelf and the clipboard",
+          "capture-11": "copy the link [11] \"0 items in shopping basket 0 Basket\" (its address) to the Shelf and the clipboard",
+          "capture-13": "copy the link [13] \"Prime Video\" (its address) to the Shelf and the clipboard",
+          "capture-14": "copy the link [14] \"Wish Lists\" (its address) to the Shelf and the clipboard",
+          "capture-15": "copy the link [15] \"Today's Deals\" (its address) to the Shelf and the clipboard",
+          "capture-16": "copy the link [16] \"Vouchers\" (its address) to the Shelf and the clipboard",
+          "capture-17": "copy the link [17] \"Music\" (its address) to the Shelf and the clipboard",
+          "capture-18": "copy the link [18] \"Books\" (its address) to the Shelf and the clipboard",
+          "capture-19": "copy the link [19] \"Kindle Books\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Subscribe & Save\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"PC & Video Games\" (its address) to the Shelf and the clipboard",
+          "capture-22": "copy the link [22] \"New Releases\" (its address) to the Shelf and the clipboard",
+          "capture-23": "copy the link [23] \"Sports & Outdoors\" (its address) to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -318,5 +338,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

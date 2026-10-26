@@ -56,7 +56,28 @@
           "say_time": "appliance: say the time and date — 02:43, Saturday 24 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 9°C, mainly clear now; today high 16°C, low 8°C, rain 100%; coming hours 03:00 8°C, 04:00 8°C, 05:00 8°C, 06:00 8°C, 07:00 8°C, 08:00 8°C; coming days 2026-10-25 13°C/9°C overcast, rain 83%, 2026-10-26 17°C/9°C drizzle, rain 94%, 2026-10-27 16°C/11°C drizzle, rain 42%",
           "say_playing": "appliance: say the song playing — nothing playing",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-text-1": "copy the text [text-1] heading \"Diwali 2026, 2027 and 2028\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] \"⌂\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] \"The Hindu religious holiday of Diwali, also called Deepavali or the “Festival of\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] \"In 2026, Diwali falls on Sunday 8 November. The observance will be on Friday 29 \" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] table row \"Year | Date | Day | Holiday\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] table row \"2026 | 8 Nov | Sun | Diwali\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] table row \"2027 | 29 Oct | Fri | Diwali\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] table row \"2028 | 17 Oct | Tue | Diwali\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] table row \"Please scroll down to end of page for previous years' dates.\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] \"Diwali is always celebrated between mid-October and mid-November in the western \" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] \"The Festival of Lights is a colourful and happy celebration. Families prepare th\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] \"The centre of UK Diwali celebrations is London, which has a large Hindu populati\" to the Shelf and the clipboard",
+          "capture-text-13": "copy the text [text-13] heading \"Previous Years\" to the Shelf and the clipboard",
+          "capture-text-14": "copy the text [text-14] table row \"2025 | 21 Oct | Tue | Diwali\" to the Shelf and the clipboard",
+          "capture-text-15": "copy the text [text-15] table row \"2024 | 1 Nov | Fri | Diwali\" to the Shelf and the clipboard",
+          "capture-text-16": "copy the text [text-16] list item \"Other Languages\" to the Shelf and the clipboard",
+          "capture-text-17": "copy the text [text-17] list item \"Chinese\" to the Shelf and the clipboard",
+          "capture-text-18": "copy the text [text-18] list item \"French\" to the Shelf and the clipboard",
+          "capture-text-19": "copy the text [text-19] list item \"German\" to the Shelf and the clipboard",
+          "capture-text-20": "copy the text [text-20] \"© 2026 Public Holidays Global Pty Ltd ABN 53 608 843 885 Terms and Conditions | \" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -110,5 +131,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

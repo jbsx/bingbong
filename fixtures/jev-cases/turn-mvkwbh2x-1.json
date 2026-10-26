@@ -106,7 +106,43 @@
           "none": "not a command for this page: a remark, a question, a name, noise",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
-          "queue": "music: find a song by the words and add it to the end of the queue"
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "capture-view-1": "copy the text in view \"Passport fees\" to the Shelf and the clipboard",
+          "capture-view-2": "copy the text in view \"How much your passport costs depends on how you apply for it.\" to the Shelf and the clipboard",
+          "capture-view-3": "copy the text in view \"You cannot get a refund if you cancel your application or you’re not entitled to\" to the Shelf and the clipboard",
+          "capture-view-4": "copy the text in view \" | Apply online | Apply by paper form\" to the Shelf and the clipboard",
+          "capture-view-5": "copy the text in view \"Adult (16 and over) standard 34-page passport | £102 | £115.50\" to the Shelf and the clipboard",
+          "capture-view-6": "copy the text in view \"Adult (16 and over) 54-page frequent traveller passport | £116 | £129.50\" to the Shelf and the clipboard",
+          "capture-view-7": "copy the text in view \"Child (under 16) standard 34-page passport | £66.50 | £80\" to the Shelf and the clipboard",
+          "capture-view-8": "copy the text in view \"Child (under 16) 54-page frequent traveller passport | £80.50 | £94\" to the Shelf and the clipboard",
+          "capture-view-9": "copy the text in view \"Related content\" to the Shelf and the clipboard",
+          "capture-1": "copy the link [1] \"Getting your first adult passport\" (its address) to the Shelf and the clipboard",
+          "capture-2": "copy the link [2] \"Get a passport urgently\" (its address) to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"Passport Check and Send service\" (its address) to the Shelf and the clipboard",
+          "capture-4": "copy the link [4] \"Renew or replace your adult passport\" (its address) to the Shelf and the clipboard",
+          "capture-5": "copy the link [5] \"Get a passport for your child\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Countersigning passport applications and photos\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] table row \"Passport for people born on or before 2 September 1929 | Free | Free\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] \"You’ll pay a different fee if you apply for a passport from another country.\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] \"If you need to get a passport urgently, it costs more.\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] \"You can pay extra to use the Post Office’s Check and Send service.\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] heading \"How to pay\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] \"Depending on how you apply, you can pay by:\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] list item \"debit or credit card\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] list item \"cash\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] list item \"cheque or postal order (payable to the correct organisation, and write the appli\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] table row \" | Debit or credit card accepted | Cheque or postal order | Cash\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] table row \"Apply using the Post Office Passport Check and Send service | Yes | Only postal \" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] table row \"Apply by post | Yes - complete the form in the application pack | Cheque or post\" to the Shelf and the clipboard",
+          "capture-text-13": "copy the text [text-13] table row \"Apply online | Yes | No | No\" to the Shelf and the clipboard",
+          "capture-text-14": "copy the text [text-14] heading \"Fees for returning supporting documents\" to the Shelf and the clipboard",
+          "capture-text-15": "copy the text [text-15] \"Your supporting documents (for example birth certificates) will be sent back to \" to the Shelf and the clipboard",
+          "capture-text-16": "copy the text [text-16] \"It usually costs an extra £5 if you want your documents sent back by secure deli\" to the Shelf and the clipboard",
+          "capture-text-17": "copy the text [text-17] heading \"If you were born on or before 2 September 1929\" to the Shelf and the clipboard",
+          "capture-text-18": "copy the text [text-18] \"You can get or renew a British passport for free if you’re a British national an\" to the Shelf and the clipboard",
+          "capture-text-19": "copy the text [text-19] \"You must pay a fee if you need to get a passport urgently or if you want a frequ\" to the Shelf and the clipboard",
+          "capture-text-20": "copy the text [text-20] heading \"Explore the topic\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -194,5 +230,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

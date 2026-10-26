@@ -204,7 +204,25 @@
           "say_time": "appliance: say the time and date — 11:53, Wednesday 21 October",
           "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
           "say_playing": "appliance: say the song playing — \"YE - HIGHS AND LOWS\", 1:02 of 3:35",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-2": "copy the link [2] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-6": "copy the link [6] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-16": "copy the link [16] \"\" (its address) to the Shelf and the clipboard",
+          "capture-17": "copy the link [17] \"Kanye West\" (its address) to the Shelf and the clipboard",
+          "capture-24": "copy the link [24] \"https://yzy.lnk.to/BULLY\" (its address) to the Shelf and the clipboard",
+          "capture-29": "copy the link [29] \"@kanyewest\" (its address) to the Shelf and the clipboard",
+          "capture-30": "copy the link [30] \"6 months ago\" (its address) to the Shelf and the clipboard",
+          "capture-31": "copy the link [31] \"https://yzy.lnk.to/BULLY\" (its address) to the Shelf and the clipboard",
+          "capture-35": "copy the link [35] \"3:02\" (its address) to the Shelf and the clipboard",
+          "capture-37": "copy the link [37] \"2:39\" (its address) to the Shelf and the clipboard",
+          "capture-38": "copy the link [38] \"OK (feat. Don Toliver) 2 minutes, 39 seconds OK (feat. Don Toliver)\" (its address) to the Shelf and the clipboard",
+          "capture-43": "copy the link [43] \"Mix Play all\" (its address) to the Shelf and the clipboard",
+          "capture-44": "copy the link [44] \"Mix – YE - HIGHS AND LOWS\" (its address) to the Shelf and the clipboard",
+          "capture-45": "copy the link [45] \"37:47\" (its address) to the Shelf and the clipboard",
+          "capture-46": "copy the link [46] \"Ye Lecture at The Oxford Guild 37 minutes Ye Lecture at The Oxford Guild\" (its address) to the Shelf and the clipboard",
+          "capture-48": "copy the link [48] \"4:25\" (its address) to the Shelf and the clipboard",
+          "capture-49": "copy the link [49] \"Kanye West Opened Up About His Mental Health Breakdown 4 minutes, 25 seconds Ka…\" (its address) to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
@@ -243,5 +261,6 @@
         }
       }
     }
-  }
+  },
+  "note": "#466: the card widened with its Capture Ops as production writes them"
 }

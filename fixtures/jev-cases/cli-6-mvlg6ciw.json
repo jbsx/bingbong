@@ -1,6 +1,6 @@
 {
   "turnId": "cli-6-mvlg6ciw",
-  "note": "Captured for #408 from a live Mammoth run on the #408 build: a speed down, its direction the Amount Choice's.",
+  "note": "Captured for #408 from a live Mammoth run on the #408 build: a speed down, its direction the Amount Choice's.; #466: the card widened with its Capture Ops as production writes them",
   "transcript": "slow it down a bit",
   "model": "decision-models/baseten-mammoth-27b-latest",
   "recordedAt": 1792788823960,
@@ -137,7 +137,25 @@
           "say_time": "appliance: say the time and date — 21:53, Friday 23 October",
           "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
           "say_playing": "appliance: say the song playing — \"YE - HIGHS AND LOWS - YouTube\", 0:05 of 1:51",
-          "say_timer": "appliance: say how long is left on the timer — no timer set"
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "capture-view-1": "copy the text in view \"BULLY DELUXE BY YE OUT NOW STREAM HERE: https://yzy.lnk.to/BULLY-DELUXE\" to the Shelf and the clipboard",
+          "capture-3": "copy the link [3] \"YouTube Home\" (its address) to the Shelf and the clipboard",
+          "capture-8": "copy the link [8] \"Sign in Sign in\" (its address) to the Shelf and the clipboard",
+          "capture-20": "copy the link [20] \"Kanye West\" (its address) to the Shelf and the clipboard",
+          "capture-21": "copy the link [21] \"Kanye West\" (its address) to the Shelf and the clipboard",
+          "capture-text-1": "copy the text [text-1] \"BULLY BY YE OUT NOW STREAM HERE: https://yzy.lnk.to/BULLY …\" to the Shelf and the clipboard",
+          "capture-text-2": "copy the text [text-2] heading \"Mix – Kanye West\" to the Shelf and the clipboard",
+          "capture-text-3": "copy the text [text-3] heading \"YE - PREACHER MAN\" to the Shelf and the clipboard",
+          "capture-text-4": "copy the text [text-4] heading \"Mix – YE - HIGHS AND LOWS\" to the Shelf and the clipboard",
+          "capture-text-5": "copy the text [text-5] \"Kanye West, Andre Troutman, Dwele and more Playlist\" to the Shelf and the clipboard",
+          "capture-text-6": "copy the text [text-6] heading \"Kanye West With ABSOLUTELY Zero Filter\" to the Shelf and the clipboard",
+          "capture-text-7": "copy the text [text-7] heading \"ALL THE LOVE BY YE, BUT ITS THE EXTENDED VERSION\" to the Shelf and the clipboard",
+          "capture-text-8": "copy the text [text-8] heading \"Ye Lecture at The Oxford Guild\" to the Shelf and the clipboard",
+          "capture-text-9": "copy the text [text-9] heading \"Kanye West - Runaway (Extended Video Version) ft. Pusha T\" to the Shelf and the clipboard",
+          "capture-text-10": "copy the text [text-10] heading \"Mix – KING\" to the Shelf and the clipboard",
+          "capture-text-11": "copy the text [text-11] heading \"YE - FATHER (feat. TRAVIS SCOTT)\" to the Shelf and the clipboard",
+          "capture-text-12": "copy the text [text-12] heading \"Comments\" to the Shelf and the clipboard",
+          "capture-page": "copy the link to this page — its address, under its title — to the Shelf and the clipboard"
         }
       },
       "slot": {
