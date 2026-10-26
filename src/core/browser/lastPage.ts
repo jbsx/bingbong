@@ -29,15 +29,22 @@ export function backLeadsToBlank(current: string, before: string | undefined): b
 /**
  * The Last Page after one pane state: the state's page when it is a real one
  * (the title following along as it arrives), else what it was. The pane
- * names an untitled page by its address; that is no title.
+ * names an untitled page by its address; that is no title. A title set on
+ * another document is not this page's either (#450): an in-page navigation
+ * leaves the old page's title in the pane until the new one sets its own.
  */
-export function lastPageFrom(previous: LastPage | null, state: Pick<BrowserPaneState, 'url' | 'title'>, now: number): LastPage | null {
+export function lastPageFrom(previous: LastPage | null, state: Pick<BrowserPaneState, 'url' | 'title' | 'titleUrl'>, now: number): LastPage | null {
   if (!isRealPage(state.url)) return previous
-  const trimmed = state.title.trim()
+  const trimmed = sameDocument(state.titleUrl, state.url) ? state.title.trim() : ''
   const title = trimmed === state.url ? '' : trimmed
   const samePage = previous !== null && previous.url === state.url
   if (samePage && (title === '' || previous.title === title)) return previous
   return { url: state.url, title: title === '' && samePage ? previous.title : title, at: now }
+}
+
+/** Two addresses of one document: the same but for the fragment after `#`. */
+function sameDocument(a: string, b: string): boolean {
+  return a.split('#')[0] === b.split('#')[0]
 }
 
 /** A persisted Last Page read back, or null for anything that is not one. */
@@ -81,9 +88,38 @@ export function withoutSiteTail(title: string, host: string): string {
   return tail !== '' && (tail === bare(siteName(host)) || tail === bare(host)) ? match[1] : title
 }
 
-/** What the Idle Screen shows of a Last Page: its title, less a tail naming the host beside it, or its host when it has none. */
+/**
+ * The words of an address's path (#450): its last segment that holds a
+ * letter, decoded, its extension dropped and `-`, `_` and `+` read as
+ * spaces — /blog/some_long-post.html is "some long post". '' for a bare host.
+ */
+function pathWords(url: URL): string {
+  const segments = url.pathname.split('/').map((segment) => {
+    try {
+      return decodeURIComponent(segment)
+    } catch {
+      return segment
+    }
+  })
+  const last = segments.filter((segment) => /\p{L}/u.test(segment)).at(-1) ?? ''
+  return last
+    .replace(/\.[a-z0-9]{1,5}$/i, '')
+    .replace(/[-_+]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * What the Idle Screen shows of a Last Page: its title, less a tail naming
+ * the host beside it. A page with no title, or whose title is only its
+ * site's name, is named by the words of its path, else by its host (#450).
+ */
 export function lastPageLabel(page: Pick<LastPage, 'url' | 'title'>): { title: string; host: string } {
   // A persisted address that no longer parses: the address itself stands in.
-  const host = URL.canParse(page.url) ? new URL(page.url).host.replace(/^www\./, '') : page.url
-  return { title: page.title !== '' ? withoutSiteTail(page.title, host) : host, host }
+  const url = URL.canParse(page.url) ? new URL(page.url) : null
+  const host = url !== null ? url.host.replace(/^www\./, '') : page.url
+  const title = page.title !== '' ? withoutSiteTail(page.title, host) : ''
+  if (title !== '' && bare(title) !== bare(siteName(host))) return { title, host }
+  const words = url !== null ? pathWords(url) : ''
+  return { title: words !== '' ? words : host, host }
 }

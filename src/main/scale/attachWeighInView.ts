@@ -4,6 +4,7 @@ import { isPaneRect } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { WEIGHT_IPC } from '../../core/scale/ipcChannels'
 import { resolvePreloadPath } from '../preloadPath'
+import { onWindowClosed } from '../onWindowClosed'
 
 // The Weigh-in pop-up over the browsing pane: renderer DOM cannot composite
 // above the pane's WebContentsView, and the feed overlay's view has one rect
@@ -47,7 +48,7 @@ export function attachWeighInViewToWindow(win: BrowserWindow, deps: { preloadDir
     if (isPaneRect(rect) && !wc.isDestroyed()) view.setBounds(toPaneBounds(rect))
   }
   ipcMain.on(WEIGHT_IPC.popupRect, onRect)
-  win.on('closed', () => {
+  onWindowClosed(win, () => {
     ipcMain.removeListener(WEIGHT_IPC.popupRect, onRect)
     if (!wc.isDestroyed()) wc.close()
   })

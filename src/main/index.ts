@@ -114,6 +114,7 @@ import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createDecisionModelSource } from './decision/createDecisionModel'
 import { createConsentChooser } from '../core/browser/consentChooser'
 import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
+import { onWindowClosed } from './onWindowClosed'
 
 // kachow: the browser, the interaction surface the agent drives (the
 // numbered-ref snapshot over CDP), the dashboard and the local voice
@@ -405,7 +406,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
   trackSurface('pane', pane.view.webContents)
   // A video codec the GPU cannot decode is not offered to the pane's pages (#425): YouTube then serves one it can.
-  win.on('closed', attachCodecRefusal(pane.session, pane.view.webContents, { onSettled: (event) => boot.mark(`codecs-${event.kind}`) }))
+  onWindowClosed(win, attachCodecRefusal(pane.session, pane.view.webContents, { onSettled: (event) => boot.mark(`codecs-${event.kind}`) }))
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // above it before the first frame.
   // What the dashboard last said of the Idle Screen (#361): typing opens its Prompt, and the Feed stays shut under it.
@@ -426,7 +427,7 @@ async function createWindow(): Promise<BrowserWindow> {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.enter)
   }
   for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents()]) {
-    if (contents !== null) win.on('closed', attachIdleShortcut(contents, enterIdle))
+    if (contents !== null) onWindowClosed(win, attachIdleShortcut(contents, enterIdle))
   }
   // Typing on the Idle Screen goes to its Prompt, from whichever surface owns focus.
   const onIdleShown = (event: Electron.IpcMainEvent, shown: unknown): void => {
@@ -442,7 +443,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const windowId = win.id
   idleWindows.set(windowId, idleShown)
   ipcMain.on(IDLE_IPC.shown, onIdleShown)
-  win.on('closed', () => {
+  onWindowClosed(win, () => {
     ipcMain.removeListener(IDLE_IPC.shown, onIdleShown)
     idleWindows.delete(windowId)
   })
@@ -454,7 +455,7 @@ async function createWindow(): Promise<BrowserWindow> {
     win.webContents.send(IDLE_IPC.typed, text)
   }
   for (const contents of [win.webContents, pane.view.webContents]) {
-    win.on('closed', attachIdleTyping(contents, { shown: () => idleShown.up && !idleShown.prompting, onType: typeFromIdle }))
+    onWindowClosed(win, attachIdleTyping(contents, { shown: () => idleShown.up && !idleShown.prompting, onType: typeFromIdle }))
   }
   // A load in the hidden pane takes focus (a `play` opening the watch page): with the Idle Prompt open, focus goes back to its field,
   // or main would go on routing keys itself and Escape, Backspace and Space would never reach it.
@@ -466,7 +467,7 @@ async function createWindow(): Promise<BrowserWindow> {
     }, 0)
   }
   pane.view.webContents.on('focus', onPaneFocus)
-  win.on('closed', () => {
+  onWindowClosed(win, () => {
     if (!pane.view.webContents.isDestroyed()) pane.view.webContents.removeListener('focus', onPaneFocus)
   })
 
@@ -492,7 +493,7 @@ async function createWindow(): Promise<BrowserWindow> {
     lastPageStore.record(state)
     knownAddresses.record(state)
   })
-  win.on('closed', unsubscribeLastPage)
+  onWindowClosed(win, unsubscribeLastPage)
   feedPanel.bringToTop()
   weighInView.bringToTop()
   // Which downloads are a Task's (#423): the runner's Tasks are tracked below, and the pane's navigations each began during one.
@@ -539,11 +540,11 @@ async function createWindow(): Promise<BrowserWindow> {
       learnedTermsStore.admit(term)
     },
   }, paneCustody)
-  win.on('closed', music.stop)
+  onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
-  win.on('closed', attachPlaybackWatch(perfTracer, pane.view.webContents))
+  onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))
   // Now Playing (#344): the Idle Screen's card follows the Player.
-  win.on('closed', attachNowPlayingToWindow(win, music.player))
+  onWindowClosed(win, attachNowPlayingToWindow(win, music.player))
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download
@@ -561,8 +562,8 @@ async function createWindow(): Promise<BrowserWindow> {
   )
   // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
   const ducking = createDucking((on) => void music.player.duck(on))
-  win.on('closed', speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
-  win.on('closed', timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
+  onWindowClosed(win, speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
+  onWindowClosed(win, timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
     tts: speakingGate.tts,
@@ -579,7 +580,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const commandListeners = new Set<(event: PipelineEvent) => void>()
   // The app itself on the card (#420, ADR 0091): its panel, views and settings.
   const appControl = attachAppControl(win, { panel: feedPanel, settings: settingsStore, voicesDir: () => piperConfig.voicesDir })
-  win.on('closed', appControl.detach)
+  onWindowClosed(win, appControl.detach)
   // Each Status Capsule stage timed (#442): the p95s that date its "still …" bound.
   const stageSpans = createStageSpans((stage, durMs, detail) => perfTracer.span(APP_TURN_ID, stage, durMs, detail))
   const commandRunner = createCommandRunner({
@@ -660,7 +661,7 @@ async function createWindow(): Promise<BrowserWindow> {
   attachCommandRunnerToWindow(runner, win, escape)
   // Escape aborts from the pane and the feed panel too, where the dashboard never sees the key.
   for (const contents of [pane.view.webContents, feedPanel.contents()]) {
-    if (contents !== null) win.on('closed', attachAbortHotkey(escape, contents))
+    if (contents !== null) onWindowClosed(win, attachAbortHotkey(escape, contents))
   }
   // The app's shortcuts (reload, back and forward, listen) act on the pane from every surface.
   const shortcuts: AppShortcutActions = {
@@ -676,7 +677,7 @@ async function createWindow(): Promise<BrowserWindow> {
     ...(app.isPackaged ? {} : { devTools: (contents: Electron.WebContents) => contents.openDevTools({ mode: 'detach' }) }),
   }
   for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents(), weighInView.contents()]) {
-    if (contents !== null) win.on('closed', attachAppShortcuts(contents, shortcuts))
+    if (contents !== null) onWindowClosed(win, attachAppShortcuts(contents, shortcuts))
   }
 
   if (runningCliHarness) {

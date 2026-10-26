@@ -57,7 +57,7 @@ describe('window event publisher', () => {
 
   it('publishes browser state only to the renderer', () => {
     const { calls, publisher } = harness()
-    publisher.publish({ source: 'browser', state: { url: 'https://x.test', title: 'x', loading: false, canGoBack: false, canGoForward: false, pendingUrl: '' } })
+    publisher.publish({ source: 'browser', state: { url: 'https://x.test', title: 'x', titleUrl: 'https://x.test', loading: false, canGoBack: false, canGoForward: false, pendingUrl: '' } })
     expect(calls).toEqual(['renderer:browser'])
   })
 })

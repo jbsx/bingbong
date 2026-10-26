@@ -15,6 +15,7 @@ import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { VOICE_IPC, type VoiceErrorEvent, type VoiceHeardEvent, type VoicePartialEvent, type VoiceState } from '../../core/voice/ipcChannels'
 import { resolvePreloadPath } from '../preloadPath'
+import { onWindowClosed } from '../onWindowClosed'
 
 // The feed panel as a native overlay (#45): renderer DOM cannot composite
 // above the browser pane's WebContentsView, and overlay mode must not
@@ -247,7 +248,7 @@ export function attachFeedPanelOverlayToWindow(
   }
 
   overlays.set(win, overlay)
-  win.on('closed', () => {
+  onWindowClosed(win, () => {
     overlays.delete(win)
     overlay.dispose()
   })

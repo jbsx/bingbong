@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { CommandRunner, CommandRunOptions } from './commandRunner'
+import { onWindowClosed } from '../onWindowClosed'
 
 // Glue between the dashboard and the window's command runner: submit a
 // Command (Prompt Bar or voice), abort it. The runner owns the reading and
@@ -43,8 +44,8 @@ export function registerCommandRunnerIpc(): void {
 export function attachCommandRunnerToWindow(runner: CommandRunner, win: BrowserWindow, escape: () => boolean = () => runner.abort()): void {
   runners.set(win, runner)
   const detachAbortHotkey = attachAbortHotkey(escape, win.webContents)
-  win.on('closed', () => runners.delete(win))
-  win.on('closed', detachAbortHotkey)
+  onWindowClosed(win, () => runners.delete(win))
+  onWindowClosed(win, detachAbortHotkey)
 }
 
 /** Capture Escape when the embedded browser, rather than React, owns focus. */

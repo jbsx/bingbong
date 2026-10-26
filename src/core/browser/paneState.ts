@@ -1,6 +1,8 @@
 export interface BrowserPaneState {
   url: string
   title: string
+  /** The address the title was set on (#450): after an in-page navigation the title is the old page's until the new one sets its own. */
+  titleUrl: string
   canGoBack: boolean
   canGoForward: boolean
   loading: boolean
@@ -44,7 +46,7 @@ export function samePaneRect(a: PaneRect, b: PaneRect): boolean {
 }
 
 export function idleBrowserPaneState(): BrowserPaneState {
-  return { url: '', title: '', canGoBack: false, canGoForward: false, loading: false, pendingUrl: '' }
+  return { url: '', title: '', titleUrl: '', canGoBack: false, canGoForward: false, loading: false, pendingUrl: '' }
 }
 
 export function isPaneRect(value: unknown): value is PaneRect {

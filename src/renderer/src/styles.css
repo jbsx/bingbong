@@ -2461,9 +2461,12 @@ details[open] > .settings-summary::before {
   pointer-events: none;
 }
 
+/* The date is the line under the clock a glance reads (#450): 40 px, the step under the status size, so it holds from 2 m.
+   It rises into the clock's line box, under figures that have no descenders, so the row keeps the 209 px the
+   middle Column counts on (core/idle/columns CLOCK) and the cards under it keep their forms. */
 .idle-date {
-  margin: 4px 0 0;
-  font-size: var(--type-m);
+  margin: -16px 0 0;
+  font-size: var(--type-l);
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--fg2);
@@ -3829,9 +3832,12 @@ button.idle-line {
   color: var(--fg2);
 }
 
+/* The hours' skies sit in a row of their own over the plot (#450): a temperature labelled at the top of
+   its range clears them by 4 px, where it used to sit 25 px into the last hour's sky. */
 .wx-hours-chart {
   position: relative;
   margin-top: 4px;
+  padding-top: 34px;
 }
 
 .wx-hours-chart > svg {

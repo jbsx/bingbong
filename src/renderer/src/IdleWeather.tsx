@@ -120,12 +120,17 @@ const W = 456
 const X0 = 30
 const X1 = W - 30
 const BASE = 246
+/** A rain chance's figure in the chart's 16 px mono (#450): half its width, and its reach over and under its baseline. */
+const RAIN_FIGURE = { halfWidth: 20, ascent: 16, descent: 5 }
+/** How far the temperature's 3.5-wide stroke keeps from a rain figure: below 6, shot:idle saw it strike one at 1280×800. */
+const LINE_CLEARANCE = 6
 
 /**
  * The six coming hours, round 6's chart: each hour's sky over its column,
  * the temperature as a line in its hues — labelled where it turns, and at
  * each end — over the rain chance as a blue area, each hour's chance over
- * it, the peak's brighter, and the hours under the axis.
+ * it (under it where the temperature's line would cross the figure), the
+ * peak's brighter, and the hours under the axis.
  */
 function HourChart({ hours, units, peak, format }: { hours: readonly WeatherHour[]; units: WeatherUnits; peak: number; format: TimeFormat }) {
   const last = hours.length - 1
@@ -137,7 +142,23 @@ function HourChart({ hours, units, peak, format }: { hours: readonly WeatherHour
   const tempY = (temperature: number): number => 76 - (temperature - mean) * per
   const rain = hours.map((hour, index): [number, number] => [x(index), rainY(hour.precipitationChance ?? 0)])
   const temps = hours.map((hour, index): [number, number] => [x(index), tempY(Math.round(hour.temperature))])
-  // Labelled where the temperature turns and at each end — always over the line, since under it lie the rain figures.
+  // A rain chance sits over its line, or under it where the temperature's line would strike it through (#450). The line's
+  // reach across the figure is read from the hour's point and its neighbours', with the stroke and a clearance either side.
+  const lineSpan = (index: number): [number, number] => {
+    const ys = [-1, 1].map((side) => {
+      const next = temps[index + side]
+      return next === undefined ? temps[index][1] : temps[index][1] + ((next[1] - temps[index][1]) * RAIN_FIGURE.halfWidth) / Math.abs(next[0] - temps[index][0])
+    })
+    return [Math.min(temps[index][1], ...ys) - LINE_CLEARANCE, Math.max(temps[index][1], ...ys) + LINE_CLEARANCE]
+  }
+  const rainLabelY = (index: number, chance: number): number => {
+    const [top, bottom] = lineSpan(index)
+    const clear = (baseline: number): boolean => bottom < baseline - RAIN_FIGURE.ascent || top > baseline + RAIN_FIGURE.descent
+    const over = rainY(chance) - 10
+    const under = rainY(chance) + 22
+    return clear(over) || !clear(under) || under + RAIN_FIGURE.descent > BASE ? over : under
+  }
+  // Labelled where the temperature turns and at each end — always over the line, which the rain figures keep clear of.
   const shown = hours.map((hour, index) => {
     const t = Math.round(hour.temperature)
     const before = index > 0 ? Math.round(hours[index - 1].temperature) : null
@@ -153,7 +174,7 @@ function HourChart({ hours, units, peak, format }: { hours: readonly WeatherHour
           </span>
         ))}
       </span>
-      <svg viewBox={`0 0 ${W} 300`} width={W} height={300} aria-hidden="true">
+      <svg viewBox={`0 0 ${W} 280`} width={W} height={280} aria-hidden="true">
         <defs>
           <linearGradient id="wx-rain-fill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0" className="wx-rain-stop" stopOpacity={0.42} />
@@ -181,7 +202,7 @@ function HourChart({ hours, units, peak, format }: { hours: readonly WeatherHour
               {hourLabel(hour.time, { format })}
             </text>
             {hour.precipitationChance !== null && hour.precipitationChance > 0 ? (
-              <text className={hour.precipitationChance === peak ? 'wx-hours-rain wx-hours-rain--peak' : 'wx-hours-rain'} x={x(index)} y={rainY(hour.precipitationChance) - 10} textAnchor="middle">
+              <text className={hour.precipitationChance === peak ? 'wx-hours-rain wx-hours-rain--peak' : 'wx-hours-rain'} x={x(index)} y={rainLabelY(index, hour.precipitationChance)} textAnchor="middle">
                 {Math.round(hour.precipitationChance)}%
               </text>
             ) : null}

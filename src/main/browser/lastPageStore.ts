@@ -13,7 +13,7 @@ import { reportFault } from '../../core/trace/fault'
 export interface LastPageStore {
   get(): LastPage | null
   /** One pane state seen: persisted when it moves the Last Page, and announced. */
-  record(state: Pick<BrowserPaneState, 'url' | 'title'>): void
+  record(state: Pick<BrowserPaneState, 'url' | 'title' | 'titleUrl'>): void
   /**
    * A landing the Action Outcome called not found, unavailable or empty
    * (2026-10-22 audit): no page worth going back to. The Last Page goes

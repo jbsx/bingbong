@@ -23,10 +23,10 @@ describe('the Last Page store', () => {
     store.onChange((page) => seen.push(page))
 
     expect(store.get()).toBeNull()
-    store.record({ url: 'about:blank', title: '' })
-    store.record({ url: 'https://youtube.com/', title: '' })
-    store.record({ url: 'https://youtube.com/', title: 'YouTube' })
-    store.record({ url: 'https://youtube.com/', title: 'YouTube' })
+    store.record({ url: 'about:blank', titleUrl: 'about:blank', title: '' })
+    store.record({ url: 'https://youtube.com/', titleUrl: 'https://youtube.com/', title: '' })
+    store.record({ url: 'https://youtube.com/', titleUrl: 'https://youtube.com/', title: 'YouTube' })
+    store.record({ url: 'https://youtube.com/', titleUrl: 'https://youtube.com/', title: 'YouTube' })
 
     expect(store.get()).toEqual({ url: 'https://youtube.com/', title: 'YouTube', at: 42 })
     expect(seen).toEqual([
@@ -37,7 +37,7 @@ describe('the Last Page store', () => {
   })
 
   it('reads the persisted page back at the next start', () => {
-    createLastPageStore(path, { now: () => 7 }).record({ url: 'https://example.com/a', title: 'A' })
+    createLastPageStore(path, { now: () => 7 }).record({ url: 'https://example.com/a', titleUrl: 'https://example.com/a', title: 'A' })
 
     expect(createLastPageStore(path).get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 7 })
   })
@@ -45,23 +45,23 @@ describe('the Last Page store', () => {
   it('goes back to the page before a dropped landing, and keeps it while the pane shows that address (2026-10-22 audit)', () => {
     const store = createLastPageStore(path, { now: () => 9 })
     const seen: unknown[] = []
-    store.record({ url: 'https://example.com/a', title: 'A' })
+    store.record({ url: 'https://example.com/a', titleUrl: 'https://example.com/a', title: 'A' })
     store.onChange((page) => seen.push(page))
-    store.record({ url: 'https://example.com/missing', title: '' })
+    store.record({ url: 'https://example.com/missing', titleUrl: 'https://example.com/missing', title: '' })
     store.drop('https://example.com/missing')
-    store.record({ url: 'https://example.com/missing', title: 'Page not found' })
+    store.record({ url: 'https://example.com/missing', titleUrl: 'https://example.com/missing', title: 'Page not found' })
 
     expect(store.get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 9 })
     expect(seen).toEqual([{ url: 'https://example.com/missing', title: '', at: 9 }, { url: 'https://example.com/a', title: 'A', at: 9 }])
     expect(createLastPageStore(path).get()).toEqual({ url: 'https://example.com/a', title: 'A', at: 9 })
     // Another page moves it again.
-    store.record({ url: 'https://example.com/b', title: 'B' })
+    store.record({ url: 'https://example.com/b', titleUrl: 'https://example.com/b', title: 'B' })
     expect(store.get()).toMatchObject({ url: 'https://example.com/b' })
   })
 
   it('drops to no Last Page when the dropped landing was the first', () => {
     const store = createLastPageStore(path)
-    store.record({ url: 'https://example.com/missing', title: '' })
+    store.record({ url: 'https://example.com/missing', titleUrl: 'https://example.com/missing', title: '' })
     store.drop('https://example.com/missing')
 
     expect(store.get()).toBeNull()

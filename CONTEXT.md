@@ -1100,7 +1100,10 @@ provider (a provider is a Calendar or AI Usage term)
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in
 userData across restarts. While the app runs it is the live page; after a
-restart it is what the pane boots without. The Idle Screen names it in a
+restart it is what the pane boots without. Its title is the one the page's
+own document set (#450): one left over from the page before an in-page
+navigation is not it, and a page with no title, or only its site's name,
+is named by the words of its path. The Idle Screen names it in a
 Clock Line, the `lastPage` Pinned Card (2026-10-20; a tile of the #352
 grid before), and
 `resume` (spoken "resume", "continue", "where was I", "last page", or the

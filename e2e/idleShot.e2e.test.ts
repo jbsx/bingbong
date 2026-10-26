@@ -49,6 +49,19 @@ function topRepos() {
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
+/**
+ * The coming six hours' temperatures a state draws, from the current hour (#450): the kiosk's 2026-10-26 07:38 morning,
+ * rising to its last hour, whose label sat on that hour's sky; a peak mid-chart; a fall from the first hour; flat.
+ */
+const HOUR_SHAPES = {
+  kiosk: [10, 11, 11, 11, 12, 13],
+  peak: [9, 11, 14, 11, 9, 8],
+  fall: [14, 10, 9, 9, 9, 9],
+  flat: [10, 10, 10, 10, 10, 10],
+} as const
+/** The shape the stand-in forecast answers with; null for the default rolling hours. */
+let hourShape: readonly number[] | null = null
+
 /** London's forecast as Open-Meteo answers it, the hours from the current one, the city an hour ahead of UTC. */
 function forecast() {
   const day = (offset: number): string => {
@@ -71,7 +84,8 @@ function forecast() {
     },
     hourly: {
       time: hours,
-      temperature_2m: hours.map((_, hour) => 11 + Math.round(2 * Math.sin((hour - 9) / 4))),
+      // The chart draws the hours after the current one (core/weather upcomingHours), so a shape starts an hour on.
+      temperature_2m: hours.map((_, hour) => hourShape?.[hour - nowHour - 1] ?? 11 + Math.round(2 * Math.sin((hour - 9) / 4))),
       weather_code: hours.map(() => 53),
       precipitation_probability: hours.map((_, hour) => [73, 80, 88, 94, 97, 97][hour % 6]),
       is_day: hours.map((_, hour) => (hour % 24 >= 8 && hour % 24 < 18 ? 1 : 0)),
@@ -341,6 +355,56 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     }
   })
 
+  it('#450: draws every hour’s temperature clear of the skies and the other figures, at the appliance’s 1920×1080 and at 1280×800', async () => {
+    const shapes = Object.entries(HOUR_SHAPES)
+    try {
+      for (const [name, shape] of shapes) {
+        hourShape = shape
+        // A city the screen has not drawn yet makes the card fetch the forecast again.
+        await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: ${JSON.stringify(`London ${name}`)} } }))`)
+        // Labelled where the temperature turns and at each end, as the chart draws them.
+        const labels = shape.filter((t, i) => i === 0 || i === shape.length - 1 || t !== shape[i - 1] || t !== shape[i + 1]).map((t) => `${t}°`)
+        await waitFor(async () => (JSON.stringify(await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.wx-temp-label')].map((label) => label.textContent)`)) === JSON.stringify(labels) ? true : undefined), {
+          timeoutMs: 10000,
+          intervalMs: 100,
+        })
+        for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 800 }]) {
+          await harness.cdp.send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false }, session)
+          await new Promise((resolve) => setTimeout(resolve, 300))
+          expect.soft(await hourCollisions(), `${name} at ${size.width}×${size.height}`).toEqual([])
+          if (size.width === 1920) await held(`hours-${name}`)
+        }
+        await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+      }
+    } finally {
+      hourShape = null
+      await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+      await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: 'London' } }))`)
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    }
+  })
+
+  it('writes the date under the clock at 40 px, the next step of the four sizes (#450)', async () => {
+    expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.idle-date')).fontSize`)).toBe('40px')
+    // Inside the clock row the middle Column counts on (core/idle/columns CLOCK.plain, 209), and clear of the clock's figures:
+    // the clock's baseline (its figures have no descenders) over the top of the date's capitals (Inter's cap height, 0.727 em).
+    const row = await harness.dashboardEval<{ height: number; gap: number }>(`(() => {
+      const baseline = (el) => {
+        const mark = document.createElement('span')
+        mark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
+        el.append(mark)
+        const y = mark.getBoundingClientRect().top
+        mark.remove()
+        return y
+      }
+      const date = document.querySelector('.idle-date')
+      const capTop = baseline(date) - 0.727 * parseFloat(getComputedStyle(date).fontSize)
+      return { height: document.querySelector('.idle-clock-row').getBoundingClientRect().height, gap: capTop - baseline(document.querySelector('.idle-clock')) }
+    })()`)
+    expect(row.height).toBeLessThanOrEqual(209)
+    expect(row.gap).toBeGreaterThanOrEqual(8)
+  })
+
   it('draws one Person larger, then the note with no Weigh-ins', async () => {
     await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weight: { ...s.weight, card: { ...s.weight.card, hidden: ['barun'] } } }))`)
     await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.weight-card-row').length`)) === 1 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
@@ -401,6 +465,38 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, ...size, scale: 1 } }, session)
     await writeFile(join(outDir, `${name}-${scheme}.png`), Buffer.from(data, 'base64'))
     if (scheme === 'light') await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, session)
+  }
+
+  /**
+   * Every pair in the coming hours' chart that overlaps (#450): a temperature over an hour's sky, with 4 px between at the
+   * least, or over another temperature, a rain chance or an hour. The boxes are the text's em boxes, wider than its ink.
+   */
+  function hourCollisions() {
+    return harness.dashboardEval<string[]>(`(() => {
+      const box = (el) => el.getBoundingClientRect()
+      const named = (selector) => [...document.querySelectorAll(selector)].map((el) => ({ name: (el.textContent || 'sky').trim(), rect: box(el) }))
+      const skies = named('.wx-hours-skies svg')
+      const temps = named('.wx-temp-label')
+      const others = [...temps, ...named('.wx-hours-rain'), ...named('.wx-hours-time')]
+      const meet = (a, b, gap) => a.left < b.right + gap && b.left < a.right + gap && a.top < b.bottom + gap && b.top < a.bottom + gap
+      const hits = []
+      for (const temp of temps) {
+        for (const sky of skies) if (meet(temp.rect, sky.rect, 4)) hits.push(temp.name + ' on a sky (' + Math.round(sky.rect.bottom - temp.rect.top) + ' px)')
+        for (const other of others) if (other !== temp && meet(temp.rect, other.rect, 0)) hits.push(temp.name + ' on ' + other.name)
+      }
+      // The temperature's line, struck through a rain chance: its stroke sampled every 2 units along it.
+      const line = document.querySelector('.wx-temp-line')
+      if (line) {
+        const matrix = line.getScreenCTM()
+        const points = []
+        for (let at = 0; at <= line.getTotalLength(); at += 2) points.push(line.getPointAtLength(at).matrixTransform(matrix))
+        for (const chance of named('.wx-hours-rain')) {
+          const r = chance.rect
+          if (points.some((p) => p.x > r.left - 2 && p.x < r.right + 2 && p.y > r.top - 2 && p.y < r.bottom + 2)) hits.push('the temperature line through ' + chance.name)
+        }
+      }
+      return hits
+    })()`)
   }
 
   /** The owner's Pinned Cards set as the settings page would. */

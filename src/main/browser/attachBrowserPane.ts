@@ -3,6 +3,7 @@ import { BROWSER_IPC } from '../../core/browser/ipcChannels'
 import { isPaneRect } from '../../core/browser/paneState'
 import type { BrowserPane } from './createBrowserPane'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
+import { onWindowClosed } from '../onWindowClosed'
 
 const panes = new WeakMap<BrowserWindow, BrowserPane>()
 
@@ -41,7 +42,7 @@ export function attachBrowserPaneToWindow(
   const unsubscribe = pane.onState((state) => {
     publisher.publish({ source: 'browser', state })
   })
-  win.on('closed', () => {
+  onWindowClosed(win, () => {
     unsubscribe()
     panes.delete(win)
   })

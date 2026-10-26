@@ -281,7 +281,7 @@ export function createBrowserPane(deps?: {
     syncNavigationState(url)
   })
   wc.on('did-navigate-in-page', (_event, url) => syncNavigationState(url))
-  wc.on('page-title-updated', (_event, title) => update({ title: title || state.url }))
+  wc.on('page-title-updated', (_event, title) => update({ title: title || state.url, titleUrl: state.url }))
   // A failed navigation (#330) blanks the pane on the address that failed,
   // so the address field shows that one, not the page before. An aborted
   // load — Stop, or a later navigation replacing it — leaves the page it
@@ -295,7 +295,7 @@ export function createBrowserPane(deps?: {
   })
   wc.on('did-start-loading', () => update({ loading: true }))
   wc.on('did-stop-loading', () => update({ loading: false, pendingUrl: '' }))
-  wc.on('render-process-gone', () => update({ title: 'Renderer process crashed' }))
+  wc.on('render-process-gone', () => update({ title: 'Renderer process crashed', titleUrl: '' }))
   applyPaneZoom(wc, deps?.getZoomPercent)
 
   return {
