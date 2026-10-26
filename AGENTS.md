@@ -71,7 +71,8 @@ the rest go either way.
 To measure a tie:
 
 - Name the measure before building, from what the repo already keeps:
-  the gate (`pnpm jev:gate`), the unit and e2e suites, `pnpm perf:report`,
+  the gate (`pnpm jev:gate`), the STT gate (`pnpm stt:gate`, the labelled
+  dumps through the ear), the unit and e2e suites, `pnpm perf:report`,
   the ledger, a live run under the CLI harness. A measure chosen after
   the numbers are in is a preference wearing them.
 - Grow the measure to reach the fork before comparing arms. A tie on the
@@ -242,6 +243,10 @@ The e2e suite on this branch covers the shell only: the pane, the CLI
 harness, settings, the adblocker, kiosk mode, and the YouTube snapshot gate
 (`BINGBONG_YOUTUBE_E2E=1`). Every suite that scripted an orchestrator run
 was removed with the orchestrator.
+
+`e2e/sttCorpus.elevenlabs.test.ts` runs in the unit suite and skips
+without `ELEVENLABS_API_KEY`; it is `pnpm stt:gate` as a test and opens
+the real socket, so it is run on purpose, never by the suite alone.
 
 ## graphify
 

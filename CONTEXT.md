@@ -71,7 +71,11 @@ ElevenLabs Scribe v2 Realtime as the STT engine, on a bounded trial (ADR
 partials feed the Hearing phase; a fault, or no committed words within 1.5 s
 of the Endpoint, hands the same Utterance to Parakeet, which stays loaded
 behind it. Its seconds per day are tallied as fired a Command or fired
-nothing.
+nothing. Each socket is asked with at most 50 keyterms: the Learned Terms,
+then the grammar's heads (`commandHeads`, one word per verb and view,
+lifted from the command tables), then the Page Terms worth a slot (#471).
+The `stt` span names the list, and `pnpm stt:gate` holds every labelled
+dump (`fixtures/stt-dumps/`) against the kept run.
 _Avoid_: cloud STT tier, hybrid ear, router
 
 **Barge-in**:

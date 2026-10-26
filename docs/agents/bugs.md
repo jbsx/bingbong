@@ -57,6 +57,7 @@ first for the wider net ([[jev-widest-net]]).
 ## Before closing a fix
 
 Every claimed line is marked `fixedBy` with the commit and guarded by a Jev
-corpus case (`pnpm jev:case`, named in `case`) or an e2e test, or marked
+corpus case (`pnpm jev:case`, named in `case`), an STT gate dump (`pnpm
+stt:gate`, the dump file named in `case`) or an e2e test, or marked
 `ruled` with the owner's words. `pnpm bugs` after the close shows the
 stage's open count down by what the issue claimed.

@@ -130,3 +130,19 @@ overturn them:
 If the trial is kept, this ADR is superseded by one that names the cloud
 ear the default and the terms it keeps. If it is rolled back, this
 amendment records the number it lost on.
+
+## Amendment 2026-10-26 — the cloud ear's keyterm budget (#471)
+
+The keyterms sent with each socket were Page Terms first, then Learned
+Terms, then the Seed Lexicon, cut at the ear's 50. A YouTube watch page
+yields 64 Page Terms, so on the app's most common page the ear was never
+told the app's own words: `idle page` was heard `Title page` five times on
+the first spoken session. The order is now the Learned Terms, then the
+grammar's heads — one short word per verb and view the app answers to,
+lifted from the command tables as the seed is — then the Page Terms worth
+a slot (a name, not a count or a single short control label), cut at the
+cap from the end. The seed as a whole is not sent: its rank is the heads.
+Every `stt` span names the keyterms it was asked with, and `pnpm stt:gate`
+replays every labelled dump with them against the kept run. Measured on
+the 105 dumps: 52 word errors and 77 exact with no keyterms, 15 and 95
+with the budget.
