@@ -90,6 +90,9 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
  */
 export const MUSIC_PHRASES: readonly string[] = Object.keys(WHOLE_LINES).filter((line) => line.includes(' '))
 
+/** Every whole music line (#456), which the Seed Lexicon lifts. */
+export const MUSIC_LINES: readonly string[] = Object.keys(WHOLE_LINES)
+
 /** Lower case, apostrophes dropped, letters and digits only, one space between words. */
 function normalize(text: string): string {
   return text

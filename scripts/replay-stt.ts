@@ -28,15 +28,22 @@
 // Set BINGBONG_STT_AT_PAUSE=<ms> to replay the final the way #443 runs it:
 // the decode starts at the pause, the Endpoint comes <ms> later (the turn
 // check's time), and finish() over the same audio takes that decode's words.
+// Set BINGBONG_STT_SEED=<file> (a JSON array of phrases) to replay another
+// seed in place of the shipped one: the other arm of a lexicon tie (#456).
+// Dumps labelled with what was said are scored against it: the labels file
+// is BINGBONG_STT_LABELS, else fixtures/stt-labels/audio-dumps-2026-10.json
+// when it exists (#456).
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { registerHooks } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SttModel } from '../src/core/settings/settings.ts'
 import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
 import { WAKE_DUMP_PREFIX } from '../src/core/voice/utteranceDump.ts'
-import { formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
+import { formatLabelScore, formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
 import { VAD_FRAME_SAMPLES, VAD_FRAME_MS } from '../src/core/voice/vadEndpointing.ts'
 import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
 import { createMoonshineTranscriber, type BiasInput } from '../src/main/moonshine/createMoonshineTranscriber.ts'
@@ -53,9 +60,27 @@ const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
 // extensionless main-tree module graph into Node's type-stripping runtime.
 const envTier = process.env.BINGBONG_STT_MODEL
 const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'parakeet'
-// The Seed Lexicon, read off its source: biasLexicon.ts imports core
-// without a .ts extension, which this type-stripping runtime cannot follow.
-const seedLexicon = [...readFileSync(new URL('../src/main/moonshine/biasLexicon.ts', import.meta.url), 'utf8').matchAll(/^\s+'([^']+)',$/gm)].map((match) => match[1]!)
+// The Seed Lexicon as the app builds it (#456): its command half is read
+// off the command tables, whose imports carry no .ts extension — this
+// type-stripping runtime follows them through a resolve hook that tries
+// the .ts file first.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (!/^\.\.?\//.test(specifier) || /\.[cm]?[jt]s$/.test(specifier)) return nextResolve(specifier, context)
+    try {
+      return nextResolve(`${specifier}.ts`, context)
+    } catch {
+      return nextResolve(specifier, context)
+    }
+  },
+})
+const { BIAS_LEXICON } = (await import('../src/main/moonshine/biasLexicon.ts')) as typeof import('../src/main/moonshine/biasLexicon')
+const seedFile = process.env.BINGBONG_STT_SEED
+const seedLexicon: readonly string[] = seedFile === undefined ? BIAS_LEXICON : (JSON.parse(readFileSync(seedFile, 'utf8')) as string[])
+const labelsFile = process.env.BINGBONG_STT_LABELS ?? fileURLToPath(new URL('../fixtures/stt-labels/audio-dumps-2026-10.json', import.meta.url))
+const labels: Record<string, string> = existsSync(labelsFile)
+  ? Object.fromEntries(Object.entries((JSON.parse(readFileSync(labelsFile, 'utf8')) as { labels: Record<string, { said: string }> }).labels).map(([file, label]) => [file, label.said]))
+  : {}
 const pageTerms = (process.env.BINGBONG_STT_BIAS ?? '').split(',').map((term) => term.trim()).filter((term) => term !== '')
 const atPauseMs = process.env.BINGBONG_STT_AT_PAUSE === undefined ? null : Number(process.env.BINGBONG_STT_AT_PAUSE)
 const biasPhrases: BiasInput = pageTerms.length === 0 ? seedLexicon : [{ phrases: seedLexicon }, { phrases: pageTerms, boost: PAGE_TERMS_BOOST }]
@@ -110,7 +135,7 @@ async function shippedEngine(): Promise<Transcriber> {
   })
 }
 const transcriber = await shippedEngine()
-console.log(`engine ${sttModel}${atPauseMs !== null ? `; final decoded at the pause, the Endpoint ${atPauseMs} ms later` : ''}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
+console.log(`engine ${sttModel}${atPauseMs !== null ? `; final decoded at the pause, the Endpoint ${atPauseMs} ms later` : ''}; seed lexicon ${seedLexicon.length} terms${seedFile !== undefined ? ` from ${seedFile}` : ''}${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
 
 /** Real-time-paced push: partials overlap speech the way they do live. */
 async function replay(file: string): Promise<ReplayRow> {
@@ -142,3 +167,8 @@ const rows: ReplayRow[] = []
 for (const file of files) rows.push(await replay(file))
 console.log()
 console.log(formatReplayReport(rows))
+if (Object.keys(labels).length > 0) {
+  console.log()
+  console.log(`scored against ${labelsFile}:`)
+  console.log(formatLabelScore(rows, labels))
+}

@@ -692,12 +692,13 @@ function songMemory(): SongMemory & { all(): readonly string[] } {
 function remembering() {
   const browser = new FakeBrowser()
   const youtube = new ScriptedYouTube(browser)
-  youtube.search('midnight drive', videoItem('first000000', 'Lumen - Midnight Drive (Official Video)'), { channelRenderer: {} }, videoItem('second00000', 'Second'), videoItem('third000000', 'Third'))
+  youtube.search('midnight drive', videoItem('first000000', 'Lumen - Midnight Drive (Official Video)', 'Lumen Music'), { channelRenderer: {} }, videoItem('second00000', 'Second', 'Second Channel'), videoItem('third000000', 'Third'))
   youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
   for (const [id, title] of [['first000000', 'Lumen - Midnight Drive'], ['second00000', 'Second'], ['third000000', 'Third'], ['bbbbbbbbbbb', 'Song B']] as const) youtube.watches.set(id, { title })
   const songs = songMemory()
   const learned: string[] = []
-  const player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, songs, learn: (term) => learned.push(term) })
+  const proposed: string[] = []
+  const player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, songs, learn: (term) => learned.push(term), propose: (term) => proposed.push(term) })
   const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true)
   const play = () => perform({ kind: 'search', place: 'now' }, 'midnight drive')
   /** The song plays on this long, and the poll hears it. */
@@ -705,7 +706,7 @@ function remembering() {
     youtube.element.currentTime = seconds
     await player.check()
   }
-  return { browser, youtube, player, perform, play, playFor, songs, learned }
+  return { browser, youtube, player, perform, play, playFor, songs, learned, proposed }
 }
 
 describe('correcting the pick (#345)', () => {
@@ -785,6 +786,30 @@ describe('a pick that stayed (#345)', () => {
     await play()
     await playFor(31)
     expect(learned).toEqual(['Lumen Midnight Drive', 'Lumen', 'Midnight Drive'])
+  })
+
+  it("proposes its channel's name once it plays through the retry chain's minute, admitted only when it recurs (#456)", async () => {
+    const { perform, play, playFor, proposed } = remembering()
+    await play()
+    await playFor(10)
+    // Corrected before it stayed: the wrong pick's channel teaches nothing, the one that stayed proposes its own.
+    await perform({ kind: 'correct', step: 1 })
+    await playFor(31)
+    expect(proposed).toEqual([])
+    await playFor(61)
+    expect(proposed).toEqual(['Second Channel'])
+    await playFor(90)
+    expect(proposed).toEqual(['Second Channel'])
+  })
+
+  it('proposes nothing when a retry inside the minute plays another song, or the pick named no channel', async () => {
+    const { perform, play, playFor, proposed } = remembering()
+    await play()
+    await playFor(31)
+    // A retry between the stay and the minute: the pick was wrong after all.
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    await playFor(61)
+    expect(proposed).toEqual([])
   })
 
   it('a correction on a remembered song forgets it, searches again and passes the wrong one by', async () => {

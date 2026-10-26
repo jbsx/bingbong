@@ -8,6 +8,8 @@
 export interface Song {
   readonly id: string
   readonly title: string
+  /** The channel that posted it, when the results named one (#456): a name a pick that stays proposes. */
+  readonly channel?: string
 }
 
 export interface Queue {

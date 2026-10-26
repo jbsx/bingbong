@@ -22,8 +22,15 @@ import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type Comman
 //   4. Jev's choice when it was unsure, under the same guards;
 //   5. Escape.
 
+/** The verbs a dismiss phrase opens on, and what it may say it dismisses. */
+const DISMISS_VERBS: readonly string[] = ['exit', 'close', 'dismiss', 'get rid of', 'go away', 'cancel', 'x', 'no thanks']
+const DISMISSED: readonly string[] = ['this', 'that', 'it', 'out of this', 'the pop up', 'the popup', 'the dialog']
+
+/** Every dismiss phrase (#456): each verb alone and with each thing it dismisses. The Seed Lexicon lifts them. */
+export const DISMISS_PHRASES: readonly string[] = DISMISS_VERBS.flatMap((verb) => [verb, ...DISMISSED.map((what) => `${verb} ${what}`)])
+
 /** A dismiss phrase: the verb alone, or with what it dismisses. */
-const DISMISS_PHRASE_RE = /^(?:exit|close|dismiss|get rid of|go away|cancel|x|no thanks)(?: (?:this|that|it|out of this|the pop up|the popup|the dialog))?$/
+const DISMISS_PHRASE_RE = new RegExp(`^(?:${DISMISS_VERBS.join('|')})(?: (?:${DISMISSED.join('|')}))?$`)
 
 /** A label that reads as a close, by how it begins: "Close", "Close this consent banner", "Not now", "No, thanks", "Skip for now", "Continue without an account"… */
 const CLOSE_LABEL_RE =

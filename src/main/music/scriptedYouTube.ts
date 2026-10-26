@@ -19,9 +19,9 @@ export function resultsData(...items: unknown[]): unknown {
   }
 }
 
-/** A plain video result. */
-export function videoItem(id: string, title: string): unknown {
-  return { videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } } } }
+/** A plain video result, and the channel that posted it when given. */
+export function videoItem(id: string, title: string, channel?: string): unknown {
+  return { videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } }, ...(channel !== undefined ? { ownerText: { runs: [{ text: channel }] } } : {}) } }
 }
 
 /** A watch page: the song it plays, or how it fails — the player's error, or no watch page at all (a sign-in wall). */

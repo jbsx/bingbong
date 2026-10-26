@@ -50,6 +50,24 @@ describe('the search pick', () => {
     expect(pickVideo(resultsData({ videoRenderer: { videoId: 'simpletext1', title: { simpleText: 'Simple' } } }))).toEqual({ id: 'simpletext1', title: 'Simple' })
   })
 
+  it("carries the video's channel, from a renderer's owner text or a lockup's byline (#456)", () => {
+    const owned = { videoRenderer: { videoId: 'JTRDwh0BHG4', title: { runs: [{ text: 'Tum Se Tum Tak - Niyam' }] }, ownerText: { runs: [{ text: 'Niyam' }] } } }
+    expect(pickVideo(resultsData(owned))).toEqual({ id: 'JTRDwh0BHG4', title: 'Tum Se Tum Tak - Niyam', channel: 'Niyam' })
+    const byline = {
+      lockupViewModel: {
+        contentId: 'lockupvid02',
+        contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+        metadata: {
+          lockupMetadataViewModel: {
+            title: { content: 'Niyam - Tum Se Tum Tak (Official Music Video)' },
+            metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{ text: { content: 'Stagione Records' } }, { text: { content: '1.2M views' } }] }] } },
+          },
+        },
+      },
+    }
+    expect(pickVideo(resultsData(byline))).toEqual({ id: 'lockupvid02', title: 'Niyam - Tum Se Tum Tak (Official Music Video)', channel: 'Stagione Records' })
+  })
+
   it('is null for no results, or data that is not a results page', () => {
     expect(pickVideo(resultsData({ channelRenderer: {} }))).toBeNull()
     expect(pickVideo(null)).toBeNull()

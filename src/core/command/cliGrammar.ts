@@ -127,8 +127,13 @@ export function headsFlagLine(partial: string): boolean {
   })
 }
 
+/** Every head word the grammar reads (#456): the switch below takes no other, and the Seed Lexicon lifts each. */
+export const CLI_HEADS = ['navigate', 'read', 'read_page', 'click', 'menu', 'type', 'scroll', 'press', 'screenshot', 'back', 'reload', 'resume', 'timer', 'help', 'quit', 'exit'] as const
+type CliHead = (typeof CLI_HEADS)[number]
+const isCliHead = (head: string): head is CliHead => (CLI_HEADS as readonly string[]).includes(head)
+
 /** The verbs the grammar reads only as the whole line. */
-const WORDLESS_HEADS: ReadonlySet<string> = new Set(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
+const WORDLESS_HEADS: ReadonlySet<string> = new Set<CliHead>(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
 
 function unknownCommand(head: string): ParsedCliCommand {
   return { ok: false, error: `unknown command: '${head}' — try 'help'` }
@@ -153,6 +158,7 @@ export function parseCliCommand(line: string): ParsedCliCommand {
 
   // A verb that takes no words is the whole line or no grammar line (#368): "back to the results" is the spoken reading's.
   if (rest !== '' && WORDLESS_HEADS.has(head)) return unknownCommand(head)
+  if (!isCliHead(head)) return unknownCommand(head)
 
   switch (head) {
     case 'navigate':
@@ -218,7 +224,10 @@ export function parseCliCommand(line: string): ParsedCliCommand {
     case 'quit':
     case 'exit':
       return { ok: true, command: { type: 'quit' } }
-    default:
-      return unknownCommand(head)
+    default: {
+      // Every head in CLI_HEADS has its case: one listed with none fails to compile here.
+      const unread: never = head
+      return unknownCommand(unread)
+    }
   }
 }

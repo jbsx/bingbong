@@ -35,6 +35,18 @@ export interface RememberedSongs {
 
 export const EMPTY_REMEMBERED_SONGS: RememberedSongs = { songs: [] }
 
+/**
+ * How long a pick that stayed must play before its channel is proposed
+ * (#456): the retry chain's window (ADR 0077, `RETRY_CHAIN_WINDOW_MS`), so a
+ * play no retry followed inside it is the one that proposes.
+ */
+export const CHANNEL_STAY_S = 60
+
+/** Whether a pick played this many seconds has played through the retry chain's window. */
+export function heldThroughChain(seconds: number): boolean {
+  return seconds >= CHANNEL_STAY_S
+}
+
 /** Whether a pick played this many seconds has stayed. */
 export function stayed(seconds: number): boolean {
   return seconds >= STAY_S

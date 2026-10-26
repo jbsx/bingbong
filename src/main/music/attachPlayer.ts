@@ -16,7 +16,7 @@ const CHECK_MS = 1_000
 export function attachPlayer(
   browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate'>,
   session: Session,
-  memory: { songs: SongMemory; learn(term: string): void },
+  memory: { songs: SongMemory; learn(term: string): void; propose(term: string): void },
   custody: Pick<BrowserCustody<BrowserController>, 'settled'>,
 ): { player: Player; stop: () => void } {
   const player = createPlayer({
@@ -24,6 +24,7 @@ export function attachPlayer(
     custody,
     songs: memory.songs,
     learn: memory.learn,
+    propose: memory.propose,
     fetchResults: async (url) => {
       const response = await session.fetch(url)
       if (!response.ok) throw new Error(`results fetch: HTTP ${response.status}`)

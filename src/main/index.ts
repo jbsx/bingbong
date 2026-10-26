@@ -533,11 +533,14 @@ async function createWindow(): Promise<BrowserWindow> {
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
   const youtubeFixture = process.env[YOUTUBE_FIXTURE_ENV]
   if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
-  // A song that stayed (#345) is remembered in songs.json beside lexicon.json, and its title learned.
+  // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {
     songs: rememberedSongs,
     learn: (term) => {
       learnedTermsStore.admit(term)
+    },
+    propose: (term) => {
+      learnedTermsStore.propose(term)
     },
   }, paneCustody)
   onWindowClosed(win, music.stop)

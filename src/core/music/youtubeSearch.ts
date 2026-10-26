@@ -65,13 +65,22 @@ function plainVideoOf(item: unknown): Song | null {
   if (isObject(renderer)) {
     if (at(renderer, 'navigationEndpoint', 'reelWatchEndpoint') !== undefined) return null
     const id = renderer['videoId']
-    return typeof id === 'string' && id !== '' ? { id, title: textOf(renderer['title']) } : null
+    return typeof id === 'string' && id !== '' ? withChannel({ id, title: textOf(renderer['title']) }, textOf(renderer['ownerText'])) : null
   }
   const lockup = at(item, 'lockupViewModel')
   if (isObject(lockup) && lockup['contentType'] === 'LOCKUP_CONTENT_TYPE_VIDEO' && typeof lockup['contentId'] === 'string') {
-    return { id: lockup['contentId'], title: textOf(at(lockup, 'metadata', 'lockupMetadataViewModel', 'title')) }
+    const metadata = at(lockup, 'metadata', 'lockupMetadataViewModel')
+    // A video lockup's first metadata row is its byline: the channel first.
+    const channel = textOf(at(metadata, 'metadata', 'contentMetadataViewModel', 'metadataRows', 0, 'metadataParts', 0, 'text'))
+    return withChannel({ id: lockup['contentId'], title: textOf(at(metadata, 'title')) }, channel)
   }
   return null
+}
+
+/** The song with its channel (#456), when the result names one. */
+function withChannel(song: Song, channel: string): Song {
+  const name = channel.trim()
+  return name === '' ? song : { ...song, channel: name }
 }
 
 /** The plain videos of a results page's data, in order: what a correction moves along (#345). Empty for none, or no results page. */

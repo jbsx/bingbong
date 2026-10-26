@@ -1958,6 +1958,34 @@ describe('learning from a retry chain (ADR 0077)', () => {
     expect(proposed).toEqual([])
   })
 
+  it('admits the words a typed repair spells differently from the spoken Slot it sounds like (#456)', async () => {
+    const { admitted, proposed, decision, runner } = harness()
+    decision.script.push(...searched('s1-6'), ...searched('s1-6'))
+    await runner.run('search tum se tum tak Bai Diamo', { source: 'spoken' })
+    await runner.run('search tum se tum tak by niyam')
+    expect(admitted).toEqual(['by niyam'])
+    expect(proposed).toEqual([])
+  })
+
+  it('learns nothing from a typed line past the chain window, or one that sounds nothing like the spoken Slot (#456)', async () => {
+    const { admitted, decision, runner, setWall } = harness()
+    decision.script.push(...searched('s1-6'), ...searched('s1-3'), ...searched('s1-6'))
+    await runner.run('search tum se tum tak Bai Diamo', { source: 'spoken' })
+    await runner.run('search weather in gurgaon')
+    setWall(1_700_000_000_000 + 120_000)
+    await runner.run('search tum se tum tak by niyam')
+    expect(admitted).toEqual([])
+  })
+
+  it('learns nothing from a typed line once a spoken Command moved on from the Slot (#456)', async () => {
+    const { admitted, decision, runner } = harness()
+    decision.script.push(...searched('s1-6'), ...searched('s1-6'))
+    await runner.run('search tum se tum tak Bai Diamo', { source: 'spoken' })
+    await runner.run('scroll down', { source: 'spoken' })
+    await runner.run('search tum se tum tak by niyam')
+    expect(admitted).toEqual([])
+  })
+
   it('lets a chain lapse after a minute', async () => {
     const { proposed, decision, runner, setWall } = harness()
     decision.script.push(...searched('s1-3'), ...searched('s1-3'))

@@ -79,6 +79,9 @@ export function mediaOpDescription(op: MediaOp, ref: number, title: string): str
   return OP_WORDS[op].card(`[${ref}] ${JSON.stringify(title)}`)
 }
 
+/** Every op's card label and the words it is said done in (#456): the Seed Lexicon lifts them. */
+export const MEDIA_OP_WORDS: readonly string[] = MEDIA_OPS.flatMap((op) => [op, OP_WORDS[op].done])
+
 /** The number an action carries, in its words: ` 10 s` for a seek, ` 30` for a volume, ` 1.5×` for a speed; nothing for the rest. */
 function numberOf(action: MediaOpAction): string {
   if (isSeek(action.op)) return action.seconds !== undefined ? ` ${Math.round(action.seconds)} s` : ''

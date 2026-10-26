@@ -4,7 +4,7 @@ import type { PickSource } from '../../core/command/decisionRecord'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
 import { QUEUED_SHOWN, type NowPlaying } from '../../core/music/nowPlaying'
 import { initialDataOf, plainVideos, resultsUrl, watchUrl } from '../../core/music/youtubeSearch'
-import { songTerms, stayed } from '../../core/music/rememberedSongs'
+import { heldThroughChain, songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
 import { WithheldResourceError, type BrowserCustody } from '../../core/browser/unsettledAction'
@@ -96,6 +96,13 @@ export interface PlayerDeps {
   songs?: SongMemory
   /** A Learned Term a song that stayed teaches (#345): admitted at once. */
   learn?(term: string): void
+  /**
+   * The channel of a song that stayed (#456): proposed, admitted only when
+   * it recurs — a wrong pick that plays on must not teach itself its
+   * channel (a guess, cheapest to reverse; a week of kiosk `learned` hits
+   * against wrong picks would settle it).
+   */
+  propose?(term: string): void
   /**
    * The custody the browser is held in (ADR 0038, #433): a refusal waits on
    * its `settled()` edge rather than asking again. Absent, a refusal is one
@@ -206,6 +213,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     for (const listener of [...listeners]) listener(now)
   }
   let pick: SearchPick | null = null
+  /** A pick that stayed, its channel proposed once it plays through the retry chain's window (#456). */
+  let channelDue: { readonly id: string; readonly channel: string } | null = null
 
   const superseded: PlayerOutcome = { result: 'superseded', answer: '', superseded: true }
 
@@ -489,12 +498,14 @@ export function createPlayer(deps: PlayerDeps): Player {
     const song = state.current
     if (song === null) return { result: 'nothing playing', answer: 'Nothing is playing.' }
     if (pick?.song.id === song.id) pick.staying = false
+    if (channelDue?.id === song.id) channelDue = null
     if (deps.songs?.forgetVideo(song.id) === true) return { result: `forgot: id=${song.id}`, answer: `Forgot ${quoted(song.title)}.` }
     return { result: `not remembered: id=${song.id}`, answer: `${quoted(song.title)} wasn't remembered.` }
   }
 
   /** The poll's read of the watch page (#345): the pick playing past the threshold has stayed — remembered, and its title learned. */
   function hearStay(status: WatchStatus): void {
+    hearChannel(status)
     const staying = pick
     if (staying === null || !staying.staying) return
     if (state.current?.id !== staying.song.id) {
@@ -505,6 +516,20 @@ export function createPlayer(deps: PlayerDeps): Player {
     staying.staying = false
     deps.songs?.remember(staying.words, staying.song)
     for (const term of songTerms(staying.song.title)) deps.learn?.(term)
+    if (staying.song.channel !== undefined) channelDue = { id: staying.song.id, channel: staying.song.channel }
+  }
+
+  /** A pick that stayed and plays on through the retry chain's window, with no retry in it (#456), proposes its channel. */
+  function hearChannel(status: WatchStatus): void {
+    const due = channelDue
+    if (due === null) return
+    if (state.current?.id !== due.id) {
+      channelDue = null
+      return
+    }
+    if (status.ad || status.id !== due.id || !heldThroughChain(status.elapsed)) return
+    channelDue = null
+    deps.propose?.(due.channel)
   }
 
   /** The results script's JSON, parsed; null for none, or JSON that does not parse. */

@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { BIAS_LEXICON } from './biasLexicon'
 
-// The bias lexicon is data (#62): the only edit site when a mishear is
-// discovered — the decode code never changes. These tests pin the seed
-// contract (the app's own vocabulary is present) and the hygiene the
-// applier's normalization relies on, so extending the list never breaks
-// them but rotting an entry does.
+// The bias lexicon (#62): the command half built from the tables the app
+// answers by (#456), the names half by hand. These tests pin that every
+// kind of command word is lifted by class — the grammar's, the Local
+// Match's, the Player's, the media ops', the card's — and the hygiene the
+// applier's normalization relies on.
 
 describe('BIAS_LEXICON', () => {
-  it("seeds this branch's vocabulary: the CLI grammar's verbs, Settings names, navigation words (#335)", () => {
+  it('lifts every kind of command word the app answers to (#456)', () => {
     for (const term of [
+      // The CLI grammar and the Local Match (#335)
       'scroll',
       'scroll up',
       'scroll down',
@@ -21,42 +22,45 @@ describe('BIAS_LEXICON', () => {
       'back',
       'forward',
       'reload',
-      'close',
-      'close the pop-up',
-      'dismiss',
       'resume',
-      'wake word',
-      'endpoint delay',
-      'web zoom',
-      'web',
-      'adblock',
-      'dashboard',
+      'go back',
+      'search',
+      // The Player's lines: the words heard wrong on 2026-10-25/26
+      'play',
+      'loop',
+      'loop this song',
+      'repeat',
+      'volume',
+      'mute',
+      'skip',
+      'play from the beginning',
+      // The Media Ops' labels and done words (#372)
+      'captions',
+      'stop looping',
+      // The dismiss phrases (#336): "close" was heard as "Closer." and "Clothes"
+      'close',
+      'close it',
+      'close the pop up',
+      'dismiss',
+      // The card's ref-less labels: the Appliance Verbs and the app's options (#374, #420)
+      'play next',
+      'previous',
+      'panel open',
+      'panel close',
+      'show settings',
     ]) {
       expect(BIAS_LEXICON).toContain(term)
     }
   })
 
-  it('lifts no orchestrator-era or Feed Panel sizing word, each a near-tie no Command uses (#335)', () => {
-    for (const term of [
-      'orchestrator',
-      'subagent',
-      'tool rounds',
-      'model routing',
-      'panel',
-      'feed panel',
-      'dock',
-      'docked',
-      'dock mode',
-      'overlay',
-      'overlay mode',
-      'collapsed',
-      'wider',
-      'narrower',
-      'half screen',
-      'panel mode',
-      'panel width',
-      'pop up',
-    ]) {
+  it('keeps the names no command table says (#335)', () => {
+    for (const term of ['wake word', 'endpoint delay', 'web zoom', 'web', 'adblock', 'dashboard', 'idle screen']) {
+      expect(BIAS_LEXICON).toContain(term)
+    }
+  })
+
+  it('lifts no orchestrator-era word, each a near-tie no Command uses (#335)', () => {
+    for (const term of ['orchestrator', 'subagent', 'tool rounds', 'model routing', 'dock mode', 'overlay mode', 'half screen', 'panel mode']) {
       expect(BIAS_LEXICON).not.toContain(term)
     }
   })

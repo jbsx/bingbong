@@ -57,7 +57,7 @@ import {
 } from '../../core/command/jevReading'
 import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutcome'
 import { navigateAddress, searchAddress } from '../../core/command/openAddress'
-import { hearNames, nameMatch, soundsAlike, type NameHearing } from '../../core/command/nameMatch'
+import { hearNames, nameMatch, soundsAlike, typedRepair, type NameHearing } from '../../core/command/nameMatch'
 import {
   MAX_TASK_ACTIONS,
   MISFIRE_WINDOW_MS,
@@ -980,13 +980,37 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (slotIsNameable(command)) {
         const retry = chain !== null && firedAt - chain.at <= RETRY_CHAIN_WINDOW_MS && soundsAlike(chain.slot, command.slot, 1)
         chain = { slot: command.slot, at: firedAt, length: retry ? chain!.length + 1 : 1 }
+        lastSpoken = { slot: command.slot, at: firedAt }
         return
       }
+      // Moving on took the Slot as heard: a typed line after it is no repair of it (#456).
+      if (MOVES_ON.has(command.verb)) lastSpoken = null
       if (chain === null || !MOVES_ON.has(command.verb)) return
       if (chain.length >= 2 && firedAt - chain.at <= RETRY_CHAIN_WINDOW_MS) deps.terms?.propose(chain.slot)
       chain = null
     } catch (error) {
       reportFault('run.commandRunner.learnFrom', error)
+    }
+  }
+
+  /** The last spoken Slot a typed repair may spell again (#456), and when it was spoken. */
+  let lastSpoken: { slot: string; at: number } | null = null
+
+  /**
+   * What a fired typed Command teaches (#456): typed inside the retry
+   * chain's window after a spoken Slot it sounds like, it is the owner's
+   * own spelling of what the ear heard wrong — the words that differ are
+   * admitted at once, as a page-witnessed name is. One repair per Slot.
+   */
+  function learnFromTyped(command: Command, firedAt: number): void {
+    try {
+      if (lastSpoken === null || !slotIsNameable(command) || firedAt - lastSpoken.at > RETRY_CHAIN_WINDOW_MS) return
+      const term = typedRepair(lastSpoken.slot, command.slot)
+      if (term === null) return
+      lastSpoken = null
+      deps.terms?.admit(term)
+    } catch (error) {
+      reportFault('run.commandRunner.learnFromTyped', error)
     }
   }
 
@@ -1240,6 +1264,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A Jev-read hop: what an overrun is read against, until the next one fires.
     jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken' && reacting.ownMove !== true) learnFrom(command, matched, firedAt)
+    else if (source === 'typed' && task.hop === 0) learnFromTyped(command, firedAt)
 
     // Whether a `stop` finds anything to stop: nothing in flight, being read or sounding pauses the music instead (#343, owner's ruling 2).
     const nothingInFlight = idleAt === submitted && idle()

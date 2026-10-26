@@ -200,6 +200,28 @@ export function soundsAlike(a: string, b: string, slack = 0): boolean {
   return editDistance(keyA, keyB, limit) <= limit
 }
 
+/** A Learned Term is at most four words (learnedTerms.ts). */
+const MAX_TERM_WORDS = 4
+
+/**
+ * What a typed repair teaches (#456): the owner typed again what the ear
+ * heard wrong, so the typed words that differ from the heard ones — the
+ * run between the words both share at the start and at the end — are the
+ * owner's own spelling of what was said. Only when the two sound alike at
+ * the retry chain's slack, and the run fits a Learned Term; null else.
+ */
+export function typedRepair(heard: string, typed: string): string | null {
+  const said = wordsOf(heard)
+  const spelled = wordsOf(typed)
+  if (!soundsAlike(said.join(' '), spelled.join(' '), 1)) return null
+  let start = 0
+  while (start < said.length && start < spelled.length && said[start] === spelled[start]) start += 1
+  let end = 0
+  while (end < said.length - start && end < spelled.length - start && said[said.length - 1 - end] === spelled[spelled.length - 1 - end]) end += 1
+  const run = spelled.slice(start, spelled.length - end)
+  return run.length === 0 || run.length > MAX_TERM_WORDS ? null : run.join(' ')
+}
+
 /** A name the transcript was heard to carry (#396): the words as heard, the name they sound like, and where the name came from. */
 export interface NameHearing {
   readonly heard: string

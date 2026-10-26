@@ -50,6 +50,46 @@ export function formatReplayReport(rows: ReplayRow[]): string {
   return lines.join('\n')
 }
 
+/** A transcript's words as a label's are written: lower case, apostrophes dropped, letters and digits only. */
+function wordsOf(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((word) => word !== '')
+}
+
+/** The words heard wrong against what was said (#456): substituted, dropped or added — a word-level edit distance. */
+export function wordErrors(said: string, heard: string): number {
+  const a = wordsOf(said)
+  const b = wordsOf(heard)
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i]
+    for (let j = 1; j <= b.length; j += 1) current.push(Math.min(previous[j]! + 1, current[j - 1]! + 1, previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)))
+    previous = current
+  }
+  return previous[b.length]!
+}
+
+/**
+ * The replay scored against labels (#456): what was said, by dump file,
+ * for each dump whose meaning is sure. One line per labelled dump — its
+ * word errors, what was said and, when wrong, what was heard — and the
+ * totals two seed lexicons are compared by.
+ */
+export function formatLabelScore(rows: ReplayRow[], labels: Readonly<Record<string, string>>): string {
+  const scored = rows.filter((row) => Object.hasOwn(labels, row.file)).map((row) => ({ row, said: labels[row.file]!, errors: wordErrors(labels[row.file]!, row.transcript) }))
+  const fileWidth = Math.max(0, ...scored.map(({ row }) => row.file.length))
+  const lines = scored.map(({ row, said, errors }) => `${pad(row.file, fileWidth)}  ${errors}  ${said}${errors > 0 ? `  ← ${row.transcript}` : ''}`)
+  const errors = scored.reduce((sum, { errors: each }) => sum + each, 0)
+  const words = scored.reduce((sum, { said }) => sum + wordsOf(said).length, 0)
+  const exact = scored.filter(({ errors: each }) => each === 0).length
+  lines.push('', `labelled ${scored.length} of ${rows.length} | word errors ${errors} of ${words} | exact ${exact} of ${scored.length}`)
+  return lines.join('\n')
+}
+
 function formatSpeech(row: ReplayRow): string {
   return `${(row.speechMs / 1000).toFixed(1)}s`
 }

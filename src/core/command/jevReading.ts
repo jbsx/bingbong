@@ -11,9 +11,9 @@ import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateLevel, seekAmount, volumeLevel, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from './mediaOp'
-import { factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
+import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 import { promptChars } from '../decision/cardBudget'
-import { appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
+import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title, the text in
@@ -67,6 +67,11 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
  * Media Ops its ref carries (ADR 0080).
  */
 type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show' | 'correct' | 'correct_back' | 'forget'
+
+/** Every ref-less label the action card can offer (#456): the browser's verbs, the Appliance Verbs, the facts and the app's options. The Seed Lexicon lifts their words. */
+export function refLessCardLabels(): string[] {
+  return [...REFLESS_VERBS, ...(Object.keys(APPLIANCE_VERBS) as ApplianceVerb[]), ...SAY_LABELS, ...appCardLabels()]
+}
 
 /** Each Appliance Verb's Player action — the Command the grammar's exact lines make — and its one line on the card. */
 const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAction; readonly line: string }>> = {

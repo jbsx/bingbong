@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatReplayReport, type ReplayRow } from './replayReport'
+import { formatLabelScore, formatReplayReport, wordErrors, type ReplayRow } from './replayReport'
 
 // The #35 replay report: one row per replayed utterance dump (file, speech
 // duration, endpoint→transcript wall time, transcript) plus the p50/p95/max
@@ -48,5 +48,24 @@ describe('formatReplayReport', () => {
     const out = formatReplayReport([])
     expect(out).toContain('0 utterances')
     expect(out).toContain('p50 0ms')
+  })
+})
+
+describe('wordErrors (#456)', () => {
+  it('counts the words substituted, dropped or added, case, punctuation and apostrophes aside', () => {
+    expect(wordErrors('loop this song', 'Look this song.')).toBe(1)
+    expect(wordErrors("go to elon musk's profile", 'Go to your masks profile')).toBe(2)
+    expect(wordErrors('back', '')).toBe(1)
+    expect(wordErrors("what's the time", 'Whats the time?')).toBe(0)
+  })
+})
+
+describe('formatLabelScore (#456)', () => {
+  it('scores each labelled dump against what was said, and leaves the rest out', () => {
+    const out = formatLabelScore(ROWS, { 'intent.wav': 'can you go forward please', 'jfk.wav': 'and so my fellow americans ask not' })
+    expect(out).toContain('intent.wav  0  can you go forward please')
+    expect(out).toContain('jfk.wav     2  and so my fellow americans ask not  ← And so my fellow Americans.')
+    expect(out).not.toContain('beckett.wav')
+    expect(out).toContain('labelled 2 of 4 | word errors 2 of 12 | exact 1 of 2')
   })
 })

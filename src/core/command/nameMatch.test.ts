@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, wordSoundKey } from './nameMatch'
+import { HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, typedRepair, wordSoundKey } from './nameMatch'
 
 // The Name Match (ADR 0077, #325): a Slot that sounds like a name the page
 // shows, or one the user taught the app, is carried as that name. The
@@ -115,5 +115,25 @@ describe('soundsAlike', () => {
     expect(soundsAlike('linus tech dips', 'linus tech tips')).toBe(true)
     expect(soundsAlike('line of tactics', 'linus tech tips')).toBe(false)
     expect(soundsAlike('cats', 'dogs')).toBe(false)
+  })
+})
+
+describe('typedRepair (#456)', () => {
+  it('reads the real pair: the owner typed "by niyam" where the ear heard "Bai Diamo"', () => {
+    expect(typedRepair('tum se tum tak Bai Diamo', 'tum se tum tak by niyam')).toBe('by niyam')
+  })
+
+  it('takes only the typed words that differ, wherever they sit', () => {
+    expect(typedRepair('line stack tips review', 'linus tech tips review')).toBe('linus tech')
+    expect(typedRepair('go to your masks profile', 'go to elon musks profile')).toBe('elon musks')
+  })
+
+  it('teaches nothing when the typed line repeats what was heard, or sounds nothing like it', () => {
+    expect(typedRepair('tum se tum tak', 'Tum se tum tak.')).toBeNull()
+    expect(typedRepair('tum se tum tak bai diamo', 'weather in gurgaon')).toBeNull()
+  })
+
+  it("teaches nothing past a Learned Term's four words", () => {
+    expect(typedRepair('a bee sea dee ee eff', 'ay be see the e if')).toBeNull()
   })
 })

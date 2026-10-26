@@ -1,0 +1,166 @@
+{
+  "source": "Each dump matched 1:1 by time to a decision record (2026-10-17 logs: ~/.claude/jobs/07c4ba48/tmp/today-logs/decision-1792244719460-1.jsonl and the decision-1792245564371 records in ~/.claude/jobs/c8172ccb/tmp/all2.jsonl; 2026-10-24: ~/.config/bingbong/logs/decision-1792854534608-1.jsonl); a label is kept only where the Command was accepted (the next line built on it) or a retry chain, the ledger, a post mortem or the owner's own words make the words sure, with the live decode and the 2026-10-17 Small/Base replays (session 8245387d) used only as corroboration. Lower case, no punctuation except the apostrophe inside a word.",
+  "labels": {
+    "utterance-1792244719141-0001.wav": {
+      "said": "youtube",
+      "evidence": "decision turn-mvcg8bvu-1 heard 'YouTube.', opened YouTube; next line built on it (no undo); Small replay agrees"
+    },
+    "utterance-1792244731626-0002.wav": {
+      "said": "open elon musk's latest tweet",
+      "evidence": "turn-mvcg8lik-2 heard 'Open Elon Musk's latest tweet.' and searched it; next line clicked a result (accepted); Base replay agrees on the name; the owner said the same line again on 2026-10-19 (ledger turn-mvfpbusm-1)"
+    },
+    "utterance-1792244743264-0003.wav": {
+      "said": "click on the first link",
+      "evidence": "turn-mvcg8ui2-3; live, Small and Base agree; memory kachow-324-checkpoint names the line (Jev clicked ref [1], undone by the next 'back')"
+    },
+    "utterance-1792244750370-0004.wav": {
+      "said": "back",
+      "evidence": "turn-mvcg8zz7-4 fired back as the recovery of the misread click; live, Small and Base agree"
+    },
+    "utterance-1792244763244-0005.wav": {
+      "said": "go to elon musk's profile",
+      "evidence": "turn-mvcg99wt-5 heard 'Go to your masks profile'; 'Go back' and the retry 'Elon musk's profile' follow; memory kachow-324-checkpoint: STT misheard 'Elon Musk's' as 'your masks'; Small replay heard 'Go to Elon Musk's profile.'"
+    },
+    "utterance-1792244772705-0006.wav": {
+      "said": "go back",
+      "evidence": "turn-mvcg9h7m-6 fired back (undo of the misheard open); live, Small and Base agree"
+    },
+    "utterance-1792244779756-0007.wav": {
+      "said": "elon musk's profile",
+      "evidence": "turn-mvcg9mnh-7 heard 'Elon musk's profile', the retry of 0005; owner in session 07c4ba48: 'it looked up elon musks profile'; Small agrees"
+    },
+    "utterance-1792244786980-0008.wav": {
+      "said": "back",
+      "evidence": "turn-mvcg9s85-8 heard 'Back' and fired back, one of the four back recoveries counted in kachow-324-checkpoint; the next line 'open the first result' is on the results page it returned to"
+    },
+    "utterance-1792244792994-0009.wav": {
+      "said": "open the first result",
+      "evidence": "turn-mvcg9wv8-9; live, Small and Base agree; owner in session 07c4ba48 describes asking for 'the first result' and it being searched verbatim"
+    },
+    "utterance-1792244799073-0010.wav": {
+      "said": "go back",
+      "evidence": "turn-mvcga1k2-a fired back (undo of the verbatim search); live, Small and Base agree"
+    },
+    "utterance-1792245564200-0001.wav": {
+      "said": "open youtube",
+      "evidence": "turn-mvcgqfxr-1 opened YouTube, next line clicked its Search box (accepted); live, Small and Base agree"
+    },
+    "utterance-1792245580079-0002.wav": {
+      "said": "click on search",
+      "evidence": "turn-mvcgqs6p-2 clicked [3] Search, the session then searched it; live, Small and Base agree"
+    },
+    "utterance-1792245592413-0003.wav": {
+      "said": "search linus tech tips",
+      "evidence": "turn-mvcgr1pg-3 heard 'Search line status'; 'Go back' then the retry chain 'on YouTube search ... Linus Tech Tips' (0005, 0006) settles the name; every decode has 'search' plus one three-word name"
+    },
+    "utterance-1792245601956-0004.wav": {
+      "said": "go back",
+      "evidence": "decision at 1792245602090 fired back after the wrong search; live and Small agree"
+    },
+    "utterance-1792245609967-0005.wav": {
+      "said": "on youtube search linus tech tips",
+      "evidence": "heard 'on YouTube search Lana Statics'; repeated at once as 0006, heard right as 'on YouTube search Linus Tech Tips.'; same frame in every decode"
+    },
+    "utterance-1792245619278-0006.wav": {
+      "said": "on youtube search linus tech tips",
+      "evidence": "decision at 1792245619858; live, Small and Base agree"
+    },
+    "utterance-1792245634981-0008.wav": {
+      "said": "delete the text",
+      "evidence": "decision at 1792245635588 cleared the box; live, Small and Base agree; the owner's #325 brief quotes the line"
+    },
+    "utterance-1792245642416-0009.wav": {
+      "said": "type linus tech tips",
+      "evidence": "heard 'Type linus tag tips'; the retry chain (owner's #325 brief: 'Delete the text' -> 'Type Linus Tech dips' -> ...) and 0012 settle the name; Base heard 'Type Linus Tech tips'"
+    },
+    "utterance-1792245649328-0010.wav": {
+      "said": "search",
+      "evidence": "decision at 1792245649657; live, Small and Base agree"
+    },
+    "utterance-1792245655602-0011.wav": {
+      "said": "go back",
+      "evidence": "decision at 1792245655863 fired back; live, Small and Base agree"
+    },
+    "utterance-1792245665201-0012.wav": {
+      "said": "type linus tech tips in the search box",
+      "evidence": "decision at 1792245665579 typed 'Linus Tech Tips' and the next lines submitted it (accepted); live and Base agree"
+    },
+    "utterance-1792245671686-0013.wav": {
+      "said": "click on the search button",
+      "evidence": "decision at 1792245671848; live, Small and Base agree"
+    },
+    "utterance-1792245679015-0014.wav": {
+      "said": "press enter",
+      "evidence": "decision at 1792245679105 pressed enter; live, Small and Base agree"
+    },
+    "utterance-1792245689432-0015.wav": {
+      "said": "click on the first video",
+      "evidence": "decision at 1792245689915 clicked the first video; live, Small and Base agree"
+    },
+    "utterance-1792245734824-0016.wav": {
+      "said": "refresh page",
+      "evidence": "decision at 1792245735160 (Jev none), followed by the reload rephrasings; live and Small agree"
+    },
+    "utterance-1792245741226-0017.wav": {
+      "said": "reload the page",
+      "evidence": "decision at 1792245741728, a rephrase in the reload chain; live, Small and Base agree"
+    },
+    "utterance-1792245750214-0018.wav": {
+      "said": "reload",
+      "evidence": "decision at 1792245750548, a rephrase in the reload chain; live, Small and Base agree"
+    },
+    "utterance-1792245793580-0020.wav": {
+      "said": "press control r",
+      "evidence": "decision at 1792245794116 pressed ctrl r, ending the reload chain; live 'Press ctrl r', Small 'Press Ctrl + R', Base 'Press control r'"
+    },
+    "utterance-1792854529592-0001.wav": {
+      "said": "what time is it",
+      "evidence": "turn-mvmjaon0-1 said the time; post mortem 2026-10-24 16:08: the time tasks did what was meant"
+    },
+    "utterance-1792854547620-0002.wav": {
+      "said": "what time is it",
+      "evidence": "turn-mvmjb2jq-2 said the time; post mortem: the time tasks did what was meant"
+    },
+    "utterance-1792854553621-0003.wav": {
+      "said": "what day",
+      "evidence": "turn-mvmjb76d-3 said the time/day; post mortem: the time tasks did what was meant"
+    },
+    "utterance-1792854562488-0004.wav": {
+      "said": "when is diwali",
+      "evidence": "turn-mvmjbe0o-4 searched it and read the answer; post mortem: the Diwali tasks did what was meant"
+    },
+    "utterance-1792854580676-0005.wav": {
+      "said": "when is diwali next year",
+      "evidence": "turn-mvmjbs1x-7 searched it; post mortem: the Diwali tasks did what was meant"
+    },
+    "utterance-1792854600747-0006.wav": {
+      "said": "click on the first link",
+      "evidence": "turn-mvmjc7jf-a clicked the first result; post mortem: first link did what was meant"
+    },
+    "utterance-1792854606016-0007.wav": {
+      "said": "scroll down",
+      "evidence": "turn-mvmjcblt-e scrolled (Local Match); post mortem: scroll did what was meant"
+    },
+    "utterance-1792854607792-0008.wav": {
+      "said": "scroll down",
+      "evidence": "turn-mvmjccz4-f scrolled (Local Match); post mortem: scroll did what was meant"
+    },
+    "utterance-1792854707823-0009.wav": {
+      "said": "what's the time",
+      "evidence": "turn-mvmjei5s-g said the time; post mortem: the time tasks did what was meant"
+    },
+    "utterance-1792854721928-0010.wav": {
+      "said": "what's the weather like in gurgaon",
+      "evidence": "turn-mvmjetct-i; ledger fixtures/failed-lines/turn-mvmjetct-i.json (stage reading, STT right)"
+    },
+    "utterance-1792854730054-0011.wav": {
+      "said": "what's the weather like in gurgaon",
+      "evidence": "turn-mvmjezbb-k heard 'Gergan'; ledger fixtures/failed-lines/turn-mvmjezbb-k.json: the owner said the Gurgaon line again (stage stt)"
+    }
+  },
+  "unlabelled": {
+    "utterance-1787154757369-0001.wav": "2026-08-19, no decision log survives and no session records the owner's words; decodes 'Open the first line of stackups video you can find' suggest Linus Tech Tips but the words are not sure",
+    "utterance-1792245627878-0007.wav": "heard 'Type - backtips' live, 'I need liner stack tips' (Small), 'Ave line stack tips' (Base): the name is Linus Tech Tips but the leading word (type? i need?) is not sure",
+    "utterance-1792245756083-0019.wav": "heard 'Really fresh' live, 'Refresh' by Small and Base; a reload rephrase that Jev read as none and was followed by another rephrase, so whether it was 'refresh' or 'really refresh' is not sure"
+  }
+}

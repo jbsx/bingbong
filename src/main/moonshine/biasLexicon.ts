@@ -1,48 +1,18 @@
 // The STT contextual-biasing lexicon (#62): the app's own vocabulary that
-// Moonshine's greedy decode boosts toward (see contextualBiasing.ts). Pure
-// data — extend it as mishears are discovered; no decode code changes.
-// Terms the acoustic model already hears fine (everyday words) are left out
-// on purpose: every entry is a near-tie waiting to be flipped.
+// the decode boosts toward (see contextualBiasing.ts).
 //
 // The Seed Lexicon half of the Bias Lexicon (ADR 0022): frozen in source,
-// the reserved set no runtime proposal may admit as a Learned Term.
+// the reserved set no runtime proposal may admit as a Learned Term. Two
+// halves (#456): the command half is built from the tables the app answers
+// by (commandLexicon.ts), so every verb is lifted by class; the rest is the
+// app's other vocabulary — the settings' and the dashboard's names — kept
+// by hand, as no table says them.
 
 import { normalizeLearnedTerm } from '../../core/voice/learnedTerms'
+import { commandLexicon } from '../../core/voice/commandLexicon'
 
-export const BIAS_LEXICON: readonly string[] = [
-    // The CLI grammar's verbs (ADR 0076). Everyday words, kept against the
-    // rule above: every spoken Command opens on one, and "scroll" was
-    // heard as "Screw that." and "Crawled" in one session, both coming to
-    // nothing (#335).
-    'scroll',
-    'scroll up',
-    'scroll down',
-    'click',
-    'read',
-    'press',
-    'screenshot',
-    'navigate',
-    'back',
-
-    // Navigation and app control
-    'forward',
-    'go forward',
-    'backward',
-    'reload',
-    // The dismiss phrases (#336): "close" was heard as "Closer." and
-    // "Clothes" over Truth Social's pop-up on 2026-10-19, and the first
-    // scrolled a Task to the cap.
-    'close',
-    'close it',
-    'close the pop-up',
-    'dismiss',
-    'pop-up',
-    'quit',
-    'restart',
-    'pause',
-    'resume',
-    'continue',
-
+/** The vocabulary no command table says: kept by hand, every entry a near-tie waiting to be flipped. */
+const NAMES: readonly string[] = [
     // Settings names (voice-settable surface, ADR 0006)
     'wake word',
     'wake threshold',
@@ -64,6 +34,8 @@ export const BIAS_LEXICON: readonly string[] = [
     'idle screen',
     'feed entry',
 ]
+
+export const BIAS_LEXICON: readonly string[] = [...new Set([...commandLexicon(), ...NAMES])]
 
 /** The Seed Lexicon as the admission gate's reserved set (normalized). */
 export function seedLexiconSet(): ReadonlySet<string> {

@@ -122,7 +122,7 @@ const VIEW_NAMES: Readonly<Record<ShownView, string>> = { dashboard: 'the browse
 const sectionTitle = (id: string | undefined): string | undefined => SETTINGS_SECTIONS.find((section) => section.id === id)?.title
 
 /** What the screen shows now, as a view line says it. */
-function shownNow(state: AppState): string {
+function shownNow(state: Pick<AppState, 'view' | 'section'>): string {
   const title = state.view === 'settings' ? sectionTitle(state.section) : undefined
   return `now showing ${VIEW_NAMES[state.view]}${title !== undefined ? ` at its ${title} section` : ''}`
 }
@@ -222,7 +222,7 @@ const IDLE_LINE = 'app: bring the Idle Screen back over the browser, music playi
  * top and at each of its sections — and the Idle Screen (#458) whenever it
  * is not up, over any of them.
  */
-function viewOptions(state: AppState): AppOption[] {
+function viewOptions(state: Pick<AppState, 'view' | 'section' | 'idle'>): AppOption[] {
   const now = shownNow(state)
   return [
     ...(state.idle ? [] : [{ label: 'show_idle', line: `${IDLE_LINE} — ${now}`, op: { kind: 'view', view: 'idle' } } satisfies AppOption]),
@@ -263,6 +263,11 @@ const SETTINGS_LINE =
  */
 export function appCardOptions(state: AppState): AppOption[] {
   return [...panelOptions(state.panel), ...viewOptions(state), { label: SETTINGS_LABEL, line: SETTINGS_LINE, op: { kind: 'settings' } }]
+}
+
+/** The labels of the app's options on the action card (#456), which no state changes: the Seed Lexicon lifts their words. */
+export function appCardLabels(): string[] {
+  return [...panelOptions({ mode: 'docked', open: false, width: 0 }), ...viewOptions({ view: 'dashboard', idle: false }), { label: SETTINGS_LABEL }].map((option) => option.label)
 }
 
 /** Every setting's ops by its kind, each line carrying the state now: the settings ask's card. A setting the kinds table keeps off (`kept`: the voice timings, the records) has none. */

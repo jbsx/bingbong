@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { grammarErrorOf, headsFlagLine, parseCliCommand, readFlagLine } from './cliGrammar'
+import { CLI_HEADS, grammarErrorOf, headsFlagLine, parseCliCommand, readFlagLine } from './cliGrammar'
 
 describe('parseCliCommand', () => {
   it('parses navigate with its url input', () => {
@@ -233,5 +233,17 @@ describe('the Flag line (#421)', () => {
     expect(headsFlagLine('fla')).toBe(false)
     expect(headsFlagLine('open')).toBe(false)
     expect(headsFlagLine('mark the second one')).toBe(false)
+  })
+})
+
+describe('CLI_HEADS (#456)', () => {
+  it('lists every head the grammar reads, each one read, and no other', () => {
+    const unknown = (line: string): boolean => {
+      const parsed = parseCliCommand(line)
+      return parsed?.ok === false && parsed.error.startsWith('unknown command')
+    }
+    // A wordless head is read only alone; the rest with their words.
+    for (const head of CLI_HEADS) expect(unknown(head) && unknown(`${head} 1`)).toBe(false)
+    expect(parseCliCommand('loook 1')).toEqual({ ok: false, error: "unknown command: 'loook' — try 'help'" })
   })
 })

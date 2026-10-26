@@ -161,6 +161,9 @@ export const sayLabel = (fact: ApplianceFact): string => `say_${fact}`
 
 const FACTS: readonly ApplianceFact[] = ['time', 'weather', 'playing', 'timer']
 
+/** Every fact's card label (#456): the Seed Lexicon lifts their words. */
+export const SAY_LABELS: readonly string[] = FACTS.map(sayLabel)
+
 /** The fact an action card label says; null for any other label. */
 export function factOfLabel(label: string): ApplianceFact | null {
   return FACTS.find((fact) => sayLabel(fact) === label) ?? null
