@@ -92,6 +92,28 @@ const CHECK_SCRIPT = `(() => {
     if (box.right > outer.right - parseFloat(pad.paddingRight) + 1 || box.left < outer.left + parseFloat(pad.paddingLeft) - 1) issues.push('out of the Voice Prompt (' + Math.round(box.left) + '..' + Math.round(box.right) + ' in ' + Math.round(outer.left) + '..' + Math.round(outer.right) + '): ' + name(el))
     if (el.getClientRects().length > 1 || box.height > parseFloat(getComputedStyle(el).fontSize) * 1.6) issues.push('broken across lines: ' + name(el))
   }
+  // A run's wait (#462): in the Capsule's face, its seconds whole, inside the Capsule and the screen and under
+  // nothing; the detail gives way wholly before the stage's words, and fills the room before it ellipsizes.
+  const sans = (family) => family.replace(/["'\\s]/g, '')
+  for (const hint of document.querySelectorAll('.run-hint')) {
+    if (hint.getBoundingClientRect().width <= 1) continue
+    if (sans(getComputedStyle(hint).fontFamily) !== sans(getComputedStyle(document.documentElement).getPropertyValue('--font-sans'))) issues.push('run hint not in the sans (' + getComputedStyle(hint).fontFamily + '): ' + name(hint))
+    const capsule = hint.closest('.status-capsule, .idle-status') ?? hint.parentElement
+    const outer = capsule.getBoundingClientRect()
+    const pad = getComputedStyle(capsule)
+    const tail = hint.querySelector('.run-hint-tail')
+    const box = tail === null ? null : tail.getBoundingClientRect()
+    if (box === null || box.width <= 1) { issues.push('run hint without its seconds: ' + name(hint)); continue }
+    if (box.right > outer.right - parseFloat(pad.paddingRight) + 1 || box.left < outer.left + parseFloat(pad.paddingLeft) - 1) issues.push('seconds out of the Capsule (' + Math.round(box.left) + '..' + Math.round(box.right) + ' in ' + Math.round(outer.left) + '..' + Math.round(outer.right) + '): ' + name(tail))
+    if (box.right > hint.getBoundingClientRect().right + 1 || tail.scrollWidth > Math.ceil(box.width) + 1) issues.push('seconds cut: ' + name(tail))
+    if (box.right > innerWidth + 1 || box.left < -1 || box.bottom > innerHeight + 1 || box.top < -1) issues.push('seconds off the surface: ' + name(tail))
+    const top = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2)
+    if (top === null || !tail.contains(top)) issues.push('seconds covered by ' + (top === null ? 'nothing drawn' : name(top)) + ': ' + name(tail))
+    const detail = hint.querySelector('.run-hint-detail')
+    const clipped = (el) => el.scrollWidth > el.clientWidth + 1
+    if (detail !== null && detail.getBoundingClientRect().width > 1 && [...hint.querySelectorAll('.run-hint-stage')].some(clipped)) issues.push('stage words cut before the detail: ' + name(hint))
+    if (detail !== null && clipped(detail) && hint.getBoundingClientRect().right < outer.right - parseFloat(pad.paddingRight) - 2) issues.push('detail cut with room to spare: ' + name(hint))
+  }
   // The type ladder (#436): four sizes on a surface, the display numerals (data-display) apart.
   const sizes = new Set()
   for (const el of document.querySelectorAll('body *')) {
@@ -108,8 +130,8 @@ const CHECK_SCRIPT = `(() => {
     if (!el.closest('[data-display]')) sizes.add(style.fontSize + ' ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
-    // The live words and the kept result in the capsule (#331, #436), a stage's long detail beside its seconds (#428), the words an ear's wait is on beside its seconds (#442), and a long address after its host (#453), ellipsize by design: the clips allowed.
-    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .ear-wait-object, .url-display')) issues.push('clipped across: ' + name(el))
+    // The live words and the kept result in the capsule (#331, #436), a stage's long detail and then its words beside its seconds (#428, #462), the words an ear's wait is on beside its seconds (#442), and a long address after its host (#453), ellipsize by design: the clips allowed.
+    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .run-hint-stage, .ear-wait-object, .url-display')) issues.push('clipped across: ' + name(el))
     if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
