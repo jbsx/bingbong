@@ -7,7 +7,8 @@ for Kaggle's 20 GB disk:
 
 - FMA (block 7-8): the 8 GB zip is never downloaded. Its central directory
   is read over HTTP ranges and only the 1,500 MP3s block 8 converts are
-  fetched.
+  fetched, every n-th of the sorted names so they span the whole archive
+  as the notebook's extraction order does.
 - ACAV (blocks 7 and 9): not fetched here at all. Clip generation and
   augmentation never read it; the sweep kernel fetches the first tenth of
   its rows, block 9's training subset, by byte range.
@@ -256,8 +257,13 @@ if len(os.listdir(fma_wav)) < 1500:
                                            buffer_size=1 << 20))
     mp3s = sorted(n for n in zf.namelist() if n.endswith(".mp3"))
     assert len(mp3s) >= 1500, f"FMA zip lists only {len(mp3s)} MP3s"
+    # The notebook's "first 1,500" are in extraction order, scattered over all
+    # 156 folders; the first 1,500 by name would be the lowest track ids
+    # only, an early slice of the archive (#452 parity check). So take every
+    # n-th of the sorted names: fixed, and spread over the whole zip.
+    picks = [mp3s[i * len(mp3s) // 1500] for i in range(1500)]
     tmp_mp3 = f"{W}/fma_tmp.mp3"
-    for i, name in enumerate(mp3s[:1500]):
+    for i, name in enumerate(picks):
         out = f"{fma_wav}/{i:05d}.wav"
         if os.path.exists(out):
             continue

@@ -1,0 +1,10 @@
+{
+  "sweep": "features2",
+  "max_gpu_hours": 6,
+  "note": "#452 orchestrator ruling 2026-10-26, after the parity check failed: features made on Kaggle with the FMA pick spread over the whole archive. aug2 is run 3's data settings (the parity check again, and the Kaggle-native control), aug3 augmentation_rounds 3, chow aug2 with the custom near-miss phrases as a class at 10% of the adversarial texts instead of about 0.1%.",
+  "data": [
+    {"name": "aug2", "features": {"job": {"augmentation_rounds": 2}}, "training": "features-grid.json"},
+    {"name": "aug3", "features": {"job": {"augmentation_rounds": 3}}, "training": "features-grid.json"},
+    {"name": "chow", "features": {"job": {"augmentation_rounds": 2, "negative_phrase_share": 0.1}}, "training": "features-grid.json"}
+  ]
+}

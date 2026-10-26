@@ -49,9 +49,8 @@ MAX_KERNEL_MIN = 9 * 60
 SETUP_MIN = 5
 MIN_PER_20K_STEPS = 5
 RETRIES = 2
-# A full-size features job on a T4: the issue's estimate, unmeasured until the
-# first one runs.
-FEATURES_JOB_MIN = 120
+# A full-size features job on a T4: aug2 took 74 min (2026-10-26), rounded up.
+FEATURES_JOB_MIN = 80
 
 
 def log(msg: str) -> None:

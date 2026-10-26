@@ -33,9 +33,10 @@ set (`pnpm wake:score build`).
   data config's overrides on block 10. The output is the four
   `*_features_*.npy` files plus `my_model.yaml`. That output is the
   reusable features set: the sweep kernels mount it as a kernel source, so
-  it is never copied into a separate dataset. It fetches 1,500 FMA MP3s out of the remote zip by byte range and
+  it is never copied into a separate dataset. It fetches 1,500 FMA MP3s,
+  every n-th across the archive, out of the remote zip by byte range, and
   never fetches ACAV, so Kaggle's 20 GB disk is never close to full. It
-  runs about 2 h on a T4.
+  ran 74 min on a T4.
 - **Sweep kernel, many trainings per features set** (`sweep-kernel/`).
   Blocks 14–15 in a loop over the config list. After every config it writes
   `<config>.onnx` and a line of `results.jsonl` holding the config and its
@@ -113,8 +114,10 @@ checks the whole loop end to end.
   whole 10.7 h validation audio, both halves, as the notebook always has.
   So the final card's false-wake side is a little optimistic, like the
   scorer's caveat on notebook models.
-- A features job's 2 h (`FEATURES_JOB_MIN`) is the issue's estimate until
-  one has run at full size.
+- Kaggle's features are not Colab's. Kaggle's aug2 (run 3's data settings)
+  trained a control band of 25.9–35.4% against the Colab features'
+  35.6–39.4%, with the FMA pick then the first 1,500 by name. The pick now
+  spans the whole archive. Compare data configs within one features port.
 - Kaggle's Python is 3.13, so the notebook's pins install as they are. The
   sweep kernel installs only `onnx` and `onnxruntime`, since blocks 14–15
   need nothing else beyond Kaggle's own torch.

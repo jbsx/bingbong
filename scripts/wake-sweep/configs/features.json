@@ -1,10 +1,9 @@
 {
   "sweep": "features",
-  "max_gpu_hours": 8,
-  "note": "#452 orchestrator ruling 2026-10-26: features made on Kaggle, about 6.5 GPU h. aug2 is run 3's data settings regenerated, the Kaggle-native control every later data config compares to (and a parity check against the Colab features). aug3 is augmentation_rounds 3, else the same. chow is aug2 with the custom near-miss phrases, as a class and every phrase equally, at 10% of the adversarial texts instead of about 0.1% (ruling 2026-10-26: one arm; 3x their share measures nothing).",
+  "max_gpu_hours": 6,
+  "note": "#452 orchestrator ruling 2026-10-26: the first features made on Kaggle. aug2 is run 3's data settings regenerated (the parity check against the Colab features), aug3 augmentation_rounds 3. Ran with the features kernel's first-1,500-by-name FMA pick; aug2's control band missed the Colab band, so the pick was fixed and features2.json is the queue that counts. Kept as the record.",
   "data": [
     {"name": "aug2", "features": {"job": {"augmentation_rounds": 2}}, "training": "features-grid.json"},
-    {"name": "aug3", "features": {"job": {"augmentation_rounds": 3}}, "training": "features-grid.json"},
-    {"name": "chow", "features": {"job": {"augmentation_rounds": 2, "negative_phrase_share": 0.1}}, "training": "features-grid.json"}
+    {"name": "aug3", "features": {"job": {"augmentation_rounds": 3}}, "training": "features-grid.json"}
   ]
 }
