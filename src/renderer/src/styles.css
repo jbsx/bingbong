@@ -86,10 +86,10 @@
   --barunq: #8d6d82;
   /* Radii and shadows: every corner is one of these or 0 (#455, guarded by
      styleTokens.test.ts). A bar whose old radius was half its height takes
-     --radius-sm, which the browser clamps to the same round end; a 1–3 px
-     corner on a mark or a square takes 0, unseen from the chair. Guess: the
-     10 px small music thumb took --radius-sm, not --radius; the shot settles
-     it. */
+     --radius-sm, which the browser clamps to the same round end; a 1–4 px
+     corner on a mark, a square or a favicon takes 0, unseen from the chair.
+     Guess: the 10 px small music thumb took --radius-sm, not --radius; the
+     owner's read of the idle music shot settles it. */
   --radius-sm: 8px;
   --radius: 12px;
   --radius-md: 16px;
@@ -3068,7 +3068,7 @@ button.idle-line {
 }
 
 .idle-last-page-mark img {
-  border-radius: var(--radius-sm);
+  border-radius: 0;
 }
 
 .idle-last-page-title {

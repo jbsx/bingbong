@@ -96,12 +96,12 @@ describe('the renderer CSS keeps to the tokens (#455)', () => {
   })
 
   it('rounds every corner with a radius token', () => {
-    const off = ALL.filter((d) => d.property === 'border-radius' && !d.value.split(/\s+/).every((part) => RADIUS_PART.test(part)))
+    const off = ALL.filter((d) => /^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/.test(d.property) && !d.value.split(/\s+/).every((part) => RADIUS_PART.test(part)))
     expect(off.map(where)).toEqual([])
   })
 
   it('sets every face with a face token', () => {
-    const off = ALL.filter((d) => d.property === 'font-family' && d.selector !== '@font-face' && !FACE.test(d.value))
+    const off = ALL.filter((d) => (d.property === 'font-family' || (d.property === 'font' && d.value !== 'inherit')) && d.selector !== '@font-face' && !FACE.test(d.value))
     expect(off.map(where)).toEqual([])
   })
 
