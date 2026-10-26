@@ -63,7 +63,7 @@ function Clock({ now, small, format, seconds, dateFormat }: { now: Date; small: 
   const parts = small ? { ...full, seconds: '', period: '' } : full
   return (
     <div className={small ? 'idle-clock-block idle-clock-block--split' : 'idle-clock-block'}>
-      <p className="idle-clock" aria-label="clock">
+      <p className="idle-clock" data-display aria-label="clock">
         {parts.hours}
         <span className="idle-clock-colon">{parts.separator}</span>
         {parts.minutes}
@@ -124,7 +124,7 @@ function TimerClock({ timer, format }: { timer: Exclude<TimerState, { status: 'o
     const ends = timeOfDay(timer.endsAt, format)
     return (
       <section className="idle-timer" aria-label={`timer: ${countdownLabel(left)} left of ${length}`}>
-        <p className="idle-timer-left">{countdownLabel(left)}</p>
+        <p className="idle-timer-left" data-display>{countdownLabel(left)}</p>
         <p className="idle-timer-sub">
           <TimerRing fraction={left / timer.durationMs} />
           <span className="idle-timer-kicker">
@@ -148,7 +148,7 @@ function TimerClock({ timer, format }: { timer: Exclude<TimerState, { status: 'o
         if (event.key === 'Enter' || event.key === ' ') dismiss()
       }}
     >
-      <p className="idle-timer-left">Time’s up</p>
+      <p className="idle-timer-left" data-display>Time’s up</p>
       <p className="idle-timer-sub">
         <TimerRing fraction={1} />
         <span className="idle-timer-kicker">
@@ -190,13 +190,18 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
     <div className={`idle-line idle-voice idle-voice--${phase}`} role="status" aria-label={taking ? EAR_WORD[phase] : phase === 'off' ? 'microphone off' : 'waiting for the wake word'}>
       <span className="idle-voice-orb" aria-hidden="true" />
       {phase === 'off' ? (
-        <span className="idle-voice-hint">Microphone off — start typing</span>
+        <>
+          <span className="idle-voice-hint">Microphone off</span> <span className="idle-voice-more">— start typing</span>
+        </>
       ) : taking ? (
         <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? wordlessLine(phase) : `“${voice.partial}…”`}</span>
       ) : (
-        <span className="idle-voice-hint">
-          Say <span className="idle-voice-word">“Bing Bong”</span> or start typing
-        </span>
+        <>
+          <span className="idle-voice-hint">
+            Say <span className="idle-voice-word">“Bing Bong”</span>
+          </span>{' '}
+          <span className="idle-voice-more">or start typing</span>
+        </>
       )}
       {phase !== 'off' ? (
         <>
@@ -337,7 +342,7 @@ function CalendarCard({ now, weekStart, events, form, format }: { now: Date; wee
   return (
     <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
       <header className="idle-cal-head">
-        <span className="idle-cal-today">{now.getDate()}</span>
+        <span className="idle-cal-today" data-display>{now.getDate()}</span>
         <span className="idle-cal-words">
           <span className="idle-cal-month">
             {now.toLocaleDateString([], { weekday: 'short' })} · {monthName} {now.getFullYear()}

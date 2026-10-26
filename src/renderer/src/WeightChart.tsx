@@ -34,7 +34,7 @@ export function WeightChart({ points, start, end, digits, label, compact = false
   const area = drawn.length > 0 ? `M${drawn[0][0].toFixed(1)},100${drawn.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(2)}`).join('')}L${drawn[drawn.length - 1][0].toFixed(1)},100Z` : ''
   return (
     <div className={compact ? 'weight-chart weight-chart--compact' : 'weight-chart'} role="img" aria-label={label}>
-      <span className="weight-chart-y" aria-hidden="true">
+      <span className="weight-chart-y" data-display aria-hidden="true">
         {/* The column's width: the longer label, unseen; the labels themselves sit at their heights. */}
         <span className="weight-chart-y-size">{points.length > 0 ? (top.length >= bottom.length ? top : bottom) : ''}</span>
         {points.length > 0 ? (

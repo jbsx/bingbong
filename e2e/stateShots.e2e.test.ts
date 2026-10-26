@@ -68,6 +68,12 @@ const CHECK_SCRIPT = `(() => {
     const words = (el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40)
     return cls + ' "' + words + '"'
   }
+  // The glance surface (#436): every status item at 65 px, read from 2 m.
+  for (const el of document.querySelectorAll('.status-pill, .run-hint, .idle-voice-hint, .idle-voice-state, .voice-prompt-state')) {
+    if (el.getBoundingClientRect().width > 1 && parseFloat(getComputedStyle(el).fontSize) < 65) issues.push('status under 65 px (' + getComputedStyle(el).fontSize + '): ' + name(el))
+  }
+  // The type ladder (#436): four sizes on a surface, the display numerals (data-display) apart.
+  const sizes = new Set()
   for (const el of document.querySelectorAll('body *')) {
     if (el.closest('svg, option, .feed-sr, .weight-chart-y-size')) continue
     const field = (el instanceof HTMLInputElement && ['text', 'search', 'url', 'number', 'date', 'email', 'tel', 'password'].includes(el.type)) || el instanceof HTMLTextAreaElement
@@ -79,15 +85,22 @@ const CHECK_SCRIPT = `(() => {
     if (box.width <= 1 || box.height <= 1 || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
     if (el.closest('[aria-hidden="true"]') && el.closest('.feed-surface')) continue
     if (parseFloat(style.fontSize) < 16) issues.push('under 16 px (' + style.fontSize + '): ' + name(el))
+    if (!el.closest('[data-display]')) sizes.add(style.fontSize + ' ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
-    // The live words in the capsule grow without bound and ellipsize by design (#331): the one clip allowed.
-    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening')) issues.push('clipped across: ' + name(el))
+    // The live words and the kept result in the capsule (#331, #436), and a stage's long detail beside its seconds (#428), ellipsize by design: the clips allowed.
+    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail')) issues.push('clipped across: ' + name(el))
     if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
-    // Words squeezed into a column a few letters wide, wrapping down the screen.
-    if (!field && box.width < 80 && box.height > parseFloat(style.fontSize) * 6) issues.push('squeezed: ' + name(el))
+    // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
+    if (!field && !style.writingMode.startsWith('vertical') && box.width < 80 && box.height > parseFloat(style.fontSize) * 6) issues.push('squeezed: ' + name(el))
   }
+  const ladder = new Map()
+  for (const entry of sizes) {
+    const size = entry.slice(0, entry.indexOf(' '))
+    if (!ladder.has(size)) ladder.set(size, entry.slice(entry.indexOf(' ') + 1))
+  }
+  if (ladder.size > 4) issues.push('more than 4 type sizes: ' + [...ladder].map(([size, first]) => size + ' ' + first).join(', '))
   return issues
 })()`
 
@@ -211,6 +224,14 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '08-page-loaded')
   await command(run, 'read')
   await shoot(run, '09-read-answer')
+  // The panel shut, the capsule keeps the sentence the read said (#436), until the next input.
+  await clickPanel(run, '[aria-label="Collapse the feed panel"]')
+  const kept = await waitFor(async () => {
+    const words = await harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`)
+    return /lighthouse/i.test(words) ? words : undefined
+  }, { timeoutMs: 10_000, intervalMs: 100 }).catch(async () => harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`))
+  expect.soft(kept, 'the capsule keeps the read sentence with the panel shut').toMatch(/lighthouse/i)
+  await shoot(run, '09b-read-answer-panel-shut')
   await command(run, 'click 999')
   await shoot(run, '10-failure')
   await command(run, 'scroll down')
@@ -365,6 +386,8 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
   const feed = (count: number): Promise<unknown> => harness.dashboardEval(`(() => { for (let i = 0; i < ${count}; i++) window.bingbong.voice.sendAudio(new Float32Array(512)) })()`)
   await feed(12)
   await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.voice-prompt--listening')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 })
+  // LISTENING held to the glance floor (#436) as soon as it shows, before any words come.
+  await shoot(run, '29-listening')
   await waitFor(
     async () => {
       await feed(2)
@@ -403,8 +426,9 @@ describe('the states screenshot review (#359)', () => {
         await walkTheShell(run)
       } finally {
         await close(run)
+        // Every state shot before a walk that died is still held to the floor.
+        expectClean(run)
       }
-      expectClean(run)
     }, 400_000)
 
     it(`shoots the Voice Prompt taking an Utterance in ${theme}`, async () => {
@@ -420,8 +444,9 @@ describe('the states screenshot review (#359)', () => {
         await walkTheVoicePrompt(run)
       } finally {
         await close(run)
+        // Every state shot before a walk that died is still held to the floor.
+        expectClean(run)
       }
-      expectClean(run)
     }, 200_000)
   }
 })

@@ -89,7 +89,7 @@ function Ring({ gauge, inner, now }: { gauge: UsageWindow | null; inner: UsageWi
         {run !== null ? <Tick from={86} to={114} share={run} className="usage-ring-tick" /> : null}
       </svg>
       <span className="usage-ring-middle">
-        <span className={used !== null && Math.round(gauge!.usedPct) >= 100 ? 'usage-ring-pct usage-ring-pct--wide' : 'usage-ring-pct'}>
+        <span className={used !== null && Math.round(gauge!.usedPct) >= 100 ? 'usage-ring-pct usage-ring-pct--wide' : 'usage-ring-pct'} data-display>
           {used === null ? '–' : Math.round(gauge!.usedPct)}
           {used !== null ? <small>%</small> : null}
         </span>
@@ -103,7 +103,7 @@ function WindowFigure({ window, now, lead }: { window: UsageWindow; now: number;
   return (
     <span className={lead ? 'usage-figure usage-figure--lead' : 'usage-figure'} aria-label={`${window.caption} ${Math.round(window.usedPct)}%, resets ${resetLabel(window.resetAt, now)}`}>
       <span className="usage-figure-caption">{window.caption}</span>
-      <b className="usage-figure-pct">{Math.round(window.usedPct)}%</b>
+      <b className="usage-figure-pct" data-display>{Math.round(window.usedPct)}%</b>
       <span className="usage-figure-reset">
         <Cycle />
         {resetLabel(window.resetAt, now)}
@@ -292,7 +292,7 @@ function UsageChart({ providers, updatedAt, now, format }: { providers: readonly
         <span ref={plot} className="usage-chart-last" aria-label="the last values">
           {drawn.map(({ provider, window, end }, index) =>
             end === null ? null : (
-              <span key={`${provider}:${window.key}:last`} className={`usage-last ${toneClass(provider)}`} style={{ top: `${lastAt[index]}%` }}>
+              <span key={`${provider}:${window.key}:last`} className={`usage-last ${toneClass(provider)}`} data-display style={{ top: `${lastAt[index]}%` }}>
                 {end.pct}
               </span>
             ),

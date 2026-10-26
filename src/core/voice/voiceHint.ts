@@ -2,7 +2,9 @@
 // state, so the hint carries only instruction or the live words — never
 // the state word a second time. Transcribing has nothing to add. While
 // the Voice Prompt is on screen (#359) the Prompt carries the hint and the
-// live words, and the capsule says only the state.
+// live words, and the capsule says only the state. Otherwise the last
+// spoken result (#436) takes the instruction's place until the next input:
+// speech cannot be scrolled back by ear, and the live words still win.
 
 import { wordlessLine } from './voicePrompt'
 
@@ -18,15 +20,16 @@ export interface VoiceHintInput {
 }
 
 export interface VoiceHint {
-  kind: 'listening' | 'monitoring'
+  kind: 'listening' | 'monitoring' | 'result'
   text: string
 }
 
-export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean } = {}): VoiceHint | null {
+export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean; result?: string | null } = {}): VoiceHint | null {
   if (voice.transcribing || options.promptShown === true) return null
   if (voice.listening) {
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
   }
+  if (options.result != null && options.result !== '') return { kind: 'result', text: options.result }
   if (voice.monitoring) return { kind: 'monitoring', text: 'say “Bing Bong” or press Ctrl+Space' }
   return null
 }

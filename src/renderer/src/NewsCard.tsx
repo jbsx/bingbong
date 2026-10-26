@@ -102,7 +102,7 @@ export function NewsCard({ repos, lean = false }: { repos: TopRepo[]; lean?: boo
             <li key={repo.name}>
               <button type="button" className="idle-repo" aria-label={spoken(repo, line)} {...opener(repo.link)}>
                 <span className="idle-repo-gain">
-                  <span className="idle-repo-gain-figure">+{compactStars(repo.starsThisMonth)}</span>
+                  <span className="idle-repo-gain-figure" data-display>+{compactStars(repo.starsThisMonth)}</span>
                   <span className="idle-repo-gain-label">this month</span>
                   <span className="idle-repo-bar" style={{ '--share': repo.starsThisMonth / leader } as React.CSSProperties} />
                 </span>

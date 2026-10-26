@@ -75,13 +75,17 @@ export const COLUMN_HEIGHT = 1000
 
 // The middle Column's heights, as styles.css draws them on the 1920×1080 canvas (measured, #365).
 /** The clock row (the clock alone, or stepped down beside a Timer Clock and lifted 6 px), the Clock Lines' top margin under it, and their bottom margin. */
-const CLOCK = { plain: 211, timer: 170 - 6 }
-const LINES_TOP = { plain: 18, timer: 30 }
-const LINES_BOTTOM = 22
+// #436: the date at 24 px, 2 px shorter than at 26 (measured by shot:idle: 209).
+const CLOCK = { plain: 209, timer: 170 - 6 }
+// The margins gave the Voice Prompt's 65 px line the room it grew (#436), so the cards keep their forms (a guess at the spacing; shot:idle settles that it fits).
+const LINES_TOP = { plain: 0, timer: 8 }
+const LINES_BOTTOM = 0
 const CLOCK_ROW = { plain: CLOCK.plain + LINES_TOP.plain + LINES_BOTTOM, timer: CLOCK.timer + LINES_TOP.timer + LINES_BOTTOM }
 /** A Clock Line and the gap between two. */
 const LINE_PX = 36
 const LINE_GAP = 12
+/** The Voice Prompt's line, the first: its hint in 65 px status type (#436), Inter's 1.21 em glyph box, the same height whatever the ear's phase, so nothing jumps when it listens. */
+const VOICE_LINE_PX = 80
 /** The panel's hairline edge, top and bottom. */
 const PANEL_EDGES = 2
 /** Now Playing's card: the thumbnail over the bar and controls, or one row of them. */
@@ -96,7 +100,7 @@ const NOTE_PX = 140
 
 /** The middle Column's height for its cards: what the clock and the Clock Lines shown leave of it. */
 export function middleRoom(clock: { timer: boolean; lines: number }): number {
-  const lines = clock.lines * LINE_PX + Math.max(0, clock.lines - 1) * LINE_GAP
+  const lines = clock.lines === 0 ? 0 : VOICE_LINE_PX + (clock.lines - 1) * LINE_PX + (clock.lines - 1) * LINE_GAP
   return COLUMN_HEIGHT - (clock.timer ? CLOCK_ROW.timer : CLOCK_ROW.plain) - lines - PANEL_EDGES
 }
 

@@ -67,7 +67,7 @@ function WeatherNow({ report, now, format }: { report: WeatherReport; now: numbe
   return (
     <div className="wx-band wx-now" aria-label="weather now">
       <div className="wx-now-head">
-        <span className="wx-temp wx-hero" style={hueStyle(report.temperature, units)}>
+        <span className="wx-temp wx-hero" data-display style={hueStyle(report.temperature, units)}>
           {degrees(report.temperature)}
         </span>
         <span className="wx-cond">
@@ -85,7 +85,7 @@ function WeatherNow({ report, now, format }: { report: WeatherReport; now: numbe
         </span>
       </div>
       {today ? (
-        <div className="wx-lohi" aria-label={`low ${degrees(today.low)}, high ${degrees(today.high)}`}>
+        <div className="wx-lohi" data-display aria-label={`low ${degrees(today.low)}, high ${degrees(today.high)}`}>
           <span className="wx-temp" style={hueStyle(today.low, units)}>
             {degrees(today.low)}
           </span>
@@ -217,7 +217,7 @@ function WeatherHours({ report, format }: { report: WeatherReport; format: TimeF
     <div className="wx-band wx-hours" aria-label="coming hours">
       {peak !== null ? (
         <div className="wx-peak" aria-label={`rain ${Math.round(peak.chance)}% by ${hourLabel(peak.time, { format })}`}>
-          <span className="wx-peak-figure">
+          <span className="wx-peak-figure" data-display>
             {Math.round(peak.chance)}
             <small>%</small>
           </span>
@@ -257,10 +257,10 @@ function WeatherDays({ days, units }: { days: readonly WeatherOutlookDay[]; unit
           </span>
           <span className="wx-days-track">
             <span className="wx-days-range" style={{ left: `${at(day.low)}%`, right: `${100 - at(day.high)}%`, '--from': tone(day.low, units), '--to': tone(day.high, units) } as React.CSSProperties} />
-            <span className="wx-temp wx-days-low" style={{ ...hueStyle(day.low, units), right: `calc(${100 - at(day.low)}% + 10px)` }}>
+            <span className="wx-temp wx-days-low" data-display style={{ ...hueStyle(day.low, units), right: `calc(${100 - at(day.low)}% + 10px)` }}>
               {degrees(day.low)}
             </span>
-            <span className="wx-temp wx-days-high" style={{ ...hueStyle(day.high, units), left: `calc(${at(day.high)}% + 10px)` }}>
+            <span className="wx-temp wx-days-high" data-display style={{ ...hueStyle(day.high, units), left: `calc(${at(day.high)}% + 10px)` }}>
               {degrees(day.high)}
             </span>
           </span>

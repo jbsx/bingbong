@@ -34,7 +34,17 @@ describe('voiceHint', () => {
     expect(voiceHint(quiet)).toBeNull()
   })
 
+  it('keeps the last spoken result in place of the wake instruction (#436)', () => {
+    expect(voiceHint({ ...quiet, monitoring: true }, { result: 'Volume 38 percent.' })).toEqual({ kind: 'result', text: 'Volume 38 percent.' })
+    expect(voiceHint(quiet, { result: 'Volume 38 percent.' })).toEqual({ kind: 'result', text: 'Volume 38 percent.' })
+  })
+
+  it('gives the live words the slot over the last result — they are the next input (#436)', () => {
+    expect(voiceHint({ ...quiet, listening: true, partial: 'open you' }, { result: 'Volume 38 percent.' })).toEqual({ kind: 'listening', text: '“open you…”' })
+  })
+
   it('says nothing while the Voice Prompt is on screen — the Prompt carries the words (#359)', () => {
+    expect(voiceHint(quiet, { promptShown: true, result: 'Volume 38 percent.' })).toBeNull()
     expect(voiceHint({ ...quiet, listening: true, partial: 'open you' }, { promptShown: true })).toBeNull()
     expect(voiceHint({ ...quiet, monitoring: true }, { promptShown: true })).toBeNull()
   })

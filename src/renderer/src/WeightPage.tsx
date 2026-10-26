@@ -176,8 +176,8 @@ export function WeightPage({
                   return (
                     <li key={key} className="weight-figure" data-figure={key}>
                       <span className="weight-figure-label">{label}</span>
-                      <span className="weight-figure-value">{value === 'unavailable' ? '–' : <FigureValue text={key === 'weightKg' ? formatKg(value) : formatFigure(value, digits)} unit={unit} />}</span>
-                      <span className="weight-figure-change" data-trend={trend}>
+                      <span className="weight-figure-value" data-display>{value === 'unavailable' ? '–' : <FigureValue text={key === 'weightKg' ? formatKg(value) : formatFigure(value, digits)} unit={unit} />}</span>
+                      <span className="weight-figure-change" data-display data-trend={trend}>
                         <NoBreakHyphens text={value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} ${SINCE_LAST}`} />
                       </span>
                     </li>

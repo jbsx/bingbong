@@ -5,6 +5,7 @@ import type { FeedEntry } from '../../core/feed/feedProjection'
 import { useFeedProjection } from './useFeedProjection'
 import { createRunProgressTracker, type CapsuleStatus, type RunProgress } from '../../core/pipeline/runProgress'
 import { createTaskProgressTracker, type TaskProgress } from '../../core/pipeline/taskProgress'
+import { createLastResultTracker } from '../../core/pipeline/lastResult'
 
 export type OrbStatus = CapsuleStatus
 
@@ -37,6 +38,8 @@ export interface Assistant {
    * reading, and again at the next Command.
    */
   taskProgress: TaskProgress | null
+  /** The sentence the last Command said aloud (#436), kept until the next input; null before one speaks. */
+  lastResult: string | null
   submit(text: string): void
   abort(): void
   /** A heard-but-not-a-command line (control words, undecided transcripts). */
@@ -49,12 +52,14 @@ export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null)
+  const [lastResult, setLastResult] = useState<string | null>(null)
   const lastStatus = useRef<OrbStatus>('idle')
   // The turn whose stage the pill shows (#428): a line thinks before its `command`, and only that turn's `done` returns it to Ready — never a late one gone by.
   const statusTurn = useRef<string | null>(null)
   const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const progressTracker = useRef(createRunProgressTracker())
   const taskProgressTracker = useRef(createTaskProgressTracker())
+  const lastResultTracker = useRef(createLastResultTracker())
   // The feed's projection wiring (#44) is shared with the panel's overlay
   // page (#45): same events in, same entries out.
   const feedProjection = useFeedProjection()
@@ -67,6 +72,8 @@ export function useAssistant(): Assistant {
       progressTracker.current.onEvent(event)
       taskProgressTracker.current.onEvent(event)
       setTaskProgress(taskProgressTracker.current.current())
+      lastResultTracker.current.onEvent(event)
+      setLastResult(lastResultTracker.current.current())
       // The hint and the pill go quiet together, once the hold has passed with no stage after it.
       const progressNow = progressTracker.current.current()
       switch (event.type) {
@@ -123,5 +130,5 @@ export function useAssistant(): Assistant {
     [feedProjection],
   )
 
-  return { status, feed, liveRunId, progress, taskProgress, submit, abort, appendVoiceHeard, appendVoiceError }
+  return { status, feed, liveRunId, progress, taskProgress, lastResult, submit, abort, appendVoiceHeard, appendVoiceError }
 }

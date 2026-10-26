@@ -23,7 +23,7 @@ export function WeighInPopup({ state }: { state: WeighInPopupState }) {
         {settled ? '✓' : ''}
       </span>
       <span className="weighin-popup-words">
-        <span className="weighin-popup-kg">
+        <span className="weighin-popup-kg" data-display>
           {formatKg(state.kg)}
           <small> kg</small>
         </span>

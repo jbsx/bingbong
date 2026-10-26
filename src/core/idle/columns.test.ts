@@ -69,13 +69,13 @@ describe('the middle Column (#365)', () => {
 
   it('with no song, the AI Usage takes the Column under the clock and its lines in full, its rings at their size over the chart', () => {
     const bands = columnBands(middleAsks(IDLE_CARD_IDS, { music: false, usage }), middleRoom({ timer: false, lines: 2 }))
-    expect(shown(bands)).toEqual(['usage 663 full'])
+    expect(shown(bands)).toEqual(['usage 661 full'])
     expect(usageLayout(bands[0].height, usage.rings)).toEqual({ form: 'full', compact: false })
   })
 
   it('with a song alone, Now Playing takes its full card over the rings, the chart given up and the rings drawn smaller', () => {
     const bands = columnBands(middleAsks(IDLE_CARD_IDS, { music: true, usage }), middleRoom({ timer: false, lines: 2 }))
-    expect(shown(bands)).toEqual(['music 280 full', 'usage 383 small'])
+    expect(shown(bands)).toEqual(['music 280 full', 'usage 381 small'])
     expect(usageLayout(bands[1].height, usage.rings)).toEqual({ form: 'small', compact: true })
   })
 

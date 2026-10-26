@@ -92,7 +92,7 @@
   --shadow-pop: 0 8px 24px rgba(16, 22, 34, 0.12);
   --focus-ring: 0 0 0 3px rgba(180, 82, 31, 0.22);
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --tb-h: 76px; /* the Toolbar */
+  --tb-h: 104px; /* the Toolbar: the capsule's 65 px state word and its frame (#436) */
   /* The Peek Card's ground: the solid panel, a breath see-through. */
   --panel-peek: rgba(236, 238, 241, 0.96);
   /* The News card's "★ this month": a quiet gold of its own. */
@@ -124,6 +124,14 @@
   --code-text: var(--fgh);
   /* The single calibration knob for the rem sizes still in use. */
   --font-scale: 1;
+  /* The type ladder (#436, docs/agents/ui.md principle 7): four sizes, each a
+     rank to learn. 65 is the status floor read from 2 m; display numerals
+     (the clock, temperatures, weights, chart figures) are data, marked
+     data-display, and keep their own. */
+  --type-s: 16px;
+  --type-m: 24px;
+  --type-l: 40px;
+  --type-xl: 65px;
 }
 
 /* The dark set — F1 Headline at full contrast: a pure black ground, every
@@ -210,8 +218,16 @@
   box-sizing: border-box;
 }
 
+/* A control takes the app's type, never the browser's 13.3 px (#437, which owns this rule; #436 needs it for the ladder). */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
 html {
-  font-size: calc(17px * var(--font-scale));
+  font-size: calc(var(--type-s) * var(--font-scale));
 }
 
 html,
@@ -244,7 +260,7 @@ body {
    keep theirs, so "Ready" is never cut to "Rea". */
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
+  grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) min-content;
   align-items: center;
   gap: 12px;
   height: var(--tb-h);
@@ -272,7 +288,7 @@ body {
 /* The app's version: the quietest text, small, never in the way. */
 .app-version {
   color: var(--fg3);
-  font-size: 12px;
+  font-size: var(--type-s);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   user-select: none;
@@ -293,8 +309,8 @@ body {
   max-width: 100%;
 }
 
-/* The Status Capsule: the one thing on the Toolbar read from three metres —
-   the state in 26 px, peach while Bing Bong works or listens. The hooks
+/* The Status Capsule: the one thing on the Toolbar read from the chair —
+   the state in 65 px (#436), peach while Bing Bong works or listens. The hooks
    inside (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
    observation points and must survive any restyle. Bounded by its column
    (#331): a long hint or partial transcript ellipsizes instead of growing
@@ -307,11 +323,11 @@ body {
   gap: 12px;
   min-width: 0;
   max-width: 100%;
-  height: 52px;
+  height: 88px;
   overflow: hidden;
-  padding: 0 22px 0 18px;
+  padding: 0 32px 0 28px;
   border: 1px solid var(--hair);
-  border-radius: 26px;
+  border-radius: 44px;
   background: var(--surface);
 }
 
@@ -354,8 +370,8 @@ body {
 
 /* The orb: state lives in its colour, named by the pill beside it. */
 .status-orb {
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--status-color, var(--idle));
   flex: none;
@@ -363,10 +379,10 @@ body {
 
 .status-pill {
   flex: none;
-  font-size: 26px;
+  font-size: var(--type-xl);
   font-weight: 600;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1;
   color: var(--status-color, var(--fg2));
   white-space: nowrap;
 }
@@ -399,8 +415,8 @@ body {
 
 .status-orb--cancelled {
   --status-color: var(--fgh);
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   border-radius: 3px;
 }
 
@@ -415,7 +431,7 @@ body {
   min-width: 0;
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: var(--type-xl);
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -433,11 +449,12 @@ body {
   white-space: pre;
 }
 
-/* The voice hint: instruction or the live words, the quiet layer — shown
-   in the capsule only while no Voice Prompt is on screen (#359). */
+/* The voice hint: instruction, the live words, or the last spoken result
+   kept until the next input (#436), the quiet layer — shown in the capsule
+   only while no Voice Prompt is on screen (#359). */
 .voice-hint {
   min-width: 0;
-  font-size: 20px;
+  font-size: var(--type-l);
   color: var(--fg2);
   white-space: nowrap;
   overflow: hidden;
@@ -453,7 +470,7 @@ body {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 28px;
+  height: 44px;
   flex: none;
 }
 
@@ -521,7 +538,7 @@ body {
   background: var(--surface);
   color: var(--fgh);
   font: inherit;
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -548,7 +565,7 @@ body {
 
 .toolbar-timer .toolbar-widget-text {
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: var(--type-m);
   font-variant-numeric: tabular-nums;
 }
 
@@ -562,7 +579,7 @@ body {
 
 .toolbar-timer--ringing .toolbar-widget-text {
   font-family: inherit;
-  font-size: 20px;
+  font-size: var(--type-m);
 }
 
 .toolbar-song-title {
@@ -672,7 +689,7 @@ body {
 .url-form {
   position: relative;
   flex: 0 1 auto;
-  width: min(680px, 38vw);
+  width: min(560px, 30vw);
   min-width: 0;
   height: 48px;
 }
@@ -686,7 +703,7 @@ body {
   background: var(--surface);
   color: var(--fgh);
   font: inherit;
-  font-size: 19px;
+  font-size: var(--type-s);
 }
 
 .url-input::placeholder {
@@ -712,7 +729,7 @@ body {
   display: flex;
   align-items: center;
   overflow: hidden;
-  font-size: 19px;
+  font-size: var(--type-s);
   color: var(--fg2);
   white-space: pre;
   text-overflow: ellipsis;
@@ -929,7 +946,7 @@ body {
   height: 64px;
   padding: 0 12px 0 24px;
   border-bottom: 1px solid var(--hair);
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -955,7 +972,7 @@ body {
 .feed-empty {
   margin: 0;
   padding: 8px 4px;
-  font-size: 22px;
+  font-size: var(--type-m);
   color: var(--fg3);
 }
 
@@ -997,7 +1014,7 @@ details.feed-entry {
 
 .feed-entry summary > .feed-text {
   grid-column: 2 / 4;
-  font-size: 18px;
+  font-size: var(--type-s);
 }
 
 /* One time column (#333): every entry's time comes first, at one width,
@@ -1006,7 +1023,7 @@ details.feed-entry {
   grid-column: 1;
   padding-top: 6px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1020,7 +1037,7 @@ details.feed-entry {
 /* A system line's words take the mark's column and the words'. */
 .feed-entry > .feed-text {
   grid-column: 2 / 4;
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fg2);
 }
 
@@ -1056,7 +1073,7 @@ details.feed-entry {
 .feed-entry--user .feed-bubble .feed-text {
   display: block;
   color: var(--fgh);
-  font-size: 21px;
+  font-size: var(--type-m);
   line-height: 1.36;
 }
 
@@ -1067,7 +1084,7 @@ details.feed-entry {
   margin-top: 3px;
   overflow-wrap: break-word;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -1108,7 +1125,7 @@ details.feed-entry {
 }
 
 .feed-entry--working .feed-bubble .feed-text {
-  font-size: 27px;
+  font-size: var(--type-m);
   line-height: 1.28;
   font-weight: 500;
   color: var(--fg);
@@ -1150,7 +1167,7 @@ details.feed-entry {
   min-width: 0;
   padding: 4px 0 4px 16px;
   border-left: 3px solid color-mix(in srgb, var(--ok) 55%, transparent);
-  font-size: 21px;
+  font-size: var(--type-m);
   line-height: 1.38;
   color: var(--fg2);
 }
@@ -1190,7 +1207,7 @@ details.feed-entry {
   padding: 2px 0 4px 18px;
   border-left-width: 4px;
   border-left-color: var(--ok);
-  font-size: 28px;
+  font-size: var(--type-m);
   line-height: 1.3;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -1207,7 +1224,7 @@ details.feed-entry {
 }
 
 .feed-entry--headline .feed-markdown p + p {
-  font-size: 24px;
+  font-size: var(--type-m);
   color: var(--fgh);
 }
 
@@ -1220,7 +1237,7 @@ details.feed-entry {
 .feed-entry--voice .feed-text,
 .feed-entry--tool .feed-text,
 .feed-entry--stage .feed-text {
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -1244,7 +1261,7 @@ details.feed-entry {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg2);
 }
 
@@ -1277,7 +1294,7 @@ details.feed-entry {
 }
 
 .feed-entry--headline .feed-markdown :is(h1, h2, h3, h4, h5, h6) {
-  font-size: 32px;
+  font-size: var(--type-l);
   letter-spacing: -0.015em;
 }
 
@@ -1317,7 +1334,7 @@ details.feed-entry {
   border-radius: 6px;
   background: var(--code-bg);
   font-family: var(--font-mono);
-  font-size: 0.85em;
+  font-size: 1em;
 }
 
 /* Code wraps: a glanceable panel must never hide lines off its right
@@ -1335,7 +1352,7 @@ details.feed-entry {
 
 .feed-markdown pre code {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   line-height: 1.45;
 }
 
@@ -1372,7 +1389,7 @@ details.feed-entry {
   background: transparent;
   cursor: pointer;
   color: var(--fg3);
-  font-size: 16px;
+  font-size: var(--type-s);
   user-select: none;
   list-style: none;
 }
@@ -1384,7 +1401,7 @@ details.feed-entry {
 /* The fold marker: a quiet triangle that turns with the section. */
 .feed-run-summary::before {
   content: '▶';
-  font-size: 12px;
+  font-size: var(--type-s);
   transition: rotate 120ms ease;
 }
 
@@ -1518,7 +1535,7 @@ details.feed-entry {
 .peek-command {
   margin: 0;
   color: var(--fg);
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1528,14 +1545,14 @@ details.feed-entry {
 .peek-step {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--accent);
 }
 
 .peek-text {
   margin: 0;
   color: var(--fg);
-  font-size: 22px;
+  font-size: var(--type-m);
   font-weight: 500;
   line-height: 1.3;
   display: -webkit-box;
@@ -1562,7 +1579,7 @@ details.feed-entry {
   gap: 4px;
   align-self: center;
   color: var(--fg3);
-  font-size: 16px;
+  font-size: var(--type-s);
   flex: none;
 }
 
@@ -1597,7 +1614,7 @@ details.feed-entry {
 
 .settings-index h1 {
   margin: 0 0 30px 16px;
-  font-size: 40px;
+  font-size: var(--type-l);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fgh);
@@ -1605,7 +1622,7 @@ details.feed-entry {
 
 .settings-index-group {
   margin: 6px 0 10px 16px;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1628,7 +1645,7 @@ details.feed-entry {
   background: transparent;
   color: var(--fg2);
   font: inherit;
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -1646,7 +1663,7 @@ details.feed-entry {
 .settings-index-number {
   width: 22px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -1687,7 +1704,7 @@ details.feed-entry {
 .settings-group {
   margin: 0;
   padding: 26px 0 6px;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1744,7 +1761,7 @@ details[open] > .settings-summary::before {
 
 .settings-section h2 {
   margin: 0;
-  font-size: 26px;
+  font-size: var(--type-m);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--fgh);
@@ -1754,7 +1771,7 @@ details[open] > .settings-summary::before {
   min-width: 0;
   overflow: hidden;
   color: var(--fg2);
-  font-size: 18px;
+  font-size: var(--type-s);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1775,7 +1792,7 @@ details[open] > .settings-summary::before {
 /* A part of a long section (the Weight section's People, Scale, card and pop-up). */
 .settings-subhead {
   margin: 22px 0 6px;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1811,7 +1828,7 @@ details[open] > .settings-summary::before {
 }
 
 .settings-label {
-  font-size: 18px;
+  font-size: var(--type-s);
   line-height: 1.35;
   color: var(--fg2);
 }
@@ -1831,7 +1848,7 @@ details[open] > .settings-summary::before {
   background: var(--surface);
   color: var(--fgh);
   font: inherit;
-  font-size: 18px;
+  font-size: var(--type-s);
 }
 
 .settings-field select {
@@ -1926,7 +1943,7 @@ details[open] > .settings-summary::before {
 .settings-note {
   max-width: 1000px;
   margin: 2px 0 14px;
-  font-size: 16px;
+  font-size: var(--type-s);
   line-height: 1.5;
   color: var(--fg3);
 }
@@ -1972,7 +1989,7 @@ details[open] > .settings-summary::before {
   gap: 12px;
   padding: 10px 12px;
   border-radius: calc(var(--radius) - 4px);
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fgh);
   cursor: pointer;
 }
@@ -1983,7 +2000,7 @@ details[open] > .settings-summary::before {
 
 .city-picker-where {
   overflow: hidden;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1991,14 +2008,14 @@ details[open] > .settings-summary::before {
 
 .city-picker-note {
   padding: 10px 12px;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
 /* A status line: green when what it names is working, coral when it is not. */
 .settings-role-status {
   margin: 0 0 12px;
-  font-size: 17px;
+  font-size: var(--type-s);
   color: var(--ok);
 }
 
@@ -2027,7 +2044,7 @@ details[open] > .settings-summary::before {
   padding: 0 8px 0 18px;
   border: 1px solid var(--hair);
   border-radius: var(--radius);
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fgh);
 }
 
@@ -2039,7 +2056,7 @@ details[open] > .settings-summary::before {
   background: none;
   color: var(--fg3);
   font: inherit;
-  font-size: 16px;
+  font-size: var(--type-s);
   cursor: pointer;
 }
 
@@ -2072,7 +2089,7 @@ details[open] > .settings-summary::before {
 
 .settings-section[aria-label='environment'] .settings-field:not(:has(.settings-env-key)) .settings-label {
   font-family: ui-monospace, monospace;
-  font-size: 16px;
+  font-size: var(--type-s);
   overflow-wrap: anywhere;
 }
 
@@ -2098,7 +2115,7 @@ details[open] > .settings-summary::before {
 .settings-status {
   flex: 1;
   color: var(--ok);
-  font-size: 16px;
+  font-size: var(--type-s);
 }
 
 .settings-card-row {
@@ -2115,7 +2132,7 @@ details[open] > .settings-summary::before {
   background: transparent;
   color: var(--fgh);
   font: inherit;
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 500;
   cursor: pointer;
   transition: background 120ms ease;
@@ -2154,7 +2171,7 @@ details[open] > .settings-summary::before {
 
 .settings-loading {
   padding: 28px 36px;
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fg2);
 }
 
@@ -2229,7 +2246,7 @@ details[open] > .settings-summary::before {
   right: 24px;
   bottom: 16px;
   z-index: 3;
-  font-size: 16px;
+  font-size: var(--type-s);
   pointer-events: none;
 }
 
@@ -2312,7 +2329,7 @@ details[open] > .settings-summary::before {
 .idle-kicker,
 .idle-line-kicker {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -2330,7 +2347,7 @@ details[open] > .settings-summary::before {
 
 .idle-note-words {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
   text-align: center;
@@ -2393,7 +2410,7 @@ details[open] > .settings-summary::before {
 
 .idle-date {
   margin: 4px 0 0;
-  font-size: 26px;
+  font-size: var(--type-m);
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--fg2);
@@ -2419,7 +2436,12 @@ details[open] > .settings-summary::before {
 .idle-clock-block--split .idle-date,
 .idle-timer-sub {
   margin-top: 2px;
-  font-size: 22px;
+  font-size: var(--type-m);
+}
+
+/* The Timer's line is the longer at 24 px and wrapped under a 12-hour end time (#436): a secondary line, it drops to 16. */
+.idle-timer-sub {
+  font-size: var(--type-s);
 }
 
 .idle-clock-rule {
@@ -2528,11 +2550,12 @@ details[open] > .settings-summary::before {
   align-items: center;
   gap: 12px;
   flex: none;
-  margin: 18px 0 22px;
+  /* columns.ts LINES_TOP and LINES_BOTTOM: the room the 65 px Voice Prompt line took (#436). */
+  margin: 0;
 }
 
 .idle-clock-row--timer + .idle-lines {
-  margin-top: 30px;
+  margin-top: 8px;
 }
 
 .idle-line {
@@ -2547,7 +2570,7 @@ details[open] > .settings-summary::before {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg2);
   white-space: nowrap;
   -webkit-app-region: no-drag;
@@ -2582,7 +2605,22 @@ button.idle-line {
   box-shadow: none;
 }
 
+/* The first Clock Line (#436): the Idle Screen's status item, at 65 px, one
+   line high in every phase (columns.ts VOICE_LINE_PX); what else will be
+   heard, typing, is its quiet tail. */
+.idle-voice {
+  height: 80px;
+}
+
 .idle-voice-hint {
+  font-size: var(--type-xl);
+  line-height: 80px;
+  letter-spacing: -0.01em;
+  color: var(--fg3);
+}
+
+.idle-voice-more {
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -2632,7 +2670,7 @@ button.idle-line {
   color: var(--fg);
   caret-color: var(--accent);
   font: inherit;
-  font-size: 40px;
+  font-size: var(--type-l);
 }
 
 .idle-prompt-input:focus {
@@ -2650,13 +2688,13 @@ button.idle-line {
   margin: 0;
   padding: 28px 40px;
   box-shadow: inset 6px 0 0 var(--accent);
-  font-size: 28px;
+  font-size: var(--type-m);
   line-height: 1.3;
 }
 
 .idle-prompt-said {
   color: var(--fg3);
-  font-size: 22px;
+  font-size: var(--type-m);
 }
 
 .idle-prompt-answer {
@@ -2677,7 +2715,7 @@ button.idle-line {
   padding: 18px 40px;
   background: var(--raise);
   color: var(--fg3);
-  font-size: 20px;
+  font-size: var(--type-m);
   letter-spacing: 0.04em;
 }
 
@@ -2690,10 +2728,11 @@ button.idle-line {
 .idle-voice-said {
   flex: 0 1 auto !important;
   min-width: 0;
-  max-width: 440px;
+  /* What LISTENING at 65 px leaves of the 720 px line (#436). */
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fgh);
 }
@@ -2719,8 +2758,11 @@ button.idle-line {
 
 .idle-voice-state {
   font-family: var(--font-mono);
+  /* The ear's state is the line's status item (#436): 65 px, as at rest. */
+  font-size: var(--type-xl);
+  line-height: 80px;
   font-weight: 500;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
 }
@@ -2795,7 +2837,7 @@ button.idle-line {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -2810,7 +2852,7 @@ button.idle-line {
   gap: 10px;
   min-height: 22px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -2840,9 +2882,10 @@ button.idle-line {
 .idle-music-title {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 32px;
+  font-size: var(--type-l);
   font-weight: 600;
-  line-height: 38px;
+  /* Inter's glyphs stand 1.21 em: a shorter line box spills them under the clamp. */
+  line-height: 49px;
   letter-spacing: -0.01em;
   color: var(--fgh);
   -webkit-line-clamp: 2;
@@ -2851,7 +2894,7 @@ button.idle-line {
 
 .idle-music-card--small .idle-music-title {
   display: block;
-  font-size: 26px;
+  font-size: var(--type-m);
   line-height: 32px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2864,22 +2907,23 @@ button.idle-line {
   text-overflow: ellipsis;
 }
 
+/* The title's two 40 px lines took 22 px of the card's fixed top (#436): its secondary lines gave them, at 16 px, and the column its gaps. */
 .idle-music-channel {
-  font-size: 21px;
-  line-height: 26px;
+  font-size: var(--type-s);
+  line-height: 22px;
 }
 
 .idle-music-next {
   margin-top: auto;
-  font-size: 18px;
-  line-height: 24px;
+  font-size: var(--type-s);
+  line-height: 20px;
   color: var(--fg3);
 }
 
 .idle-music-next-label {
   margin-right: 6px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -2896,7 +2940,7 @@ button.idle-line {
 .idle-music-time {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 20px;
+  font-size: var(--type-m);
   color: var(--fg2);
 }
 
@@ -2990,7 +3034,7 @@ button.idle-line {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 600;
   color: var(--fgh);
 }
@@ -3061,7 +3105,7 @@ button.idle-line {
   border-radius: 50%;
   background: var(--accent);
   color: var(--onaccent);
-  font-size: 16px;
+  font-size: var(--type-s);
   line-height: 1;
 }
 
@@ -3210,7 +3254,7 @@ button.idle-line {
 
 .usage-ring-name {
   margin-top: 12px;
-  font-size: 18px;
+  font-size: var(--type-s);
   white-space: nowrap;
 }
 
@@ -3229,7 +3273,7 @@ button.idle-line {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 16px;
+  font-size: var(--type-s);
   white-space: nowrap;
 }
 
@@ -3252,7 +3296,7 @@ button.idle-line {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   white-space: nowrap;
 }
@@ -3297,7 +3341,7 @@ button.idle-line {
   padding: 14px 28px 12px 28px;
   border-top: 1px solid var(--hair);
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -3437,7 +3481,7 @@ button.idle-line {
 .usage-card-foot {
   padding: 0 28px 16px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   text-align: right;
 }
@@ -3467,7 +3511,7 @@ button.idle-line {
 .idle-popup-place .weighin-popup-mark {
   width: 64px;
   height: 64px;
-  font-size: 34px;
+  font-size: var(--type-l);
 }
 
 .idle-popup-place .weighin-popup-kg {
@@ -3483,7 +3527,7 @@ button.idle-line {
 
 .idle-popup-place .weighin-popup-sub {
   margin-top: 18px;
-  font-size: 24px;
+  font-size: var(--type-m);
 }
 
 .idle-popup-place .weighin-popup--live .weighin-popup-sub {
@@ -3504,7 +3548,7 @@ button.idle-line {
 }
 
 .idle-popup-place .weighin-popup-chip {
-  font-size: 22px;
+  font-size: var(--type-m);
 }
 
 /* ---- the weather, down the left: now, the coming hours, the coming days ---- */
@@ -3559,7 +3603,7 @@ button.idle-line {
 }
 
 .wx-cond-words {
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 600;
   line-height: 1.15;
   color: var(--fgh);
@@ -3569,7 +3613,7 @@ button.idle-line {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   white-space: nowrap;
 }
@@ -3578,7 +3622,7 @@ button.idle-line {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 600;
   color: var(--rain);
   white-space: nowrap;
@@ -3587,7 +3631,7 @@ button.idle-line {
 /* "peak today": which rain this is, beside the coming hours' "rain by". */
 .wx-cond-rain-words {
   margin-left: -2px;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 500;
   color: var(--fg3);
 }
@@ -3630,7 +3674,7 @@ button.idle-line {
   height: 62px;
   margin-top: 16px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -3707,13 +3751,13 @@ button.idle-line {
   flex-direction: column;
   gap: 3px;
   padding-bottom: 4px;
-  font-size: 16px;
+  font-size: var(--type-s);
   line-height: 1.25;
   color: var(--fg3);
 }
 
 .wx-peak-by {
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
 }
@@ -3737,7 +3781,7 @@ button.idle-line {
 
 .wx-hours-chart text {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   fill: var(--fg3);
 }
 
@@ -3787,7 +3831,7 @@ button.idle-line {
 
 .wx-hours-chart .wx-temp-label {
   font-family: InterVariable, system-ui, sans-serif;
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 600;
 }
 
@@ -3808,13 +3852,13 @@ button.idle-line {
 }
 
 .wx-days-name {
-  font-size: 26px;
+  font-size: var(--type-m);
   font-weight: 600;
   color: var(--fgh);
 }
 
 .wx-days-rain {
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--rainq);
 }
 
@@ -3907,13 +3951,13 @@ button.idle-line {
   gap: 3px;
   min-width: 0;
   padding-bottom: 4px;
-  font-size: 16px;
+  font-size: var(--type-s);
   line-height: 1.25;
   color: var(--fg3);
 }
 
 .idle-cal-month {
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
   white-space: nowrap;
@@ -3955,7 +3999,7 @@ button.idle-line {
 }
 
 .idle-cal-weekday {
-  font-size: 16px;
+  font-size: var(--type-s);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg3);
@@ -3975,7 +4019,7 @@ button.idle-line {
   z-index: 0;
   height: 50px;
   line-height: 50px;
-  font-size: 22px;
+  font-size: var(--type-m);
   color: var(--fg2);
 }
 
@@ -4036,7 +4080,7 @@ button.idle-line {
 .idle-cal-entry-when {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -4044,7 +4088,7 @@ button.idle-line {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 20px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fgh);
 }
@@ -4115,7 +4159,7 @@ button.idle-line {
 .weight-card-change--flat { color: var(--fg2); }
 
 .weight-card-change--none {
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 500;
   color: var(--fg3);
 }
@@ -4126,13 +4170,13 @@ button.idle-line {
   align-items: flex-end;
   gap: 2px;
   margin-left: auto;
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   white-space: nowrap;
 }
 
 .weight-card-name {
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 600;
   color: var(--person-name, var(--fgh));
 }
@@ -4153,7 +4197,7 @@ button.idle-line {
   gap: 12px;
   padding-left: 52px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
   white-space: nowrap;
 }
@@ -4226,7 +4270,7 @@ button.idle-line {
   align-items: center;
   gap: 16px;
   margin: 30px 0 0;
-  font-size: 28px;
+  font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
 }
@@ -4281,7 +4325,7 @@ button.idle-line {
   background: none;
   color: inherit;
   font: inherit;
-  font-size: 1.2rem;
+  font-size: var(--type-m);
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
@@ -4309,7 +4353,7 @@ button.idle-line {
 }
 
 .idle-repo-gain-label {
-  font-size: 1rem;
+  font-size: var(--type-s);
   color: var(--fg2);
 }
 
@@ -4339,7 +4383,7 @@ button.idle-line {
 
 .idle-repo-name {
   overflow: hidden;
-  font-size: 1.35rem;
+  font-size: var(--type-m);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4361,7 +4405,7 @@ button.idle-line {
 .idle-repo-line {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 1rem;
+  font-size: var(--type-s);
   line-height: 1.3;
   color: color-mix(in srgb, var(--fg) 82%, var(--fg2));
   -webkit-box-orient: vertical;
@@ -4371,7 +4415,7 @@ button.idle-line {
 .idle-repo-foot {
   display: flex;
   gap: 18px;
-  font-size: 1rem;
+  font-size: var(--type-s);
   color: var(--fg2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -4415,7 +4459,7 @@ button.idle-line {
   align-items: center;
   gap: 14px;
   min-height: 40px;
-  font-size: 21px;
+  font-size: var(--type-m);
   font-weight: 600;
   color: var(--fgh);
   cursor: pointer;
@@ -4424,7 +4468,7 @@ button.idle-line {
 .usage-set-plan,
 .usage-set-hint {
   color: var(--fg2);
-  font-size: 17px;
+  font-size: var(--type-s);
   font-weight: 400;
 }
 
@@ -4441,7 +4485,7 @@ button.idle-line {
 }
 
 .usage-set-col {
-  font-size: 16px;
+  font-size: var(--type-s);
   letter-spacing: 0.08em;
   color: var(--fg3);
   text-align: center;
@@ -4452,7 +4496,7 @@ button.idle-line {
   gap: 8px;
   align-items: baseline;
   min-width: 0;
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fgh);
 }
 
@@ -4570,7 +4614,7 @@ button.idle-line {
   display: grid;
   place-items: center;
   color: var(--fg3);
-  font-size: 16px;
+  font-size: var(--type-s);
 }
 
 .weight-chart-x {
@@ -4578,7 +4622,7 @@ button.idle-line {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--type-s);
   color: var(--fg3);
 }
 
@@ -4629,7 +4673,7 @@ button.idle-line {
 }
 
 .weight-page .settings-section > h2 {
-  font-size: 30px;
+  font-size: var(--type-m);
 }
 
 .weight-page .settings-section > .settings-note {
@@ -4648,7 +4692,7 @@ button.idle-line {
 
 .weight-page-title {
   margin: 0;
-  font-size: 40px;
+  font-size: var(--type-l);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fgh);
@@ -4662,7 +4706,7 @@ button.idle-line {
 
 .weight-latest-when {
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: var(--type-m);
   font-weight: 400;
   color: var(--fg2);
 }
@@ -4693,7 +4737,7 @@ button.idle-line {
 }
 
 .weight-figure-label {
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -4758,7 +4802,7 @@ button.idle-line {
 
 .weight-history-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: var(--type-m);
 }
 
 /* A segmented switch: the span of the charts, or which Person the page shows. */
@@ -4779,7 +4823,7 @@ button.idle-line {
   background: transparent;
   color: var(--fg2);
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 500;
   cursor: pointer;
 }
@@ -4792,7 +4836,7 @@ button.idle-line {
 
 .weight-people .weight-range {
   font-family: inherit;
-  font-size: 20px;
+  font-size: var(--type-m);
 }
 
 .weight-people .weight-range--on {
@@ -4822,7 +4866,7 @@ button.idle-line {
 }
 
 .weight-chart-figure figcaption {
-  font-size: 22px;
+  font-size: var(--type-m);
   font-weight: 600;
   color: var(--fgh);
 }
@@ -4833,7 +4877,7 @@ button.idle-line {
   margin-top: 20px;
   border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: 19px;
+  font-size: var(--type-s);
   font-variant-numeric: tabular-nums;
   color: var(--fgh);
 }
@@ -4843,7 +4887,7 @@ button.idle-line {
   border-top: 1px solid var(--hair);
   border-bottom: 1px solid var(--hair);
   font-family: InterVariable, system-ui, sans-serif;
-  font-size: 16px;
+  font-size: var(--type-s);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-align: right;
@@ -4892,7 +4936,7 @@ button.idle-line {
   background: none;
   color: var(--fgh);
   font-family: InterVariable, system-ui, sans-serif;
-  font-size: 16px;
+  font-size: var(--type-s);
   cursor: pointer;
 }
 
@@ -4930,7 +4974,7 @@ button.idle-line {
 
 .settings-scale-address {
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: var(--type-s);
   color: var(--fgh);
 }
 
@@ -4984,7 +5028,7 @@ button.idle-line {
   background: var(--raise);
   color: var(--fgh);
   font: inherit;
-  font-size: 18px;
+  font-size: var(--type-s);
   font-weight: 600;
   cursor: pointer;
 }
@@ -5002,7 +5046,7 @@ button.idle-line {
   border-radius: 50%;
   border: 3px solid var(--track);
   color: var(--bg);
-  font-size: 24px;
+  font-size: var(--type-m);
   font-weight: 700;
 }
 
@@ -5050,7 +5094,7 @@ button.idle-line {
 }
 
 .weighin-popup-sub {
-  font-size: 18px;
+  font-size: var(--type-s);
   color: var(--fg2);
   white-space: nowrap;
   overflow: hidden;

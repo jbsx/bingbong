@@ -54,7 +54,7 @@ function LastChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
   const size = Math.abs(Math.round(change * 100) / 100)
   const direction = size < 0.05 ? 'flat' : change < 0 ? 'down' : 'up'
   return (
-    <span className={`weight-card-change weight-card-change--${direction}`} aria-label={`${direction === 'down' ? 'down' : direction === 'up' ? 'up' : 'flat'} ${size.toFixed(2)} kg ${SINCE_LAST}`}>
+    <span className={`weight-card-change weight-card-change--${direction}`} data-display aria-label={`${direction === 'down' ? 'down' : direction === 'up' ? 'up' : 'flat'} ${size.toFixed(2)} kg ${SINCE_LAST}`}>
       {direction === 'flat' ? '±0' : `${direction === 'down' ? '▼' : '▲'} ${size.toFixed(2)}`}
     </span>
   )
@@ -110,7 +110,7 @@ export function WeightCard({
           return (
             <div key={person.id} className="weight-card-row weight-card-line" {...tapProps(person, latest, onOpen)}>
               <span className="weight-card-name">{person.name}</span>
-              <span className="weight-card-kg">
+              <span className="weight-card-kg" data-display>
                 {formatKg(latest.kg)}
                 <small> kg</small>
               </span>
@@ -131,7 +131,7 @@ export function WeightCard({
         return (
           <div key={person.id} className="weight-card-row" {...tapProps(person, latest, onOpen)}>
             <div className="weight-card-figures">
-              <span className="weight-card-kg">
+              <span className="weight-card-kg" data-display>
                 {formatKg(latest.kg)}
                 <small> kg</small>
               </span>
