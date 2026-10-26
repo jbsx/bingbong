@@ -334,13 +334,9 @@ async function createWindow(): Promise<BrowserWindow> {
     width: 1280,
     height: 800,
     title: 'Bing Bong',
-    // The appliance commitment (ADR 0012): no OS title bar, no window
-    // buttons — the renderer's Toolbar band is the drag region, Alt+F4
-    // closes.
-    titleBarStyle: 'hidden',
-    // Transparent windowed, opaque kiosk (#426, see windowFrame). The
-    // renderer reads the same flag and the layout is pixel-identical to
-    // windowed (ADR 0012).
+    // Frameless and transparent windowed, framed and opaque kiosk (#426,
+    // see windowFrame). The renderer reads the same flag and the layout is
+    // pixel-identical to windowed (ADR 0012).
     ...windowFrame(launchConfig, paneBackgroundColor()),
     webPreferences: {
       preload: resolvePreloadPath(join(__dirname, '../preload')),

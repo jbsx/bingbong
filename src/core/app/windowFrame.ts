@@ -8,13 +8,23 @@ import type { LaunchConfig } from './launchConfig'
 // own ground, so nothing shows through.
 //
 // Kiosk = fullscreen appliance (ADR 0012), which has no border to hide, so
-// it is opaque: on X11 with no compositor a transparent window takes an ARGB
-// visual and Chromium blends the whole screen with alpha every frame. An
-// opaque window shows its backgroundColor (white by default) until the
-// renderer's first paint, so the kiosk takes the theme's ground for it.
+// it is opaque. Opaque takes more than `transparent: false`: a frameless
+// window on Linux (titleBarStyle 'hidden') draws its own client-side frame
+// shadow, and whenever a compositing manager runs (picom on the kiosk)
+// Electron gives it a 32-bit ARGB visual anyway, so the compositor blends
+// the whole screen with alpha. Measured under Xvfb + picom (#426): frameless
+// and `transparent: false` is Depth 32; framed is Depth 24, with or without
+// the compositor; `hasShadow: false` and --disable-transparent-visuals stay
+// 32. So the kiosk keeps the OS frame, which fullscreen hides. An opaque
+// window shows its backgroundColor (white by default) until the renderer's
+// first paint, so the kiosk takes the theme's ground for it.
+//
+// Windowed: no OS title bar or window buttons, the renderer's Toolbar band
+// is the drag region and Alt+F4 closes (ADR 0012).
 
 export interface WindowFrame {
   transparent: boolean
+  titleBarStyle?: 'hidden'
   backgroundColor?: string
   fullscreen?: boolean
   autoHideMenuBar?: boolean
@@ -23,5 +33,5 @@ export interface WindowFrame {
 export function windowFrame(config: Pick<LaunchConfig, 'kiosk'>, ground: string): WindowFrame {
   return config.kiosk
     ? { transparent: false, backgroundColor: ground, fullscreen: true, autoHideMenuBar: true }
-    : { transparent: true }
+    : { transparent: true, titleBarStyle: 'hidden' }
 }

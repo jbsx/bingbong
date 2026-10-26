@@ -10,6 +10,11 @@ frame insets and came up 8 px wider than the screen (x −4), so kiosk sat
 ~4 px off windowed; main now holds a fullscreen window's content on its display
 (`holdFullscreenFit`), and the Toolbar pins capsule, address cluster and
 controls to their columns, so the settings page keeps the controls right.
+Amended by #426: the kiosk window keeps the OS frame (fullscreen hides it)
+and is opaque on the theme's ground; only the windowed window is
+frameless. On X11 under a compositor a frameless window takes a 32-bit ARGB
+visual whatever `transparent` says, so the compositor blended the whole
+kiosk screen.
 
 ## Context
 
@@ -44,7 +49,7 @@ DOM compositing would reintroduce the live-page reflow it exists to prevent.
   Capsule (orb + pill + run/voice hints collapsed into one control) on the
   left, navigation and the address field in the center, feed/settings
   toggles on the right. The "Bing Bong" title is deleted everywhere.
-- **Hidden title bar, no window buttons.** `titleBarStyle: 'hidden'`; the
+- **Hidden title bar, no window buttons.** `titleBarStyle: 'hidden'` (windowed; the kiosk is framed and fullscreen, #426); the
   Toolbar is the window's drag region (interactive controls opt out), and
   the idle screen carries an invisible top drag strip. Alt+F4 closes — the
   appliance commitment.
