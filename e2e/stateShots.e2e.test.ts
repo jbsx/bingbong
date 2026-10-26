@@ -101,6 +101,8 @@ const CHECK_SCRIPT = `(() => {
     const capsule = hint.closest('.status-capsule, .idle-status') ?? hint.parentElement
     const outer = capsule.getBoundingClientRect()
     const pad = getComputedStyle(capsule)
+    const pill = capsule.querySelector('.status-pill')
+    if (pill !== null && pill.getBoundingClientRect().right > outer.right - parseFloat(pad.paddingRight) + 1) issues.push('state word out of the Capsule: ' + name(pill))
     const tail = hint.querySelector('.run-hint-tail')
     const box = tail === null ? null : tail.getBoundingClientRect()
     if (box === null || box.width <= 1) { issues.push('run hint without its seconds: ' + name(hint)); continue }
