@@ -1,0 +1,7 @@
+{
+  "id": "goal-14-chart-shot-and-caption",
+  "transcript": "Take a screenshot of this chart and copy the text under it.",
+  "start": "a page with a chart and a caption (a Wikipedia article or a news graphic)",
+  "meant": "a screenshot on the Shelf and the caption text on the clipboard",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

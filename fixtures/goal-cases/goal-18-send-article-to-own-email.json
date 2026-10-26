@@ -1,0 +1,7 @@
+{
+  "id": "goal-18-send-article-to-own-email",
+  "transcript": "Send this article to my own email.",
+  "start": "an article page",
+  "meant": "an email to the owner's own address with the article's link, after the owner said yes; if no mail road is open, ask back",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

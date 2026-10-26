@@ -1,0 +1,7 @@
+{
+  "id": "goal-12-f1-timer",
+  "transcript": "Look up when the next Formula 1 race is and set a timer for an hour before it starts.",
+  "start": "any page",
+  "meant": "the next race's start said and a Timer set to end an hour before it; ask back if the race is more than a day away",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

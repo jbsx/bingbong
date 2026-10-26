@@ -1,0 +1,7 @@
+{
+  "id": "goal-11-playwright-install-to-clipboard",
+  "transcript": "Search for the Playwright install command and copy it to the clipboard.",
+  "start": "any page",
+  "meant": "the docs' install command on the clipboard, said aloud",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

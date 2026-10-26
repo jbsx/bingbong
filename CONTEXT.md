@@ -105,7 +105,7 @@ its last line names what it looked for. It searches each site at most
 once. Capped at five actions; ended by the next Utterance, Escape or the
 Abort Head like any Command; never confirmed. A first reading of `none`
 is followed by a Where Ask before the line ends.
-_Avoid_: plan, goal, intent, errand, run, session
+_Avoid_: plan, goal, intent, run, session (an outcome carried across Tasks is an Errand)
 
 **Step**:
 One Command's words of a line the Decision Model read as two or more,
@@ -114,6 +114,36 @@ as its own Task in order, on the page the last one left, and a later Step
 runs only after the earlier ended done. A line the grammar settles whole
 is never Steps; a line is split only once it is whole, never on a partial.
 _Avoid_: sub-task, chain, plan, sequence
+
+**Errand**:
+One spoken outcome the appliance carries across as many Tasks and hops as
+it takes, with a memory: the Goal Line, the steps done, what was captured,
+the last card. Driven by the Planner, never by the Decision Model, which
+reads one card at a time and keeps no memory past "Done so far". Bounded
+by seconds said aloud, not by a count of actions; an action whose effect
+leaves the appliance (post, send, pay, delete, submit) is said back and
+waits for yes; one question may be asked back when the Planner is unsure.
+Ended by the next Utterance, Escape or the Abort Head like a Task. A Task
+that ends not done hands its record to an Errand instead of saying it
+could not finish. Where the Planner enters is measured, never argued
+(ADR 0095, #464).
+_Avoid_: plan, task chain, session, agent run
+
+**Goal Line**:
+An Utterance that names an outcome rather than a verb and a target
+("comment that this is great on this video", "find me a cheaper one of
+these"). The grammar never settles one; whether it becomes an Errand or a
+Task is the routing, measured on the goal corpus (`fixtures/goal-cases/`).
+_Avoid_: intent, complex command, multi-step command
+
+**Planner**:
+The model that drives an Errand: it sees the same card the Decision Model
+sees plus the page read in parts and the Errand's memory, reasons, and
+names the next action, its class (whether its effect leaves the
+appliance) and when the Errand is done. A chat model behind an
+OpenAI-compatible endpoint, routed by env like the Decision Model, under
+the appliance's own rate limit. The Decision Model is never the Planner.
+_Avoid_: orchestrator, agent, reasoning model
 
 **Appliance Verb**:
 A ref-less option on the action card that acts on the appliance itself,
@@ -161,6 +191,13 @@ muted, loop, rate when not 1, captions when a track is showing or every
 track is off, buffering, failed, and its Player Switches — and "Done so
 far" tells what an op changed. Several media refs each carry their own.
 _Avoid_: capability (for these), control, command (for the op itself)
+
+**Capture**:
+An op a ref carries because of its kind, text or image (`capture-N`): it
+puts the ref's text or image on the Shelf as a file and on the clipboard,
+on any site. The payload an Errand's next step reads; on the Decision
+Model's card too, so "copy this" is one hop.
+_Avoid_: copy op, clipboard op, extract
 
 **Player Switch**:
 An on/off control that belongs to one media element's player: a button

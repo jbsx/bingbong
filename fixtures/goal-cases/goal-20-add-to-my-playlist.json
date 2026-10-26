@@ -1,0 +1,7 @@
+{
+  "id": "goal-20-add-to-my-playlist",
+  "transcript": "Add this to my playlist.",
+  "start": "a YouTube watch page",
+  "meant": "the Planner asks back which playlist when more than one is offered; with one, adds to it",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "goal-16-reply-source",
+  "transcript": "Reply to Elon's latest tweet with \"source?\".",
+  "start": "any page",
+  "meant": "a reply reading exactly: source? on the newest post of x.com/elonmusk, after the owner said yes to the confirm; a sign-in wall is a wall",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

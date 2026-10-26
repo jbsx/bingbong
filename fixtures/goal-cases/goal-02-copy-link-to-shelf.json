@@ -1,0 +1,7 @@
+{
+  "id": "goal-02-copy-link-to-shelf",
+  "transcript": "Copy the link to this video and put it on the Shelf.",
+  "start": "a YouTube watch page",
+  "meant": "the watch URL as a file on the Shelf and on the clipboard; nothing sent",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}

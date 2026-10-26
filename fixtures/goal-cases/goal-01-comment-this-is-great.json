@@ -1,0 +1,7 @@
+{
+  "id": "goal-01-comment-this-is-great",
+  "transcript": "Comment \"this is great\" on this video.",
+  "start": "a YouTube watch page",
+  "meant": "a comment reading exactly: this is great, posted under the video, after the owner said yes to the confirm",
+  "source": "owner, confirmed 2026-10-26 (#464)"
+}
