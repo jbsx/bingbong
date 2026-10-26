@@ -6,5 +6,6 @@
   "stage": "stt",
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Read this song.' (the meant word is a guess: 'Repeat this song', said between two restarts and after a loop); Jev read read and the page was read out",
   "meant": "Repeat the song playing (a guess from the lines around it)",
-  "log": "decision-1793008066207-1.jsonl"
+  "log": "decision-1793008066207-1.jsonl",
+  "claimedBy": "#456"
 }

@@ -6,5 +6,6 @@
   "stage": "missing_option",
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: 'Go back to home page.' after two 'Go to Idle Screen' misses: Jev read back, which hit the wall 'cannot go back: the page before is the blank start page'. The home meant is the Idle Screen, which no option offers",
   "meant": "Bring the Idle Screen back over the pane",
-  "log": "decision-1793008066207-1.jsonl"
+  "log": "decision-1793008066207-1.jsonl",
+  "claimedBy": "#458"
 }
