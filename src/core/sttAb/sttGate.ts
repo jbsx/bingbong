@@ -65,7 +65,7 @@ export interface SttGateVerdict {
   readonly gained: readonly SttGateRow[]
 }
 
-const wordsOf = (said: string): number => said.split(/\s+/).filter((word) => word !== '').length
+const wordCount = (said: string): number => said.split(/\s+/).filter((word) => word !== '').length
 
 /** The run read against its labels and the kept run. */
 export function judgeGate(rows: readonly SttGateRow[], baseline: SttBaseline): SttGateVerdict {
@@ -76,7 +76,7 @@ export function judgeGate(rows: readonly SttGateRow[], baseline: SttBaseline): S
   })
   return {
     rows,
-    words: rows.reduce((sum, row) => sum + wordsOf(row.said), 0),
+    words: rows.reduce((sum, row) => sum + wordCount(row.said), 0),
     errors: rows.reduce((sum, row) => sum + row.errors, 0),
     exact: rows.filter((row) => row.errors === 0).length,
     changed,

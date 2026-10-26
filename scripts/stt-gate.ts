@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // `pnpm stt:gate [--only a.wav,b.wav] [--keyterms app|none|<file>] [--keep]
-// [--baseline <file>] [--concurrency n]` (#471): every labelled dump in
+// [--baseline <file>] [--dumps <dir>] [--labels <file>] [--concurrency n]`
+// (#471): every labelled dump in
 // `fixtures/stt-dumps/` heard again by the cloud ear with the keyterms the
 // app would build for it — the logged list where the dump's label has one,
 // else the corpus' Learned Terms and the grammar's heads — scored by word
@@ -55,15 +56,14 @@ if (apiKey === '') {
 }
 const corpusAsLabelled = JSON.parse(readFileSync(labelsFile, 'utf8')) as SttCorpus
 // The arm: the app's keyterms, none, or one fixed list asked of every dump (a logged list on a label still wins: it is what was asked live).
+const fixedList: readonly string[] | null = keytermsArm === 'app' ? null : keytermsArm === 'none' ? [] : (JSON.parse(readFileSync(keytermsArm, 'utf8')) as string[])
 const corpus: SttCorpus =
-  keytermsArm === 'app'
+  fixedList === null
     ? corpusAsLabelled
     : {
         ...corpusAsLabelled,
         learned: [],
-        labels: Object.fromEntries(
-          Object.entries(corpusAsLabelled.labels).map(([file, label]) => [file, { ...label, keyterms: label.keyterms ?? (keytermsArm === 'none' ? [] : (JSON.parse(readFileSync(keytermsArm, 'utf8')) as string[])) }]),
-        ),
+        labels: Object.fromEntries(Object.entries(corpusAsLabelled.labels).map(([file, label]) => [file, { ...label, keyterms: label.keyterms ?? fixedList }])),
       }
 const heads = keytermsArm === 'app' ? commandHeads() : []
 const baseline: SttBaseline = existsSync(baselineFile) ? (JSON.parse(readFileSync(baselineFile, 'utf8')) as SttBaseline) : {}

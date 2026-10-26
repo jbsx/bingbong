@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CLOUD_KEYTERM_LIMIT, CLOUD_KEYTERM_MAX_CHARS, cloudKeyterms, keytermPageTerm } from './cloudKeyterms'
+import { CLOUD_KEYTERM_LIMIT, CLOUD_KEYTERM_MAX_CHARS, cloudKeyterms, worthKeytermSlot } from './cloudKeyterms'
 import { commandHeads } from './commandLexicon'
 
 // The cloud ear's keyterm budget (#471): the Learned Terms, then the
@@ -69,9 +69,9 @@ describe('cloudKeyterms', () => {
   })
 })
 
-describe('keytermPageTerm', () => {
+describe('worthKeytermSlot', () => {
   it('keeps a name and drops a bare number, a count, a clock time and a single short word', () => {
-    for (const kept of ['coke studio bharat', 'niyam 2', '320 comments', 'youtube', 'barsaat', 'mkbhd', 'leave']) expect(keytermPageTerm(kept)).toBe(true)
-    for (const dropped of ['3', '17k', '4:18', '17,814', '1.5x', 'sign', 'save', 'turn', 'mix']) expect(keytermPageTerm(dropped)).toBe(false)
+    for (const kept of ['coke studio bharat', 'niyam 2', '320 comments', 'youtube', 'barsaat', 'mkbhd', 'leave']) expect(worthKeytermSlot(kept)).toBe(true)
+    for (const dropped of ['3', '17k', '4:18', '17,814', '1.5x', 'sign', 'save', 'turn', 'mix']) expect(worthKeytermSlot(dropped)).toBe(false)
   })
 })

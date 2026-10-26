@@ -28,7 +28,7 @@ const COUNT_WORD_RE = /^[\d.,:]+[a-z]{0,2}$/
  * five-letter line is a guess: the measured arm had no Page Term slot
  * left to tell, and `pnpm stt:gate` is where it would.
  */
-export function keytermPageTerm(term: string): boolean {
+export function worthKeytermSlot(term: string): boolean {
   const words = term.split(' ')
   if (words.every((word) => COUNT_WORD_RE.test(word))) return false
   return words.length > 1 || term.length >= 5
@@ -39,7 +39,7 @@ export function keytermPageTerm(term: string): boolean {
  * boosted set is the Page Terms (ADR 0077), the plain one the Bias Lexicon
  * — the Seed Lexicon's terms and the Learned Terms after them, told apart
  * by the seed. The Learned Terms, then the heads, then the Page Terms that
- * pass {@link keytermPageTerm}, cut at the cap from the end.
+ * pass {@link worthKeytermSlot}, cut at the cap from the end.
  */
 export function cloudKeyterms(bias: readonly string[] | readonly BiasPhraseSet[], seed: ReadonlySet<string>, heads: readonly string[]): string[] {
   const sets: readonly BiasPhraseSet[] = bias.length > 0 && typeof bias[0] === 'string' ? [{ phrases: bias as readonly string[] }] : (bias as readonly BiasPhraseSet[])
@@ -48,7 +48,7 @@ export function cloudKeyterms(bias: readonly string[] | readonly BiasPhraseSet[]
   const learned = lexicon.filter((term) => !seed.has(term))
   const terms: string[] = []
   const seen = new Set<string>()
-  for (const raw of [...learned, ...heads, ...page.filter(keytermPageTerm)]) {
+  for (const raw of [...learned, ...heads, ...page.filter(worthKeytermSlot)]) {
     const term = raw.trim()
     const key = term.toLowerCase()
     if (term === '' || term.length > CLOUD_KEYTERM_MAX_CHARS || seen.has(key)) continue
