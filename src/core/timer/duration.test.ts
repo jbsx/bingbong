@@ -66,7 +66,7 @@ describe('firstNumber', () => {
     expect(firstNumber(text)).toBe(number)
   })
 
-  it.each(['', 'turn it up a bit', 'an hour', 'one point five', 'one and a half', 'three quarters', '1.5'])('names no whole number in %j', (text) => {
+  it.each(['', 'turn it up a bit', 'an hour', 'one point five', 'one and a half', 'three quarters', '1.5', 'the third video', 'the second half'])('names no whole number in %j', (text) => {
     expect(firstNumber(text)).toBeNull()
   })
 })

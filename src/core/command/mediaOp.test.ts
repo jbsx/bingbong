@@ -54,6 +54,10 @@ describe('rateLevel', () => {
     ['double speed', 2],
     ['half speed', 0.5],
     ['two times speed', 2],
+    ['speed point five', 0.5],
+    ['2 point 5 speed', 2.5],
+    ['play the second half at 1.5x', 1.5],
+    ['play the third video at 2x', 2],
   ])('sets %j to %d', (words, rate) => {
     expect(rateLevel('to', words, FACTS)).toBe(rate)
   })
@@ -79,7 +83,7 @@ describe('secondsInWords', () => {
     expect(secondsInWords(words)).toBe(seconds)
   })
 
-  it('names no length in words with no number', () => {
-    expect(secondsInWords('skip ahead a bit')).toBeNull()
+  it.each(['skip ahead a bit', 'skip ahead a few seconds', 'skip to the third minute'])('names no length in %j', (words) => {
+    expect(secondsInWords(words)).toBeNull()
   })
 })

@@ -52,7 +52,10 @@ const ONES: Readonly<Record<string, number>> = {
 
 const TENS: Readonly<Record<string, number>> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 }
 
-/** The parts of one: "half", "three quarters", "two thirds". */
+/**
+ * The parts of one, read after a count or an article ("three quarters", "a
+ * third"); alone they are ordinals ("the third video"), save "half".
+ */
 const FRACTIONS: Readonly<Record<string, number>> = { half: 1 / 2, halves: 1 / 2, third: 1 / 3, thirds: 1 / 3, quarter: 1 / 4, quarters: 1 / 4 }
 
 const isArticle = (word: string | undefined): boolean => word === 'a' || word === 'an'
@@ -60,11 +63,15 @@ const isArticle = (word: string | undefined): boolean => word === 'a' || word ==
 /** Words a spoken length carries between its parts: "an hour and a half", "five minutes and ten seconds". */
 const FILLERS: ReadonlySet<string> = new Set(['and', 'of', 'for'])
 
-/** A number read off the words: its value, the index after it, and whether it was only an article ("a minute"). */
-export interface NumberRead {
-  readonly value: number
-  readonly next: number
-  readonly article: boolean
+type Read = { readonly value: number; readonly next: number }
+
+/**
+ * A number read off the words: its value, the index after it, and whether
+ * it was a word alone that is a number only before a unit — an article ("a
+ * minute") or "half" ("half an hour", but "the second half").
+ */
+export interface NumberRead extends Read {
+  readonly alone: boolean
 }
 
 /**
@@ -83,7 +90,7 @@ export function numberWords(text: string): string[] {
 }
 
 /** Under a hundred in words: "seven", "nineteen", "forty", "twenty five". */
-function underHundredAt(words: readonly string[], at: number): { value: number; next: number } | null {
+function underHundredAt(words: readonly string[], at: number): Read | null {
   const tens = TENS[words[at] ?? '']
   if (tens !== undefined) {
     const ones = ONES[words[at + 1] ?? '']
@@ -102,8 +109,8 @@ function scaledAt(
   words: readonly string[],
   at: number,
   scale: 'hundred' | 'thousand',
-  part: (words: readonly string[], at: number) => { value: number; next: number } | null,
-): { value: number; next: number } | null {
+  part: (words: readonly string[], at: number) => Read | null,
+): Read | null {
   const head = isArticle(words[at]) && words[at + 1] === scale ? { value: 1, next: at + 1 } : part(words, at)
   if (head === null || words[head.next] !== scale) return head
   const value = head.value * (scale === 'hundred' ? 100 : 1000)
@@ -113,11 +120,11 @@ function scaledAt(
 }
 
 /** A whole number in words, to the thousands: "twelve hundred", "a hundred and five", "two thousand five hundred". */
-const wholeAt = (words: readonly string[], at: number): { value: number; next: number } | null =>
+const wholeAt = (words: readonly string[], at: number): Read | null =>
   scaledAt(words, at, 'thousand', (inner, from) => scaledAt(inner, from, 'hundred', underHundredAt))
 
 /** Digits said one by one after "point": "five", "seven five"; null for none. */
-function decimalsAt(words: readonly string[], at: number): { value: number; next: number } | null {
+function decimalsAt(words: readonly string[], at: number): Read | null {
   let digits = ''
   let next = at
   for (; next < words.length; next += 1) {
@@ -133,43 +140,45 @@ function decimalsAt(words: readonly string[], at: number): { value: number; next
  * The number at the head of the words, in digits or as it is said: whole
  * ("twenty five", "a hundred", "two thousand five hundred"), a decimal
  * ("1.5", "one point five", "zero point seven five") or a part of one
- * ("half", "three quarters", "one and a half"). A lone article is 1,
- * flagged, since "a minute" is one and "turn it up a bit" is none. Null
- * when no number starts there.
+ * ("a half", "three quarters", "one and a half"). A lone article is 1 and
+ * a lone "half" a half, both flagged `alone`, since "a minute" is one and
+ * "turn it up a bit" is none. Null when no number starts there.
  */
 export function numberAt(words: readonly string[], at: number): NumberRead | null {
   const word = words[at]
   if (word === undefined) return null
-  if (/^\d+(\.\d+)?$/.test(word)) return { value: Number(word), next: at + 1, article: false }
-  const part = FRACTIONS[word]
-  if (part !== undefined) return { value: part, next: at + 1, article: false }
+  if (/^\d+\.\d+$/.test(word)) return { value: Number(word), next: at + 1, alone: false }
+  // "point five": a decimal with no whole before it.
+  const bare = word === 'point' ? decimalsAt(words, at + 1) : null
+  if (bare !== null) return { ...bare, alone: false }
+  if (word === 'half') return { value: 1 / 2, next: at + 1, alone: true }
   const articlePart = isArticle(word) ? FRACTIONS[words[at + 1] ?? ''] : undefined
-  if (articlePart !== undefined) return { value: articlePart, next: at + 2, article: false }
-  const whole = wholeAt(words, at)
-  if (whole === null) return isArticle(word) ? { value: 1, next: at + 1, article: true } : null
-  // "one point five": the digits after the point.
+  if (articlePart !== undefined) return { value: articlePart, next: at + 2, alone: false }
+  const whole = /^\d+$/.test(word) ? { value: Number(word), next: at + 1 } : wholeAt(words, at)
+  if (whole === null) return isArticle(word) ? { value: 1, next: at + 1, alone: true } : null
+  // "one point five", "2 point 5": the digits after the point.
   if (words[whole.next] === 'point') {
     const decimals = decimalsAt(words, whole.next + 1)
-    if (decimals !== null) return { value: whole.value + decimals.value, next: decimals.next, article: false }
+    if (decimals !== null) return { value: whole.value + decimals.value, next: decimals.next, alone: false }
   }
   // "three quarters": a count of a part.
   const parts = FRACTIONS[words[whole.next] ?? '']
-  if (parts !== undefined) return { value: whole.value * parts, next: whole.next + 1, article: false }
+  if (parts !== undefined) return { value: whole.value * parts, next: whole.next + 1, alone: false }
   // "one and a half", "one and three quarters": a whole and a part.
   if (words[whole.next] === 'and') {
     const after = numberAt(words, whole.next + 1)
-    if (after !== null && !after.article && after.value > 0 && after.value < 1) return { value: whole.value + after.value, next: after.next, article: false }
+    if (after !== null && after.value > 0 && after.value < 1) return { value: whole.value + after.value, next: after.next, alone: false }
   }
-  return { value: whole.value, next: whole.next, article: false }
+  return { ...whole, alone: false }
 }
 
 /**
- * Where a unit follows a number: past "of a" after a part of one ("half an
- * hour", "three quarters of an hour"), else right after it.
+ * The index a unit sits at after a number: past "of a" after a part of one
+ * ("half an hour", "three quarters of an hour"), else right after it.
  */
-export function unitAfter(words: readonly string[], number: NumberRead): number {
+export function unitAt(words: readonly string[], number: NumberRead): number {
   let next = number.next
-  if (number.value >= 1 || number.article) return next
+  if (number.value >= 1) return next
   if (words[next] === 'of') next += 1
   return isArticle(words[next]) ? next + 1 : next
 }
@@ -185,7 +194,7 @@ export function firstNumber(text: string, options: { readonly fractions?: boolea
   let at = 0
   while (at < words.length) {
     const found = numberAt(words, at)
-    if (found === null || found.article) {
+    if (found === null || found.alone) {
       at += 1
       continue
     }
@@ -240,10 +249,10 @@ export function parseDuration(text: string): number | null {
     }
     const number = numberAt(words, at)
     if (number === null) return null
-    const next = unitAfter(words, number)
+    const next = unitAt(words, number)
     const unit = UNITS[words[next] ?? '']
     // "an hour and a half", "a minute and a quarter": a part of the unit just named.
-    if (unit === undefined && lastUnit !== null && !number.article && number.value < 1 && next === number.next) {
+    if (unit === undefined && lastUnit !== null && number.value < 1 && next === number.next) {
       total += number.value * lastUnit
       at = next
       continue

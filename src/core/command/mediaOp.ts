@@ -1,7 +1,7 @@
 import type { DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import { MEDIA_OPS, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
-import { firstNumber, numberAt, numberWords, unitAfter } from '../timer/duration'
+import { firstNumber, numberAt, numberWords, unitAt } from '../timer/duration'
 
 export { AMOUNT_RUNGS, LEVEL_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 
@@ -224,18 +224,19 @@ export function secondsInWords(words: string): number | null {
       at += 1
       continue
     }
-    // The unit right after the number, or one word on ("thirty more seconds") when the number is said, not an article.
-    const unitAt = unitAfter(tokens, number)
-    const reach = UNITS[tokens[unitAt] ?? ''] === undefined && !number.article && numberAt(tokens, unitAt) === null ? unitAt + 1 : unitAt
-    const unit = UNITS[tokens[reach] ?? '']
+    // The unit right after the number, or one word on ("thirty more seconds") when the number is said, not a word alone.
+    const right = unitAt(tokens, number)
+    const oneOn = !number.alone && UNITS[tokens[right] ?? ''] === undefined && numberAt(tokens, right) === null
+    const unitIndex = oneOn ? right + 1 : right
+    const unit = UNITS[tokens[unitIndex] ?? '']
     if (unit !== undefined) {
       total = (total ?? 0) + number.value * unit
       lastUnit = unit
-      at = reach + 1
+      at = unitIndex + 1
       continue
     }
     // "a minute and a half": a part of the unit just named.
-    if (lastUnit !== null && tokens[at - 1] === 'and' && !number.article && number.value < 1) total = (total ?? 0) + number.value * lastUnit
+    if (lastUnit !== null && tokens[at - 1] === 'and' && number.value < 1) total = (total ?? 0) + number.value * lastUnit
     at = number.next
   }
   return total ?? firstNumber(words, { fractions: true })
@@ -278,12 +279,13 @@ const byNumber = (words: string): number | null => {
   return by === null ? null : firstNumber(by[1]!)
 }
 
-/** The level a speed's words carry: a number (1 is normal, "2x" is double, "one point five", "half"), or normal or double; null for none. */
+/** The level a speed's words carry: a number (1 is normal, "2x" is double, "one point five"), or normal, double or half; null for none. */
 function rateInWords(words: string): number | null {
   const rate = firstNumber(words.replace(/(\d)x\b/gi, '$1'), { fractions: true })
   if (rate !== null && rate > 0 && rate <= 16) return rate
   if (/\bnormal\b/i.test(words)) return 1
   if (/\bdouble\b/i.test(words)) return 2
+  if (/\bhalf\b/i.test(words)) return 0.5
   return null
 }
 
