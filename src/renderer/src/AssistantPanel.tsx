@@ -4,6 +4,7 @@ import { runProgressParts, type RunProgress } from '../../core/pipeline/runProgr
 import { stageWord } from '../../core/pipeline/stageWords'
 import type { TaskProgress } from '../../core/pipeline/taskProgress'
 import { earWaitParts } from '../../core/voice/voicePrompt'
+import { EAR_FAILED } from '../../core/voice/voiceHint'
 
 /**
  * The Task's progress bar (#375): a track along the capsule's foot that
@@ -43,6 +44,8 @@ const PILL_LABELS: Record<OrbStatus, string> = {
   idle: 'Ready',
   // The ear cannot hear yet (#442): never "Ready" while speaking would go unheard.
   starting: 'Starting…',
+  // The ear did not start (#447): the wait's outcome, no ellipsis — nothing more is coming.
+  earFailed: EAR_FAILED,
   thinking: 'Thinking…',
   acting: 'Acting…',
   loading: 'Loading…',
@@ -58,7 +61,7 @@ const PILL_LABELS: Record<OrbStatus, string> = {
  */
 export function capsuleTone(status: OrbStatus): 'ready' | 'working' | 'listening' | 'stopped' {
   // A starting ear is not live (#442): quiet, as Ready is, so the accent never marks an ear that cannot hear.
-  if (status === 'idle' || status === 'starting') return 'ready'
+  if (status === 'idle' || status === 'starting' || status === 'earFailed') return 'ready'
   if (status === 'cancelled') return 'stopped'
   if (status === 'listening') return 'listening'
   return 'working'

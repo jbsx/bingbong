@@ -27,7 +27,7 @@ export interface MainVoice {
  * The bias union getter (ADR 0022) rides through to the decoder.
  */
 export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () => BiasInput, sttElsewhere?: Transcriber): Promise<MainVoice> {
-  const vad: VadScorer = config.vadScript ? createScriptedVad(config.vadScript, config.vadLoadMs) : await createSileroVad({ modelPath: config.vadModel })
+  const vad: VadScorer = config.vadScript ? createScriptedVad(config.vadScript, config.vadLoadMs, config.vadLoadFails === true) : await createSileroVad({ modelPath: config.vadModel })
   const transcriber = sttElsewhere ?? createMainVoiceTranscriber(config, getBiasPhrases)
   const turn: TurnDetector = config.turnScript
     ? createScriptedTurn(config.turnScript)

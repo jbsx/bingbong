@@ -21,6 +21,18 @@ export const REST_HINT_WAKE = '“Bing Bong”'
 export const REST_HINT_MORE = 'or start typing'
 export const REST_HINT = `${REST_HINT_SAY} ${REST_HINT_WAKE} ${REST_HINT_MORE}`
 
+/**
+ * The cold start's failed outcome (#447, principles 2 and 9): what did not
+ * start and what to do, on every surface — speaking is not heard, typing
+ * is, and a restart loads the ear again. The Idle Screen sets the two
+ * halves apart, as it does "Microphone off".
+ */
+export const EAR_FAILED = 'Ear did not start'
+export const EAR_FAILED_MORE = 'type, or restart'
+export const EAR_FAILED_LINE = `${EAR_FAILED} — ${EAR_FAILED_MORE}`
+/** The same, said aloud — only to a wake that came in while the words loaded (#442 ruling 3). */
+export const EAR_FAILED_SPOKEN = 'The ear did not start. Type, or restart the app.'
+
 export interface VoiceHintInput {
   transcribing: boolean
   listening: boolean
@@ -37,7 +49,7 @@ export interface VoiceHintInput {
 }
 
 export interface VoiceHint {
-  kind: 'listening' | 'monitoring' | 'result' | 'starting' | 'transcribing'
+  kind: 'listening' | 'monitoring' | 'result' | 'starting' | 'failed' | 'transcribing'
   text: string
 }
 
@@ -46,6 +58,9 @@ export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolea
   const phase = earPhase(voice)
   const now = options.now ?? Date.now()
   if (phase === 'starting' || phase === 'transcribing') return { kind: phase, text: earWaitLine(phase, voice, now) }
+  // The wait has ended (#447): no count, the outcome and the next thing to do.
+  // The pill says what did not start (#331: never twice); the hint, what to do.
+  if (phase === 'failed') return { kind: 'failed', text: EAR_FAILED_MORE }
   if (voice.listening) {
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
   }

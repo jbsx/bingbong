@@ -136,12 +136,12 @@ export function App() {
   // thinking — never claim the ear is open while it works.
   // A cold ear outranks the ear's own states (#442), and a line it holds outranks a Command; a typed Command's stage still shows while the ear loads.
   const ear = earPhase(voice)
-  const status = ear === 'starting' && (voice.transcribing || assistant.status === 'idle') ? 'starting' : voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  const status = ear === 'starting' && (voice.transcribing || assistant.status === 'idle') ? 'starting' : ear === 'failed' && assistant.status === 'idle' ? 'earFailed' : voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
   // Never go idle over a running command, an open mic, the STT window, or
   // the settings page — the timer must not unmount a form mid-edit. Once
   // up, the Idle Screen stays up through them until something wakes it.
   // A cold ear is no activity: the Idle Screen comes up over it and says so (#442).
-  const quiet = (status === 'idle' || status === 'starting') && !voice.listening && !voice.transcribing
+  const quiet = (status === 'idle' || status === 'starting' || status === 'earFailed') && !voice.listening && !voice.transcribing
   const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current)
   idleUp.current = showIdle
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries

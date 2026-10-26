@@ -7,6 +7,7 @@ import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import type { VoiceSession } from '../../core/voice/voiceSession'
 import { createVoiceChainClient, type ChainBias, type ChainModelLoad, type VoiceChainClient, type VoiceChainEvents, type VoiceChainLink } from '../../core/voice/voiceChain'
 import { createEarState, type EarLoads } from '../../core/voice/earState'
+import { EAR_FAILED_SPOKEN } from '../../core/voice/voiceHint'
 import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { forwardFault, reportFault } from '../../core/trace/fault'
@@ -104,6 +105,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     if (told.changed) publishState()
     // The cold start is said aloud only to a wake that came in while the words loaded (owner ruling 3, #442).
     if (told.sayReady) void deps.tts.speak('I’m ready').catch((error: unknown) => reportFault('voice.attachVoice.ready', error))
+    // A failed load ends that wait the same way (#447): said only where "I'm ready" would have been.
+    if (told.sayFailed) void deps.tts.speak(EAR_FAILED_SPOKEN).catch((error: unknown) => reportFault('voice.attachVoice.failed', error))
   }
   const session = createVoiceChainClient<VoiceProcessConfig>({
     start: deps.startVoiceProcess,

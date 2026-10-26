@@ -9,7 +9,7 @@ import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } from '../../core/idle/timeFormat'
 import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
-import { REST_HINT_MORE, REST_HINT_SAY, REST_HINT_WAKE } from '../../core/voice/voiceHint'
+import { EAR_FAILED, EAR_FAILED_MORE, REST_HINT_MORE, REST_HINT_SAY, REST_HINT_WAKE } from '../../core/voice/voiceHint'
 import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
 import type { EarLoading } from '../../core/voice/ipcChannels'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
@@ -180,7 +180,7 @@ export interface IdleVoice {
 }
 
 // Hearing keeps the pill's word (#441): the said-line's "…" is what changes when speech starts.
-const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { starting: 'Starting', listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
+const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off' | 'failed'>, string> = { starting: 'Starting', listening: 'Listening', hearing: 'Listening', transcribing: 'Transcribing' }
 
 /**
  * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb and the
@@ -193,15 +193,20 @@ const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off'>, string> = { starting: 
  * cannot hear yet it is `STARTING`, the ear loading and its seconds, and
  * never invites speech; a line it took before it can read is `STARTING`
  * too, with its words (#442). A wait draws no waveform: the line's room
- * goes to its seconds.
+ * goes to its seconds. A load that failed ends the wait (#447): what did
+ * not start and what to do, set as "Microphone off" is, the count gone.
  */
 export function VoiceLine({ voice }: { voice: IdleVoice }) {
   const phase = earPhase(voice)
   const taking = phase === 'starting' || phase === 'listening' || phase === 'hearing' || phase === 'transcribing'
   return (
-    <div className={`idle-line idle-voice idle-voice--${phase}`} role="status" aria-label={taking ? EAR_WORD[phase] : phase === 'off' ? 'microphone off' : 'waiting for the wake word'}>
+    <div className={`idle-line idle-voice idle-voice--${phase}`} role="status" aria-label={taking ? EAR_WORD[phase] : phase === 'off' ? 'microphone off' : phase === 'failed' ? 'ear did not start' : 'waiting for the wake word'}>
       <span className="idle-voice-orb" aria-hidden="true" />
-      {phase === 'off' ? (
+      {phase === 'failed' ? (
+        <>
+          <span className="idle-voice-hint">{EAR_FAILED}</span> <span className="idle-voice-more">— {EAR_FAILED_MORE}</span>
+        </>
+      ) : phase === 'off' ? (
         <>
           <span className="idle-voice-hint">Microphone off</span> <span className="idle-voice-more">— start typing</span>
         </>
@@ -219,7 +224,7 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
           <span className="idle-voice-more">{REST_HINT_MORE}</span>
         </>
       )}
-      {phase !== 'off' && phase !== 'starting' && phase !== 'transcribing' ? (
+      {phase !== 'off' && phase !== 'failed' && phase !== 'starting' && phase !== 'transcribing' ? (
         <>
           <span className="idle-line-sep" aria-hidden="true" />
           <VoiceWave bars={6} />
@@ -458,7 +463,7 @@ function useFitZoom(): number {
  * The ear's own states are the Voice Prompt's to say.
  */
 function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProgress | null }) {
-  if (status === 'idle' || status === 'starting' || status === 'listening' || status === 'transcribing') return null
+  if (status === 'idle' || status === 'starting' || status === 'earFailed' || status === 'listening' || status === 'transcribing') return null
   return (
     <div className="status-capsule idle-status">
       <StatusOrb status={status} />

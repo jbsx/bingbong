@@ -1,10 +1,10 @@
 import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { REST_HINT } from '../src/core/voice/voiceHint'
+import { EAR_FAILED, EAR_FAILED_LINE, EAR_FAILED_MORE, REST_HINT } from '../src/core/voice/voiceHint'
 import { colourFloor } from './colourFloor'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
@@ -73,9 +73,22 @@ const CHECK_SCRIPT = `(() => {
     const words = (el.value || el.placeholder || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40)
     return cls + ' "' + words + '"'
   }
+  const contentWidth = (el) => el.clientWidth - parseFloat(getComputedStyle(el).paddingLeft) - parseFloat(getComputedStyle(el).paddingRight)
   // The glance surface (#436): every status item at 65 px, read from 2 m.
   for (const el of document.querySelectorAll('.status-pill, .run-hint, .idle-voice-hint, .idle-voice-state, .voice-prompt-state')) {
-    if (el.getBoundingClientRect().width > 1 && parseFloat(getComputedStyle(el).fontSize) < 65) issues.push('status under 65 px (' + getComputedStyle(el).fontSize + '): ' + name(el))
+    // The panel's TRANSCRIBING steps down to 40 px where 65 px would not fit its width (#447): the panel only, never the Idle Screen or the Toolbar.
+    const floor = el.matches('.voice-prompt--transcribing .voice-prompt-state') && contentWidth(el.closest('.voice-prompt')) <= 540 ? 40 : 65
+    if (el.getBoundingClientRect().width > 1 && parseFloat(getComputedStyle(el).fontSize) < floor) issues.push('status under ' + floor + ' px (' + getComputedStyle(el).fontSize + '): ' + name(el))
+  }
+  // The panel's state word and a wait's seconds (#447): whole and inside the Voice Prompt's own box, at whatever width the panel is.
+  for (const el of document.querySelectorAll('.voice-prompt-state, .voice-prompt .ear-wait-tail')) {
+    const prompt = el.closest('.voice-prompt')
+    const box = el.getBoundingClientRect()
+    if (prompt === null || box.width <= 1) continue
+    const outer = prompt.getBoundingClientRect()
+    const pad = getComputedStyle(prompt)
+    if (box.right > outer.right - parseFloat(pad.paddingRight) + 1 || box.left < outer.left + parseFloat(pad.paddingLeft) - 1) issues.push('out of the Voice Prompt (' + Math.round(box.left) + '..' + Math.round(box.right) + ' in ' + Math.round(outer.left) + '..' + Math.round(outer.right) + '): ' + name(el))
+    if (el.getClientRects().length > 1 || box.height > parseFloat(getComputedStyle(el).fontSize) * 1.6) issues.push('broken across lines: ' + name(el))
   }
   // The type ladder (#436): four sizes on a surface, the display numerals (data-display) apart.
   const sizes = new Set()
@@ -143,11 +156,20 @@ interface Run {
   usage: UsageStandIn
   userDataDir: string
   theme: Theme
+  /** The theme, and the window's size when it is not the appliance's: what each shot's file and failures are named by. */
+  label: string
   /** Every state's failures, by state, asserted once the whole walk is shot. */
   issues: Map<string, string[]>
 }
 
-async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = []): Promise<Run> {
+/** A window size the walk runs at: the appliance's, or a laptop's (#447). */
+interface Size {
+  width: number
+  height: number
+}
+const APPLIANCE: Size = { width: WIDTH, height: HEIGHT }
+
+async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = [], size: Size = APPLIANCE): Promise<Run> {
   const fixture = await startFixtureServer()
   // The owner's two providers, so the Idle Screen's middle Column is laid out as on the appliance.
   const usage = await startUsageStandIn(2)
@@ -163,14 +185,15 @@ async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs
     env: { DISPLAY: screen?.display, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile(userDataDir), ...env },
   })
   // The window at the appliance's size: Electron has no Browser.setWindowBounds, the X server has.
-  onScreen(`xdotool search --onlyvisible --name '.*' windowmove %@ 0 0 windowsize %@ ${WIDTH} ${HEIGHT}`)
+  onScreen(`xdotool search --onlyvisible --name '.*' windowmove %@ 0 0 windowsize %@ ${size.width} ${size.height}`)
   const width = await waitFor(async () => {
     const inner = await harness.dashboardEval<number>('innerWidth')
-    return inner > WIDTH - 40 ? inner : undefined
+    return Math.abs(inner - size.width) < 40 ? inner : undefined
   }, { timeoutMs: 10_000, intervalMs: 100 }).catch(async () => harness.dashboardEval<number>('innerWidth'))
-  expect(width, 'the window at the appliance width').toBeGreaterThan(WIDTH - 40)
+  expect(Math.abs(width - size.width), `the window at ${size.width} px wide`).toBeLessThan(40)
   await sleep(800)
-  return { harness, fixture, usage, userDataDir, theme, issues: new Map() }
+  const label = size === APPLIANCE ? theme : `${theme}-${size.width}x${size.height}`
+  return { harness, fixture, usage, userDataDir, theme, label, issues: new Map() }
 }
 
 async function close(run: Run): Promise<void> {
@@ -188,7 +211,7 @@ const calendarFile = (userDataDir: string): string => join(userDataDir, 'calenda
 async function shoot(run: Run, state: string, rest = true): Promise<void> {
   await sleep(500)
   mkdirSync(OUT, { recursive: true })
-  onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.theme}-${state}.png`)}'`)
+  onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.label}-${state}.png`)}'`)
   const found: string[] = []
   const surfaces: [string, (expression: string) => Promise<string[]>][] = [
     ['dashboard', (expression) => run.harness.dashboardEval<string[]>(expression)],
@@ -495,8 +518,64 @@ async function walkTheEarWaits(run: Run): Promise<void> {
   await shoot(run, '38-transcribing-voice-prompt')
 }
 
+/**
+ * The ear's cold start ending in a fault (#447): the scripted VAD's load
+ * fails, and the Starting wait ends — on the Voice Prompt, the Capsule and
+ * the Idle Screen — with what did not start and what to do, the count
+ * gone, and the fault in the fault log.
+ */
+async function walkTheEarFailing(run: Run): Promise<void> {
+  const { harness } = run
+  const until = async (evaluate: (expression: string) => Promise<boolean>, expression: string, state: string): Promise<void> => {
+    await waitFor(async () => ((await evaluate(expression)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 }).catch(async (error: unknown) => {
+      await shoot(run, `no-${state}`)
+      throw error
+    })
+  }
+  const onDashboard = (expression: string): Promise<boolean> => harness.dashboardEval<boolean>(expression)
+  const onPanel = (expression: string): Promise<boolean> => harness.overlayEval<boolean>(expression)
+
+  await harness.ensurePanelOpen()
+  await until(onPanel, `document.querySelector('.voice-prompt-said')?.textContent === ${JSON.stringify(EAR_FAILED_LINE)}`, 'ear-failed')
+  expect.soft(await harness.overlayEval<boolean>(`!!document.querySelector('.ear-wait, .voice-prompt--starting')`), 'the Voice Prompt counts no more').toBe(false)
+  expect.soft(await harness.overlayEval<string>('document.body.innerText'), 'nothing in the panel invites speech').not.toMatch(/Bing Bong|\bsay\b/i)
+  await shoot(run, '39-ear-failed')
+  await clickPanel(run, '[aria-label="Collapse the feed panel"]')
+  await until(onDashboard, `!!document.querySelector('.voice-hint--failed')`, 'ear-failed-capsule')
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`), 'the Capsule says it too, never Ready').toBe(`${EAR_FAILED}${EAR_FAILED_MORE}`)
+  await shoot(run, '40-ear-failed-capsule')
+  await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+  await until(onDashboard, `!!document.querySelector('.idle-voice--failed')`, 'ear-failed-idle')
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`), 'and the Idle Voice Line, no count').toBe(EAR_FAILED_LINE)
+  await shoot(run, '41-ear-failed-idle')
+  // The outcome holds: nothing climbs back into a wait.
+  await sleep(2_000)
+  expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-voice--failed')`), 'the line holds').toBe(true)
+  const logs = join(run.userDataDir, 'logs')
+  const faults = (await readdir(logs)).filter((file) => file.startsWith('faults-'))
+  const records = (await Promise.all(faults.map((file) => readFile(join(logs, file), 'utf8')))).join('').split('\n').filter((line) => line.includes('"voice.ear.load"'))
+  expect.soft(records.length, 'the fault record is written').toBeGreaterThan(0)
+}
+
 function expectClean(run: Run): void {
-  for (const [state, issues] of run.issues) expect.soft(issues, `${run.theme} ${state}`).toEqual([])
+  for (const [state, issues] of run.issues) expect.soft(issues, `${run.label} ${state}`).toEqual([])
+}
+
+/**
+ * The ear's waits (#442): the wake, quiet in the open listen, a line (held behind the transcriber still loading),
+ * then about 15 s of quiet — the hold, and the dashboard woken — and a second line of the same Hot Listen, read slowly.
+ */
+const EAR_WAITS_ENV: Record<string, string> = {
+  BINGBONG_WAKE_ENGINE: 'node',
+  BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
+  BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 60), ...frames(SPEECH, 40), ...frames(QUIET, 466), ...frames(SPEECH, 40), QUIET]),
+  // The ear "loads" long enough to be read three ways, and the transcriber after it long enough to hold a line.
+  BINGBONG_VAD_LOAD_MS: '20000',
+  BINGBONG_STT_LOAD_MS: '15000',
+  BINGBONG_STT_SCRIPT: JSON.stringify([
+    { text: '', partials: ['what about'] },
+    { text: '', delayMs: 14_000, partials: ['zorblax the quux'] },
+  ]),
 }
 
 describe('the states screenshot review (#359)', () => {
@@ -523,25 +602,7 @@ describe('the states screenshot review (#359)', () => {
     }, 400_000)
 
     it(`shoots the ear's waits — starting, held behind its load, transcribing — in ${theme}`, async () => {
-      // Chromium's fake mic feeds frames at the mic's pace, one VAD score each, from the moment the ear is in:
-      // the wake, quiet in the open listen, a line (held behind the transcriber still loading), then about 15 s
-      // of quiet — the hold, and the dashboard woken — and a second line of the same Hot Listen, read slowly.
-      const run = await launch(
-        theme,
-        {
-          BINGBONG_WAKE_ENGINE: 'node',
-          BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
-          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 60), ...frames(SPEECH, 40), ...frames(QUIET, 466), ...frames(SPEECH, 40), QUIET]),
-          // The ear "loads" long enough to be read three ways, and the transcriber after it long enough to hold a line.
-          BINGBONG_VAD_LOAD_MS: '20000',
-          BINGBONG_STT_LOAD_MS: '15000',
-          BINGBONG_STT_SCRIPT: JSON.stringify([
-            { text: '', partials: ['what about'] },
-            { text: '', delayMs: 14_000, partials: ['zorblax the quux'] },
-          ]),
-        },
-        FAKE_MIC,
-      )
+      const run = await launch(theme, EAR_WAITS_ENV, FAKE_MIC)
       try {
         await walkTheEarWaits(run)
       } finally {
@@ -549,6 +610,17 @@ describe('the states screenshot review (#359)', () => {
         expectClean(run)
       }
     }, 200_000)
+
+    it(`shoots the ear failing to start in ${theme}`, async () => {
+      // The fake mic's first frames start the scripted VAD's load, which fails after it: the ear's cold start ending in a fault.
+      const run = await launch(theme, { BINGBONG_VAD_LOAD_MS: '3000', BINGBONG_VAD_LOAD_FAIL: '1' }, FAKE_MIC)
+      try {
+        await walkTheEarFailing(run)
+      } finally {
+        await close(run)
+        expectClean(run)
+      }
+    }, 120_000)
 
     it(`shoots the Voice Prompt taking an Utterance in ${theme}`, async () => {
       // Chromium's fake mic, as the ear's waits use; the ear "loads" until the walk has its page, so the VAD
@@ -575,4 +647,15 @@ describe('the states screenshot review (#359)', () => {
       }
     }, 200_000)
   }
+
+  // A laptop's window (#447): the panel's state word and the seconds held inside it at 1280×800 too; the theme moves no box.
+  it('shoots the ear\'s waits at 1280×800 in dark', async () => {
+    const run = await launch('dark', EAR_WAITS_ENV, FAKE_MIC, { width: 1280, height: 800 })
+    try {
+      await walkTheEarWaits(run)
+    } finally {
+      await close(run)
+      expectClean(run)
+    }
+  }, 200_000)
 })

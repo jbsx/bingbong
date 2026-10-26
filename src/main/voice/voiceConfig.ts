@@ -23,6 +23,8 @@ export interface VoiceConfig {
   turnScript?: string
   /** The scripted VAD's model load, in ms from its creation (e2e double, #442): the ear's cold start held for a shot. */
   vadLoadMs?: number
+  /** The scripted VAD's load fails once it is done (e2e double, BINGBONG_VAD_LOAD_FAIL, #447): the ear's cold start ending in a fault. */
+  vadLoadFails?: boolean
   /** The scripted transcriber's model load, in ms from its prepare (e2e double, #442): a line held behind it. */
   sttLoadMs?: number
 }
@@ -60,6 +62,7 @@ export function resolveVoiceConfig(
     vadScript: env.BINGBONG_VAD_SCRIPT?.trim() || undefined,
     turnScript: env.BINGBONG_TURN_SCRIPT?.trim() || undefined,
     vadLoadMs: msOf(env.BINGBONG_VAD_LOAD_MS),
+    ...(env.BINGBONG_VAD_LOAD_FAIL === '1' ? { vadLoadFails: true } : {}),
     sttLoadMs: msOf(env.BINGBONG_STT_LOAD_MS),
   }
 }

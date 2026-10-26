@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { VoicePartialEvent, VoiceState } from '../../../core/voice/ipcChannels'
 import { PAUSE_CAP_MS_DEFAULT } from '../../../core/settings/settings'
-import { REST_HINT } from '../../../core/voice/voiceHint'
+import { EAR_FAILED_LINE, REST_HINT } from '../../../core/voice/voiceHint'
 import { earPhase, partialSpans, quietLine, wordlessLine } from '../../../core/voice/voicePrompt'
 import { EarWait, VoiceWave } from '../AssistantPanel'
 import { useSettings } from '../useSettings'
@@ -53,8 +53,9 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
   const { settings } = useSettings()
   // The ear's real state (CONTEXT.md): waiting for the wake word, or the microphone off — said, not hidden.
   const ear = earPhase(state)
-  const phase = ear === 'off' ? 'rest' : ear
-  const earOff = ear === 'off'
+  // A failed ear (#447) is drawn as one switched off: the wait has ended, and the field says what did not start.
+  const phase = ear === 'off' || ear === 'failed' ? 'rest' : ear
+  const earOff = ear === 'off' || ear === 'failed'
   const live = phase === 'listening' || phase === 'hearing'
   // A wait (#442): the ear loading, a line it holds, or the words being read, named with its seconds.
   const waiting = phase === 'starting' || phase === 'transcribing'
@@ -66,7 +67,9 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
         ? quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT)
         : runActive
           ? 'Type a command'
-          : earOff
+          : ear === 'failed'
+            ? 'Type a command'
+            : earOff
             ? 'Microphone off — type a command'
             : REST_HINT
 
@@ -93,6 +96,11 @@ export function VoicePrompt({ runActive }: { runActive: boolean }) {
             {live ? <span className="voice-prompt-caret" aria-hidden="true" /> : null}
           </p>
         </>
+      ) : ear === 'failed' ? (
+        // The wait's outcome (#447), whole and in the said-line's place: a placeholder would be cut at the field's width.
+        <p className="voice-prompt-said voice-prompt-said--waiting" role="status">
+          {EAR_FAILED_LINE}
+        </p>
       ) : null}
       <div className="prompt-row">
         {phase === 'rest' ? <span className={`voice-orb${earOff ? ' voice-orb--off' : ''}`} aria-hidden="true" /> : null}

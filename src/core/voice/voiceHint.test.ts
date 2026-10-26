@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { REST_HINT, voiceHint } from './voiceHint'
+import { EAR_FAILED_LINE, REST_HINT, voiceHint } from './voiceHint'
 
 // The Status Capsule's voice hint (#331; the rule is in voiceHint.ts).
 
@@ -16,6 +16,12 @@ describe('voiceHint', () => {
 
   it('says the ear is loading, with its seconds, while it cannot hear yet — never the wake word (#442)', () => {
     expect(voiceHint({ ...quiet, monitoring: true, loading: 'ear', since: 1_000 }, { now: 4_000 })).toEqual({ kind: 'starting', text: 'loading the ear · 3s' })
+  })
+
+  it('ends the wait with what did not start and what to do, and no count, once a load fails (#447)', () => {
+    expect(EAR_FAILED_LINE).toBe('Ear did not start — type, or restart')
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'failed', since: 1_000 }, { now: 9_000 })).toEqual({ kind: 'failed', text: 'type, or restart' })
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'failed' }, { promptShown: true })).toBeNull()
   })
 
   it('leaves the waits to the Voice Prompt while it is on screen', () => {

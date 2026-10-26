@@ -37,17 +37,21 @@ export function partialSpans(text: string, terms: readonly string[]): PartialSpa
 }
 
 /** The ear's real state, as the Voice Prompt says it (CONTEXT.md). */
-export type EarPhase = 'starting' | 'rest' | 'listening' | 'hearing' | 'transcribing' | 'off'
+export type EarPhase = 'starting' | 'failed' | 'rest' | 'listening' | 'hearing' | 'transcribing' | 'off'
 
 /**
  * What the ear is doing: starting (#442) — open but unable to hear yet, or
- * holding a line it took until it can read it; open for an Utterance,
+ * holding a line it took until it can read it; failed (#447) — a model it
+ * hears or reads with did not load, the wait ended; open for an Utterance,
  * hearing one being spoken (#441), reading one it took, waiting for the
  * wake word (at rest), or nothing at all — the microphone off. Before main
  * has said, at rest.
  */
 export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; loading?: EarLoading } | null): EarPhase {
   if (voice === null) return 'rest'
+  // A model that did not load ends the wait (#447) open or shut — a monitor whose VAD threw has stopped itself, and is not a microphone switched off —
+  // unless a listen or a read is under way: with only the wake word failed, Ctrl+Space still opens an ear that hears.
+  if (voice.loading === 'failed' && !voice.listening && !voice.transcribing) return 'failed'
   // The models that hear load as the microphone opens: shut, it is off, not starting.
   if (voice.loading === 'ear' && (voice.listening || voice.transcribing || voice.monitoring)) return 'starting'
   // A line taken before the transcriber is in waits for it: still the ear's cold start, counted from the Endpoint.

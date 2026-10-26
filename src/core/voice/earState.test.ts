@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { VoiceState } from './ipcChannels'
 import { createEarState } from './earState'
 
@@ -28,10 +29,10 @@ describe('createEarState (#442)', () => {
     expect(ear.show(AT_REST)).not.toHaveProperty('loading')
   })
 
-  it('takes no failed load, and ignores the models the ear does not wait on', () => {
+  it('ignores the models the ear does not wait on, failed or not', () => {
     const ear = createEarState({ vad: true, wake: false, stt: false }, clock().now)
-    expect(ear.modelLoaded({ model: 'vad', failed: true }).changed).toBe(false)
     expect(ear.modelLoaded({ model: 'smart-turn', failed: false }).changed).toBe(false)
+    expect(ear.modelLoaded({ model: 'smart-turn', failed: true }).changed).toBe(false)
     expect(ear.show(AT_REST).loading).toBe('ear')
   })
 
@@ -77,5 +78,55 @@ describe('createEarState (#442)', () => {
     speaking.show(WOKEN)
     speaking.show({ ...WOKEN, hearing: true })
     expect(speaking.modelLoaded({ model: 'stt', failed: false }).sayReady).toBe(false)
+  })
+
+  describe('a load that faults (#447)', () => {
+    const faults: FaultReport[] = []
+    afterEach(() => {
+      setFaultSink(null)
+      faults.length = 0
+    })
+
+    it('ends the Starting wait with the ear failed, a new phase stamped, and a fault record written', () => {
+      setFaultSink((report) => faults.push(report))
+      const time = clock()
+      const ear = createEarState({ vad: true, wake: true, stt: true }, time.now)
+      expect(ear.show(AT_REST)).toMatchObject({ loading: 'ear', since: 1_000 })
+      time.advance(4_000)
+      expect(ear.modelLoaded({ model: 'vad', failed: true }).changed).toBe(true)
+      expect(ear.show(AT_REST)).toMatchObject({ loading: 'failed', since: 5_000 })
+      expect(faults).toEqual([expect.objectContaining({ kind: 'fault', site: 'voice.ear.load', message: expect.stringContaining('vad') })])
+      // The other models coming in do not hide that the ear cannot hear.
+      ear.modelLoaded({ model: 'wake', failed: false })
+      ear.modelLoaded({ model: 'stt', failed: false })
+      expect(ear.show(AT_REST).loading).toBe('failed')
+    })
+
+    it('ends it the same way for the wake word and the transcriber', () => {
+      for (const model of ['wake', 'stt']) {
+        const ear = createEarState({ vad: true, wake: true, stt: true }, clock().now)
+        ear.show(AT_REST)
+        expect(ear.modelLoaded({ model, failed: true }).changed).toBe(true)
+        expect(ear.show(AT_REST).loading).toBe('failed')
+      }
+    })
+
+    it('clears when a later retry of the failed model succeeds, back to what is still loading or to rest', () => {
+      const ear = createEarState({ vad: false, wake: false, stt: true }, clock().now)
+      ear.modelLoaded({ model: 'stt', failed: true })
+      expect(ear.show(AT_REST).loading).toBe('failed')
+      expect(ear.modelLoaded({ model: 'stt', failed: false }).changed).toBe(true)
+      expect(ear.show(AT_REST)).not.toHaveProperty('loading')
+    })
+
+    it('says the failure aloud only when a wake came in while the words loaded (owner ruling, #442 ruling 3)', () => {
+      const quiet = createEarState({ vad: false, wake: false, stt: true }, clock().now)
+      quiet.show(AT_REST)
+      expect(quiet.modelLoaded({ model: 'stt', failed: true })).toMatchObject({ sayFailed: false, sayReady: false })
+
+      const woken = createEarState({ vad: false, wake: false, stt: true }, clock().now)
+      woken.show(WOKEN)
+      expect(woken.modelLoaded({ model: 'stt', failed: true })).toMatchObject({ sayFailed: true, sayReady: false })
+    })
   })
 })

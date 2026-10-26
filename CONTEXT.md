@@ -653,7 +653,11 @@ until the models that hear are in — `loading the ear` and its seconds,
 the orb grey, never `Say "Bing Bong"`; a line taken after that but before
 the transcriber is in is held, `STARTING` with its words and the seconds
 since its Endpoint. Only a wake heard while the transcriber loaded hears
-"I'm ready" when it is in.
+"I'm ready" when it is in. A model that hears or reads that does not load
+ends the wait (#447): `Ear did not start — type, or restart`, no
+count, the orb grey, said aloud only where "I'm ready" would have been;
+a later load of it that succeeds clears the line. In the panel a state
+word wider than the panel, `TRANSCRIBING`, steps down to 40 px.
 _Avoid_: voice line (that is the Spoken Rendering), input box, omnibar
 
 **Feed**:
@@ -1349,7 +1353,8 @@ says the stage's word and the Feed's Run Detail the same words (#438). Past
 the first Hop the hint names the Hop, and the seconds are the stage's own. A
 stage that runs past its own bound, its p95 (#442), names its wait ("still
 thinking", "page still loading"). The ear's states lead the Command's:
-Starting while the ear cannot hear yet — quiet, never Ready — and
+Starting while the ear cannot hear yet — quiet, never Ready — or `Ear
+did not start` once it could not load, its hint what to do (#447), and
 Transcribing, each with its words and seconds in the hint. The screen never names the
 Decision Model (owner ruling 2026-10-25, #428). Its orb is the feed's assistant mark: one visual
 identity for "this is Bing Bong" — save that a failed Command's mark (the

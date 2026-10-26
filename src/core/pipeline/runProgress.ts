@@ -67,7 +67,7 @@ export function createRunProgressTracker(): {
 }
 
 /** The state the Status Capsule's pill names: the voice states outrank the Command's stage. */
-export type CapsuleStatus = 'idle' | 'starting' | 'listening' | 'transcribing' | PipelineStatus
+export type CapsuleStatus = 'idle' | 'starting' | 'earFailed' | 'listening' | 'transcribing' | PipelineStatus
 
 /**
  * What a Loading stage loads, as its detail (#442): the host of the

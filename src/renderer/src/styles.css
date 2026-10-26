@@ -2663,6 +2663,7 @@ button.idle-line {
 
 /* An ear that cannot hear yet (#442) is drawn as dead as one switched off: no accent until it is live. */
 .idle-voice--off .idle-voice-orb,
+.idle-voice--failed .idle-voice-orb,
 .idle-voice--starting .idle-voice-orb {
   background: var(--fg3);
   box-shadow: none;

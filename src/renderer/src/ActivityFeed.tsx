@@ -232,15 +232,15 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
   )
 }
 
-/** Whether the ear is starting (#442), as main says it: it cannot hear yet, so nothing here invites speech. */
-function useEarStarting(): boolean {
-  const [starting, setStarting] = useState(false)
+/** Whether the ear cannot hear (#442), as main says it — starting, or failed to start (#447) — so nothing here invites speech. */
+function useEarCannotHear(): boolean {
+  const [cannotHear, setCannotHear] = useState(false)
   useEffect(() => {
-    const apply = (state: Parameters<typeof earPhase>[0]): void => setStarting(earPhase(state) === 'starting')
+    const apply = (state: Parameters<typeof earPhase>[0]): void => setCannotHear(['starting', 'failed'].includes(earPhase(state)))
     void window.bingbong.voice.getState().then(apply)
     return window.bingbong.voice.onState(apply)
   }, [])
-  return starting
+  return cannotHear
 }
 
 export function ActivityFeed({
@@ -257,7 +257,7 @@ export function ActivityFeed({
   footer?: React.ReactNode
 }) {
   const listRef = useRef<HTMLDivElement>(null)
-  const earStarting = useEarStarting()
+  const earCannotHear = useEarCannotHear()
   const headline = headlineAnswerId(entries)
   // The Command being worked on: the newest one, while a run is live.
   const working = liveRunId == null ? null : (entries.findLast((entry) => entry.role === 'user')?.id ?? null)
@@ -275,7 +275,7 @@ export function ActivityFeed({
       </div>
       <div className="feed-list" ref={listRef} aria-live="polite">
         {/* The rest hint invites speech, so a cold ear blanks it (#442): the Voice Prompt below says why. */}
-        {entries.length === 0 && !earStarting ? <p className="feed-empty">{REST_HINT}</p> : null}
+        {entries.length === 0 && !earCannotHear ? <p className="feed-empty">{REST_HINT}</p> : null}
         {foldRuns(entries).map((item) =>
           item.item === 'run' ? (
             <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />

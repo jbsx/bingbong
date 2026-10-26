@@ -71,7 +71,7 @@ describe('wordlessLine', () => {
 })
 
 describe('earPhase at the cold start (#442)', () => {
-  const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>, loading?: 'ear' | 'words') => ({
+  const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>, loading?: 'ear' | 'words' | 'failed') => ({
     listening: open.listening ?? false,
     transcribing: open.transcribing ?? false,
     monitoring: open.monitoring ?? false,
@@ -93,6 +93,26 @@ describe('earPhase at the cold start (#442)', () => {
     expect(earPhase(ear({ listening: true, monitoring: true }, 'words'))).toBe('listening')
     expect(earPhase(ear({ transcribing: true, monitoring: true }, 'words'))).toBe('starting')
     expect(earPhase(ear({ transcribing: true, monitoring: true }))).toBe('transcribing')
+  })
+})
+
+describe('earPhase after a failed load (#447)', () => {
+  const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>) => ({
+    listening: open.listening ?? false,
+    transcribing: open.transcribing ?? false,
+    monitoring: open.monitoring ?? false,
+    hearing: false,
+    loading: 'failed' as const,
+  })
+
+  it('is failed, not starting, open or shut — the wait has ended, and a monitor stopped by the fault is no microphone switched off', () => {
+    expect(earPhase(ear({}))).toBe('failed')
+    expect(earPhase(ear({ monitoring: true }))).toBe('failed')
+  })
+
+  it('says a listen or a read under way as ever: a failed wake word leaves Ctrl+Space an ear that hears', () => {
+    expect(earPhase(ear({ listening: true, monitoring: true }))).toBe('listening')
+    expect(earPhase(ear({ transcribing: true }))).toBe('transcribing')
   })
 })
 

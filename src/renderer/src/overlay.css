@@ -163,6 +163,7 @@ body,
   flex: none;
   padding: 14px 16px 16px 20px;
   border-top: 1px solid var(--hair);
+  container: voice-prompt / inline-size;
 }
 
 /* The open ear is live; a read is a wait, counted, not tinted (#437, #442). */
@@ -218,6 +219,15 @@ body,
 /* Not live yet (#442): the accent is kept for an ear that hears. */
 .voice-prompt--starting .voice-prompt-state {
   color: var(--fg2);
+}
+
+/* TRANSCRIBING at 65 px is ~495 px of mono: wider than the default 536 px
+   panel holds. Below that the word steps down the ladder to 40 px, whole,
+   in the panel only (#447; measured against wrapping, which breaks it). */
+@container voice-prompt (max-width: 540px) {
+  .voice-prompt--transcribing .voice-prompt-state {
+    font-size: var(--type-l);
+  }
 }
 
 .voice-prompt-hint {
