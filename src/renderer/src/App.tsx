@@ -187,11 +187,8 @@ export function App() {
   if (showIdle) {
     // The Peek Card's Idle Screen form (#470): a failure or "No response." only, never while the Idle Prompt is open
     // (its own Answer says it), and the Weigh-in pop-up outranks it in the place they share.
-    const peekAnswer = peekCardAnswer(assistant.feed, peek.state.runId)
-    const idlePeek =
-      promptDraft === null && peek.state.runId !== idlePeekDismissed && peekCardOnIdleScreen(peek.state, peekAnswer) ? (
-        <IdlePeekCard state={peek.state} answer={peekAnswer!} onDismiss={() => setIdlePeekDismissed(peek.state.runId)} />
-      ) : null
+    const idleAnswer = promptDraft === null && peek.state.runId !== idlePeekDismissed ? peekCardOnIdleScreen(peek.state, peekCardAnswer(assistant.feed, peek.state.runId)) : null
+    const idlePeek = idleAnswer !== null ? <IdlePeekCard state={peek.state} answer={idleAnswer} onDismiss={() => setIdlePeekDismissed(peek.state.runId)} /> : null
     return (
       <>
         <IdleScreen

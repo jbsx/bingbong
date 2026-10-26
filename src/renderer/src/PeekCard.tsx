@@ -5,9 +5,9 @@ import { FeedMarkdown } from './FeedMarkdown'
 import { ChevronIcon } from './WeatherIcon'
 
 // The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
-// report of the live Run and its Answer, for 15 s past its sentence (#470),
-// while the Feed Panel is Collapsed — voice shows it, only a human act opens the panel, and
-// clicking it is that act. It renders from the panel's overlay view
+// report of the live Run and its Answer, for 15 s past its sentence
+// (#470), while the Feed Panel is Collapsed — voice shows it, only a
+// human act opens the panel, and clicking it is that act. It renders from the panel's overlay view
 // (ADR 0029) — the one surface that floats above the native pane —
 // translucent over the page, bottom-center, replacing the collapsed edge
 // tab; it is not a state of the panel.

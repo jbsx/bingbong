@@ -71,7 +71,7 @@ export function createPeekCardFold(): {
     sawError = false
     sounding = 0
   }
-  const linger = (): void => {
+  const reschedule = (): void => {
     if (state.phase === 'answer') state = { ...state, retiresAt: sounding > 0 ? null : quietAt + PEEK_CARD_LINGER_MS }
   }
   const fromReportedRun = (event: { runId?: string; turnId?: string }): boolean =>
@@ -99,13 +99,13 @@ export function createPeekCardFold(): {
         case 'speak':
           if (!fromReportedRun(event)) return
           sounding += 1
-          linger()
+          reschedule()
           return
         case 'spoken':
           if (!fromReportedRun(event) || sounding === 0) return
           sounding -= 1
           quietAt = Math.max(quietAt, event.at)
-          linger()
+          reschedule()
           return
         case 'status':
           if (fromReportedRun(event)) lastStatus = event.status
@@ -125,7 +125,7 @@ export function createPeekCardFold(): {
           if (outcome === 'cancelled') return hide()
           state = { ...state, phase: 'answer' }
           quietAt = Math.max(quietAt, event.at)
-          linger()
+          reschedule()
           return
         }
         default:
@@ -173,14 +173,14 @@ export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | n
 }
 
 /**
- * Whether the card shows over the Idle Screen (#470): only its Answer, and
+ * The Answer the card shows over the Idle Screen (#470), or null for none:
  * only a failure or a line read as no Command ("No response."). A success
  * shows none — its own card on the screen says it (the Timer Clock, Now
  * Playing) — and a Stop is neutral (#334).
  */
-export function peekCardOnIdleScreen(state: PeekCardState, answer: PeekCardAnswer | null): boolean {
-  if (state.phase !== 'answer' || answer === null) return false
-  return answer.failure || (state.dropped === true && answer.muted === true)
+export function peekCardOnIdleScreen(state: PeekCardState, answer: PeekCardAnswer | null): PeekCardAnswer | null {
+  if (state.phase !== 'answer' || answer === null) return null
+  return answer.failure || (state.dropped === true && answer.muted === true) ? answer : null
 }
 
 /**

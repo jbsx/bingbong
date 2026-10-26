@@ -204,18 +204,20 @@ describe('peekCardOnIdleScreen', () => {
   const answerOf = (dropped = false) => ({ phase: 'answer' as const, runId: 't1', commandText: 'play jazz', retiresAt: 20_000, ...(dropped ? { dropped: true as const } : {}) })
 
   it('shows a failed Command', () => {
-    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing played.', failure: true })).toBe(true)
+    const failed = { kind: 'display' as const, text: 'Nothing played.', failure: true }
+    expect(peekCardOnIdleScreen(answerOf(), failed)).toBe(failed)
   })
 
   it('shows "No response." for a line read as no Command', () => {
-    expect(peekCardOnIdleScreen(answerOf(true), { kind: 'display', text: 'No response.\n\nNothing on this page fits the words.', failure: false, muted: true })).toBe(true)
+    const none = { kind: 'display' as const, text: 'No response.\n\nNothing on this page fits the words.', failure: false, muted: true as const }
+    expect(peekCardOnIdleScreen(answerOf(true), none)).toBe(none)
   })
 
   it('shows no success, no Stop, no Answer-less end and no live report', () => {
-    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Timer set for 5 minutes.', failure: false })).toBe(false)
-    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing to stop.', failure: false, muted: true })).toBe(false)
-    expect(peekCardOnIdleScreen(answerOf(), null)).toBe(false)
-    expect(peekCardOnIdleScreen({ ...answerOf(), phase: 'live', retiresAt: null }, { kind: 'display', text: 'Nothing played.', failure: true })).toBe(false)
+    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Timer set for 5 minutes.', failure: false })).toBeNull()
+    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing to stop.', failure: false, muted: true })).toBeNull()
+    expect(peekCardOnIdleScreen(answerOf(), null)).toBeNull()
+    expect(peekCardOnIdleScreen({ ...answerOf(), phase: 'live', retiresAt: null }, { kind: 'display', text: 'Nothing played.', failure: true })).toBeNull()
   })
 })
 

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, YOUTUBE_FIXTURE_NOTHING, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
+import { PEEK_CARD_LINGER_MS as LINGER_MS } from '../src/core/panel/peekCardState'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
@@ -15,7 +16,6 @@ import { waitFor } from './waitFor'
 // for YouTube, its search finding nothing for YOUTUBE_FIXTURE_NOTHING.
 
 const FAILING_PLAY = `play ${YOUTUBE_FIXTURE_NOTHING}`
-const LINGER_MS = 15_000
 
 describe('peek card e2e: the card goes, and over the Idle Screen it tells a failure', () => {
   let harness: Harness
@@ -56,6 +56,7 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     const shownAt = Date.now()
     expect(shown).toContain(`“${FAILING_PLAY}”`)
     expect(shown).toContain('No videos found')
+    // A song that would not play names no Try line (#445); one that does rides under the sentence, as the Answer carries it.
     // The sentence at status size, the dot in the failure colour.
     expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.peek-card--idle .peek-sentence')).fontSize`)).toBe('65px')
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.peek-card--idle.peek-card--failed')`)).toBe(true)
