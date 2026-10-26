@@ -66,6 +66,8 @@ describe('createElevenLabsTranscriber', () => {
     expect(url.searchParams.get('audio_format')).toBe('pcm_16000')
     expect(url.searchParams.get('commit_strategy')).toBe('manual')
     expect(url.searchParams.getAll('keyterms')).toEqual(['Niyam', 'Tum Se Tum Tak'])
+    // The list it was asked with, for the stt span (#471).
+    expect(ear.keyterms).toEqual(['Niyam', 'Tum Se Tum Tak'])
     expect(sockets[0]!.headers['xi-api-key']).toBe('k')
     // Speech in the same listen rides the socket the wake opened.
     ear.begin()

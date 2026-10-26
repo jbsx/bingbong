@@ -25,8 +25,8 @@ export const PAGE_TERMS_CAP = 64
 /** A term is a phrase, not a sentence: at most four words, like a Learned Term. */
 const MAX_TERM_WORDS = 4
 
-/** Words that never make a term on their own and never open or close one. */
-const FUNCTION_WORDS: ReadonlySet<string> = new Set([
+/** Words that never make a term on their own and never open or close one; nor a head of the cloud ear's keyterms (#471). */
+export const FUNCTION_WORDS: ReadonlySet<string> = new Set([
   'a', 'an', 'the', 'of', 'on', 'in', 'at', 'to', 'for', 'and', 'or', 'but', 'by', 'with', 'from', 'as', 'is', 'are', 'was', 'be',
   'it', 'its', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'he', 'she', 'my', 'your', 'our', 'their', 'his', 'her',
   'new', 'more', 'all', 'how', 'why', 'what', 'when', 'where', 'who', 'vs', 'via', 'not', 'no', 'yes', 'up', 'down', 'out', 'off',

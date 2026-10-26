@@ -148,6 +148,9 @@ async function createSession(overrides?: {
         get sentMs() {
           return baseTranscriber.sentMs
         },
+        get keyterms() {
+          return baseTranscriber.keyterms
+        },
         begin: (preRoll?: Float32Array) => baseTranscriber.begin(preRoll),
         push: (frame: Float32Array) => baseTranscriber.push(frame),
         onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
@@ -907,6 +910,16 @@ describe('voice session — perf spans (#27)', () => {
     await harness.speakUtterance()
 
     expect(harness.perf.find((record) => record.stage === 'stt')!.detail).toMatchObject({ engine: 'elevenlabs', sentMs: 1_250 })
+  })
+
+  it('carries the keyterms the cloud ear was asked with in the stt detail (#471)', async () => {
+    const keyterms = ['niyam', 'idle', 'loop']
+    const harness = await createSession({ transcriber: Object.assign(new FakeTranscriber(['go']), { engine: 'elevenlabs', sentMs: 900, keyterms }), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.find((record) => record.stage === 'stt')!.detail).toMatchObject({ engine: 'elevenlabs', keyterms })
   })
 
   it('carries the turn check that fired the Endpoint in the stt detail (#357)', async () => {

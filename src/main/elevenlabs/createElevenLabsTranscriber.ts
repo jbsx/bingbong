@@ -58,6 +58,8 @@ export interface CloudTranscriber extends Transcriber {
   /** The engine whose words the last finish() resolved with: the cloud, or the fallback. */
   readonly engine: string
   readonly sentMs: number
+  /** The keyterms the open socket, or the last one, was asked with. */
+  readonly keyterms: readonly string[]
 }
 
 const ERROR_TYPES = new Set([
@@ -132,10 +134,12 @@ export function createElevenLabsTranscriber(deps: ElevenLabsTranscriberDeps): Cl
   let sentSamples = 0
   let lastEngine = 'elevenlabs'
   let lastSentMs = 0
+  let lastKeyterms: readonly string[] = []
 
   function url(): string {
     const query = new URLSearchParams({ model_id: 'scribe_v2_realtime', audio_format: 'pcm_16000', commit_strategy: 'manual', language_code: 'en' })
-    for (const term of deps.keyterms?.() ?? []) query.append('keyterms', term)
+    lastKeyterms = [...(deps.keyterms?.() ?? [])]
+    for (const term of lastKeyterms) query.append('keyterms', term)
     return `${deps.url ?? ELEVENLABS_REALTIME_URL}?${query.toString()}`
   }
 
@@ -240,6 +244,9 @@ export function createElevenLabsTranscriber(deps: ElevenLabsTranscriberDeps): Cl
     },
     get sentMs() {
       return lastSentMs
+    },
+    get keyterms() {
+      return lastKeyterms
     },
     listenOpened() {
       // The socket opens at the wake word (grill ruling 7): its handshake runs while the owner starts to speak. A guess; the `stt` span settles it.

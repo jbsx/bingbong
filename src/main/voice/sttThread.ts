@@ -27,7 +27,7 @@ type ToStt =
 
 type FromStt =
   | { type: 'partial'; text: string }
-  | { type: 'done'; id: number; text?: string; error?: string; engine?: string; sentMs?: number }
+  | { type: 'done'; id: number; text?: string; error?: string; engine?: string; sentMs?: number; keyterms?: readonly string[] }
   | { type: 'relay'; message: FromVoiceChain }
 
 /** The voice process's side: a Transcriber whose engine runs on the STT thread. */
@@ -40,6 +40,7 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
   // Which engine heard the last final, and the audio it sent (#463): the cloud ear's fallback says Parakeet.
   let heardBy: string = config.sttEngine
   let sentMs: number | undefined
+  let keyterms: readonly string[] | undefined
   // The bias the pause's decode ran with (#443); undefined while no pause decode stands.
   let pauseBias: ChainBias | null | undefined
   worker.postMessage({ type: 'init', config, bias: sent } satisfies ToStt)
@@ -58,6 +59,7 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
       if (message.engine !== undefined) {
         heardBy = message.engine
         sentMs = message.sentMs
+        keyterms = message.keyterms
       }
       if (message.error !== undefined) waiter?.reject(new Error(message.error))
       else waiter?.resolve(message.text ?? '')
@@ -85,6 +87,9 @@ export function createThreadTranscriber(entry: string, config: VoiceConfig, bias
     },
     get sentMs() {
       return sentMs
+    },
+    get keyterms() {
+      return keyterms
     },
     listenOpened: () => {
       syncBias()
@@ -137,9 +142,11 @@ if (parentPort !== null && (workerData as { sttThread?: boolean } | null)?.sttTh
   let bias: ChainBias | null = null
   let transcriber: Transcriber | null = null
   const reply = (id: number, work: Promise<string>, final = false): void => {
-    const heard = (): { engine?: string; sentMs?: number } => (!final ? {} : {
+    const heard = (): { engine?: string; sentMs?: number; keyterms?: readonly string[] } => (!final ? {} : {
       ...(transcriber?.engine !== undefined ? { engine: transcriber.engine } : {}),
       ...(transcriber?.sentMs !== undefined ? { sentMs: transcriber.sentMs } : {}),
+      // The cloud ear's keyterms (#471), for the stt span.
+      ...(transcriber?.keyterms !== undefined ? { keyterms: transcriber.keyterms } : {}),
     })
     work.then(
       (text) => post({ type: 'done', id, text, ...heard() }),

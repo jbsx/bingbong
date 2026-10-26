@@ -93,6 +93,9 @@ export const MUSIC_PHRASES: readonly string[] = Object.keys(WHOLE_LINES).filter(
 /** Every whole music line (#456), which the Seed Lexicon lifts. */
 export const MUSIC_LINES: readonly string[] = Object.keys(WHOLE_LINES)
 
+/** Every action a whole music line asks, once, by its kind (#471): the Player's heads. */
+export const MUSIC_KINDS: readonly string[] = [...new Set(Object.values(WHOLE_LINES).map((action) => action.kind))]
+
 /** Lower case, apostrophes dropped, letters and digits only, one space between words. */
 function normalize(text: string): string {
   return text

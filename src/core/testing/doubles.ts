@@ -543,6 +543,8 @@ export class FakeTranscriber implements Transcriber {
   engine?: string
   /** The audio the last final sent off the machine (#463); unset like a local engine. */
   sentMs?: number
+  /** The keyterms the cloud ear was asked with (#471); unset like a local engine. */
+  keyterms?: readonly string[]
   /** The pre-roll each begin() was handed (#463). */
   readonly preRolls: (Float32Array | undefined)[] = []
   /** How many listens opened (#463). */

@@ -89,7 +89,7 @@ export function grammarErrorOf(line: string): string | null {
  * "flag" or "mark" keeps its own reading (ADR 0089). Adding one is a
  * grammar change.
  */
-const FLAG_HEADS: readonly string[] = ['mark this as a failure', 'flag that', 'that was wrong']
+export const FLAG_HEADS: readonly string[] = ['mark this as a failure', 'flag that', 'that was wrong']
 const HINT_MARK = 'with the hint'
 /** The mark in the line as given: its words with whatever {@link flagWords} reads as a space between them. */
 const HINT_MARK_RE = /with[^\p{L}\p{N}']+the[^\p{L}\p{N}']+hint/iu

@@ -270,6 +270,11 @@ export function appCardLabels(): string[] {
   return [...panelOptions({ mode: 'docked', open: false, width: 0 }), ...viewOptions({ view: 'dashboard', idle: false }), { label: SETTINGS_LABEL }].map((option) => option.label)
 }
 
+/** Every view the app shows by voice (#471): the views' heads, `idle` among them. */
+export function appViews(): string[] {
+  return [...new Set(viewOptions({ view: 'dashboard', idle: false }).flatMap((option) => (option.op.kind === 'view' ? [option.op.view] : [])))]
+}
+
 /** Every setting's ops by its kind, each line carrying the state now: the settings ask's card. A setting the kinds table keeps off (`kept`: the voice timings, the records) has none. */
 export function settingOptions(state: AppState, kinds: SettingKinds<AppSettings> = SETTING_KINDS): AppOption[] {
   return leavesIn(state.settings, kinds).flatMap((leaf) => opsOfSetting(leaf, state.voices))

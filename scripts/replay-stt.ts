@@ -88,6 +88,7 @@ registerHooks({
   },
 })
 const { BIAS_LEXICON } = (await import('../src/main/moonshine/biasLexicon.ts')) as typeof import('../src/main/moonshine/biasLexicon')
+const { commandHeads } = (await import('../src/core/voice/commandLexicon.ts')) as typeof import('../src/core/voice/commandLexicon')
 const seedFile = process.env.BINGBONG_STT_SEED
 const seedLexicon: readonly string[] = seedFile === undefined ? BIAS_LEXICON : (JSON.parse(readFileSync(seedFile, 'utf8')) as string[])
 const labelsFile = process.env.BINGBONG_STT_LABELS ?? fileURLToPath(new URL('../fixtures/stt-labels/audio-dumps-2026-10.json', import.meta.url))
@@ -131,7 +132,7 @@ async function shippedEngine(): Promise<Transcriber> {
       console.error('ELEVENLABS_API_KEY is unset: run with node --env-file=<root>/.env')
       process.exit(1)
     }
-    const keyterms = cloudKeyterms(biasPhrases, new Set(seedLexicon))
+    const keyterms = cloudKeyterms(biasPhrases, new Set(seedLexicon), commandHeads())
     console.log(`keyterms (${keyterms.length}): ${keyterms.join(' | ')}`)
     // The wait for the commit: the app's 1.5 s unless BINGBONG_STT_COMMIT_MS says otherwise, so the ear's words and its lateness read apart.
     const commitMs = Number(process.env.BINGBONG_STT_COMMIT_MS)

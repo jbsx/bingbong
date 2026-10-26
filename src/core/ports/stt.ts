@@ -4,6 +4,8 @@ export interface Transcriber {
   readonly engine?: string
   /** Audio the last final sent off this machine, in ms (#463): the cloud ear's usage. Absent for a local engine. */
   readonly sentMs?: number
+  /** The keyterms the last socket was opened with (#471): the exact ask of the cloud ear, named on the `stt` span so a dump replays it. Absent for a local engine. */
+  readonly keyterms?: readonly string[]
   /**
    * Streaming transcription (#40): the voice session begins a capture when
    * speech starts and pushes utterance frames as they arrive, so a streaming

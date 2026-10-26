@@ -547,6 +547,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           ...(deps.transcriber.engine !== undefined ? { engine: deps.transcriber.engine } : {}),
           // The audio the cloud ear sent (#463): the Usage card's tally, the fallback's lines included.
           ...(deps.transcriber.sentMs !== undefined ? { sentMs: deps.transcriber.sentMs } : {}),
+          // The keyterms the cloud ear was asked with (#471): `pnpm stt:gate` replays the dump with the same list.
+          ...(deps.transcriber.keyterms !== undefined ? { keyterms: deps.transcriber.keyterms } : {}),
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
           truncated: utterance.truncated,

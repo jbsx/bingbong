@@ -115,6 +115,9 @@ const JOINERS: readonly string[] = ['and then', 'and', 'then']
  */
 const CLAUSE_HEADS: readonly string[] = [...VERB_PHRASES.map(([phrase]) => phrase), 'search for', 'search', 'look up', 'look for', 'google', 'find']
 
+/** Every verb the Local Match reads a line as, once, by its kind (#471): its heads. */
+export const LOCAL_MATCH_VERBS: readonly string[] = [...new Set([...VERB_PHRASES.map(([, kind]) => kind), ...Object.values(BARE_WORDS)])]
+
 /** Every phrase the Local Match reads a line by (#456): its verb and search phrases and its bare words, which the Seed Lexicon lifts. */
 export const LOCAL_MATCH_PHRASES: readonly string[] = [...CLAUSE_HEADS, ...Object.keys(BARE_WORDS)]
 

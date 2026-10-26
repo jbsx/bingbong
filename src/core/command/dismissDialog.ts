@@ -23,7 +23,7 @@ import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type Comman
 //   5. Escape.
 
 /** The verbs a dismiss phrase opens on, and what it may say it dismisses. */
-const DISMISS_VERBS: readonly string[] = ['exit', 'close', 'dismiss', 'get rid of', 'go away', 'cancel', 'x', 'no thanks']
+export const DISMISS_VERBS: readonly string[] = ['exit', 'close', 'dismiss', 'get rid of', 'go away', 'cancel', 'x', 'no thanks']
 const DISMISSED: readonly string[] = ['this', 'that', 'it', 'out of this', 'the pop up', 'the popup', 'the dialog']
 
 /** Every dismiss phrase (#456): each verb alone and with each thing it dismisses. The Seed Lexicon lifts them. */
