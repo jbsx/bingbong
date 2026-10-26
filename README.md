@@ -156,8 +156,11 @@ in the Log Bucket (below), its lines, both in Settings › Environment. At
 boot the app checks for `aplay`, a microphone and a display; anything
 missing is a line in the fault log and under Settings › This computer.
 
-`journalctl --user -u bingbong` shows the service; `systemctl --user
-restart bingbong` restarts the app.
+`journalctl --user -t bingbong.AppImage` shows the app's lines; `systemctl
+--user restart bingbong` restarts the app. Not `-u bingbong`: about a second
+after start Chromium moves the main process into its own
+`app-bingbong-<pid>.scope`, and every line it prints from then on (the
+`[codecs]` line among them) is filed under that scope, not the service.
 
 **Releases.** `pnpm dist` builds the AppImage locally (`dist/`), and
 `scripts/kiosk-install.sh dist/bingbong-*.AppImage` installs that build. A

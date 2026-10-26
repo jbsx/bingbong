@@ -394,7 +394,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
   trackSurface('pane', pane.view.webContents)
   // A video codec the GPU cannot decode is not offered to the pane's pages (#425): YouTube then serves one it can.
-  win.on('closed', attachCodecRefusal(pane.session, pane.view.webContents))
+  win.on('closed', attachCodecRefusal(pane.session, pane.view.webContents, { onSettled: (event) => boot.mark(`codecs-${event.kind}`) }))
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // above it before the first frame.
   // What the dashboard last said of the Idle Screen (#361): typing opens its Prompt, and the Feed stays shut under it.
