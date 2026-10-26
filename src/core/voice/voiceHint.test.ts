@@ -33,6 +33,11 @@ describe('voiceHint', () => {
     expect(voiceHint({ ...quiet, listening: true })).toEqual({ kind: 'listening', text: 'say a command' })
   })
 
+  it('never asks for a command while the app speaks into the Hot Listen: the rest hint, or the last result (#472)', () => {
+    expect(voiceHint({ ...quiet, listening: true, monitoring: true, speaking: true })).toEqual({ kind: 'monitoring', text: REST_HINT })
+    expect(voiceHint({ ...quiet, listening: true, monitoring: true, speaking: true }, { result: 'Volume 38 percent' })).toEqual({ kind: 'result', text: 'Volume 38 percent' })
+  })
+
   it('says "…" once speech has started, until the first partial lands (#441)', () => {
     expect(voiceHint({ ...quiet, listening: true, hearing: true })).toEqual({ kind: 'listening', text: '…' })
     expect(voiceHint({ ...quiet, listening: true, hearing: true, partial: 'next' })).toEqual({ kind: 'listening', text: '“next…”' })

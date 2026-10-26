@@ -38,6 +38,8 @@ export interface VoiceHintInput {
   listening: boolean
   /** Speech has started in the Utterance being taken (#441): "…" until the first partial. */
   hearing: boolean
+  /** The app's own voice is playing (#472): an open ear that has heard nothing is at rest. */
+  speaking?: boolean
   /** Only the wake word listens (the mic is not open for a command). */
   monitoring: boolean
   /** The live partial transcript (#324); empty before the first words. */
@@ -61,8 +63,8 @@ export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolea
   // The wait has ended (#447): no count, the outcome and the next thing to do.
   // The pill says what did not start (#331: never twice); the hint, what to do.
   if (phase === 'failed') return { kind: 'failed', text: EAR_FAILED_MORE }
-  if (voice.listening) {
-    return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(voice.hearing ? 'hearing' : 'listening') }
+  if (phase === 'listening' || phase === 'hearing') {
+    return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(phase) }
   }
   if (options.result != null && options.result !== '') return { kind: 'result', text: options.result }
   if (voice.monitoring) return { kind: 'monitoring', text: REST_HINT }

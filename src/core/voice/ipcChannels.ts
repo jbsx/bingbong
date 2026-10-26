@@ -42,6 +42,13 @@ export interface VoiceState {
    */
   hearing: boolean
   /**
+   * The app's own voice is playing (#472), main's to say from the speaking
+   * gate: an Utterance started now is dropped as the app's own (#326), so an
+   * open ear that has heard nothing is shown at rest — only the wake word,
+   * which cuts the speech, is heard. Absent while nothing is said.
+   */
+  speaking?: boolean
+  /**
    * What the ear still waits for at its cold start (#442), main's to say:
    * `ear` until the models it hears with are in, so nothing said is heard;
    * `words` from then until the transcriber is, so a line taken is held;

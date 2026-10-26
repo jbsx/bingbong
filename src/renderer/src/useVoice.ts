@@ -10,6 +10,8 @@ export interface VoiceApi {
   transcribing: boolean
   /** Speech has started in the Utterance being taken (#441); false before it and from its Endpoint. */
   hearing: boolean
+  /** The app's own voice is playing (#472): an open ear that has heard nothing is shown at rest. */
+  speaking: boolean
   /** Reason for listening — drives the hint line next to the orb. */
   reason: VoiceListenReason | null
   /** Wake-word monitoring is live — the mic stays open between commands. */
@@ -57,6 +59,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [hearing, setHearing] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
   const [monitoring, setMonitoring] = useState(false)
   const [partial, setPartial] = useState('')
@@ -112,6 +115,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
       setListening(state.listening)
       setTranscribing(state.transcribing)
       setHearing(state.hearing)
+      setSpeaking(state.speaking === true)
       if (state.hearing && !hearingRef.current) setLastWords('')
       hearingRef.current = state.hearing
       setReason(state.reason)
@@ -148,5 +152,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, hearing, reason, monitoring, partial, lastWords, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
+  return { listening, transcribing, hearing, speaking, reason, monitoring, partial, lastWords, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
 }

@@ -170,6 +170,8 @@ export interface IdleVoice {
   monitoring: boolean
   /** Speech has started in the Utterance being taken (#441). */
   hearing: boolean
+  /** The app's own voice is playing (#472): an open ear that has heard nothing is at rest. */
+  speaking?: boolean
   /** The live words of the Utterance being taken; empty before the first. */
   partial: string
   /** The Utterance's last words, kept through its read after the live partial clears (#442). */

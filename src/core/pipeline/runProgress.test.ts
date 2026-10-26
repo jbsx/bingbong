@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from './events'
-import { STUCK_STAGE_MS, createRunProgressTracker, describeRunProgress, loadingDetail, runProgressParts } from './runProgress'
+import { STUCK_STAGE_MS, capsuleStatus, createRunProgressTracker, describeRunProgress, loadingDetail, runProgressParts } from './runProgress'
 
 // The Status Capsule names each state once (#331): the pill says the state,
 // so the run hint beside it carries only what the pill does not — the
@@ -125,5 +125,34 @@ describe('loadingDetail (#442)', () => {
     expect(loadingDetail('about:blank')).toBeUndefined()
     expect(loadingDetail(null)).toBeUndefined()
     expect(loadingDetail('not a url')).toBeUndefined()
+  })
+})
+
+describe('capsuleStatus', () => {
+  const voice = { transcribing: false }
+
+  it('names a running Command’s stage over an open ear that has heard nothing — a Hot Listen stays open through its Task (#472)', () => {
+    for (const stage of ['thinking', 'acting', 'loading', 'speaking'] as const) expect(capsuleStatus('listening', voice, stage)).toBe(stage)
+    expect(capsuleStatus('listening', voice, 'idle')).toBe('listening')
+    expect(capsuleStatus('listening', voice, 'cancelled')).toBe('listening')
+  })
+
+  it('names the line being heard over the stage, and its read over both (#441, #38)', () => {
+    expect(capsuleStatus('hearing', voice, 'acting')).toBe('listening')
+    expect(capsuleStatus('transcribing', { transcribing: true }, 'acting')).toBe('transcribing')
+  })
+
+  it('says Speaking while the app’s own voice plays after the Task has ended (#472)', () => {
+    expect(capsuleStatus('rest', { transcribing: false, speaking: true }, 'idle')).toBe('speaking')
+    expect(capsuleStatus('rest', { transcribing: false, speaking: true }, 'acting')).toBe('acting')
+    expect(capsuleStatus('rest', voice, 'idle')).toBe('idle')
+  })
+
+  it('keeps the cold ear first while nothing runs, and a typed Command’s stage while the ear loads (#442, #447)', () => {
+    expect(capsuleStatus('starting', voice, 'idle')).toBe('starting')
+    expect(capsuleStatus('starting', voice, 'thinking')).toBe('thinking')
+    expect(capsuleStatus('starting', { transcribing: true }, 'thinking')).toBe('starting')
+    expect(capsuleStatus('failed', voice, 'idle')).toBe('earFailed')
+    expect(capsuleStatus('failed', voice, 'acting')).toBe('acting')
   })
 })

@@ -1,5 +1,6 @@
 import type { PipelineEvent, PipelineStatus } from './events'
 import { stageWord } from './stageWords'
+import type { EarPhase } from '../voice/voicePrompt'
 
 // Progress projection: the header hint's state, as a pure function over the
 // pipeline event stream. The stage and its start come from status events.
@@ -68,6 +69,28 @@ export function createRunProgressTracker(): {
 
 /** The state the Status Capsule's pill names: the voice states outrank the Command's stage. */
 export type CapsuleStatus = 'idle' | 'starting' | 'earFailed' | 'listening' | 'transcribing' | PipelineStatus
+
+/**
+ * What the Status Capsule's pill names, from the ear's phase, the voice
+ * state and the Command's stage. A cold ear outranks the ear's own states
+ * (#442), and a line it holds outranks a Command; a typed Command's stage
+ * still shows while the ear loads. Transcribing outranks listening (#38):
+ * the endpoint fired, never claim the ear is open while it reads. A line
+ * being heard outranks a stage, the receipt first (#441). An open ear that
+ * has heard nothing yields to a running Command's stage (#472): a Hot
+ * Listen stays open through its Task, and the screen says the work, the
+ * waveform beside it saying the ear is open. The app's own voice after the
+ * Task has ended is "Speaking…": most speech publishes no stage.
+ */
+export function capsuleStatus(ear: EarPhase, voice: { transcribing: boolean; speaking?: boolean }, run: CapsuleStatus): CapsuleStatus {
+  if (ear === 'starting' && (voice.transcribing || run === 'idle')) return 'starting'
+  if (ear === 'failed' && run === 'idle') return 'earFailed'
+  if (voice.transcribing) return 'transcribing'
+  if (ear === 'hearing') return 'listening'
+  if (ear === 'listening' && (run === 'idle' || run === 'cancelled')) return 'listening'
+  if (run === 'idle' && voice.speaking === true) return 'speaking'
+  return run
+}
 
 /**
  * What a Loading stage loads, as its detail (#442): the host of the

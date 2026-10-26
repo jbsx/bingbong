@@ -60,6 +60,14 @@ describe('earPhase', () => {
   it('is at rest before main has said anything', () => {
     expect(earPhase(null)).toBe('rest')
   })
+
+  it('is at rest while the app speaks into an open ear that has heard nothing — only the wake word is heard then (#472)', () => {
+    expect(earPhase({ ...ear(true, false, true), speaking: true })).toBe('rest')
+    expect(earPhase({ ...ear(true, false, false), speaking: true })).toBe('off')
+    expect(earPhase({ ...ear(true, false, true, true), speaking: true })).toBe('hearing')
+    expect(earPhase({ ...ear(false, true, true), speaking: true })).toBe('transcribing')
+    expect(earPhase({ ...ear(true, false, true), speaking: false })).toBe('listening')
+  })
 })
 
 describe('wordlessLine', () => {

@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
+import type { TtsSpeaker } from '../../core/ports/tts'
+import type { SpeakingGate } from '../../core/tts/speakingGate'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
@@ -98,7 +99,9 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   // The cold ear (#442): what it waits for, told by the voice process's model loads; the screen reads the session's state through it.
   const ear = createEarState(deps.earLoads ?? { vad: false, wake: false, stt: false }, Date.now)
   let raw: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
-  const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: ear.show(raw) })
+  // The app's own voice rides the shown state (#472): an ear that drops what it hears while a line plays is not said to listen.
+  const withSpeech = (state: VoiceState): VoiceState => (deps.speaking?.isSpeaking() === true ? { ...state, speaking: true } : state)
+  const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: ear.show(withSpeech(raw)) })
   const onModelLoad = (load: ChainModelLoad): void => {
     recordModelLoad(load)
     const told = ear.modelLoaded(load)
@@ -179,10 +182,12 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   })
 
   sessions.set(win, session)
-  shownStates.set(win, () => ear.show(session.getState()))
+  shownStates.set(win, () => ear.show(withSpeech(session.getState())))
+  const unsubSpeech = deps.speaking?.onSpeakingChange(() => publishState())
   win.on('closed', () => {
     sessions.delete(win)
     shownStates.delete(win)
+    unsubSpeech?.()
     session.stop()
   })
   // The always-on ear (T10): monitoring starts with the window when a wake
@@ -211,8 +216,8 @@ export interface AttachVoiceDeps {
   getHotListenSilenceMs?(): number
   /** The decode's bias (ADR 0022, 0077), identity-stable until it changes; absent biases toward nothing. */
   getBiasPhrases?(): ChainBias
-  /** The speaking gate (#326): the mic takes no Utterance while a line plays. */
-  speaking?: TtsIdle
+  /** The speaking gate (#326): the mic takes no Utterance while a line plays, and the screen is told when one starts and stops (#472). */
+  speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange'>
   /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */
   ducking?: Ducking
   /** Told on every voice state whether the ear is open; absent tells no one. */

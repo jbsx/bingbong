@@ -30,6 +30,7 @@ import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 import { voiceHint } from '../../core/voice/voiceHint'
 import { earPhase } from '../../core/voice/voicePrompt'
+import { capsuleStatus } from '../../core/pipeline/runProgress'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { AppView } from '../../core/command/appOp'
 
@@ -145,11 +146,10 @@ export function App() {
     }
   }, [ping])
 
-  // Transcribing outranks listening (#38): the endpoint fired, STT is
-  // thinking — never claim the ear is open while it works.
-  // A cold ear outranks the ear's own states (#442), and a line it holds outranks a Command; a typed Command's stage still shows while the ear loads.
-  const ear = earPhase(voice)
-  const status = ear === 'starting' && (voice.transcribing || assistant.status === 'idle') ? 'starting' : ear === 'failed' && assistant.status === 'idle' ? 'earFailed' : voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  // A Speaking stage drowns the ear as the speaking gate does (#472), from the stage's start to the Task's end: one face, not "say a command" in its gaps.
+  const earVoice = assistant.status === 'speaking' ? { ...voice, speaking: true } : voice
+  const ear = earPhase(earVoice)
+  const status = capsuleStatus(ear, earVoice, assistant.status)
   const tone = capsuleTone(status)
   // Never go idle over a running command, an open mic, the STT window, or
   // the settings page — the timer must not unmount a form mid-edit. Once
@@ -162,7 +162,7 @@ export function App() {
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
   // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.
   // With the panel shut the capsule keeps the last spoken result (#436) once the line has ended, until the next input.
-  const hint = voiceHint(voice, { promptShown: panel.open && view === 'dashboard', result: status === 'idle' && assistant.progress === null ? assistant.lastResult : null })
+  const hint = voiceHint(earVoice, { promptShown: panel.open && view === 'dashboard', result: status === 'idle' && assistant.progress === null ? assistant.lastResult : null })
   const weather = useWeather(settings?.weather ?? null)
   const lastPage = useLastPage(showIdle)
   // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.
@@ -215,7 +215,7 @@ export function App() {
           onOpenSettings={() => setView('settings')}
           status={status}
           progress={assistant.progress}
-          voice={voice}
+          voice={earVoice}
           popup={weighInPopup.phase === 'hidden' ? idlePeek : <WeighInPopup state={weighInPopup} />}
           popupKind={weighInPopup.phase === 'hidden' && idlePeek !== null ? 'peek' : 'weighin'}
           result={assistant.lastFailure}
@@ -241,7 +241,8 @@ export function App() {
           <div className={`status-capsule status-capsule--${tone}${tone === 'working' || tone === 'listening' ? ' live-tint' : ''}`}>
             <StatusOrb status={status} />
             <StatusPill status={status} progress={assistant.progress} />
-            {status === 'listening' ? <VoiceWave bars={6} /> : null}
+            {/* The open ear beside a running Command's stage too (#472): speaking now will be heard. */}
+            {status === 'listening' || ear === 'listening' ? <VoiceWave bars={6} /> : null}
             {/* Run progress (#43) keeps its place even when the mic opens
                 mid-run — the climbing timer must never disappear behind a
                 listening hint, or a long round reads as frozen again. */}
