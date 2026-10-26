@@ -5,10 +5,19 @@ import { inferRunOutcome, type PipelineEvent } from '../pipeline/events'
 // opens the feed panel — a command shows the Peek Card instead, as a pure
 // fold over the same pipeline event seam every observer rides (the same
 // shape as the panel-state fold beside it). The card reports the live Run
-// and then its Answer, persisting until the next Run, a panel open, or
-// the Session's end — no time window. The view owns what renders inside
-// the card; this fold owns only the phase, the run identity, and the
-// answer's retirement.
+// and then its Answer, until 15 s past the Answer's spoken sentence (#470,
+// ADR 0026 as amended) or sooner on the next Run or a panel open. The view
+// owns what renders inside the card; this fold owns only the phase, the
+// run identity, and the answer's retirement.
+
+/**
+ * How long the Answer stays past its sentence (#470): one constant for every
+ * form of the card. The owner's guess (2026-10-26 grill) — no measure in
+ * the repo can settle 10 s against 15 s; what would is the owner reading a
+ * failure from the chair on a normal day and saying the card went too soon
+ * or stayed too long.
+ */
+export const PEEK_CARD_LINGER_MS = 15_000
 
 export type PeekCardPhase = 'hidden' | 'live' | 'answer'
 
@@ -18,16 +27,21 @@ export interface PeekCardState {
   runId: string | null
   /** The command echo shown while live. */
   commandText: string | null
+  /** When the Answer goes, on the events' clock (#470): null while live, hidden, or while its sentence still sounds. */
+  retiresAt: number | null
+  /** The line was read as no Command: its Answer is "No response." (the Idle Screen form shows it). */
+  dropped?: true
 }
 
-const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null }
+const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, retiresAt: null }
 
 /**
  * Folds pipeline events into the card's phase: `command` shows it live,
- * the run's `done` moves it to the persisting answer (a cancelled or
- * interrupted run hides it), `session_ended` hides it, and a new command
- * always restarts it live. Busy rejections emit no events, so they never
- * show a card.
+ * the run's `done` moves it to the answer (a cancelled or interrupted run
+ * hides it), and a new command always restarts it live. The answer's end is
+ * 15 s past the later of `done` and the end of the run's last sentence; a
+ * sentence still sounding holds it off. Busy rejections emit no events, so
+ * they never show a card.
  */
 export function createPeekCardFold(): {
   onEvent(event: PipelineEvent): void
@@ -37,6 +51,8 @@ export function createPeekCardFold(): {
    * closing the panel again revives the card.
    */
   retireAnswer(): void
+  /** The answer's time is up at `now` (#470): it goes. Nothing else does. */
+  expire(now: number): void
   state(): PeekCardState
 } {
   let state: PeekCardState = HIDDEN
@@ -45,11 +61,18 @@ export function createPeekCardFold(): {
   // status/error trail of the reported run is the fallback.
   let lastStatus: string | null = null
   let sawError = false
+  // The reported run's sentences still sounding, and when the run, or its last sentence, last fell quiet.
+  let sounding = 0
+  let quietAt = 0
 
   const hide = (): void => {
     state = HIDDEN
     lastStatus = null
     sawError = false
+    sounding = 0
+  }
+  const linger = (): void => {
+    if (state.phase === 'answer') state = { ...state, retiresAt: sounding > 0 ? null : quietAt + PEEK_CARD_LINGER_MS }
   }
   const fromReportedRun = (event: { runId?: string; turnId?: string }): boolean =>
     state.phase !== 'hidden' && event.turnId === state.runId
@@ -65,9 +88,24 @@ export function createPeekCardFold(): {
             phase: 'live',
             runId: event.turnId,
             commandText: event.text,
+            retiresAt: null,
+            ...(event.dropped === true ? { dropped: true as const } : {}),
           }
           lastStatus = null
           sawError = false
+          sounding = 0
+          quietAt = event.at
+          return
+        case 'speak':
+          if (!fromReportedRun(event)) return
+          sounding += 1
+          linger()
+          return
+        case 'spoken':
+          if (!fromReportedRun(event) || sounding === 0) return
+          sounding -= 1
+          quietAt = Math.max(quietAt, event.at)
+          linger()
           return
         case 'status':
           if (fromReportedRun(event)) lastStatus = event.status
@@ -80,12 +118,14 @@ export function createPeekCardFold(): {
         case 'done': {
           // Only the reported run's own end moves the card (#336): a Task's closing hop — abandoned, done or no next step — ends a turn the card never reported.
           if (!fromReportedRun(event)) return
-          // The outcome fork (ADR 0026): done and failed persist as the
+          // The outcome fork (ADR 0026): done and failed show as the
           // card's answer; cancelled and interrupted hide it — an abort is
           // the user's last word, and the screen goes quiet.
           const outcome = inferRunOutcome(event.outcome, lastStatus, sawError)
-          if (outcome === 'cancelled') hide()
-          else state = { ...state, phase: 'answer' }
+          if (outcome === 'cancelled') return hide()
+          state = { ...state, phase: 'answer' }
+          quietAt = Math.max(quietAt, event.at)
+          linger()
           return
         }
         default:
@@ -94,6 +134,9 @@ export function createPeekCardFold(): {
     },
     retireAnswer() {
       if (state.phase === 'answer') hide()
+    },
+    expire(now) {
+      if (state.phase === 'answer' && state.retiresAt !== null && now >= state.retiresAt) hide()
     },
     state: () => state,
   }
@@ -127,6 +170,17 @@ export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | n
   }
   if (error !== null) return { kind: 'error', text: error.text.split('\n', 1)[0]!, failure: true }
   return spoken !== null ? { kind: 'spoken', text: spoken.text, failure: spoken.failure === true } : null
+}
+
+/**
+ * Whether the card shows over the Idle Screen (#470): only its Answer, and
+ * only a failure or a line read as no Command ("No response."). A success
+ * shows none — its own card on the screen says it (the Timer Clock, Now
+ * Playing) — and a Stop is neutral (#334).
+ */
+export function peekCardOnIdleScreen(state: PeekCardState, answer: PeekCardAnswer | null): boolean {
+  if (state.phase !== 'answer' || answer === null) return false
+  return answer.failure || (state.dropped === true && answer.muted === true)
 }
 
 /**

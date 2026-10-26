@@ -1590,6 +1590,98 @@ details.feed-entry {
   flex: none;
 }
 
+/* The linger (#470): the Answer goes 15 s past its sentence, this bar
+   draining along the card's foot across that time; full and still while
+   the sentence sounds. */
+.peek-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.peek-linger {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--fg3);
+  transform-origin: left center;
+  animation-name: peek-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.peek-linger--held {
+  animation: none;
+}
+
+@keyframes peek-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* The Peek Card's Idle Screen form (#470): a failure or "No response." in
+   the Weigh-in pop-up's place, read from the chair — the sentence at the
+   status size. The place grows upward when the sentence wraps, so no
+   word is cut. */
+.idle-popup-place--peek {
+  height: auto;
+  min-height: 246px;
+  display: flex;
+}
+
+.idle-popup-place .peek-card--idle {
+  max-width: none;
+  align-items: flex-start;
+  gap: 26px;
+  padding: 26px 32px 30px;
+  cursor: default;
+  animation: card-in 200ms ease;
+}
+
+.peek-card--idle .peek-orb {
+  width: 32px;
+  height: 32px;
+  margin-top: 46px;
+}
+
+.peek-card--idle .peek-body {
+  gap: 10px;
+}
+
+.peek-heard {
+  margin: 0;
+  color: var(--fg2);
+  font-size: var(--type-m);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peek-sentence {
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--type-xl);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.peek-card--failed .peek-sentence {
+  color: var(--fail-text);
+}
+
+.peek-more {
+  margin: 0;
+  color: var(--fg2);
+  font-size: var(--type-m);
+  line-height: 1.3;
+}
+
 /* Settings (ADR 0078): the index down the left — numbered, by group — and
    the sections to its right, each a hairline, a heading and its body; no
    boxes. The Weight page reuses the sheet's parts in one centred column. */
@@ -2758,6 +2850,11 @@ button.idle-line {
 
 .idle-voice-said--waiting {
   color: var(--fg3);
+}
+
+/* A failure kept at rest (#470): no state word beside it, so it takes the line's room the rest hint had. */
+.idle-voice-result {
+  max-width: 600px;
 }
 
 .idle-voice .voice-wave {

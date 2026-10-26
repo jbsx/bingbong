@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
 import { createFeedProjection } from '../feed/feedProjection'
-import { createPeekCardFold, overlaySlotContent, peekCardAnswer, peekCardVisible } from './peekCardState'
+import { createPeekCardFold, overlaySlotContent, PEEK_CARD_LINGER_MS, peekCardAnswer, peekCardOnIdleScreen, peekCardVisible } from './peekCardState'
 
 // The Peek Card fold (ADR 0021, amended by ADR 0026): a command shows the
 // Peek Card — never the panel — and the card's life is a pure fold over
 // the same pipeline event seam every observer rides. Live while the run
-// runs, persisting as the Answer after `done` (no time window — only the
-// next run or a panel open retires it), hidden on a cancelled run.
+// runs, then its Answer until 15 s past its spoken sentence (#470), or
+// sooner when the next run or a panel open retires it; hidden on a
+// cancelled run.
 
 function command(text = 'find a pizza place', turnId = 't1'): PipelineEvent {
   return { type: 'command', turnId, text, at: 1_000 }
@@ -20,14 +21,14 @@ function done(at = 5_000, outcome?: 'done' | 'failed' | 'cancelled'): PipelineEv
 describe('createPeekCardFold', () => {
   it('boots hidden', () => {
     const fold = createPeekCardFold()
-    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null })
+    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null, retiresAt: null })
     expect(peekCardVisible(fold.state())).toBe(false)
   })
 
   it('a command shows the card live with the command echo and run identity', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command('find a pizza place'))
-    expect(fold.state()).toEqual({ phase: 'live', runId: 't1', commandText: 'find a pizza place' })
+    expect(fold.state()).toEqual({ phase: 'live', runId: 't1', commandText: 'find a pizza place', retiresAt: null })
     expect(peekCardVisible(fold.state())).toBe(true)
   })
 
@@ -47,7 +48,7 @@ describe('createPeekCardFold', () => {
     expect(fold.state().phase).toBe('answer')
   })
 
-  it('done persists as the answer — the linger window is gone (ADR 0026)', () => {
+  it('done shows the answer (ADR 0026)', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())
     fold.onEvent(done(5_000))
@@ -70,7 +71,7 @@ describe('createPeekCardFold', () => {
     fold.onEvent(command('first'))
     fold.onEvent(done(5_000))
     fold.onEvent(command('second', 't2'))
-    expect(fold.state()).toEqual({ phase: 'live', runId: 't2', commandText: 'second' })
+    expect(fold.state()).toEqual({ phase: 'live', runId: 't2', commandText: 'second', retiresAt: null })
   })
 
   it('retireAnswer hides the answer', () => {
@@ -99,7 +100,7 @@ describe('createPeekCardFold', () => {
     expect(peekCardVisible(fold.state())).toBe(true)
   })
 
-  it('a failed run persists on the card — the failure is the outcome (ADR 0026)', () => {
+  it('a failed run shows on the card — the failure is the outcome (ADR 0026)', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())
     fold.onEvent(done(5_000, 'failed'))
@@ -124,14 +125,108 @@ describe('createPeekCardFold', () => {
   })
 })
 
+// The linger (#470, ADR 0026 as amended): the owner's ruling ended the
+// persisting answer — the card goes 15 s after its sentence is spoken, or
+// after `done` when nothing is spoken, and nothing pauses it.
+describe('the Peek Card linger', () => {
+  it('the Answer goes 15 s after done when nothing is spoken', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000))
+    expect(PEEK_CARD_LINGER_MS).toBe(15_000)
+    expect(fold.state().retiresAt).toBe(20_000)
+    fold.expire(19_999)
+    expect(fold.state().phase).toBe('answer')
+    fold.expire(20_000)
+    expect(fold.state().phase).toBe('hidden')
+  })
+
+  it('while its sentence sounds the Answer has no end; it goes 15 s after the sentence ends', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'speak', turnId: 't1', text: "That page doesn't exist.", failure: true, at: 4_000 })
+    fold.onEvent(done(5_000))
+    expect(fold.state()).toMatchObject({ phase: 'answer', retiresAt: null })
+    fold.expire(60_000)
+    expect(fold.state().phase).toBe('answer')
+    fold.onEvent({ type: 'spoken', turnId: 't1', at: 9_000 })
+    expect(fold.state().retiresAt).toBe(24_000)
+  })
+
+  it('a sentence ended before done counts from done', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'speak', turnId: 't1', text: 'Welcome.', at: 2_000 })
+    fold.onEvent({ type: 'spoken', turnId: 't1', at: 3_000 })
+    fold.onEvent(done(5_000))
+    expect(fold.state().retiresAt).toBe(20_000)
+  })
+
+  it("a page read's further part holds the end off again until it is spoken", () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000))
+    fold.onEvent({ type: 'speak', turnId: 't1', text: 'part two', at: 6_000 })
+    expect(fold.state().retiresAt).toBeNull()
+    fold.onEvent({ type: 'spoken', turnId: 't1', at: 8_000 })
+    expect(fold.state().retiresAt).toBe(23_000)
+  })
+
+  it("another turn's speech, or speech outside any turn, never moves the end", () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000))
+    fold.onEvent({ type: 'speak', text: 'Downloaded a file.', at: 6_000 })
+    fold.onEvent({ type: 'speak', turnId: 't0', text: 'old', at: 6_500 })
+    expect(fold.state().retiresAt).toBe(20_000)
+  })
+
+  it('the live report never expires', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.expire(1_000_000)
+    expect(fold.state().phase).toBe('live')
+  })
+
+  it('a line read as no Command is marked dropped, for the Idle Screen form', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'what a lovely day', dropped: true, task: { id: 't1', hop: 0 }, at: 1 })
+    fold.onEvent(done(2))
+    expect(fold.state()).toMatchObject({ phase: 'answer', dropped: true })
+    fold.onEvent(command('play jazz', 't2'))
+    expect(fold.state().dropped).toBeUndefined()
+  })
+})
+
+// Over the Idle Screen (#470) the card shows only a failure or "No
+// response.": a success's own card says it, and a Stop is neutral.
+describe('peekCardOnIdleScreen', () => {
+  const answerOf = (dropped = false) => ({ phase: 'answer' as const, runId: 't1', commandText: 'play jazz', retiresAt: 20_000, ...(dropped ? { dropped: true as const } : {}) })
+
+  it('shows a failed Command', () => {
+    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing played.', failure: true })).toBe(true)
+  })
+
+  it('shows "No response." for a line read as no Command', () => {
+    expect(peekCardOnIdleScreen(answerOf(true), { kind: 'display', text: 'No response.\n\nNothing on this page fits the words.', failure: false, muted: true })).toBe(true)
+  })
+
+  it('shows no success, no Stop, no Answer-less end and no live report', () => {
+    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Timer set for 5 minutes.', failure: false })).toBe(false)
+    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing to stop.', failure: false, muted: true })).toBe(false)
+    expect(peekCardOnIdleScreen(answerOf(), null)).toBe(false)
+    expect(peekCardOnIdleScreen({ ...answerOf(), phase: 'live', retiresAt: null }, { kind: 'display', text: 'Nothing played.', failure: true })).toBe(false)
+  })
+})
+
 describe('overlaySlotContent', () => {
   // ADR 0029: the overlay view shows exactly one element at a time —
   // expanded panel, Peek Card, or edge tab — because a native view
   // intercepts input across its whole bounds. The card replaces the tab
   // while visible; an open panel outranks both.
-  const hidden = { phase: 'hidden', runId: null, commandText: null } as const
-  const live = { phase: 'live', runId: 't1', commandText: 'find a mug' } as const
-  const answer = { phase: 'answer', runId: 't1', commandText: 'find a mug' } as const
+  const hidden = { phase: 'hidden', runId: null, commandText: null, retiresAt: null } as const
+  const live = { phase: 'live', runId: 't1', commandText: 'find a mug', retiresAt: null } as const
+  const answer = { phase: 'answer', runId: 't1', commandText: 'find a mug', retiresAt: 20_000 } as const
 
   it('an open panel shows the panel, whatever the card phase says', () => {
     expect(overlaySlotContent(true, hidden)).toBe('panel')

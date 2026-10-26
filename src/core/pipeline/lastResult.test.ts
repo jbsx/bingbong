@@ -42,3 +42,36 @@ describe('the last result', () => {
     expect(fold([{ type: 'site_question', text: 'The page asks: leave the page? Say yes or no.', at: 0 }])).toBe('The page asks: leave the page? Say yes or no.')
   })
 })
+
+// The Idle Screen's Voice Prompt line (#470) keeps only a failure: the
+// sentence a failed Command said, or "No response." for a line read as no
+// Command, until the next input.
+describe('the last failure', () => {
+  const failureOf = (events: PipelineEvent[]): string | null => {
+    const tracker = createLastResultTracker()
+    for (const event of events) tracker.onEvent(event)
+    return tracker.failure()
+  }
+  const dropped = (turnId: string): PipelineEvent => ({ type: 'command', turnId, text: 'what a lovely day', dropped: true, task: { id: turnId, hop: 0 }, at: 0 })
+
+  it('is nothing after a success', () => {
+    expect(failureOf([command('t1'), speak('t1', 'Volume 38 percent.')])).toBeNull()
+  })
+
+  it('is the sentence a failed Command said', () => {
+    const said = 'Nothing played. Try “play jazz on youtube”.'
+    expect(failureOf([command('t1'), { type: 'speak', turnId: 't1', text: said, failure: true, at: 0 }])).toBe(said)
+  })
+
+  it('is "No response." for a line read as no Command', () => {
+    expect(failureOf([dropped('t1'), { type: 'display', turnId: 't1', text: 'No response.\n\nNothing on this page fits the words.', muted: true, at: 0 }])).toBe('No response.')
+  })
+
+  it('goes at the next Command', () => {
+    expect(failureOf([command('t1'), { type: 'speak', turnId: 't1', text: 'Nothing played.', failure: true, at: 0 }, command('t3')])).toBeNull()
+  })
+
+  it("is never a Stop's grey Answer", () => {
+    expect(failureOf([command('t1'), { type: 'display', turnId: 't1', text: 'Nothing to stop.', muted: true, at: 0 }])).toBeNull()
+  })
+})

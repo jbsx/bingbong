@@ -686,6 +686,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       })
       .finally(() => {
         sounding -= 1
+        // Its end, however it came (#470): the Peek Card's linger counts from here.
+        publish({ type: 'spoken', turnId, at: at() })
       })
   }
 

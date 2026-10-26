@@ -110,15 +110,19 @@ export function silentWav(seconds: number): Buffer {
   return Buffer.concat([header, Buffer.alloc(samples, 0x80)])
 }
 
+/** Words the fixture's search finds no video for (#470): a `play` that fails. */
+export const YOUTUBE_FIXTURE_NOTHING = 'nothing at all'
+
 /** The results page, its `ytInitialData` assigned with `var` as YouTube's own is: a fetched page (`queue <words>`) is parsed for that, a shown one read off `window`. */
 function youtubeResultsPage(words: string): string {
   const { id, title } = youtubeFixtureSong(words)
+  const videos = words.toLowerCase() === YOUTUBE_FIXTURE_NOTHING ? [] : [{ videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } } } }]
   const data = {
     contents: {
       twoColumnSearchResultsRenderer: {
         primaryContents: {
           sectionListRenderer: {
-            contents: [{ itemSectionRenderer: { contents: [{ videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } } } }] } }],
+            contents: [{ itemSectionRenderer: { contents: videos } }],
           },
         },
       },

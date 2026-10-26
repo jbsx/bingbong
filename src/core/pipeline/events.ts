@@ -46,6 +46,8 @@ export type PipelineEvent =
     }
   /** `failure`: the line tells what went wrong (#329) — a thrown action, a wall — and takes the failure colour. */
   | { type: 'speak'; turnId?: string; text: string; failure?: boolean; at: number }
+  /** A `speak`'s sentence has ended — spoken to its end, cut, or failed to sound (#470): the Peek Card's linger counts from it. */
+  | { type: 'spoken'; turnId?: string; at: number }
   /**
    * A Command's Answer (#333), one per Command; `failure` as on `speak` — a failure's line is its Answer, shown once.
    * `muted`: a Stop's Answer — the Command was cancelled, neither done nor failed, and reads grey.

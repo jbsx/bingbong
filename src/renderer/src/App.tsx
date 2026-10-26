@@ -8,9 +8,10 @@ import { usePaneHasPage } from './usePaneHasPage'
 import { SettingsPage } from './SettingsPage'
 import { WeightPage } from './WeightPage'
 import { WeighInPopup } from './WeighInPopup'
+import { IdlePeekCard } from './PeekCard'
 import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
-import { overlaySlotContent } from '../../core/panel/peekCardState'
+import { overlaySlotContent, peekCardAnswer, peekCardOnIdleScreen } from '../../core/panel/peekCardState'
 import { weighInPopupSurface } from '../../core/scale/weighInPopup'
 import { useFeedPanel, useFeedSlotRect, useWeighInSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
@@ -70,6 +71,8 @@ export function App() {
   // overlay view (ADR 0029); the dashboard folds the same events only
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
+  // The run whose card a tap took off the Idle Screen (#470): it stays off there; the fold's own clock still ends it.
+  const [idlePeekDismissed, setIdlePeekDismissed] = useState<string | null>(null)
   // The Weigh-in pop-up (#350): over the browsing pane it has a view of its
   // own in the Peek Card's place (or rides the open panel's top), so the
   // edge tab stays; over every other view the dashboard draws it.
@@ -182,6 +185,13 @@ export function App() {
   }, [showIdle])
 
   if (showIdle) {
+    // The Peek Card's Idle Screen form (#470): a failure or "No response." only, never while the Idle Prompt is open
+    // (its own Answer says it), and the Weigh-in pop-up outranks it in the place they share.
+    const peekAnswer = peekCardAnswer(assistant.feed, peek.state.runId)
+    const idlePeek =
+      promptDraft === null && peek.state.runId !== idlePeekDismissed && peekCardOnIdleScreen(peek.state, peekAnswer) ? (
+        <IdlePeekCard state={peek.state} answer={peekAnswer!} onDismiss={() => setIdlePeekDismissed(peek.state.runId)} />
+      ) : null
     return (
       <>
         <IdleScreen
@@ -209,7 +219,9 @@ export function App() {
           status={status}
           progress={assistant.progress}
           voice={voice}
-          popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
+          popup={weighInPopup.phase === 'hidden' ? idlePeek : <WeighInPopup state={weighInPopup} />}
+          popupKind={weighInPopup.phase === 'hidden' && idlePeek !== null ? 'peek' : 'weighin'}
+          result={assistant.lastFailure}
         />
         {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} /> : null}
       </>

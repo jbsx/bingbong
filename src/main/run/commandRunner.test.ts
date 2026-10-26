@@ -2216,8 +2216,12 @@ describe('a Command whose output is speech', () => {
     perf.state.monotonicMs = 1_150
     speech.sound()
     expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 750, detail: { verb: 'read', effect: 'spoken' } })
+    // The sentence's end is published (#470): the Peek Card's linger counts from it.
+    expect(events.filter((event) => event.type === 'spoken')).toEqual([])
     speech.finish()
     await run
+    expect(events.filter((event) => event.type === 'spoken')).toEqual([{ type: 'spoken', turnId: 'voice-1', at: expect.any(Number) }])
+    expect(types(events).indexOf('spoken')).toBeLessThan(types(events).indexOf('done'))
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(runner.getState()).toBe('idle')
   })
@@ -2333,8 +2337,10 @@ describe('a Command whose output is speech', () => {
     await reading
     await new Promise((resolve) => setImmediate(resolve))
     expect(synthesized).toEqual(['Welcome to the example.', 'It has two sentences.'])
-    const readTurn = events.filter((event) => 'turnId' in event && event.turnId === 'read-1')
+    // The cut sentence's end (#470) may land after the turn's; it ends nothing.
+    const readTurn = events.filter((event) => 'turnId' in event && event.turnId === 'read-1' && event.type !== 'spoken')
     expect(readTurn.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+    expect(events).toContainEqual({ type: 'spoken', turnId: 'read-1', at: expect.any(Number) })
   })
 
   it('abort silences the reading', async () => {

@@ -40,6 +40,8 @@ export interface Assistant {
   taskProgress: TaskProgress | null
   /** The sentence the last Command said aloud (#436), kept until the next input; null before one speaks. */
   lastResult: string | null
+  /** The Idle Screen's kept line (#470): the last Command's failure sentence, or "No response.", until the next input. */
+  lastFailure: string | null
   submit(text: string): void
   abort(): void
   /** A heard-but-not-a-command line (control words, undecided transcripts). */
@@ -53,6 +55,7 @@ export function useAssistant(): Assistant {
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null)
   const [lastResult, setLastResult] = useState<string | null>(null)
+  const [lastFailure, setLastFailure] = useState<string | null>(null)
   const lastStatus = useRef<OrbStatus>('idle')
   // The turn whose stage the pill shows (#428): a line thinks before its `command`, and only that turn's `done` returns it to Ready — never a late one gone by.
   const statusTurn = useRef<string | null>(null)
@@ -74,6 +77,7 @@ export function useAssistant(): Assistant {
       setTaskProgress(taskProgressTracker.current.current())
       lastResultTracker.current.onEvent(event)
       setLastResult(lastResultTracker.current.current())
+      setLastFailure(lastResultTracker.current.failure())
       // The hint and the pill go quiet together, once the hold has passed with no stage after it.
       const progressNow = progressTracker.current.current()
       switch (event.type) {
@@ -130,5 +134,5 @@ export function useAssistant(): Assistant {
     [feedProjection],
   )
 
-  return { status, feed, liveRunId, progress, taskProgress, lastResult, submit, abort, appendVoiceHeard, appendVoiceError }
+  return { status, feed, liveRunId, progress, taskProgress, lastResult, lastFailure, submit, abort, appendVoiceHeard, appendVoiceError }
 }

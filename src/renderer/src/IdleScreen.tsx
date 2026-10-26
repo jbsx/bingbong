@@ -196,8 +196,12 @@ const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off' | 'failed'>, string> = {
  * too, with its words (#442). A wait draws no waveform: the line's room
  * goes to its seconds. A load that failed ends the wait (#447): what did
  * not start and what to do, set as "Microphone off" is, the count gone.
+ * At rest after a Command that failed, or a line read as no Command, it
+ * keeps that sentence in the rest hint's place until the next input
+ * (#470), as the panel's capsule keeps its last result (#436) — with the
+ * microphone off too, the grey orb still saying so.
  */
-export function VoiceLine({ voice }: { voice: IdleVoice }) {
+export function VoiceLine({ voice, result = null }: { voice: IdleVoice; result?: string | null }) {
   const phase = earPhase(voice)
   const taking = phase === 'starting' || phase === 'listening' || phase === 'hearing' || phase === 'transcribing'
   return (
@@ -207,7 +211,7 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
         <>
           <span className="idle-voice-hint">{EAR_FAILED}</span> <span className="idle-voice-more">— {EAR_FAILED_MORE}</span>
         </>
-      ) : phase === 'off' ? (
+      ) : phase === 'off' && result === null ? (
         <>
           <span className="idle-voice-hint">Microphone off</span> <span className="idle-voice-more">— start typing</span>
         </>
@@ -217,6 +221,8 @@ export function VoiceLine({ voice }: { voice: IdleVoice }) {
         </span>
       ) : taking ? (
         <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? (phase === 'listening' ? wordlessLine(phase) : '') : `“${voice.partial}…”`}</span>
+      ) : result !== null ? (
+        <span className="idle-voice-said idle-voice-result">{result}</span>
       ) : (
         <>
           <span className="idle-voice-hint">
@@ -511,6 +517,8 @@ export function IdleScreen({
   progress = null,
   voice,
   popup = null,
+  popupKind = 'weighin',
+  result = null,
 }: {
   weather: WeatherState
   usage: UsageState
@@ -546,8 +554,12 @@ export function IdleScreen({
   /** The active run's stage, detail and its start (#428), for the run hint beside the pill. */
   progress?: RunProgress | null
   voice: IdleVoice
-  /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
+  /** The Weigh-in pop-up, or else the Peek Card's Idle Screen form (#470), drawn in the AI Usage chart's place. */
   popup?: React.ReactNode
+  /** Which of the two the place holds: the card's form grows upward with its sentence. */
+  popupKind?: 'weighin' | 'peek'
+  /** The last Command's failure sentence, or "No response." (#470), kept in the Voice Prompt line until the next input. */
+  result?: string | null
 }) {
   const [now, setNow] = useState(() => new Date())
   useCursorRest()
@@ -675,7 +687,7 @@ export function IdleScreen({
           {lines.map((line) => {
             switch (line) {
               case 'voice':
-                return <VoiceLine key={line} voice={voice} />
+                return <VoiceLine key={line} voice={voice} result={result} />
               case 'upNext':
                 return next !== null ? <UpNextLine key={line} next={next} now={now} format={timeFormat} /> : null
               case 'lastPage':
@@ -695,7 +707,7 @@ export function IdleScreen({
             })}
           </div>
         ) : null}
-        {popup !== null ? <div className="idle-popup-place">{popup}</div> : null}
+        {popup !== null ? <div className={popupKind === 'peek' ? 'idle-popup-place idle-popup-place--peek' : 'idle-popup-place'}>{popup}</div> : null}
       </div>
       <div className="idle-col idle-col--right">
         {right.length > 0 ? (
