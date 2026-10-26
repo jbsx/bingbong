@@ -9,7 +9,7 @@
 // every playing media element on the page, YouTube's player among them, by
 // kind and in the top frame only (#376).
 
-import { DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
+import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
 /** What the results script yields: the page's `ytInitialData` as JSON, or null when it carries none. */
 export const RESULTS_SCRIPT = `(() => {
@@ -272,7 +272,7 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
     case 'level': setHeard(video, Math.max(0, Math.min(100, op.to)) / 100); break
     case 'duck': {
       const mark = video.${DUCK_MARK} || (video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.restore)) / 100, share: op.share })
-      video.volume = Math.round(mark.restore * 100 * mark.share) / 100
+      video.volume = ${DUCK_FLOOR_FN}(mark)
       break
     }
     case 'unduck': {

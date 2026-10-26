@@ -101,9 +101,12 @@ describe.skipIf(!canDriveChrome)("the duck lowers a page's own media, no Player 
     await until(async () => (await levels()).later === 15, 'the late start to drop')
     await fixtures.chrome.evaluate("document.getElementById('clip').volume = 1")
     await until(async () => (await levels()).clip === 12, 'the raised clip to drop back')
+    // One left alone as muted is unmuted under the duck: it drops too.
+    await fixtures.chrome.evaluate("document.getElementById('quiet').muted = false")
+    await until(async () => (await levels()).quiet === 15, 'the unmuted video to drop')
     await duck.set(false)
-    expect(await levels()).toMatchObject({ clip: 80, podcast: 50, later: 100 })
-    await fixtures.chrome.evaluate("document.getElementById('later').pause()")
+    expect(await levels()).toEqual({ clip: 80, podcast: 50, later: 100, quiet: 100 })
+    await fixtures.chrome.evaluate("document.getElementById('later').pause(); document.getElementById('quiet').muted = true")
   })
 
   it('a `volume` Media Op under the duck sets the level put back, the element left at its floor', async () => {

@@ -75,8 +75,8 @@ wake, a push-to-talk or a Hot Listen's next speech until that Utterance
 ends, its Command fired or the line dropped — while a line is spoken and
 while the Timer rings, main sets every media element playing in the
 pane, the Player's song or a page's own, to 15 % of its level, low but
-never silent, and puts it back when the last of them lets go. YouTube's own remembered volume is never told the floor, and a
-`volume` spoken meanwhile, by the Player's verb or a Media Op, sets the
+never silent, and puts it back when the last of them lets go. YouTube's
+own remembered volume is never told the floor, and a `volume` spoken meanwhile, by the Player's verb or a Media Op, sets the
 volume put back. The card shows the level the duck will put back, never
 the floor (#459). The system's volume is never touched, and the music is
 never paused for it.

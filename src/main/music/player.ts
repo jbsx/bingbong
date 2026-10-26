@@ -148,6 +148,10 @@ type HeardLevel = Pick<LevelRead, 'volume' | 'loudnessDb'>
 const youTubesOwn = (read: Pick<LevelRead, 'volume' | 'playerVolume' | 'loudnessDb'>): boolean =>
   read.playerVolume !== null && Math.abs(read.volume - read.playerVolume * loudnessFactor(read.loudnessDb)) <= LEVEL_TOLERANCE
 
+/** The song plays at YouTube's own level as it opens: on the element, or in a mark the pane's duck put on it at that level (#461). */
+const opensAtYouTubesOwn = (status: WatchStatus): boolean =>
+  youTubesOwn(status) || (status.restore !== null && youTubesOwn({ ...status, volume: status.restore }))
+
 const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 
 const quoted = (title: string): string => `“${title}”`
@@ -642,12 +646,13 @@ export function createPlayer(deps: PlayerDeps): Player {
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
-    // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since —
-    // on the element, or in a mark the pane's duck put on it at the level YouTube opened it at (#461).
-    if (opening && (youTubesOwn(status) || (status.restore !== null && youTubesOwn({ ...status, volume: status.restore })))) await carry(status)
+    // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since.
+    if (opening && opensAtYouTubesOwn(status)) await carry(status)
     else if (ducked === null) {
-      knownVolume = status.volume
-      heard = { volume: status.volume, loudnessDb: status.loudnessDb }
+      // The pane's duck may hold the song while the Player holds none (#461): the level heard is its mark's, never the floor.
+      const volume = status.restore ?? status.volume
+      knownVolume = volume
+      heard = { volume, loudnessDb: status.loudnessDb }
     } else if (!status.ducked || status.volume > floorOf(ducked.restore)) await duckElement()
     if (opening && status.elapsed >= CARRIED_S) carrying = null
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes.

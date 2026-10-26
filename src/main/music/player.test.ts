@@ -536,6 +536,25 @@ describe('the level heard carries into the next song (#460)', () => {
     expect(youtube.element.volume).toBeCloseTo(19.93, 1)
   })
 
+  it('a song opened under a duck that held no song is heard at the level the pane\'s mark puts back, never its floor (#461)', async () => {
+    const { youtube, player, perform } = loud()
+    // The ear opens over a page with no Player song: the Player has nothing to duck, the pane holds.
+    await player.duck(true)
+    youtube.paneDuck = 0.15
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await player.check()
+    // The duck lets go: the Player held none, the pane puts the mark's level back.
+    await player.duck(false)
+    youtube.paneDuck = null
+    youtube.element = { ...youtube.element, volume: youtube.duckMark!.restore }
+    youtube.duckMark = null
+    // A Hot Listen opens before the next poll: the Player ducks the song from the level heard, not the floor the pane had left.
+    await player.duck(true)
+    expect(youtube.heard()).toBeCloseTo(100 * AF, 1)
+    await player.duck(false)
+    expect(youtube.element.volume).toBeCloseTo(100 * AF, 1)
+  })
+
   it('a song opened while ducked gets the floor of the matched level, and the duck lets go to it', async () => {
     const { youtube, player, perform } = loud()
     await perform({ kind: 'search', place: 'now' }, 'song a')

@@ -22,12 +22,15 @@ export const DUCK_MARK = '__bingbongDuck'
 /** A JS function source `(el) => 0–1`: the element's volume as heard once no duck holds it — the level a duck puts back, else its own. */
 export const HEARD_VOLUME_FN = `((el) => el.${DUCK_MARK} ? el.${DUCK_MARK}.restore : el.volume)`
 
+/** A JS function source `(mark) => 0–1`: the floor a duck's mark holds its element at, its share of the level put back, to a whole percent. */
+export const DUCK_FLOOR_FN = `((mark) => Math.round(mark.restore * 100 * mark.share) / 100)`
+
 /** A JS function source `(el, level)` setting a 0–1 volume: under a duck, the level put back, the element left at that level's floor. */
 export const SET_HEARD_VOLUME_FN = `((el, level) => {
   const duck = el.${DUCK_MARK}
   if (!duck) { el.volume = level; return }
   duck.restore = level
-  el.volume = Math.round(level * 100 * duck.share) / 100
+  el.volume = ${DUCK_FLOOR_FN}(duck)
 })`
 
 /**
@@ -68,40 +71,55 @@ export const MEDIA_FACTS_FN = `((el) => {
  */
 export const DUCK_HOLD = '__bingbongDuckHold'
 
+/** On an element the duck left alone as muted (#461): lowered should it be unmuted while the duck holds. */
+const DUCK_MUTED = '__bingbongDuckMuted'
+
+/** On a document: the duck's listeners are installed. */
+const DUCK_HEARD = '__bingbongDuckHeard'
+
 /**
  * A JS expression ducking every media element playing in its document
  * (#461, CONTEXT.md Ducking), by kind, on any site: each is marked with
  * its own level and dropped to `share` of it. A muted or paused element is
  * left alone, and one already marked keeps its mark — the Player's song
  * the Player marked, or one a frame's earlier duck reached. While the hold
- * stands, an element that starts playing drops to its floor too, and a
- * marked one the page raises goes back to its floor, the level put back
- * kept. Yields how many it lowered.
+ * stands, an element that starts playing drops to its floor too, as does
+ * one left alone as muted once it is unmuted, and a marked one the page
+ * raises goes back to its floor, the level put back kept. Yields how many
+ * it lowered.
  */
 export function duckAllScript(share: number): string {
   return `(() => {
   /* DUCK_ALL */
-  const floorOf = (mark) => Math.round(mark.restore * 100 * mark.share) / 100
+  const floorOf = ${DUCK_FLOOR_FN}
   const floor = (el) => { el.volume = floorOf(el.${DUCK_MARK}) }
   const lower = (el) => {
     const hold = window.${DUCK_HOLD}
-    if (!hold || el.${DUCK_MARK} || el.paused || el.ended || el.muted) return false
+    if (!hold || el.${DUCK_MARK} || el.paused || el.ended) return false
+    // Muted, it is left alone — and lowered should it be unmuted while the hold stands.
+    if (el.muted) { el.${DUCK_MUTED} = true; return false }
     el.${DUCK_MARK} = { restore: el.volume, share: hold.share }
     floor(el)
     return true
   }
-  if (!window.__bingbongDuckHeard) {
-    window.__bingbongDuckHeard = true
+  if (!window.${DUCK_HEARD}) {
+    window.${DUCK_HEARD} = true
     const media = (event) => event.target instanceof HTMLMediaElement ? event.target : null
     for (const type of ['play', 'playing']) window.addEventListener(type, (event) => { const el = media(event); if (el) lower(el) }, true)
     window.addEventListener('volumechange', (event) => {
       const el = media(event)
-      if (!el || !window.${DUCK_HOLD} || !el.${DUCK_MARK}) return
+      if (!el || !window.${DUCK_HOLD}) return
+      if (!el.${DUCK_MARK}) {
+        if (el.${DUCK_MUTED} && !el.muted) lower(el)
+        return
+      }
       if (el.volume > floorOf(el.${DUCK_MARK}) + 0.005) floor(el)
     }, true)
   }
   window.${DUCK_HOLD} = { share: ${share} }
-  return Array.from(document.querySelectorAll(${MEDIA_SELECTOR})).filter(lower).length
+  let lowered = 0
+  for (const el of document.querySelectorAll(${MEDIA_SELECTOR})) if (lower(el)) lowered += 1
+  return lowered
 })()`
 }
 
@@ -111,6 +129,7 @@ export const UNDUCK_ALL_JS = `(() => {
   window.${DUCK_HOLD} = null
   let restored = 0
   for (const el of document.querySelectorAll(${MEDIA_SELECTOR})) {
+    delete el.${DUCK_MUTED}
     const mark = el.${DUCK_MARK}
     if (!mark) continue
     delete el.${DUCK_MARK}
