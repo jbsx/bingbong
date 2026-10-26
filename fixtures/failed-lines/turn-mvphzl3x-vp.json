@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com: 'Help.' did not match, because the spoken reader has no help (only the CLI grammar does, and its parse takes 'help' but not 'Help.' with the ear's full stop). Jev read none 0.81 and the Where Ask none 0.72; nothing was said. Again 28 s later (turn-mvpi070a-vs)",
   "meant": "Show and say the help",
   "log": "decision-1793033383382-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: the words were heard right but Mammoth timed out at 3004 ms; best guess none, ended unavailable, 8.4 s from wake. The owner's next line 'Say, \"Evada by Niyam.\"' (turn-mvphuyyy-v8) read play and landed FriyzEMHUDQ",
   "meant": "Play Iraada by Niyam (FriyzEMHUDQ)",
   "log": "decision-1793033383382-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

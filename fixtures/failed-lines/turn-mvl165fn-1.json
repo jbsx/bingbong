@@ -7,5 +7,7 @@
   "happened": "Typed on the YouTube watch page on d81cb568: the Where Ask searched the whole question (search 0.90, slot s0-5 0.93) and landed once on DuckDuckGo; the hop-1 read timed out at 3003 ms on Mammoth and the Task ended unavailable, done never said",
   "meant": "Read the landing at hop 1 and end done on the weather box",
   "log": "decision-1792763610725-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

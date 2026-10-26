@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the promo's watch page (paused by turn-mvp8k4v2-2): 'Play tum se tum takbai niyum.' read play-10 0.83 (unpause the promo) over play 0.04; the promo played on. Third line of the turn-mvp8itd3-v3 shape",
   "meant": "A new play search for Niyam's song",
   "log": "decision-1793017798599-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

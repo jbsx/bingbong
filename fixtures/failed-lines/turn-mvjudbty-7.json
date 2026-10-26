@@ -7,5 +7,7 @@
   "happened": "Hop 0 clicked Ambient mode (0.99), checked=true went to false: the right action. The hop-1 Verdict read timed out at 1502 ms on Mammoth and the Task ended unavailable: done was never said",
   "meant": "Say done",
   "log": "decision-1792691664816-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

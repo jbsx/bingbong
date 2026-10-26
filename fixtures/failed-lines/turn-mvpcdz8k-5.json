@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610261228, Parakeet, Mammoth, 2026-10-26, on the watch page of 50 Cent - Many Men: the partial heard 'We like you.' (final 'Play like you do by Georgie J. O. J. I.'); Mammoth read the partial complete (noul 0.95) and the Early Fire clicked ref 24, YouTube's 'like this video' button (click-24 0.79, none 0.18), 884 ms before the Endpoint (signed out: its state did not change). Hop 1 read play 0.49 with the slot 'like you do by Georgie J O J I', landed capped with no pick, and 50 Cent played on. The owner's next line 'Like you do by J O J I.' (turn-mvpce7ye-vr) played acA8Rr3gEco. Same class as turn-mvp8m1th-3 and turn-mvp8k4v2-2: an Early Fire on a misheard partial",
   "meant": "Play Like You Do by Joji (acA8Rr3gEco), nothing clicked",
   "log": "decision-1793017798599-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }

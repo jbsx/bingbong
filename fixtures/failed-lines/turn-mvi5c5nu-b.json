@@ -7,5 +7,7 @@
   "happened": "Jev timed out at 802 ms against DECISION_TIMEOUT_MS 800 (the session's other calls took 209-309 ms); best guess none, 'unavailable' said; the same words 6 s later read click-12 at 1.00. No ledger stage names the model being unreachable; reading is the nearest",
   "meant": "click [12] to turn captions off",
   "log": "decision-1792589115188-1.jsonl",
-  "claimedBy": "#477"
+  "claimedBy": "#477",
+  "fixedBy": "9e11e984",
+  "case": "e2e/oneAsk.e2e.test.ts"
 }
