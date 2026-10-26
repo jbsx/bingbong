@@ -16,6 +16,14 @@ function summary(turnId: string, stages: Record<string, StageTally>, totalMs: nu
 }
 
 describe('buildPerfReport', () => {
+  it('reads the planner-step spans a gate run wrote into its own lines (#465)', () => {
+    const step: PerfSpanRecord = { turnId: 'g', stage: 'planner-step', durMs: 1500, at: 0, t: 0, detail: { model: 'glm-5.3', thinking: false, outcome: 'choice', promptTokens: 2000 } }
+    const text = formatPerfReport(buildPerfReport([step]), { logsDir: '/logs', fileCount: 1, skippedLines: 0 })
+    expect(text).toContain('planner-step latency by model, thinking and prompt tokens:')
+    expect(text).toContain('glm-5.3  off       1.5–3k      1  1500ms  1500ms')
+    expect(text).toContain('planner steps: 1 | choice 1')
+  })
+
   it('aggregates per-stage p50/p95/max/count over many turns', () => {
     const records: PerfSpanRecord[] = []
     const stt = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]

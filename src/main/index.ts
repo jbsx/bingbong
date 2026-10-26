@@ -379,6 +379,8 @@ function startCliHarness(runner: CommandRunner, subscribe: (listener: (event: Pi
     input: process.stdin,
     output: process.stdout,
     exit: () => quitFromApp(app),
+    // Read only under the harness (#465): the goal gate declines every confirm, so its runs never act on the world.
+    ...(process.env.BINGBONG_CONFIRM_ANSWER?.trim() ? { confirmAnswer: process.env.BINGBONG_CONFIRM_ANSWER.trim() } : {}),
   }).catch((err: unknown) => {
     process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
     quitFromApp(app)

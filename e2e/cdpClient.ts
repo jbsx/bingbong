@@ -18,7 +18,11 @@ export class CdpClient {
   private readonly pending = new Map<number, PendingRequest>()
   private readonly handlers = new Map<string, Set<EventHandler>>()
 
-  constructor(private readonly socket: CdpSocket) {
+  // A plain field, not a parameter property: node's type stripping runs this file for scripts/goal-gate.ts (#465).
+  private readonly socket: CdpSocket
+
+  constructor(socket: CdpSocket) {
+    this.socket = socket
     socket.onmessage = (event) => this.handleMessage(String(event.data))
     socket.onclose = () => this.handleClose()
   }

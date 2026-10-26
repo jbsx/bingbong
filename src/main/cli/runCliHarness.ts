@@ -22,6 +22,12 @@ export interface CliHarnessDeps {
   input: Readable
   output: Writable
   exit(): void
+  /**
+   * The answer every page question gets at once, unasked (#465): the goal
+   * gate's `BINGBONG_CONFIRM_ANSWER=no`, so a run under it never posts,
+   * sends or orders. Absent, the next typed line answers, as ever.
+   */
+  confirmAnswer?: string
 }
 
 const HELP_TEXT = [...COMMAND_HELP_LINES, '  quit | exit              exit the app'].join('\n')
@@ -42,7 +48,7 @@ function localCommand(line: string): 'help' | 'quit' | null {
 }
 
 export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
-  const { run, subscribe, input, output, exit } = deps
+  const { run, subscribe, input, output, exit, confirmAnswer } = deps
 
   const write = (text: string): void => {
     if (!output.destroyed) output.write(text)
@@ -94,6 +100,10 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
           write(`error: ${event.message}\n`)
           printed = true
           return
+        case 'speak':
+          // What the line said aloud (#465), apart from its result line: the goal gate judges both.
+          write(`said: ${JSON.stringify(event.text)}\n`)
+          return
         default:
           return
       }
@@ -142,7 +152,14 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
     subscribe((event) => {
       if (event.type !== 'site_question') return
       write(`${event.alert ? 'page says' : 'page asks'}: ${event.text}\n`)
-      if (event.alert !== true) questionOpen = true
+      if (event.alert === true) return
+      if (confirmAnswer === undefined) {
+        questionOpen = true
+        return
+      }
+      // Answered here, past the queue and with no prompt of its own: the line that raised it is still the one running.
+      write(`answered: ${confirmAnswer}\n`)
+      void runCommand(confirmAnswer).catch((err: unknown) => write(`error: ${err instanceof Error ? err.message : String(err)}\n`))
     })
 
     rl.on('line', (line: string) => {

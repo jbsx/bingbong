@@ -23,6 +23,7 @@
     "turn:replay": "node scripts/replay-turn.ts",
     "jev:replay": "node scripts/jev-replay.ts",
     "jev:gate": "node scripts/jev-gate.ts",
+    "goal:gate": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node --env-file-if-exists=.env scripts/goal-gate.ts",
     "jev:candidates": "node scripts/jev-candidates.ts",
     "jev:case": "node scripts/jev-case.ts",
     "bugs": "node scripts/bugs.ts",

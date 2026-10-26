@@ -3,6 +3,7 @@ import type { CommandLogRecord } from '../command/decisionRecord'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 import { buildAppReport, formatAppReport, isAppRecord, type AppReport } from './appTelemetry.ts'
 import { sttLine } from '../usage/earTally.ts'
+import { buildPlannerReport, formatPlannerReport, type PlannerReport } from './plannerReport.ts'
 import { buildDecisionReport, buildReactionReport, formatCommandReport, type DecisionReport, type ReactionReport } from './commandReport.ts'
 
 // The #33 report: per-stage p50/p95/max/count over every span in the log,
@@ -49,6 +50,8 @@ export interface PerfReport {
   sttEngines: SttEngineStats[]
   /** The app's own records: the runs' builds and machines, CPU samples, playback. */
   app: AppReport
+  /** The Planner's spans (#465): `planner-step` and `errand`. */
+  planner: PlannerReport
 }
 
 /** The turn check against the pause cap (#357): how often each fired the Endpoint. */
@@ -286,6 +289,7 @@ export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: reado
     endpoints: buildEndpointReport(records),
     sttEngines: buildSttEngines(records),
     app: buildAppReport(all),
+    planner: buildPlannerReport(records),
   }
 }
 
@@ -303,6 +307,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   if (report.stageStats.length === 0) {
     lines.push(`no perf spans found (files ${context.fileCount}, skipped lines ${context.skippedLines})`)
     lines.push(...formatAppReport(report.app))
+    lines.push(...formatPlannerReport(report.planner))
     appendCommandLines(lines, report, context)
     return lines.join('\n')
   }
@@ -344,6 +349,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
   if (report.sttEngines.length > 0) lines.push(formatSttEngineLine(report.sttEngines))
   lines.push(...formatAppReport(report.app))
+  lines.push(...formatPlannerReport(report.planner))
   appendCommandLines(lines, report, context)
   return lines.join('\n')
 }

@@ -31,6 +31,10 @@ import { collectJsonlFamily } from '../perf/collectPerfRecords.ts'
 import { ASK_FILE_PATTERN } from '../perf/perfFiles.ts'
 import { createRoutedDecisionModel } from './createDecisionModel.ts'
 import { askChars, cardBudgetChars, cardBudgetTokens, promptChars } from '../../core/decision/cardBudget.ts'
+import { createPlannerLimiter, type PlannerLimiter } from '../../core/planner/limiter.ts'
+import { resolvePlannerRouting } from '../../core/planner/plannerRouting.ts'
+import { chatDecisionModel } from '../planner/chatDecisionModel.ts'
+import { plannerChatClient, type PlannerStepHook } from '../planner/createPlannerModel.ts'
 
 // The Jev corpus on disk (#338): a folder of case files, each a recorded
 // ask and the answer each question should get, which `pnpm jev:replay`
@@ -131,20 +135,21 @@ async function askCorpus(
   entries: readonly CorpusEntry[],
   model: DecisionModel,
   repeat: number,
+  casesAtOnce = 1,
 ): Promise<{ repeats: RepeatVerdict[]; latencies: number[]; counts: { chars: number; tokens: number }[] }> {
-  const repeats: RepeatVerdict[] = []
+  const repeats: RepeatVerdict[] = new Array(entries.length)
   const latencies: number[] = []
   const counts: { chars: number; tokens: number }[] = []
-  for (const entry of entries) {
+  const askEntry = async (entry: CorpusEntry, at: number): Promise<void> => {
     if (typeof entry.case === 'string') {
-      repeats.push({ name: entry.name, runs: [{ name: entry.name, pass: false, problem: entry.case }] })
-      continue
+      repeats[at] = { name: entry.name, runs: [{ name: entry.name, pass: false, problem: entry.case }] }
+      return
     }
     const jevCase = entry.case
     const images = caseImages(dir, jevCase)
     if (typeof images === 'string') {
-      repeats.push({ name: entry.name, runs: [{ name: entry.name, pass: false, problem: images }] })
-      continue
+      repeats[at] = { name: entry.name, runs: [{ name: entry.name, pass: false, problem: images }] }
+      return
     }
     const runs: CaseVerdict[] = []
     const request = { state: jevCase.ask.state, questions: jevCase.ask.questions, ...(images !== null ? { images } : {}) }
@@ -161,15 +166,26 @@ async function askCorpus(
         runs.push(judgeJevCase(entry.name, jevCase, result))
       }
     }
-    repeats.push({ name: entry.name, runs })
+    repeats[at] = { name: entry.name, runs }
   }
+  // Cases are asked `casesAtOnce` at a time (a chat model's limiter decides the pace), the report in corpus order.
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < entries.length) {
+      const at = next++
+      await askEntry(entries[at]!, at)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(casesAtOnce, entries.length)) }, worker))
   return { repeats, latencies, counts }
 }
 
-export interface GateDeps {
+export interface GateDeps extends PlannerStepHook {
   readonly env: Record<string, string | undefined>
   /** Decision Models in place of the ones the env's host serves — tests only. */
   readonly models?: readonly DecisionModel[]
+  /** Chat models in place of the ones the Planner's routing reaches (`--chat`) — tests only. */
+  readonly chatModels?: readonly DecisionModel[]
 }
 
 export interface GateOptions {
@@ -177,6 +193,11 @@ export interface GateOptions {
   readonly models: readonly string[]
   /** Also ask Jev — the default endpoint, by TYPESAFE_API_KEY — which alone reads the image cases. Off unless asked: Jev is paid. */
   readonly withJev?: boolean
+  /**
+   * Chat model ids asked through the Planner's chat adapter (`--chat a,b`, #465), each on the
+   * Planner's host and key (`BINGBONG_PLANNER_*`), through one limiter: arm D's number (ADR 0095).
+   */
+  readonly chat?: readonly string[]
 }
 
 /** The env var naming the gate's models, comma-separated. */
@@ -193,9 +214,12 @@ const DECISION_ENV_PREFIX = 'BINGBONG_DECISION_'
  * case that needs an image is not run unless `--with-jev`.
  */
 export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptions): Promise<Replay> {
+  const chatIds = options.chat ?? []
+  const chat = chatModelsOf(deps, chatIds)
+  if (typeof chat === 'string') return { code: 2, report: chat }
   let models = deps.models
   if (models === undefined) {
-    if (options.models.length === 0) return { code: 2, report: `jev:gate needs its models — pass --models a,b or set ${GATE_MODELS_ENV_KEY}` }
+    if (options.models.length === 0 && chatIds.length === 0) return { code: 2, report: `jev:gate needs its models — pass --models a,b or set ${GATE_MODELS_ENV_KEY}` }
     const built: DecisionModel[] = []
     for (const id of options.models) {
       const routing = resolveDecisionRouting({ ...deps.env, BINGBONG_DECISION_MODEL: id })
@@ -215,11 +239,14 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
   const columns: GateColumn[] = []
   const latencies: number[] = []
   const counted: string[] = []
-  for (const model of models) {
+  const chatLines: string[] = []
+  for (const model of [...models, ...chat.models]) {
+    const isChat = chat.models.includes(model)
     // An image case is not asked of a model that reads no images: not run, not failed.
     const asked = model.readsImages === false ? entries.filter((entry) => typeof entry.case === 'string' || Object.keys(entry.case.ask.images ?? {}).length === 0) : entries
-    const run = await askCorpus(dir, asked, model, 1)
-    latencies.push(...run.latencies)
+    const run = await askCorpus(dir, asked, model, 1, isChat ? chat.casesAtOnce : 1)
+    if (isChat) chatLines.push(chatLine(model.model, run.repeats, run.latencies))
+    else latencies.push(...run.latencies)
     counted.push(...formatCharsPerToken(model.model, run.counts))
     const byName = new Map(run.repeats.map((repeat) => [repeat.name, repeat.runs[0]!]))
     columns.push({
@@ -231,9 +258,38 @@ export async function gateCorpus(dir: string, deps: GateDeps, options: GateOptio
     })
   }
   const budget = budgetOf(deps.env, entries)
-  const report = [formatJevGate(columns, budget.sizes), formatCardBudget(budget.tokens, budget.chars, budget.sizes, false), ...counted, ...latencyLine(latencies)].join('\n')
+  const report = [formatJevGate(columns, budget.sizes), formatCardBudget(budget.tokens, budget.chars, budget.sizes, false), ...counted, ...latencyLine(latencies), ...chatLines].join('\n')
   const pass = columns.every((column) => column.cells.every((cell) => 'notRun' in cell || cell.verdict.pass))
   return { code: pass ? 0 : 1, report }
+}
+
+/**
+ * The chat models `--chat` names (#465): each a Decision Model over the
+ * Planner's chat adapter, on the Planner's host and key with the model
+ * swapped, all through one limiter (the appliance's own, ADR 0095) and
+ * asked as many cases at once as it lets fly; or why one cannot be reached.
+ */
+function chatModelsOf(deps: GateDeps, ids: readonly string[]): { models: readonly DecisionModel[]; casesAtOnce: number } | string {
+  if (deps.chatModels !== undefined) return { models: deps.chatModels, casesAtOnce: 4 }
+  let limiter: PlannerLimiter | undefined
+  let casesAtOnce = 1
+  const models: DecisionModel[] = []
+  for (const id of ids) {
+    const routing = resolvePlannerRouting({ ...deps.env, BINGBONG_PLANNER_MODEL: id })
+    if (!routing.configured) return `jev:gate --chat cannot reach ${id} — ${routing.reason}`
+    limiter ??= createPlannerLimiter({ perSecond: routing.perSecond, inFlight: routing.inFlight })
+    casesAtOnce = routing.inFlight
+    models.push(chatDecisionModel(plannerChatClient(routing, limiter), deps))
+  }
+  return { models, casesAtOnce }
+}
+
+/** A chat model's pass count and latency p50/p95 over its answered asks (#465): arm D's numbers. */
+function chatLine(model: string, repeats: readonly RepeatVerdict[], latencies: readonly number[]): string {
+  const passed = repeats.filter((repeat) => repeat.runs[0]?.pass === true).length
+  const sorted = [...latencies].sort((a, b) => a - b)
+  const latency = sorted.length === 0 ? 'no answers' : `latency p50 ${formatMs(nearestRankPercentile(sorted, 50))} p95 ${formatMs(nearestRankPercentile(sorted, 95))} over ${sorted.length} answers`
+  return `chat ${model}: ${passed}/${repeats.length} passed, ${latency}`
 }
 
 /** Jev's latency over the asks it answered (#390): a widening is checked on the replay for what the card costs, as for what it reads; none when nothing was answered. */

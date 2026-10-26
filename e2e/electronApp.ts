@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process'
 import type { Writable } from 'node:stream'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
-import { connectCdp, type CdpClient } from './cdpClient'
-import { sleep, waitFor } from './waitFor'
+import { connectCdp, type CdpClient } from './cdpClient.ts'
+import { sleep, waitFor } from './waitFor.ts'
 
 export interface LaunchedApp {
   cdp: CdpClient
@@ -15,6 +15,8 @@ export interface LaunchedApp {
   stdoutLineCount(): number
   /** Everything printed to stdout so far (only with `pipeStdio`). */
   stdoutText(): string
+  /** Every byte printed to stdout so far, a last line with no newline yet (the CLI's prompt) included (only with `pipeStdio`). */
+  stdoutRaw(): string
   /** The most recent stderr, bounded at {@link STDERR_LIMIT} characters. */
   stderrTail(): string
   /** Quits through CDP's Browser.close, or by `signal` sent to the app (a SIGTERM is a systemd stop, #434). */
@@ -116,7 +118,9 @@ export async function launchApp({
   })
   const stdoutLines: string[] = []
   let stdoutBuffer = ''
+  let stdoutRaw = ''
   proc.stdout?.on('data', (chunk: Buffer) => {
+    stdoutRaw += chunk.toString()
     if (process.env.BINGBONG_E2E_VERBOSE) process.stderr.write(`[worker ${Date.now()}] stdout chunk: ${JSON.stringify(chunk.toString().slice(0, 80))}\n`)
     stdoutBuffer += chunk.toString()
     let newlineAt = stdoutBuffer.indexOf('\n')
@@ -154,6 +158,7 @@ export async function launchApp({
         ),
       stdoutLineCount: () => stdoutLines.length,
       stdoutText: () => stdoutLines.join('\n'),
+      stdoutRaw: () => stdoutRaw,
       async quit(options) {
         // Browser.close often never replies — the browser process exits first.
         if (options?.signal) proc.kill(options.signal)

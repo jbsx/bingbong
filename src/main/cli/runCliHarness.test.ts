@@ -296,6 +296,54 @@ describe('runCliHarness', () => {
     await cli.done
   })
 
+  it('prints every sentence its turn said aloud (#465): the goal gate judges what was said', async () => {
+    let publish: (event: PipelineEvent) => void = () => {}
+    const cli = harnessWith({
+      run: async (line, options) => {
+        const turnId = options.turnId!
+        publish({ type: 'command', turnId, text: line, action: 'read', at: 1 })
+        publish({ type: 'speak', turnId, text: 'The top comment says: nice.', at: 2 })
+        publish({ type: 'speak', turnId: 'voice-9', text: 'Not this line’s.', at: 3 })
+        return true
+      },
+    })
+    publish = cli.publish
+    cli.input.write('read me the top comment\n')
+    await cli.expectOutput('said: "The top comment says: nice."')
+    expect(cli.readOutput()).not.toContain('Not this line')
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
+  it('answers a page’s question itself with the confirm answer it was given (#465): the goal gate never acts on the world', async () => {
+    let publish: (event: PipelineEvent) => void = () => {}
+    const lines: string[] = []
+    let answer: () => void = () => {}
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    const cli = harnessWith({
+      confirmAnswer: 'no',
+      run: async (line, options) => {
+        lines.push(line)
+        if (line === 'no') {
+          answer()
+          return true
+        }
+        publish({ type: 'command', turnId: options.turnId!, text: line, action: 'click [4]', at: 1 })
+        // The page asks, and the line waits on it, as a confirm() holds a click.
+        publish({ type: 'site_question', text: 'Post this comment?', at: 2 })
+        await answered
+        return true
+      },
+    })
+    publish = cli.publish
+    cli.input.write('comment this is great\n')
+    await cli.expectOutput('answered: no')
+    expect(cli.readOutput()).toContain('page asks: Post this comment?')
+    expect(lines).toEqual(['comment this is great', 'no'])
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
   it('resolves when stdin closes without quit', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')

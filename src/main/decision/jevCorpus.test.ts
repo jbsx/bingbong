@@ -307,6 +307,44 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('Card Budget 100 tokens, 238 chars: 1 case over it: b-large 466 chars')
   })
 
+  it('jev:gate --chat asks the corpus of each chat model, several cases at once, and prints its pass count and latency p50/p95 (#465)', async () => {
+    saveCase('a-both', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-one', 'state-b', [{ question: 'target', label: 'ref-27' }])
+    saveCase('c-one', 'state-c', [{ question: 'target', label: 'ref-27' }])
+    let inFlight = 0
+    let most = 0
+    const chatModel = (model: string, latencies: Record<string, number>, targets: Record<string, Record<string, number>>): DecisionModel => {
+      const fake = new FakeJev(targets)
+      return {
+        model,
+        readsImages: false,
+        async ask(request) {
+          inFlight += 1
+          most = Math.max(most, inFlight)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          inFlight -= 1
+          const result = await fake.ask(request)
+          return { ...result, latencyMs: latencies[request.state]!, model }
+        },
+      }
+    }
+    const big = chatModel('glm-5.3', { 'state-a': 900, 'state-b': 1200, 'state-c': 3000 }, { 'state-a': { 'ref-21': 1 }, 'state-b': { 'ref-27': 1 }, 'state-c': { 'ref-27': 1 } })
+    const flash = chatModel('glm-5.3-flash', { 'state-a': 400, 'state-b': 600, 'state-c': 700 }, { 'state-a': { 'ref-21': 1 }, 'state-b': { none: 1 }, 'state-c': { 'ref-27': 1 } })
+    const gate = await gateCorpus(dir, { env: {}, chatModels: [big, flash] }, { models: [], chat: ['glm-5.3', 'glm-5.3-flash'] })
+    expect(gate.code).toBe(1)
+    expect(gate.report).toContain('case    chars  glm-5.3  glm-5.3-flash')
+    expect(gate.report).toContain('chat glm-5.3: 3/3 passed, latency p50 1200ms p95 3000ms over 3 answers')
+    expect(gate.report).toContain('chat glm-5.3-flash: 2/3 passed, latency p50 600ms p95 700ms over 3 answers')
+    expect(most).toBeGreaterThan(1)
+  })
+
+  it('jev:gate --chat needs a Planner key to reach a chat model', async () => {
+    saveCase('a-both', 'state-a', [{ question: 'target', label: 'ref-21' }])
+    const gate = await gateCorpus(dir, { env: {} }, { models: [], chat: ['glm-5.3'] })
+    expect(gate.code).toBe(2)
+    expect(gate.report).toBe('jev:gate --chat cannot reach glm-5.3 — no key: set BINGBONG_PLANNER_API_KEY, BINGBONG_PLANNER_API_KEY_ENV or ZAI_API_KEY')
+  })
+
   it('says so when the folder holds no case', async () => {
     const replay = await replayCorpus(dir, { env: {}, model: new FakeJev({}) })
     expect(replay.code).toBe(0)

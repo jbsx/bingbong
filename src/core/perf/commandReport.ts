@@ -170,7 +170,7 @@ export function buildReactionReport(records: readonly PerfSpanRecord[], decision
  * The input-token bands an answered call's latency is read in (#440): the
  * bands #440's audit drew, where Mammoth's p50 doubled past 6k.
  */
-const TOKEN_BANDS: readonly { name: string; below: number }[] = [
+export const TOKEN_BANDS: readonly { name: string; below: number }[] = [
   { name: '< 1.5k', below: 1500 },
   { name: '1.5–3k', below: 3000 },
   { name: '3–6k', below: 6000 },
@@ -178,10 +178,10 @@ const TOKEN_BANDS: readonly { name: string; below: number }[] = [
 ]
 
 /** The band of the answered calls the host gave no count for, after every counted one. */
-const NO_COUNT_BAND = TOKEN_BANDS.length
+export const NO_COUNT_BAND = TOKEN_BANDS.length
 
 /** The index of the band a token count falls in; `NO_COUNT_BAND` when there is none. */
-function tokenBandOf(tokens: number | undefined): number {
+export function tokenBandOf(tokens: number | undefined): number {
   return tokens === undefined || !Number.isFinite(tokens) ? NO_COUNT_BAND : TOKEN_BANDS.findIndex((band) => tokens < band.below)
 }
 
