@@ -4,7 +4,7 @@
   "at": 1793033710349,
   "source": "spoken",
   "stage": "stt",
-  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com (left there by turn-mvphyxti-vm): the ear heard \"I don't page.\" for 'Idle page'; Jev read none 0.88 and the Where Ask none 0.91",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com (left there by turn-mvphyxti-vm): the ear heard \"I don't page.\" for 'Idle page'; Jev read none 0.88 and the Where Ask none 0.91. The dump (utterance-1793033709127-0031) re-heard: batch Scribe 'I dev page', Whisper medium.en 'IDLE page' — the words are in the audio. The ear's 50 keyterms were all Page Terms (the watch page yields the 64 cap), so it was never told 'idle'",
   "meant": "Show the Idle Screen",
   "log": "decision-1793033383382-1.jsonl"
 }

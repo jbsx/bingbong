@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvpls2u8-v1d",
+  "transcript": "They're feeling good.",
+  "at": 1793040100412,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "ElevenLabs heard \"They're feeling good.\" (batch Scribe: 'Are they feeling good?'); Whisper medium.en hears 'Play feeling good.' on the same dump; Jev none",
+  "meant": "play Feeling Good (the repeat ten seconds later was heard and played)",
+  "log": "decision-1793033383382-1.jsonl"
+}
