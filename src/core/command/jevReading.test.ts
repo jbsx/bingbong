@@ -1945,7 +1945,7 @@ describe('Capture Ops (#466, ADR 0095): a link, an image, a block of text and th
     expect(offered['capture-view-2']).toBe('copy the text in view "npm init playwright@latest" to the Shelf and the clipboard')
     expect(offered['capture-text-1']).toBe('copy the text [text-1] "Skip to main content" to the Shelf and the clipboard')
     expect(offered['capture-text-2']).toBe('copy the text [text-2] heading "Ingredients" to the Shelf and the clipboard')
-    expect(offered['capture-page']).toBe("copy this page's address (its link) and title to the Shelf and the clipboard")
+    expect(offered['capture-page']).toBe('copy the link to this page — its address, under its title — to the Shelf and the clipboard')
   })
 
   it('offers no capture on the Where Ask, and no page capture on a blank pane', () => {

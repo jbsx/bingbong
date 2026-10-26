@@ -25,8 +25,16 @@ export function captureTextLine(block: TextBelow, n?: number): string {
   return `copy the text ${which}${quoted(block.text)} to the Shelf and the clipboard`
 }
 
-/** The page's own Capture Op (#466): its address, its title on the first line. */
-export const CAPTURE_PAGE_LINE = "copy this page's address (its link) and title to the Shelf and the clipboard"
+/**
+ * The page's own Capture Op (#466): its address, its title on the first
+ * line. Worded as measured on the gate (Mammoth ∩ Elephant), 2026-10-26, over
+ * the goal cases: "copy this page's address (its link) and title …" lost
+ * "Copy the link to this video" to YouTube's Share button on Elephant (0.57);
+ * this line and one adding "as the words ask to copy, save or keep the page
+ * or its link — never a share" both won it and lost nothing, a measured tie
+ * that went to the plainer line.
+ */
+export const CAPTURE_PAGE_LINE = 'copy the link to this page — its address, under its title — to the Shelf and the clipboard'
 
 /** What a capture took: a link's address, a block's text, an image's bytes, or the page's address and title. */
 export type CaptureKind = 'link' | 'text' | 'image' | 'page'
