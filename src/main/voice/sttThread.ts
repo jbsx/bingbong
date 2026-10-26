@@ -2,7 +2,7 @@ import { parentPort, Worker, workerData } from 'node:worker_threads'
 import type { Transcriber } from '../../core/ports/stt'
 import type { ChainBias, FromVoiceChain } from '../../core/voice/voiceChain'
 import { reportFault, setFaultSink } from '../../core/trace/fault'
-import { setModelLoadSink } from '../perf/modelLoads'
+import { relayedLoad, setModelLoadSink } from '../perf/modelLoads'
 import { createMainVoiceTranscriber } from './createMainVoice'
 import type { VoiceConfig } from './voiceConfig'
 
@@ -116,7 +116,7 @@ if (parentPort !== null && (workerData as { sttThread?: boolean } | null)?.sttTh
   const port = parentPort
   const post = (message: FromStt): void => port.postMessage(message)
   setFaultSink((report) => post({ type: 'relay', message: { type: 'fault', report } }))
-  setModelLoadSink((load) => post({ type: 'relay', message: { type: 'modelLoad', load: { model: load.model, durMs: load.durMs, failed: load.failed } } }))
+  setModelLoadSink((load) => post({ type: 'relay', message: { type: 'modelLoad', load: relayedLoad(load) } }))
   let bias: ChainBias | null = null
   let transcriber: Transcriber | null = null
   const reply = (id: number, work: Promise<string>): void => {

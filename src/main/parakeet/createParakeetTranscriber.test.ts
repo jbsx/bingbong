@@ -47,6 +47,8 @@ function fakeRuntime(scripts: JointStep[][], opts: { failCreate?: number } = {})
   let pass = -1
   let step = 0
   let creates = 0
+  /** Each session's CPU arena as created, by model file. */
+  const arenas = new Map<string, boolean | undefined>()
   let call = 0
 
   const preprocessor = {
@@ -111,8 +113,9 @@ function fakeRuntime(scripts: JointStep[][], opts: { failCreate?: number } = {})
 
   const runtime = {
     InferenceSession: {
-      async create(path: string) {
+      async create(path: string, options?: { enableCpuMemArena?: boolean }) {
         creates += 1
+        arenas.set(path.split('/').at(-1)!, options?.enableCpuMemArena)
         if (opts.failCreate !== undefined && creates <= opts.failCreate) throw new Error(`no model at ${path}`)
         if (path.endsWith('nemo128.onnx')) return preprocessor
         if (path.endsWith('encoder.onnx')) return encoder
@@ -121,7 +124,7 @@ function fakeRuntime(scripts: JointStep[][], opts: { failCreate?: number } = {})
     },
     Tensor: FakeTensor,
   }
-  return { runtime, joints, waveforms, firstSamples, callIndexOf: (passIndex: number, stepIndex: number) => joints.slice(0, passIndex).reduce((sum, calls) => sum + calls.length, 0) + stepIndex }
+  return { runtime, arenas, joints, waveforms, firstSamples, callIndexOf: (passIndex: number, stepIndex: number) => joints.slice(0, passIndex).reduce((sum, calls) => sum + calls.length, 0) + stepIndex }
 }
 
 function transcriber(fake: ReturnType<typeof fakeRuntime>, extra: Partial<Parameters<typeof createParakeetTranscriber>[0]> = {}) {
@@ -140,6 +143,12 @@ function transcriber(fake: ReturnType<typeof fakeRuntime>, extra: Partial<Parame
 describe('createParakeetTranscriber — greedy TDT decode', () => {
   it('names itself parakeet', () => {
     expect(transcriber(fakeRuntime([])).engine).toBe('parakeet')
+  })
+
+  it('creates the encoder without the CPU arena, which would keep its largest pass for good (#451); the small graphs keep theirs', async () => {
+    const fake = fakeRuntime([[{ token: 1 }]])
+    await transcriber(fake).finish(audio(1))
+    expect(Object.fromEntries(fake.arenas)).toEqual({ 'nemo128.onnx': true, 'encoder.onnx': false, 'joint.onnx': true })
   })
 
   it('walks the encoder frames, emitting tokens and skipping by each duration', async () => {

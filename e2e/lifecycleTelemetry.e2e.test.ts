@@ -141,6 +141,24 @@ describe('boot ready with the ear open on a silent mic (#435)', () => {
     // The bound #429 measured before the gate: 5.6–6.8 s on the kiosk; well under it on dev.
     expect(since('ready')).toBeLessThan(15_000)
   }, 40_000)
+
+  it('records what each voice model added to the voice process, and samples that process as voice (#451)', async () => {
+    const records = await waitFor(
+      async () => {
+        const all = await appRecords(userDataDir)
+        return all.some((r) => r.stage === 'cpu') ? all : undefined
+      },
+      { timeoutMs: 30_000, intervalMs: 500 },
+    )
+    const loads = records.filter((r) => r.stage === 'model-load' && r.detail?.first === true)
+    expect(loads.map((r) => r.detail?.model)).toEqual(expect.arrayContaining(['wake', 'vad']))
+    for (const load of loads) {
+      expect(load.detail?.rssMb).toBeGreaterThan(0)
+      expect(typeof load.detail?.rssDeltaMb).toBe('number')
+    }
+    const sample = records.find((r) => r.stage === 'cpu')!
+    expect((sample.detail?.memoryMb as Record<string, number>).voice).toBeGreaterThan(0)
+  }, 40_000)
 })
 
 // The ear's cold start (#442): until the models that hear are in, the screen

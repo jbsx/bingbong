@@ -144,6 +144,37 @@ describe('buildLifecycleReport', () => {
     ])
   })
 
+  it('prints what each voice model added on its first load, marking loads whose windows crossed, and the memory either side of the latest run’s first line (#451)', () => {
+    const base = at + 100_000
+    const at_ = (record: PerfSpanRecord, ms: number): PerfSpanRecord => ({ ...record, at: base + ms })
+    const sample = (ms: number, voice: number, availableMb: number, swapUsedMb: number): PerfSpanRecord => at_(app('cpu', { total: 30, byType: {}, load1: 2, memoryMb: { voice, Browser: 200 }, availableMb, swapUsedMb }), ms)
+    const line = (ms: number, turnId: string): PerfSpanRecord => ({ turnId, stage: 'reaction', durMs: 900, at: base + ms, t: 0 })
+    const records = [
+      at_(app('run', { version: '0.1.4' }), -50_000),
+      at_(app('model-load', { model: 'stt', first: true, rssMb: 700, rssDeltaMb: 650 }, 6_800), -40_000),
+      sample(-30_000, 900, 1_200, 360),
+      at_(app('run', { version: '0.1.5' }), 0),
+      // The STT thread's load from 0.5 s to 7 s; Smart Turn's prefetch inside it; the wake and the VAD after, apart.
+      at_(app('model-load', { model: 'stt', first: true, rssMb: 640, rssDeltaMb: 600 }, 6_500), 7_000),
+      at_(app('model-load', { model: 'smart-turn', first: true, rssMb: 680, rssDeltaMb: 24.6 }, 300), 1_300),
+      at_(app('model-load', { model: 'wake', first: true, rssMb: 700, rssDeltaMb: 12 }, 200), 8_800),
+      at_(app('model-load', { model: 'vad', first: true, rssMb: 703, rssDeltaMb: 3 }, 150), 9_000),
+      at_(app('model-load', { model: 'stt', first: false, rssMb: 703, rssDeltaMb: 0 }, 6_000), 60_000),
+      sample(10_000, 700, 1_500, 300),
+      sample(20_000, 710, 1_480, 310),
+      line(21_000, 'turn-1'),
+      sample(30_000, 790, 1_400, 340),
+      sample(40_000, 760, 1_410, 335),
+      line(41_000, 'turn-2'),
+      sample(50_000, 800, 1_390, 350),
+    ]
+    const lines = formatLifecycleReport(buildLifecycleReport(records))
+    expect(lines.filter((l) => l.startsWith('voice memory') || l.startsWith('memory around'))).toEqual([
+      'voice memory (RSS added on first load, p50 over runs): stt +600MB ×2*, smart-turn +24.6MB*, wake +12MB, vad +3MB (* overlapped another load) | utterance audio ≤1.8MB a copy (the 30 s cap)',
+      "memory around the latest run's first line: before it voice 710MB, available 1480MB, swap 310MB; after it, before the next line voice 760MB, available 1410MB, swap 335MB",
+    ])
+  })
+
   it('prints the latest quit step by step, how many reached exit, and runs that left no quit', () => {
     const records = [
       app('run', {}),

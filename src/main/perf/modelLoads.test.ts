@@ -25,6 +25,22 @@ describe('timeModelLoad', () => {
     expect(loads.every((load) => load.durMs >= 0)).toBe(true)
   })
 
+  it('reports the process RSS after each load and what the load added (#451), held while the load was', async () => {
+    const loads: ModelLoad[] = []
+    setModelLoadSink((load) => loads.push(load))
+    let held: Uint8Array | null = null
+    await timeModelLoad(
+      'stt-rss',
+      Promise.resolve().then(() => {
+        held = new Uint8Array(64 * 1_048_576).fill(1)
+      }),
+    )
+    await Promise.resolve()
+    expect(loads[0].rssMb).toBeGreaterThan(64)
+    expect(loads[0].rssDeltaMb).toBeGreaterThanOrEqual(60)
+    expect(held).not.toBeNull()
+  })
+
   it('never lets a sink that throws break the load', async () => {
     setModelLoadSink(() => {
       throw new Error('disk full')

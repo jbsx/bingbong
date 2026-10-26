@@ -70,6 +70,10 @@ export interface ChainModelLoad {
   model: string
   durMs: number
   failed: boolean
+  /** The voice process's RSS when the load ended, in MB (#451). */
+  rssMb?: number
+  /** What the voice process's RSS grew by over the load, in MB (#451). */
+  rssDeltaMb?: number
 }
 
 export type FromVoiceChain =

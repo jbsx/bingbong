@@ -1,6 +1,6 @@
 import { utilityProcess } from 'electron'
 import type { ToVoiceChain, VoiceChainEvents, VoiceChainLink } from '../../core/voice/voiceChain'
-import type { VoiceProcessConfig } from './voiceProcessConfig'
+import { VOICE_SERVICE_NAME, type VoiceProcessConfig } from './voiceProcessConfig'
 
 // Starts the voice process (#430) behind the chain's link: an Electron
 // utility process, so the native ONNX runtime's memory and any crash of it
@@ -10,7 +10,7 @@ import type { VoiceProcessConfig } from './voiceProcessConfig'
 export function voiceProcessStarter(entry: string) {
   return (events: VoiceChainEvents): VoiceChainLink<VoiceProcessConfig> => {
     let stopped = false
-    const child = utilityProcess.fork(entry, [], { serviceName: 'bingbong-voice' })
+    const child = utilityProcess.fork(entry, [], { serviceName: VOICE_SERVICE_NAME })
     child.on('message', (message) => events.message(message))
     child.on('exit', (code) => {
       if (!stopped) events.exit(`exited with code ${String(code)}`)

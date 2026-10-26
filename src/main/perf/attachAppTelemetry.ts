@@ -20,6 +20,7 @@ import { createPlaybackTracker, type PlaybackPoll } from '../../core/perf/playba
 import { reportFault } from '../../core/trace/fault'
 import { setModelLoadSink } from './modelLoads'
 import { PLAYBACK_SCRIPT } from './playbackScript'
+import { VOICE_SERVICE_NAME } from '../voice/voiceProcessConfig'
 
 // The app's own records in the perf log (kiosk telemetry 2026-10-25, see
 // src/core/perf/appTelemetry.ts): the run's stamp at boot, a CPU sample of
@@ -94,10 +95,11 @@ async function readMachineMemory(): Promise<MachineMemory | null> {
   return parseMeminfo(await readFile('/proc/meminfo', 'utf8').catch(() => ''))
 }
 
-/** One process as Electron's metrics give it: its kind, its pid, its CPU since the last call, its working set in KB. */
+/** One process as Electron's metrics give it: its kind, its pid, a utility's name, its CPU since the last call, its working set in KB. */
 export interface ProcessMetric {
   type: string
   pid: number
+  name?: string
   cpu: { percentCPUUsage: number }
   memory?: { workingSetSize: number }
 }
@@ -117,7 +119,7 @@ export function startCpuSampler(tracer: PerfTracer, metrics: () => readonly Proc
     // The CPU and the loop are read on the tick, the slower reads after: each covers the same 15 s.
     const names = surfaceNames()
     const processes: ProcessCpu[] = metrics().map((metric) => ({
-      type: names.get(metric.pid) ?? metric.type,
+      type: names.get(metric.pid) ?? (metric.name === VOICE_SERVICE_NAME ? 'voice' : metric.type),
       percent: metric.cpu.percentCPUUsage,
       ...(metric.memory ? { memoryMb: metric.memory.workingSetSize / 1024 } : {}),
     }))
@@ -143,7 +145,7 @@ export function startBootClock(tracer: PerfTracer, readyWhen: readonly string[],
   const boot = createBootClock((detail) => write(tracer, 'boot', { ...detail }, 'perf.appTelemetry.boot'), () => process.uptime() * 1000, readyWhen, onReady)
   // Each model's load, wherever it happens; the first of each is a boot milestone too.
   setModelLoadSink((load) => {
-    write(tracer, 'model-load', { model: load.model, first: load.first, ...(load.failed ? { failed: true } : {}), sinceStartMs: Math.round(process.uptime() * 1000) }, 'perf.appTelemetry.modelLoad', load.durMs)
+    write(tracer, 'model-load', { model: load.model, first: load.first, ...(load.failed ? { failed: true } : {}), rssMb: load.rssMb, rssDeltaMb: load.rssDeltaMb, sinceStartMs: Math.round(process.uptime() * 1000) }, 'perf.appTelemetry.modelLoad', load.durMs)
     if (load.first) boot.mark(`${load.model}-loaded`)
   })
   return boot

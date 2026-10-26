@@ -1,5 +1,6 @@
 import type { PerfSpanRecord } from './perfTracer'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
+import { vadDefaults } from '../voice/vadEndpointing.ts'
 
 /** The capsule's stage spans (#442): each stage's length in the perf log, `stage-<status>`, which `pnpm perf:report` prints per stage. */
 export const STAGE_SPAN_PREFIX = 'stage-'
@@ -218,6 +219,23 @@ export interface LifecycleReport {
   speechToHearing: { count: number; p50: number; p95: number } | null
   /** Each Status Capsule stage's length (#442), from its `stage-<status>` spans: what its "still …" bound is dated from. */
   stages: { stage: string; count: number; p50: number; p95: number }[]
+  /**
+   * The voice process's memory (#451): what each model's first load added to
+   * its RSS, largest first, `overlapped` when another load's window in the
+   * same run crossed it (the RSS read is the whole process's, so the two
+   * share the delta); and the latest run's settled samples either side of
+   * its first line, where what a pass leaves behind shows.
+   */
+  voiceMemory: {
+    loads: { model: string; runs: number; rssDeltaP50: number; overlapped: boolean }[]
+    /** The last sample before the first line's reaction, and the last before the next line's (or the run's end). */
+    aroundFirstLine: { before: RestSample | null; after: RestSample | null } | null
+  }
+}
+
+/** One CPU sample's memory: the machine's, and the voice process's RSS when it was sampled as `voice`. */
+export interface RestSample extends MachineMemory {
+  voiceMb: number | null
 }
 
 const isApp = (record: PerfSpanRecord, stage: string): boolean => record.turnId === 'app' && record.stage === stage && record.detail !== undefined
@@ -230,9 +248,54 @@ function percentiles(values: number[]): { p50: number; p95: number; max: number 
 }
 
 export function buildLifecycleReport(records: readonly PerfSpanRecord[]): LifecycleReport {
-  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: spanReport(records, 'wake-to-listening'), speechToHearing: spanReport(records, 'speech-to-hearing'), stages: stageReport(records) }
+  return { boot: bootReport(records), models: modelReport(records), quit: quitReport(records), steady: steadyReport(records), wakeToListening: spanReport(records, 'wake-to-listening'), speechToHearing: spanReport(records, 'speech-to-hearing'), stages: stageReport(records), voiceMemory: { loads: voiceLoadReport(records), aroundFirstLine: aroundFirstLineReport(records) } }
 }
 
+/** The records in time order, cut at each run stamp. */
+function runsOf(records: readonly PerfSpanRecord[]): PerfSpanRecord[][] {
+  const runs: PerfSpanRecord[][] = [[]]
+  for (const record of [...records].sort((a, b) => a.at - b.at)) {
+    if (isApp(record, 'run')) runs.push([])
+    else runs[runs.length - 1].push(record)
+  }
+  return runs
+}
+
+function voiceLoadReport(records: readonly PerfSpanRecord[]): LifecycleReport['voiceMemory']['loads'] {
+  const byModel = new Map<string, { deltas: number[]; overlapped: boolean }>()
+  for (const run of runsOf(records)) {
+    const loads = run.flatMap((record) => {
+      const model = record.detail?.model
+      const delta = num(record.detail?.rssDeltaMb)
+      if (!isApp(record, 'model-load') || record.detail?.first !== true || typeof model !== 'string' || delta === null) return []
+      return [{ model, delta, from: record.at - record.durMs, to: record.at }]
+    })
+    for (const load of loads) {
+      const group = byModel.get(load.model) ?? { deltas: [], overlapped: false }
+      group.deltas.push(load.delta)
+      if (loads.some((other) => other !== load && other.from < load.to && load.from < other.to)) group.overlapped = true
+      byModel.set(load.model, group)
+    }
+  }
+  return [...byModel]
+    .map(([model, { deltas, overlapped }]) => ({ model, runs: deltas.length, rssDeltaP50: percentiles(deltas).p50, overlapped }))
+    .sort((a, b) => b.rssDeltaP50 - a.rssDeltaP50)
+}
+
+function restSampleOf(record: PerfSpanRecord | undefined): RestSample | null {
+  const availableMb = num(record?.detail?.availableMb)
+  const swapUsedMb = num(record?.detail?.swapUsedMb)
+  if (availableMb === null || swapUsedMb === null) return null
+  return { availableMb, swapUsedMb, voiceMb: num((record?.detail?.memoryMb as Record<string, unknown> | undefined)?.voice) }
+}
+
+function aroundFirstLineReport(records: readonly PerfSpanRecord[]): LifecycleReport['voiceMemory']['aroundFirstLine'] {
+  const run = runsOf(records).at(-1) ?? []
+  const lines = run.flatMap((record, i) => (record.turnId !== 'app' && record.stage === 'reaction' ? [i] : []))
+  if (lines.length === 0) return null
+  const samplesIn = (from: number, to: number): PerfSpanRecord[] => run.slice(from, to).filter((record) => isApp(record, 'cpu'))
+  return { before: restSampleOf(samplesIn(0, lines[0]).at(-1)), after: restSampleOf(samplesIn(lines[0] + 1, lines[1] ?? run.length).at(-1)) }
+}
 function stageReport(records: readonly PerfSpanRecord[]): LifecycleReport['stages'] {
   const byStage = new Map<string, number[]>()
   for (const record of records) {
@@ -440,6 +503,18 @@ export function formatLifecycleReport(report: LifecycleReport): string[] {
   }
   if (report.stages.length > 0) {
     lines.push(`capsule stages: ${report.stages.map((s) => `${s.stage} ×${s.count} p50 ${formatMs(s.p50)} p95 ${formatMs(s.p95)}`).join(', ')}`)
+  }
+  const { loads, aroundFirstLine } = report.voiceMemory
+  if (loads.length > 0) {
+    const models = loads.map((l) => `${l.model} +${String(round1(l.rssDeltaP50))}MB${l.runs > 1 ? ` ×${String(l.runs)}` : ''}${l.overlapped ? '*' : ''}`)
+    // The audio has no load to time: its bound is the endpointer's cap, one 16 kHz float32 copy.
+    const capMs = vadDefaults().maxUtteranceMs
+    const audio = `utterance audio ≤${String(round1((capMs * 16 * 4) / 1_048_576))}MB a copy (the ${String(capMs / 1000)} s cap)`
+    lines.push(`voice memory (RSS added on first load, p50 over runs): ${models.join(', ')}${loads.some((l) => l.overlapped) ? ' (* overlapped another load)' : ''} | ${audio}`)
+  }
+  if (aroundFirstLine !== null) {
+    const sample = (s: RestSample | null): string => (s === null ? 'unsampled' : `${s.voiceMb !== null ? `voice ${String(s.voiceMb)}MB, ` : ''}available ${String(s.availableMb)}MB, swap ${String(s.swapUsedMb)}MB`)
+    lines.push(`memory around the latest run's first line: before it ${sample(aroundFirstLine.before)}; after it, before the next line ${sample(aroundFirstLine.after)}`)
   }
   return lines
 }

@@ -1,7 +1,7 @@
 import { createVoiceChainHost, type FromVoiceChain, type ToVoiceChain } from '../../core/voice/voiceChain'
 import { createUtteranceDumper } from '../../core/voice/utteranceDump'
 import { setFaultSink } from '../../core/trace/fault'
-import { setModelLoadSink } from '../perf/modelLoads'
+import { relayedLoad, setModelLoadSink } from '../perf/modelLoads'
 import { createMainWake } from '../wake/createMainWake'
 import { createMainVoice } from './createMainVoice'
 import { fsUtteranceDumpWriter } from './utteranceDumpWriter'
@@ -24,7 +24,7 @@ const port = {
   },
 }
 setFaultSink((report) => port.post({ type: 'fault', report }))
-setModelLoadSink((load) => port.post({ type: 'modelLoad', load: { model: load.model, durMs: load.durMs, failed: load.failed } }))
+setModelLoadSink((load) => port.post({ type: 'modelLoad', load: relayedLoad(load) }))
 
 const host = createVoiceChainHost<VoiceProcessConfig>({
   send: (message) => port.post(message),
