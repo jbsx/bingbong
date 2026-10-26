@@ -93,14 +93,20 @@ RestartSec=2
 # An update installed at the Idle Screen exits $RELAUNCH_EXIT_CODE: not a failure, and started again.
 SuccessExitStatus=$RELAUNCH_EXIT_CODE
 RestartForceExitStatus=$RELAUNCH_EXIT_CODE
+EOF
+# The stop, written unexpanded: `$MAINPID` is systemd's, `$$` a shell's `$`.
+cat >> "$UNIT_DIR/$SERVICE.service" <<'EOF'
 # A stop is a quit of the app alone (#434). The AppImage runtime beside it
-# serves the app's FUSE mount: a SIGTERM to it at the same moment took the
-# mount from under the quitting app (SIGBUS, a core dump per stop). ExecStop
-# signals the app, waits for it to go, then gives the runtime a second to
-# unmount; KillMode=mixed sends the rest SIGKILL only after that (no dead
-# mount left in /tmp). The app bounds its own quit at 5 s; TimeoutStopSec
-# bounds the whole stop, so nothing waits 90 s.
-ExecStop=/bin/sh -c 'kill -TERM \$MAINPID; while kill -0 \$MAINPID 2>/dev/null; do sleep 0.1; done; sleep 1'
+# serves the app's FUSE mount and unmounts the moment the app exits, so
+# anything still running from the mount then faults on it (SIGBUS, a core
+# dump). ExecStop first ends what runs from the mount with no parent in the
+# app (Chromium's crashpad handler: the app's quit does not take it down)
+# and waits for it (2 s at most), then signals the app and waits for it,
+# then waits (5 s at most) for every other process the unit held when the
+# stop began — Chromium's children, and the runtime, which unmounts and
+# exits on its own — so KillMode=mixed SIGKILLs only what outlives that. The app bounds its own quit at 5 s; TimeoutStopSec bounds the
+# whole stop, so nothing waits 90 s.
+ExecStop=/bin/sh -c 'c=/sys/fs/cgroup$$(sed s/^0::// /proc/self/cgroup); a=$$(cat $$c/cgroup.procs); m=$$(dirname "$$(readlink /proc/$MAINPID/exe)"); on() { case "$$(readlink /proc/$$1/exe 2>/dev/null)" in "$$m"/*) return 0;; esac; return 1; }; strays() { for p in $$(cat $$c/cgroup.procs); do on $$p || continue; q=$$(sed -n "s/^PPid:[[:space:]]*//p" /proc/$$p/status 2>/dev/null); [ "$$q" = $MAINPID ] || on "$$q" || echo $$p; done; }; s=$$(strays); [ -z "$$s" ] || kill -TERM $$s; i=0; while [ -n "$$(strays)" ] && [ $$i -lt 20 ]; do sleep 0.1; i=$$((i+1)); done; kill -TERM $MAINPID; while kill -0 $MAINPID 2>/dev/null; do sleep 0.1; done; i=0; while [ $$i -lt 50 ]; do l=; for p in $$a; do [ $$p = $$$$ ] || ! kill -0 $$p 2>/dev/null || l=1; done; [ -z "$$l" ] && break; sleep 0.1; i=$$((i+1)); done'
 KillMode=mixed
 TimeoutStopSec=15
 EOF
