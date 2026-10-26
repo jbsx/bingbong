@@ -37,6 +37,18 @@ describe('the Local Match: reload (#328)', () => {
   })
 })
 
+describe('the Local Match: capture (#466, ADR 0095)', () => {
+  it('reads `capture <ref>` as the Capture Op its kind carries, and `capture page` as the page\'s, with no ask', () => {
+    expect(localMatch('capture 6', REFS)).toEqual({ verb: 'capture', target: 6, slot: null, capture: { kind: 'link', named: 'Trending' } })
+    expect(localMatch('capture page', REFS)).toEqual({ verb: 'capture', target: null, slot: null, capture: { kind: 'page', named: '' } })
+  })
+
+  it("leaves `capture` on a control, or on a number the page does not show, to Jev", () => {
+    expect(localMatch('capture 2', REFS)).toBeNull()
+    expect(localMatch('capture 40', REFS)).toBeNull()
+  })
+})
+
 describe('the Local Match: resume (the Last Page)', () => {
   it('reads the grammar and the spoken word as a resume', () => {
     expect(localMatch('resume', [])).toEqual({ verb: 'resume', target: null, slot: null })

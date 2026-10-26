@@ -43,6 +43,8 @@ export type CollectedTextBlock = (
   inView?: boolean
   /** Whether the block is rendered and lies wholly below the viewport (#393, ADR 0086): a hidden block has no box and is never below. */
   below?: boolean
+  /** Whether the block is rendered and lies wholly above the viewport (#466): one the view has passed. */
+  above?: boolean
   /** The block's index in its document's text registry (#393): where a Show Op finds its node. */
   node?: number
   /** The frame the block was read in (#393, ADR 0081): set by the page merge; absent for the top document's own. */
@@ -113,6 +115,10 @@ export interface PageText {
   viewportTextMore: number
   /** The rendered blocks below the view (#393), in reading order, none repeating one before it or one in view. */
   textBelow: TextBelow[]
+  /** The rendered blocks the view has passed (#466), in reading order, none repeating one in view or below it. */
+  textAbove: TextBelow[]
+  /** The blocks in view where their nodes are (#466), each `viewportText` entry that has one: what a capture of a block in view reads whole. */
+  viewportBlocks: TextBelow[]
 }
 
 function renderPre(text: string): string {
@@ -179,6 +185,12 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
   const pastCap = new Set<string>()
   const prose = new Set<string>()
   const below: TextBelow[] = []
+  const above: TextBelow[] = []
+  const viewportBlocks: TextBelow[] = []
+  const entryOf = (block: CollectedTextBlock & { node: number }, lines: readonly string[]): TextBelow => {
+    const kind = kindOf(block)
+    return { text: lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH), ...(kind !== undefined ? { kind } : {}), frame: block.frame ?? null, node: block.node }
+  }
   for (const block of collected) {
     const lines = renderBlock(block)
     if (lines.length === 0) continue
@@ -191,22 +203,28 @@ export function renderPageText(collected: readonly CollectedTextBlock[]): PageTe
     if (block.inView === true) {
       const inView = lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH)
       if (viewportText.includes(inView)) continue
-      if (viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) viewportText.push(inView)
-      else pastCap.add(inView)
+      if (viewportText.length < MAX_VIEWPORT_TEXT_BLOCKS) {
+        viewportText.push(inView)
+        if (block.node !== undefined) viewportBlocks.push(entryOf({ ...block, node: block.node }, lines))
+      } else pastCap.add(inView)
     } else if (block.below === true && block.node !== undefined) {
-      const kind = kindOf(block)
-      below.push({ text: lines.join('\n').slice(0, MAX_VIEWPORT_TEXT_BLOCK_LENGTH), ...(kind !== undefined ? { kind } : {}), frame: block.frame ?? null, node: block.node })
+      below.push(entryOf({ ...block, node: block.node }, lines))
+    } else if (block.above === true && block.node !== undefined) {
+      above.push(entryOf({ ...block, node: block.node }, lines))
     }
   }
-  // A block below that repeats one before it, or one in view, is said once: where it first is.
+  // A block off the view that repeats one before it, or one in view, is said once: where it first is — in view, then
+  // below it, as before the view's passed blocks were offered (#466), then above it.
   const said = new Set([...viewportText, ...pastCap])
-  const textBelow: TextBelow[] = []
-  for (const entry of below) {
-    if (said.has(entry.text)) continue
-    said.add(entry.text)
-    textBelow.push(entry)
-  }
-  return { blocks, viewportText, viewportTextMore: pastCap.size, textBelow }
+  const once = (entries: readonly TextBelow[]): TextBelow[] =>
+    entries.filter((entry) => {
+      if (said.has(entry.text)) return false
+      said.add(entry.text)
+      return true
+    })
+  const textBelow = once(below)
+  const textAbove = once(above)
+  return { blocks, viewportText, viewportTextMore: pastCap.size, textBelow, textAbove, viewportBlocks }
 }
 
 /**

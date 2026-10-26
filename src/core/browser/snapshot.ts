@@ -220,7 +220,7 @@ export function fileFieldClause(facts: FileFieldFacts): string {
   return `${facts.accept !== '' ? ` accepts ${JSON.stringify(facts.accept)}` : ''}${facts.multiple ? ' takes several files' : ''}`
 }
 
-export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region'
+export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region' | 'image'
 
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
 // heuristics (autocomplete tokens, name/id matching, form association) are
@@ -302,6 +302,10 @@ export interface PageSnapshot {
   viewportTextMore?: number
   /** Text Further Down (#393, ADR 0086): the rendered blocks below the view, each with where its node is; absent for a page read without it. */
   textBelow?: TextBelow[]
+  /** The rendered blocks the view has passed (#466), each with where its node is; absent for a page read without it. */
+  textAbove?: TextBelow[]
+  /** The blocks in view where their nodes are (#466): what a capture of a block in view reads whole; absent for a page read without it. */
+  viewportBlocks?: TextBelow[]
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
@@ -350,6 +354,8 @@ const CLICK_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio', 't
 
 export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
+  // An image is a ref for its Capture Op alone (#466).
+  if (element.tag === 'img') return 'image'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
   // The collect sends a region's facts only for an element its scroll cue took (#383, ADR 0085).
   if (element.region !== undefined) return 'region'
@@ -402,7 +408,7 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   if (typeof entry !== 'object' || entry === null) return null
   const block = entry as Record<string, unknown>
   // Where the block is (#194, #393), and its node in its document's text registry.
-  const placement = { ...(block.inView === true ? { inView: true } : {}), ...(block.below === true ? { below: true } : {}), ...(isFiniteNumber(block.node) ? { node: block.node } : {}) }
+  const placement = { ...(block.inView === true ? { inView: true } : {}), ...(block.below === true ? { below: true } : {}), ...(block.above === true ? { above: true } : {}), ...(isFiniteNumber(block.node) ? { node: block.node } : {}) }
   const text = (value: unknown): string => (typeof value === 'string' ? value : '')
   switch (block.kind) {
     case 'text':
@@ -659,9 +665,9 @@ export function parsePageLinks(raw: unknown): PageLink[] {
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */
-function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText' | 'viewportTextMore' | 'textBelow'> {
+function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText' | 'viewportTextMore' | 'textBelow' | 'textAbove' | 'viewportBlocks'> {
   if (page.textBlocks !== undefined) {
-    const { blocks, viewportText, viewportTextMore, textBelow } = renderPageText(page.textBlocks)
+    const { blocks, viewportText, viewportTextMore, textBelow, textAbove, viewportBlocks } = renderPageText(page.textBlocks)
     const whole = blocks.join('\n')
     return {
       textBlocks: blocks,
@@ -671,6 +677,8 @@ function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'tex
       viewportText,
       ...(viewportTextMore > 0 ? { viewportTextMore } : {}),
       textBelow,
+      textAbove,
+      viewportBlocks,
     }
   }
   // An older payload sent only the capped digest: it is all the text there is.

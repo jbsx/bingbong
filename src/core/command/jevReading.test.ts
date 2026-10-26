@@ -359,15 +359,15 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
   })
 
   it('orders the card refs, then media ops, then opens, then menus under the cap: the menus give way before the ops', () => {
-    // 232 clicks and the eleven ops fill the 255 exactly beside none and the eleven ref-less verbs: nothing is left for the link or a menu.
-    const refs: CommandRef[] = [...Array.from({ length: 231 }, (_, n) => ({ ref: n + 1, kind: 'button' as const, label: `Ref ${n + 1}`, href: null, inputType: null })), { ...VIDEO, ref: 232 }]
+    // 231 clicks and the eleven ops fill the 255 exactly beside none, the eleven ref-less verbs and the page's capture (#466): nothing is left for the link or a menu.
+    const refs: CommandRef[] = [...Array.from({ length: 230 }, (_, n) => ({ ref: n + 1, kind: 'button' as const, label: `Ref ${n + 1}`, href: null, inputType: null })), { ...VIDEO, ref: 231 }]
     const labels = Object.keys(hopQuestions('pause it', { ...WATCH, refs }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)
     expect(labels.length).toBe(255)
-    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(232)
-    expect(labels).toEqual(expect.arrayContaining(['pause-232', 'rate-232']))
+    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(231)
+    expect(labels).toEqual(expect.arrayContaining(['pause-231', 'rate-231']))
     expect(labels).not.toContain('open-1')
     expect(labels.some((label) => label.startsWith('menu-'))).toBe(false)
-    expect(labels.indexOf('pause-232')).toBeGreaterThan(labels.indexOf('click-232'))
+    expect(labels.indexOf('pause-231')).toBeGreaterThan(labels.indexOf('click-231'))
     // One ref fewer, and the link takes the room before any menu does.
     expect(Object.keys(hopQuestions('pause it', { ...WATCH, refs: refs.slice(1) }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)).toContain('open-1')
   })
@@ -418,6 +418,8 @@ describe('the questions', () => {
       'menu-1',
       'menu-2',
       'menu-3',
+      // The link's Capture Op (#466): a link is a capturing kind, the buttons and the field are not; no page to take on a blank pane.
+      'capture-1',
       'navigate',
       'search',
       'scroll_up',
@@ -456,7 +458,8 @@ describe('the Where Ask (#379, ADR 0082): the same action card, asked where the 
     // The Verdict rides the Where Ask (#394), worded as a hop's.
     expect(Object.keys(where)).toEqual(['action', 'slot', 'extent', 'where', 'outcome'])
     expect(where.outcome).toEqual(hopQuestions('turn on ambient mode and loop it', SITE, { hop: 1, visited: [], actions: [], links: [] }).outcome)
-    expect(Object.keys(where.action.options)).toEqual(Object.keys(first.action.options))
+    // Every option but the Capture Ops (#466): what would reveal or find a thing takes nothing.
+    expect(Object.keys(where.action.options)).toEqual(Object.keys(first.action.options).filter((label) => !label.startsWith('capture-')))
     expect(where.action.options['click-2']).toBe(first.action.options['click-2'])
     expect(where.action.options.search).toBe(first.action.options.search)
     expect(where.action.options.none).toBe('a remark or noise, nothing to look for')
@@ -1273,7 +1276,7 @@ describe('Appliance Verbs (#374)', () => {
     const appliance = { queued: true }
     for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance }), partialQuestions('next song', WATCH, { appliance })]) {
       const labels = Object.keys(questions.action.options)
-      expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS])
+      expect(labels).toEqual(['click-4', 'menu-4', 'capture-page', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS])
       for (const verb of APPLIANCE_VERBS) expect(questions.action.options[verb]).toMatch(/^music: /)
       expect(questions.action.instructions).not.toMatch(/music/)
     }
@@ -1285,7 +1288,7 @@ describe('Appliance Verbs (#374)', () => {
     expect(labels(PAGE_SONG, false)).toEqual(['play', 'play_next', 'queue', 'show'])
     expect(labels(WATCH, false)).toEqual(['play', 'play_next', 'queue'])
     expect(labels(WATCH, true)).toEqual(APPLIANCE_VERBS)
-    expect(Object.keys(commandQuestions('next song', PAGE_SONG).action.options)).toHaveLength(14)
+    expect(Object.keys(commandQuestions('next song', PAGE_SONG).action.options)).toHaveLength(15)
   })
 
   it("an Appliance Verb reading is the `play` Command the grammar's exact line makes", () => {
@@ -1601,11 +1604,13 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
   })
 
   it('takes the room the Choice leaves under its 255 options after the refs, before any right-click or open (#407)', () => {
-    // 120 buttons' clicks and the 12 ref-less options leave 123: the 4 blocks take theirs, the right-clicks the 119 left.
+    // 120 buttons' clicks, the 12 ref-less options and the page's capture leave 122: the 4 blocks take their shows and
+    // their captures (#466), the right-clicks the 114 left.
     const roomy = options({ ...DOCS, refs: Array.from({ length: 120 }, button) })
     expect(Object.keys(roomy)).toHaveLength(255)
     expect(shows(roomy)).toEqual(['show-1', 'show-2', 'show-3', 'show-4'])
-    expect(Object.keys(roomy).filter((label) => label.startsWith('menu-'))).toHaveLength(119)
+    expect(Object.keys(roomy).filter((label) => label.startsWith('capture-text-'))).toEqual(['capture-text-1', 'capture-text-2', 'capture-text-3', 'capture-text-4'])
+    expect(Object.keys(roomy).filter((label) => label.startsWith('menu-'))).toHaveLength(114)
     // At a hop, the links further down wait for the blocks too: on uptime-kuma's README a hundred links took the room its port was in.
     const links = Array.from({ length: 250 }, (_, index) => ({ label: `Link ${index + 1}`, href: `https://docs.python.org/further/${index + 1}` }))
     const hopped = options({ ...DOCS, refs: Array.from({ length: 120 }, button) }, { ...HOP, links })
@@ -1634,7 +1639,9 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
     const questions = hopQuestions('show me how to pretty print', DOCS, hop)
     expect(Object.keys(questions.action.options)).toEqual(expect.arrayContaining(['show-2', 'scroll_down']))
     expect(Object.keys(questions.action.options)).not.toContain('show-1')
-    expect(commandState('x', DOCS, hop, undefined, undefined, questions).split('\n').slice(-2)).toEqual(['Text further down the page, not on screen yet (number, text):', `[text-2] ${JSON.stringify(pretty.text)}`])
+    // The block set aside keeps its entry for its Capture Op (#466), which the Task did not set aside.
+    expect(Object.keys(questions.action.options)).toContain('capture-text-1')
+    expect(commandState('x', DOCS, hop, undefined, undefined, questions).split('\n').slice(-3)).toEqual(['Text further down the page, not on screen yet (number, text):', '[text-1] "Basic Usage"', `[text-2] ${JSON.stringify(pretty.text)}`])
     // Set aside on the very call that answered it (#373): the next most probable label still offered.
     const reread = readCommandAnswers({ action: { type: 'choice', choice: 'show-1', confidence: 0.7, probabilities: { 'show-1': 0.7, 'show-2': 0.2 } }, slot: choice('none'), extent: choice('screen') }, 'x', DOCS, hop)
     expect(reread.show).toEqual(pretty)
@@ -1907,5 +1914,68 @@ describe('resume on the card (#408, ADR 0089)', () => {
 
   it('reads as the resume Command', () => {
     expect(readCommandAnswers({ action: choice('resume'), slot: choice('none') }, 'where was i', BLANK)).toEqual({ verb: 'resume', target: null, slot: null })
+  })
+})
+
+describe('Capture Ops (#466, ADR 0095): a link, an image, a block of text and the page itself carry their capture on the action card', () => {
+  const RECIPE: CommandPage = {
+    url: 'https://www.bbcgoodfood.com/recipes/pasta',
+    title: 'Easy pasta - BBC Good Food',
+    refs: [
+      { ref: 1, kind: 'link', label: 'Pasta recipes', href: 'https://www.bbcgoodfood.com/recipes/collection/pasta', inputType: null },
+      { ref: 2, kind: 'button', label: 'Save recipe', href: null, inputType: null },
+      { ref: 3, kind: 'image', label: 'A bowl of pasta', href: null, inputType: null },
+    ],
+    viewportText: ['Easy pasta', 'npm init playwright@latest'],
+    viewportBlocks: [
+      { text: 'Easy pasta', kind: 'heading', frame: null, node: 0 },
+      { text: 'npm init playwright@latest', kind: 'code', frame: null, node: 1 },
+    ],
+    textAbove: [{ text: 'Skip to main content', frame: null, node: 0 }],
+    textBelow: [{ text: 'Ingredients', kind: 'heading', frame: null, node: 3 }],
+  }
+  const HOP: HopContext = { hop: 1, visited: [RECIPE.url], actions: ['scroll down a screen (the address did not change)'], links: [] }
+  const read = (label: string, page = RECIPE, hop: HopContext | undefined = HOP): Command => readCommandAnswers({ action: choice(label), slot: choice('none'), extent: choice('screen') }, 'copy it', page, hop)
+
+  it('offers capture-N on a link and an image, never on a control, and a capture of every block in view, off the view and of the page', () => {
+    const offered = commandQuestions('copy the link to pasta recipes', RECIPE, HOP).action.options
+    expect(offered['capture-1']).toBe('copy the link [1] "Pasta recipes" (its address) to the Shelf and the clipboard')
+    expect(offered['capture-3']).toBe('copy the image [3] "A bowl of pasta" to the Shelf and the clipboard')
+    expect(offered).not.toHaveProperty('capture-2')
+    expect(offered['capture-view-2']).toBe('copy the text in view "npm init playwright@latest" to the Shelf and the clipboard')
+    expect(offered['capture-text-1']).toBe('copy the text [text-1] "Skip to main content" to the Shelf and the clipboard')
+    expect(offered['capture-text-2']).toBe('copy the text [text-2] heading "Ingredients" to the Shelf and the clipboard')
+    expect(offered['capture-page']).toBe("copy this page's address (its link) and title to the Shelf and the clipboard")
+  })
+
+  it('offers no capture on the Where Ask, and no page capture on a blank pane', () => {
+    expect(Object.keys(whereQuestions('copy it', RECIPE).action.options).some((label) => label.startsWith('capture-'))).toBe(false)
+    expect(commandQuestions('copy it', { ...RECIPE, url: 'about:blank' }).action.options).not.toHaveProperty('capture-page')
+  })
+
+  it('reads each capture label into its Command, and one the hop does not offer into none', () => {
+    expect(read('capture-1')).toEqual({ verb: 'capture', target: 1, slot: null, capture: { kind: 'link', named: 'Pasta recipes' } })
+    expect(read('capture-3')).toEqual({ verb: 'capture', target: 3, slot: null, capture: { kind: 'image', named: 'A bowl of pasta' } })
+    expect(read('capture-view-2')).toEqual({ verb: 'capture', target: null, slot: null, capture: { kind: 'text', block: RECIPE.viewportBlocks![1], named: 'npm init playwright@latest' } })
+    expect(read('capture-text-2')).toEqual({ verb: 'capture', target: null, slot: null, capture: { kind: 'text', block: RECIPE.textBelow![0], named: 'Ingredients' } })
+    expect(read('capture-page')).toEqual({ verb: 'capture', target: null, slot: null, capture: { kind: 'page', named: 'Easy pasta - BBC Good Food' } })
+    expect(read('capture-2').verb).toBe('none')
+    expect(read('capture-text-9').verb).toBe('none')
+  })
+
+  it('lists what the view has passed as Text further up, then Text further down, each numbered in page order', () => {
+    const questions = hopQuestions('copy the ingredients', RECIPE, HOP)
+    expect(questions.action.options['show-1']).toBe('scroll until [text-1] "Skip to main content" is in view')
+    expect(commandState('copy the ingredients', RECIPE, HOP, undefined, undefined, questions).split('\n').slice(-4)).toEqual([
+      'Text further up the page, scrolled past (number, text):',
+      '[text-1] "Skip to main content"',
+      'Text further down the page, not on screen yet (number, text):',
+      '[text-2] heading "Ingredients"',
+    ])
+  })
+
+  it('names what was captured in "Done so far", kept on the Shelf and the clipboard', () => {
+    expect(doneLine(read('capture-1'), RECIPE, { changed: false })).toBe('copy the link "Pasta recipes" to the Shelf and the clipboard (done: it is on the Shelf and the clipboard)')
+    expect(doneLine(read('capture-page'), RECIPE, { changed: true })).toBe('copy this page to the Shelf and the clipboard (done: it is on the Shelf and the clipboard)')
   })
 })

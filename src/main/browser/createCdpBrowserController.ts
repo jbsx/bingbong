@@ -1,6 +1,8 @@
 import type {
   BrowserController,
   BrowserState,
+  CaptureRead,
+  CaptureTarget,
   FileChooser,
   KeyPress,
   MarkedScreenshot,
@@ -56,6 +58,7 @@ import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } from '../../core/browser/scrollOp'
 import type { DialogText, TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
+import { captureImage, type ImageFetch } from '../../core/command/captureOp'
 import { HEARD_VOLUME_FN, MEDIA_FACTS_FN, SET_HEARD_VOLUME_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
@@ -2321,6 +2324,82 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
 
   /**
+   * A Capture Op (#466, ADR 0095): one evaluate, on any site. A ref's in
+   * its own frame on the registry node the number names — a link's
+   * address, or an image fetched by the page itself, which sends the
+   * page's own cookies and cache, and failing that (a cross-origin image
+   * the page may draw but not read) a screenshot of the image's box; a
+   * block's in its frame on the text registry's node — the one the collect
+   * numbered, or the one that carries its words — read whole, past the
+   * card's 300 characters; the page's, its title and address. Nothing on
+   * the page changes, so the snapshot stands.
+   */
+  async function captureOn(target: CaptureTarget): Promise<CaptureRead> {
+    if (target.of === 'page') {
+      const read = await evaluateInPage<{ url: string; title: string }>('(() => { /* CAPTURE_PAGE */ return { url: location.href, title: document.title } })()')
+      return { kind: 'page', text: read.title !== '' ? `${read.title}\n${read.url}` : read.url }
+    }
+    if (target.of === 'text') {
+      const { block } = target
+      const text = await evaluateInFrame<string | null>(block.frame, `((at) => {
+        /* CAPTURE_TEXT */
+        const words = (text) => text.replace(/[^\\p{L}\\p{N}]+/gu, '')
+        const wanted = words(at.text).slice(0, 40)
+        const textOf = (box) => (box instanceof Range ? box.toString() : box.innerText || box.textContent || '')
+        const fits = (box) => {
+          if (!box) return false
+          const node = box instanceof Range ? box.startContainer : box
+          return node.isConnected === true && words(textOf(box)).includes(wanted)
+        }
+        const registry = window.__bingbongText || []
+        const box = fits(registry[at.node]) ? registry[at.node] : registry.find(fits)
+        return box ? textOf(box).replace(/[ \\t]+\\n/g, '\\n').trim() : null
+      })(${JSON.stringify({ text: block.text, node: block.node })})`)
+      // A null comes back as undefined (`evaluateInPage`): either is no block.
+      if (text == null || text === '') throw new Error('the text block is no longer on the page')
+      return { kind: 'text', text }
+    }
+    const { snapshot, target: ref } = await resolveRef(target.ref)
+    const at = addressOfRef(ref.ref)
+    const read = await evaluateInFrame<{ kind: 'link'; href: string } | ({ kind: 'image' } & ImageFetch) | null>(
+      at.frame,
+      `(async () => {
+        /* CAPTURE_REF */
+        const el = (window.__bingbongRefs || [])[${at.index}]
+        if (!el || !el.isConnected) return null
+        if (el instanceof HTMLImageElement) {
+          const src = el.currentSrc || el.src
+          try {
+            const response = await fetch(src)
+            if (!response.ok) return { kind: 'image', src }
+            const blob = await response.blob()
+            const data = await new Promise((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+              reader.onerror = () => reject(reader.error)
+              reader.readAsDataURL(blob)
+            })
+            return { kind: 'image', src, data, type: blob.type }
+          } catch {
+            return { kind: 'image', src }
+          }
+        }
+        const href = typeof el.href === 'string' ? el.href : el.href && typeof el.href.baseVal === 'string' ? new URL(el.href.baseVal, location.href).href : ''
+        return href ? { kind: 'link', href } : null
+      })()`,
+      { awaitPromise: true },
+    )
+    // A null comes back as undefined (`evaluateInPage`): either is no link or image.
+    if (read == null) throw new Error(`ref ${target.ref} is no link or image`)
+    if (read.kind === 'link') return { kind: 'link', text: read.href }
+    // The fallback's region is the image's box as shares of the view, as a magnified capture names one (#195).
+    const { x, y, width, height } = ref.rect
+    const { width: vw, height: vh } = snapshot.viewport
+    const image = await captureImage(read, () => screenshot({ region: { left: x / vw, top: y / vh, width: width / vw, height: height / vh }, scale: 2 }))
+    return { kind: 'image', image }
+  }
+
+  /**
    * A Scroll Op (#383, ADR 0085): one evaluate in the ref's own frame on
    * the registry node the number names, scrolling that element — never the
    * page, since an explicit scroll on an element never chains — by the
@@ -2651,6 +2730,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   const click = (ref: number) => holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref)))
   const mediaOp = (ref: number, op: MediaOpAction) => withRefusedStaleRef(() => mediaOpOn(ref, op))
+  const capture = (target: CaptureTarget) => (target.of === 'ref' ? withRefusedStaleRef(() => captureOn(target)) : captureOn(target))
   const scrollRegion = (ref: number, direction: 'up' | 'down', extent: ScrollExtent) => withRefusedStaleRef(() => scrollRegionOn(ref, direction, extent))
   // A right-click (#363): the page's own menu, with the appliance's native one held back for the length of it.
   const openMenu = async (ref: number): Promise<string> => {
@@ -2675,6 +2755,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     scroll,
     scrollRegion,
     showText: showTextOn,
+    capture,
     clickText: (text: DialogText) => holdingWindowOpens(() => clickTextOn(text)),
     screenshot,
     markedScreenshot,

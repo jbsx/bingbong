@@ -18,6 +18,9 @@ describe('actingWords', () => {
 
   it('searches for the words, on the site when scoped', () => {
     expect(actingWords(command('search', { slot: 'lighthouses' }))).toEqual({ word: 'Searching', object: '“lighthouses”' })
+    // A Capture Op (#466) by what it takes.
+    expect(actingWords(command('capture', { target: 4, capture: { kind: 'link', named: 'Home' } }))).toEqual({ word: 'Copying', object: 'the link' })
+    expect(actingWords(command('capture', { capture: { kind: 'page', named: '' } }))).toEqual({ word: 'Copying', object: 'the page' })
     expect(actingWords(command('search', { slot: 'cats', site: 'youtube.com' }))).toEqual({ word: 'Searching', object: 'youtube.com for “cats”' })
     expect(actingWords(command('type', { slot: 'cats', target: 4, submit: true }))).toEqual({ word: 'Searching', object: '“cats”' })
   })

@@ -193,6 +193,13 @@ describe('parseCliCommand', () => {
 })
 
 describe('the menu verb (#363, ADR 0079)', () => {
+  it('parses capture with a ref number or page (#466), and names the error in plain words', () => {
+    expect(parseCliCommand('capture 7')).toEqual({ ok: true, command: { type: 'capture', ref: 7 } })
+    expect(parseCliCommand('capture page')).toEqual({ ok: true, command: { type: 'capture', ref: 'page' } })
+    expect(parseCliCommand('capture the link')).toEqual({ ok: false, error: "capture: expected a ref number or 'page', e.g. 'capture 7'" })
+    expect(grammarErrorOf('capture')).toBe('Capture needs the number of a link or an image, like “capture 7”, or “capture page”.')
+  })
+
   it('parses menu with a ref number, and names the error in plain words', () => {
     expect(parseCliCommand('menu 7')).toEqual({ ok: true, command: { type: 'menu', ref: 7 } })
     expect(parseCliCommand('menu')).toEqual({ ok: false, error: "menu: expected a ref number, e.g. 'menu 7'" })

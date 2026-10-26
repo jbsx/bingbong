@@ -492,8 +492,14 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   let regions = new WeakSet()
   // What a frame's collect took for the dialog layer alone (#414): the page merge keeps it only there.
   let dialogOnly = new WeakSet()
-  const labelFor = (el) => (regions.has(el) ? regionLabelOf(el) : labelOf(el))
+  // The collect's images (#466): refs for their Capture Op alone, named by their own alt text.
+  let images = new WeakSet()
+  const imageLabelOf = (el) => (el.getAttribute('alt') || el.getAttribute('aria-label') || el.title || '').replace(/\\s+/g, ' ').trim().slice(0, 300)
+  const labelFor = (el) => (regions.has(el) ? regionLabelOf(el) : images.has(el) ? imageLabelOf(el) : labelOf(el))
   const MAX_COLLECTED = 400
+  // The least side, in CSS pixels, of an image that is a ref (#466): a guess, cheapest to reverse — a 24 or 32 px icon is
+  // no picture anyone takes, a thumbnail is past it; settled by a line asking for an image the card did not offer.
+  const MIN_IMAGE_SIDE = 48
   // The open dialog's own click listeners (#414), as the last collect that
   // could read them left them beside the root they were read under: null
   // when none were read under this root.
@@ -595,7 +601,19 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     unmarked = new WeakSet(taken.filter((entry) => !entry.marked && entry.cue !== 'region').map((entry) => entry.el))
     regions = new WeakSet(taken.filter((entry) => entry.cue === 'region').map((entry) => entry.el))
     dialogOnly = new WeakSet(taken.filter((entry) => entry.dialogOnly).map((entry) => entry.el))
-    return taken.map((entry) => entry.el)
+    // An image is a ref for its Capture Op (#466): every image drawn in view
+    // — inside the open dialog when one is open — at least MIN_IMAGE_SIDE
+    // on each side, so an icon is no image to take. Images come after every
+    // control, in document order, in the room the controls left: no control's
+    // number moves for them, and on a full page they give way first.
+    const shownImages = Array.from(document.images).filter((el) => {
+      if (!(el.currentSrc || el.src) || !el.complete || el.naturalWidth === 0) return false
+      if (dialogRoot !== null && !containsDeep(dialogRoot, el)) return false
+      const rect = el.getBoundingClientRect()
+      return rect.width >= MIN_IMAGE_SIDE && rect.height >= MIN_IMAGE_SIDE && rectVisible(el) && !insideInertDeep(el)
+    }).slice(0, Math.max(0, MAX_COLLECTED - taken.length))
+    images = new WeakSet(shownImages)
+    return [...taken.map((entry) => entry.el), ...shownImages]
   }
   const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
@@ -630,6 +648,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   // Rendered and wholly below the viewport (#393): a hidden block has no box and is never below.
   const rectBelow = (rect) => rect.width >= 1 && rect.height >= 1 && rect.top >= vh
+  // Rendered and wholly above the viewport (#466): a block the view has passed.
+  const rectAbove = (rect) => rect.width >= 1 && rect.height >= 1 && rect.bottom <= 0
   // What a text block is, by its element (#405): the Show Op's line names it, so a question reads which block answers it.
   const BLOCK_ROLES = { H2: 'heading', H3: 'heading', LI: 'list item' }
   const rawBlock = (el) => {
@@ -671,6 +691,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     collectedText += length + 1
     if (inView) block.inView = true
     else if (rectBelow(rect)) block.below = true
+    else if (rectAbove(rect)) block.above = true
     block.node = textNodes.length
     textNodes.push(box)
     textBlocks.push(block)

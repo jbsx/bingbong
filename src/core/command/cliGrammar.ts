@@ -7,6 +7,7 @@ export type CliCommand =
   | { type: 'read' }
   | { type: 'click'; ref: number }
   | { type: 'menu'; ref: number }
+  | { type: 'capture'; ref: number | 'page' }
   | { type: 'type'; ref: number; text: string }
   | { type: 'scroll'; direction: 'up' | 'down'; ref?: number }
   | { type: 'press'; press: KeyPress; times: number }
@@ -64,6 +65,8 @@ export function grammarErrorOf(line: string): string | null {
       return 'Click needs the number of an item, like “click 7”.'
     case 'menu':
       return 'Menu needs the number of an item, like “menu 7”.'
+    case 'capture':
+      return 'Capture needs the number of a link or an image, like “capture 7”, or “capture page”.'
     case 'type':
       return 'Type needs the number of a field and the words, like “type 3 hello”.'
     case 'scroll':
@@ -128,7 +131,7 @@ export function headsFlagLine(partial: string): boolean {
 }
 
 /** Every head word the grammar reads (#456): the switch below takes no other, and the Seed Lexicon lifts each. */
-export const CLI_HEADS = ['navigate', 'read', 'read_page', 'click', 'menu', 'type', 'scroll', 'press', 'screenshot', 'back', 'reload', 'resume', 'timer', 'help', 'quit', 'exit'] as const
+export const CLI_HEADS = ['navigate', 'read', 'read_page', 'click', 'menu', 'capture', 'type', 'scroll', 'press', 'screenshot', 'back', 'reload', 'resume', 'timer', 'help', 'quit', 'exit'] as const
 type CliHead = (typeof CLI_HEADS)[number]
 const isCliHead = (head: string): head is CliHead => (CLI_HEADS as readonly string[]).includes(head)
 
@@ -179,6 +182,12 @@ export function parseCliCommand(line: string): ParsedCliCommand {
         return { ok: false, error: "menu: expected a ref number, e.g. 'menu 7'" }
       }
       return { ok: true, command: { type: 'menu', ref: Number(rest) } }
+    }
+    case 'capture': {
+      // A Capture Op (#466, ADR 0095): a link's address or an image to the Shelf and the clipboard, or the page's own.
+      if (rest === 'page') return { ok: true, command: { type: 'capture', ref: 'page' } }
+      if (!/^\d+$/.test(rest)) return { ok: false, error: "capture: expected a ref number or 'page', e.g. 'capture 7'" }
+      return { ok: true, command: { type: 'capture', ref: Number(rest) } }
     }
     case 'type': {
       const refText = space === -1 ? '' : trimmed.slice(space + 1)

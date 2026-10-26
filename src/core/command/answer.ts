@@ -6,6 +6,7 @@ import type { JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
 import { NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
 import { mediaOpAnswer } from './mediaOp'
+import { captureAnswer } from './captureOp'
 import { scrollOpOfVerb } from './scrollOp'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
@@ -178,6 +179,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
       return isRealPage(facts.page.url) ? `Back on ${pageName(facts.page)}.` : 'There is no page to resume yet.'
     case 'timer':
       return command.durationMs !== undefined ? `Timer set for ${describeDuration(command.durationMs)}.` : 'Timer off.'
+    case 'capture':
+      return command.capture === undefined ? null : captureAnswer(command.capture.kind)
     case 'read':
     case 'screenshot':
     case 'help':

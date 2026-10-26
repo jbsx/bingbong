@@ -6,6 +6,8 @@ import type {
   MarkedScreenshot,
   BrowserController,
   BrowserState,
+  CaptureRead,
+  CaptureTarget,
   FileChooser,
   KeyPress,
   MediaState,
@@ -284,6 +286,20 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async showText(block: TextBelow): Promise<string> {
     this.shownTexts.push(block)
     return 'scrolled down: x=0 y=0'
+  }
+
+  /** Every Capture Op fired (#466), in order. */
+  readonly captures: CaptureTarget[] = []
+
+  /** A capture reads a link ref's address off the snapshot, a block's text as it was collected, the page's title and address. */
+  async capture(target: CaptureTarget): Promise<CaptureRead> {
+    this.captures.push(target)
+    if (target.of === 'page') return { kind: 'page', text: `${this.snapshot.title}\n${this.snapshot.url}` }
+    if (target.of === 'text') return { kind: 'text', text: target.block.text }
+    const ref = this.snapshot.refs.find((candidate) => candidate.ref === target.ref)
+    if (ref?.kind === 'image') return { kind: 'image', image: { bytes: new Uint8Array([0x89, 0x50]), ext: 'png', via: 'fetch' } }
+    if (ref?.href == null) throw new Error(`ref ${target.ref} is no link or image`)
+    return { kind: 'link', text: ref.href }
   }
 
   /** Every click on a dialog's own text (#416), in order. */

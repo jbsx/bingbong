@@ -8,6 +8,7 @@ import type { ApplianceFact } from './applianceFacts'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
 import { describeExtent, scrollOpOfVerb, type ScrollExtent } from './scrollOp'
 import { describeAppOp, type AppOpAction } from './appOp'
+import { describeCapture, type CaptureAction } from './captureOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -23,7 +24,8 @@ import { describeAppOp, type AppOpAction } from './appOp'
  * each ref, a media ref's Media Ops (#372, ADR 0080: the `media` verb,
  * its op on the Command), the rest as they are — and `play` through the
  * Appliance Verbs (#374), `say` through the facts' options (#402), and
- * `app` through the app's own options — its panel, views and settings (#420);
+ * `app` through the app's own options — its panel, views and settings (#420),
+ * and `capture` through the Capture Ops a ref, a block or the page carries (#466);
  * `screenshot`, `help`, `resume` and `timer` are the CLI grammar's alone,
  * reached only through the Local Match.
  */
@@ -51,6 +53,7 @@ export const COMMAND_VERBS = [
   'play',
   'say',
   'app',
+  'capture',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
@@ -64,7 +67,7 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
  * nor `say`, reached through the option of the fact it says (#402), nor
  * `app`, through the app's own options (#420).
  */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app' && verb !== 'capture') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app' | 'capture'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -121,6 +124,8 @@ export interface Command {
   readonly marked?: true
   /** For `type`, a Search Op (#398): the words replace what the search box holds, then the box is submitted. */
   readonly submit?: true
+  /** For `capture` (#466, ADR 0095): what a Capture Op takes — the target ref's link or image, a block of text, or the page. */
+  readonly capture?: CaptureAction
 }
 
 /** What the reading sees of one ref: the number, its kind, its label and, for a link, its address. */
@@ -169,6 +174,10 @@ export interface CommandPage {
   readonly viewportTextMore?: number
   /** Text Further Down (#393, ADR 0086): the blocks below the view, the action card's targets; absent for a page read without them. */
   readonly textBelow?: readonly TextBelow[]
+  /** The blocks the view has passed (#466): offered beside Text Further Down, in page order; absent for a page read without them. */
+  readonly textAbove?: readonly TextBelow[]
+  /** The blocks in view where their nodes are (#466): what a capture of a block in view reads whole; absent for a page read without them. */
+  readonly viewportBlocks?: readonly TextBelow[]
   /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
   readonly dialog?: PageDialog
   /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
@@ -206,6 +215,8 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     viewportText: snapshot.viewportText,
     ...(snapshot.viewportTextMore !== undefined ? { viewportTextMore: snapshot.viewportTextMore } : {}),
     ...(snapshot.textBelow !== undefined ? { textBelow: snapshot.textBelow } : {}),
+    ...(snapshot.textAbove !== undefined && snapshot.textAbove.length > 0 ? { textAbove: snapshot.textAbove } : {}),
+    ...(snapshot.viewportBlocks !== undefined ? { viewportBlocks: snapshot.viewportBlocks } : {}),
     ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.fullScreen !== undefined ? { fullScreen: snapshot.fullScreen } : {}),
     ...(snapshot.dialogOpen
@@ -373,6 +384,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return `say ${command.fact === 'playing' ? 'the song playing' : `the ${command.fact ?? 'fact'}`}`
     case 'app':
       return command.app !== undefined ? describeAppOp(command.app) : 'app'
+    case 'capture':
+      return command.capture !== undefined ? describeCapture(command.capture) : 'capture'
     case 'none':
       return 'not a command'
     default:

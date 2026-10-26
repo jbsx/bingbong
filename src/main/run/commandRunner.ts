@@ -1,5 +1,7 @@
 import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import type { ShelfFile } from '../../core/shelf/shelf'
+import type { KeepCapture } from '../shelf/keepCapture'
+import { captureFileName } from '../../core/command/captureOp'
 import { fitShelfAsk, readShelfAnswer } from '../../core/command/shelfAsk'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import { askImageFile, type AskKind } from '../../core/decision/askRecord'
@@ -274,6 +276,8 @@ export interface CommandRunnerDeps {
   app?: AppControl
   /** The Shelf (#424, ADR 0092): the files an upload may be offered, newest first; absent, a chooser the page opens sets nothing. */
   shelf?: { files(): Promise<readonly ShelfFile[]> }
+  /** Where a Capture Op's take goes (#466, ADR 0095): a file on the Shelf and the OS clipboard; absent, a capture fails saying so. */
+  keepCapture?: KeepCapture
   /** The Flag keeper (#421); absent, a flag is logged and nothing is copied. */
   flags?: FlagKeeper
   /** Where the page's own question waits (#423): said when it opens, answered by the next line; absent, no line is read as an answer. */
@@ -335,8 +339,8 @@ const RETRY_CHAIN_WINDOW_MS = 60_000
 /** The verbs whose action can open the page's file chooser (#424): a click on a field or a site's button, a key on a focused field. */
 const OPENS_CHOOSER: ReadonlySet<Command['verb']> = new Set(['click', 'press'])
 
-/** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
-const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'menu', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
+/** The verbs a Jev-read Task goes on after (#328); every other verb ends it. A capture (#466) goes on: "Done so far" names what it took, and the Verdict judges whether that was all. */
+const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'menu', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'capture'])
 
 /**
  * How a Task ends on this hop's reading alone (#328), before anything
@@ -1151,6 +1155,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const after = await deps.app.apply({ kind: 'settings', settings: placeSettings(before, change.path, place) })
         return appAnswer(command.app, before, after, undefined, placeName(place))
       }
+      case 'capture': {
+        // A Capture Op (#466, ADR 0095): one evaluate reads it, and it goes to a file on the Shelf and the clipboard, both.
+        const capture = command.capture
+        if (capture === undefined) throw new Error('a capture Command names nothing to take')
+        if (browser.capture === undefined || deps.keepCapture === undefined) throw new Error('no Shelf on this surface')
+        const target = capture.kind === 'page' ? { of: 'page' as const } : capture.block !== undefined ? { of: 'text' as const, block: capture.block } : { of: 'ref' as const, ref: command.target ?? 0 }
+        const read = await browser.capture(target)
+        // The page's file is named by its title as it is now: the grammar's `capture page` reads no page.
+        const name = captureFileName(new Date(at()), capture.kind === 'page' ? page.title : capture.named, read.kind === 'image' ? read.image.ext : 'txt')
+        const path = await deps.keepCapture(read.kind === 'image' ? { name, bytes: read.image.bytes } : { name, text: read.text })
+        if (target.of === 'ref') flash(target.ref)
+        const how = read.kind === 'image' && read.image.via === 'screenshot' ? ' (a screenshot of it: the page would not hand over its bytes)' : ''
+        return `captured the ${read.kind}${how}: on the Shelf as ${path}, and on the clipboard`
+      }
       case 'stop':
         return 'stopped'
       case 'none':
@@ -1446,6 +1464,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             ...(command.verb === 'media' && command.mediaOp !== undefined ? { mediaChanges: result.slice(mediaOpHead(command.mediaOp.op, command.target ?? 0).length).split('\n', 1)[0] } : {}),
           })
           if (text !== null) answer(turnId, text)
+          // A capture is said aloud (#466): the one sentence naming what went on the Shelf.
+          if (text !== null && command.verb === 'capture' && deps.speech !== undefined) void say(deps.speech, turnId, text)
         }
       }
       inFlight = null
@@ -1800,6 +1820,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // The line is provisional: the next hop, reading the page the action left, tells it in facts.
     task.actions.push(doneLine(command, page, doneResult(page, fired)))
     task.pending = { command, page, fired, ...(stepAside ? { stepAside: true as const } : {}) }
+    // A capture is never taken twice in a Task (#466): what it took leaves the card once it is kept.
+    if (command.verb === 'capture') {
+      const taken = setAsideOf(command, page)
+      if (taken !== null) task.setAside.push(taken)
+    }
     if (command.site !== undefined) task.searched.push(command.site)
     if ((command.verb === 'search' || command.verb === 'type') && command.slot !== null && command.slot !== '') task.terms.push(command.slot)
     if (fired.unchanged === true) {

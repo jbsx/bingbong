@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, ipcMain, Menu, session } from 'electron'
+import { app, BrowserWindow, clipboard, crashReporter, ipcMain, Menu, nativeImage, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -44,6 +44,7 @@ import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
 import { createSettingsStore } from './settings/settingsStore'
 import { readShelf } from './shelf/readShelf'
 import { shelfFolders } from '../core/shelf/shelf'
+import { createCaptureKeeper } from './shelf/keepCapture'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { registerEnvFileIpc } from './settings/attachEnvFile'
 import { registerFolderPickerIpc } from './settings/attachFolderPicker'
@@ -660,6 +661,16 @@ async function createWindow(): Promise<BrowserWindow> {
     app: appControl.control,
     // The Shelf (#424, ADR 0092): the downloads and the Settings folder, read flat on each upload.
     shelf: { files: () => readShelf(shelfFolders(downloadsDir, settingsStore.get().shelfFolder)) },
+    // A Capture Op's take (#466): a file in bingbong_downloads, and the OS clipboard.
+    keepCapture: createCaptureKeeper(() => downloadsDir, {
+      writeText: (text) => clipboard.writeText(text),
+      writeImage: (bytes) => {
+        const image = nativeImage.createFromBuffer(Buffer.from(bytes))
+        if (image.isEmpty()) return false
+        clipboard.writeImage(image)
+        return true
+      },
+    }),
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.

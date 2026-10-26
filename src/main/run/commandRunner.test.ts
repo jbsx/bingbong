@@ -147,7 +147,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -198,6 +198,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.facts ? { facts: options.facts } : {}),
     ...(options?.app ? { app: options.app } : {}),
     ...(options?.shelf ? { shelf: options.shelf } : {}),
+    ...(options?.keepCapture ? { keepCapture: options.keepCapture } : {}),
     ...(options?.dropLastPage ? { dropLastPage: options.dropLastPage } : {}),
     ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
@@ -263,6 +264,61 @@ describe('what the appliance knows (#402)', () => {
     await runner.consider("what's the weather")
     await flushMicrotasks()
     expect(events.some((event) => event.type === 'display')).toBe(false)
+  })
+})
+
+describe('a Capture Op (#466, ADR 0095): what a ref, a block or the page holds goes to the Shelf and the clipboard', () => {
+  const keeper = () => {
+    const kept: Parameters<NonNullable<CommandRunnerDeps['keepCapture']>>[0][] = []
+    return { kept, keepCapture: async (capture: (typeof kept)[number]) => (kept.push(capture), `/dl/${capture.name}`) }
+  }
+
+  it('"capture 1" takes the link\'s address with no ask, keeps it, and says so in one sentence', async () => {
+    const speech = new FakeSpeech()
+    const { kept, keepCapture } = keeper()
+    const { browser, decision, events, records, runner } = harness({ speech, keepCapture })
+    await runner.run('capture 1', { source: 'typed' })
+    expect(decision.requests).toHaveLength(0)
+    expect(browser.captures).toEqual([{ of: 'ref', ref: 1 }])
+    expect(kept).toEqual([{ name: expect.stringMatching(/^capture-\d{8}-\d{6}-home\.txt$/), text: 'https://example.com/1' }])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Copied the link to the Shelf.'])
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Copied the link to the Shelf.'])
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ reading: 'local_match', verb: 'capture', ended: 'local_match' })])
+  })
+
+  it('"capture page" names its file by the page\'s title and keeps its title over its address', async () => {
+    const { kept, keepCapture } = keeper()
+    const { runner } = harness({ keepCapture })
+    await runner.run('capture page', { source: 'typed' })
+    expect(kept).toEqual([{ name: expect.stringMatching(/^capture-\d{8}-\d{6}-example\.txt$/), text: 'Example\nhttps://example.com/' }])
+  })
+
+  it('a capture Jev reads goes on to the next hop, whose "Done so far" names it, and a sure yes ends the Task done', async () => {
+    const { kept, keepCapture } = keeper()
+    const { decision, runner } = harness({ keepCapture })
+    decision.script.push({ answers: { action: choice('capture-1'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.95), progress: { type: 'noul', noul: 0.9 } } })
+    await runner.run('copy the link to home', { source: 'spoken' })
+    expect(kept).toHaveLength(1)
+    expect(decision.requests).toHaveLength(2)
+    expect(decision.requests[1]!.state).toContain('Done so far: copy the link "Home" to the Shelf and the clipboard (done: it is on the Shelf and the clipboard)')
+  })
+
+  it('never takes the same thing twice in a Task: what a capture took leaves the next hop\'s card', async () => {
+    const { kept, keepCapture } = keeper()
+    const { decision, runner } = harness({ keepCapture })
+    decision.script.push({ answers: { action: choice('capture-page'), slot: choice('none') } }, { answers: { action: choice('capture-page'), slot: choice('none'), outcome: choice('not_yet', 0.9), progress: { type: 'noul', noul: 0.5 } } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.95), progress: { type: 'noul', noul: 0.9 } } })
+    await runner.run('save the thumbnail of this video', { source: 'spoken' })
+    expect(Object.keys(cardOf(decision.requests[0]!).options)).toContain('capture-page')
+    expect(Object.keys(cardOf(decision.requests[1]!).options)).not.toContain('capture-page')
+    expect(Object.keys(cardOf(decision.requests[1]!).options)).toContain('capture-1')
+    expect(kept).toHaveLength(1)
+  })
+
+  it('fails saying so where nothing keeps a capture', async () => {
+    const { browser, runner, events } = harness()
+    await runner.run('capture 1', { source: 'typed' })
+    expect(browser.captures).toEqual([])
+    expect(events.some((event) => event.type === 'display' && event.failure === true)).toBe(true)
   })
 })
 
@@ -845,7 +901,8 @@ describe('the Player (#343)', () => {
     const verbs = decision.requests.map((request) => Object.keys((request.questions.action as DecisionChoiceQuestion).options))
     expect(verbs[0]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
     for (const label of ['skip', 'previous', 'show']) expect(verbs[0]).not.toContain(label)
-    expect(verbs[1]).toEqual(verbs[0])
+    // The Where Ask's card is the first's but its Capture Ops (#466).
+    expect(verbs[1]).toEqual(verbs[0]!.filter((label) => !label.startsWith('capture-')))
     expect(verbs[3]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue', 'skip', 'previous', 'show']))
     for (const label of RETIRED_LABELS) expect(verbs[3]).not.toContain(label)
   })
@@ -3566,7 +3623,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     expect(browser.clicks).toEqual([1, 20, 22])
     // Hop 2: the pinned post's click, now ref 21, is not offered again (#373: by its card label, so its right-click stays).
-    expect(Object.values(cardOf(decision.requests[2]!).options).some((option) => String(option).includes(PINNED))).toBe(false)
+    expect(Object.entries(cardOf(decision.requests[2]!).options).some(([label, option]) => !label.startsWith('capture-') && String(option).includes(PINNED))).toBe(false)
     expect(cardRefs(decision.requests[2]!)).toEqual(['click-1', 'click-22', 'menu-1', 'menu-21', 'menu-22'])
     // Jev is told what each action did.
     expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (its state did not change); click "${PINNED}" (nothing changed)`)
@@ -3900,7 +3957,8 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     expect(isWhereAsk(first!)).toBe(false)
     expect(isWhereAsk(where!)).toBe(true)
     expect(where!.state).toBe(first!.state)
-    expect(Object.keys(cardOf(where!).options)).toEqual(Object.keys(cardOf(first!).options))
+    // Every option but the Capture Ops (#466).
+    expect(Object.keys(cardOf(where!).options)).toEqual(Object.keys(cardOf(first!).options).filter((label) => !label.startsWith('capture-')))
     expect(cardOf(where!).options.none).toBe('a remark or noise, nothing to look for')
     expect(where!.questions).not.toHaveProperty('steps')
     // The Verdict rides the same call (#394), worded as every hop's.

@@ -94,6 +94,12 @@ export function createAuthPopupDirector(
         scroll: (direction, extent) => target(base).scroll(direction, extent),
         scrollRegion: (ref, direction, extent) => target(base).scrollRegion(ref, direction, extent),
         showText: (block) => target(base).showText(block),
+        // A Capture Op (#466) reads the page its refs are numbered on; a controller with none takes nothing.
+        capture: async (taken) => {
+          const controller = target(base)
+          if (controller.capture === undefined) throw new Error('this page takes no capture')
+          return controller.capture(taken)
+        },
         clickText: (text) => target(base).clickText(text),
         screenshot: (options) => target(base).screenshot(options),
         // The Mark Ask's capture (#382) is of the page its refs are numbered on; a page that makes none answers none.

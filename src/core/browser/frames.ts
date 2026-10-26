@@ -145,8 +145,10 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
   const dialog = { ...dialogText, dialogTexts: pieces }
 
   // A Player Switch names its element by its own document's index (#389): it becomes the element's place in the whole page, or goes with it.
-  const kept = elements.slice(0, MAX_MERGED_ELEMENTS)
-  const placed = addresses.slice(0, MAX_MERGED_ELEMENTS)
+  // Images come after every control, as each document lists them (#466): a frame's images never move a later control's number.
+  const order = elements.map((_, at) => at).sort((a, b) => Number(elements[a]!.tag === 'img') - Number(elements[b]!.tag === 'img'))
+  const kept = order.map((at) => elements[at]!).slice(0, MAX_MERGED_ELEMENTS)
+  const placed = order.map((at) => addresses[at]!).slice(0, MAX_MERGED_ELEMENTS)
   const merged = kept.map((element, at) => {
     if (element.switches === undefined) return element
     const switches = element.switches.flatMap((toggle) => {

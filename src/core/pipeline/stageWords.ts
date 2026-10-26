@@ -59,6 +59,9 @@ export function actingWords(command: Command, page?: CommandPage): StageWords {
       return { word: 'Reloading' }
     case 'read':
       return { word: 'Reading', object: 'the page' }
+    case 'capture':
+      // A Capture Op (#466): what it takes, by its kind.
+      return { word: 'Copying', object: command.capture?.kind === 'page' ? 'the page' : `the ${command.capture?.kind ?? 'item'}` }
     case 'resume':
       return { word: 'Opening', object: 'the last page' }
     case 'play':

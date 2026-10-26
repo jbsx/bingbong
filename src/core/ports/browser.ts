@@ -1,6 +1,7 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { FileFieldFacts, PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
+import type { CapturedImage } from '../command/captureOp'
 import type { ScrollExtent } from '../browser/scrollOp'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import type { Mark } from '../browser/marks'
@@ -112,6 +113,12 @@ export interface MarkedScreenshot {
   readonly marks: readonly Mark[]
 }
 
+/** What a Capture Op reads (#466, ADR 0095): a ref's link or image, a block of text by where its node is, or the page. */
+export type CaptureTarget = { readonly of: 'ref'; readonly ref: number } | { readonly of: 'text'; readonly block: TextBelow } | { readonly of: 'page' }
+
+/** What a capture read: a link's address, a block's whole text, the page's title and address; or an image's bytes. */
+export type CaptureRead = { readonly kind: 'link' | 'text' | 'page'; readonly text: string } | { readonly kind: 'image'; readonly image: CapturedImage }
+
 export interface BrowserController {
   navigate(url: string): Promise<string>
   /**
@@ -179,6 +186,15 @@ export interface BrowserController {
    * for a block no longer on the page.
    */
   showText(block: TextBelow): Promise<string>
+  /**
+   * A Capture Op (#466, ADR 0095): one evaluate, on any site, reading what
+   * the target holds — a link ref's address, an image ref's bytes by the
+   * page's own fetch of its address (a screenshot of its box when that
+   * fails), a block's whole text off its node, the page's title and
+   * address. Nothing on the page changes. Rejects for a number not shown,
+   * a ref of no capturing kind, or a block no longer on the page.
+   */
+  capture?(target: CaptureTarget): Promise<CaptureRead>
   /**
    * A click on a piece of the open dialog's own text (#416, ADR 0076): its
    * node found in its frame's dialog text registry — by its words when the

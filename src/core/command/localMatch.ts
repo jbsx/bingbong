@@ -6,6 +6,7 @@ import { firstNumber } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
 import { ONE_SCREEN } from './scrollOp'
+import { captureKindOf } from './captureOp'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
 // from the Utterance and the page alone, without asking the Decision Model
@@ -311,7 +312,7 @@ function command(verb: CommandVerb, extra?: Partial<Command>): Command {
 }
 
 /** The CLI grammar's command as a Command; null for `quit`, the harness's own. */
-function fromGrammar(parsed: CliCommand): Command | null {
+function fromGrammar(parsed: CliCommand, refs: readonly CommandRef[]): Command | null {
   switch (parsed.type) {
     case 'navigate':
       // The typed line's address, or the search its words run when they are no address.
@@ -322,6 +323,13 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('click', { target: parsed.ref })
     case 'menu':
       return command('menu', { target: parsed.ref })
+    case 'capture': {
+      // The page's capture names it by its title as it fires; a ref's, by its kind — none for a ref of no capturing kind, which is Jev's to read.
+      if (parsed.ref === 'page') return command('capture', { capture: { kind: 'page', named: '' } })
+      const ref = refs.find((candidate) => candidate.ref === parsed.ref)
+      const kind = ref === undefined ? null : captureKindOf(ref)
+      return ref === undefined || kind === null ? null : command('capture', { target: ref.ref, capture: { kind, named: ref.label !== '' ? ref.label : (ref.href ?? '') } })
+    }
     case 'type':
       return command('type', { target: parsed.ref, slot: parsed.text })
     case 'scroll':
@@ -499,7 +507,9 @@ export function headsAnotherVerb(text: string): boolean {
  */
 export function localMatch(text: string, refs: readonly CommandRef[], known: KnownAddressOf = NO_KNOWN_ADDRESS): Command | null {
   const parsed = parseCliCommand(text)
-  const matched = parsed !== null && parsed.ok ? fromGrammar(parsed.command) : readSpoken(text, refs, known)
+  // An image is a ref for its capture alone (#466): its alt text is no label a spoken verb clicks, nor one that makes another ambiguous.
+  const controls = refs.filter((ref) => ref.kind !== 'image')
+  const matched = parsed !== null && parsed.ok ? fromGrammar(parsed.command, refs) : readSpoken(text, controls, known)
   if (matched === null || matched.target !== null || matched.verb === 'stop') return matched
-  return aRefIsLabelled(text, refs) ? null : matched
+  return aRefIsLabelled(text, controls) ? null : matched
 }

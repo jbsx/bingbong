@@ -11,6 +11,9 @@ const PIXEL_PNG = Buffer.from(
   'base64',
 )
 
+/** The Capture Op fixture's image (#466): one the page draws at 120×80, and whose bytes a capture keeps. */
+export const CAPTURE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#c33"/></svg>'
+
 // EasyList-syntax list for the adblocker e2e: two network filters (a banner
 // path and a tracker script) plus a generic cosmetic filter. The app fetches
 // this from BINGBONG_ADBLOCK_LISTS, so the engine is exercised offline.
@@ -1373,6 +1376,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(DOWNLOAD_PAYLOAD)
       return
     }
+    // The Capture Op fixture's image (#466).
+    if (req.url === '/capture/pasta.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' })
+      res.end(CAPTURE_SVG)
+      return
+    }
     if (req.url === '/ad-banner.png' || req.url === '/ok-asset.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' })
       res.end(PIXEL_PNG)
@@ -1492,6 +1501,19 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     // An upload form (#424): a labelled PDF field, a photo field hidden behind the site's own button, and a submit
     // that records itself. Each field echoes what the page's `change` gave it, so a test reads what the site saw.
+    // The Capture Op (#466): a link, an image drawn at its own size, and a code block to take to the Shelf.
+    if (req.url === '/capture') {
+      res.end(
+        page(`<main style="color:#fff">
+  <h1>Install</h1>
+  <p><a href="/capture/docs">Getting started</a></p>
+  <img src="/capture/pasta.svg" width="120" height="80" alt="A bowl of pasta">
+  <pre>npm init playwright@latest</pre>
+  <script>document.title = 'Install Playwright'</script>
+</main>`),
+      )
+      return
+    }
     if (req.url === '/upload') {
       res.end(
         page(`<main style="color:#fff">
