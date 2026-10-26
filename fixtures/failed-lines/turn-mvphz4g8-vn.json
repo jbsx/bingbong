@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvphz4g8-vn",
+  "transcript": "I don't page.",
+  "at": 1793033710349,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com (left there by turn-mvphyxti-vm): the ear heard \"I don't page.\" for 'Idle page'; Jev read none 0.88 and the Where Ask none 0.91",
+  "meant": "Show the Idle Screen",
+  "log": "decision-1793033383382-1.jsonl"
+}

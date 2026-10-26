@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvphvwa2-1",
+  "transcript": "Stop this song.",
+  "at": 1793033558570,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on the watch page of Iraada - Niyam: the partial heard 'Group this song.' (final 'Stop this song.'); Mammoth read the partial complete (noul 0.94) and the Early Fire clicked ref 28, YouTube's 'Save to playlist' (click-28 0.23, click-30 0.23, click-31 0.14). Hop 1 was superseded 1 s later by 'Loop the song.' (turn-mvphw2lp-va, loop-10 0.99), which looped it; the owner then said 'Scroll up.', 'Escape.', 'Scroll up.'. Same class as turn-mvp8m1th-3: an Early Fire on a misheard partial, at 0.23",
+  "meant": "Loop the song (the line after it), nothing clicked",
+  "log": "decision-1793033383382-1.jsonl"
+}

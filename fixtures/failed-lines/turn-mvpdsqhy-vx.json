@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvpdsqhy-vx",
+  "transcript": "Double.",
+  "at": 1793026694330,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610261228, Parakeet, Mammoth, 2026-10-26, on the watch page of Joji - Past Won't Leave My Bed at 1×: 'Double.' read rate-10 0.79 with the amount up-step 0.24 (to 0.18, half 0.17, up-lot 0.09), so the speed went 1× → 1.5×; up-lot (+1) would have set 2×, and 'to' finds no number (rateInWords reads no 'double'). The speed stayed 1.5×; the owner's next lines were 'No', 'Okay, I speak here.', 'Mark as junior.', 'Failure', 'Idiot', 'Flag as failure.'",
+  "meant": "Double the speed: 2× (read from the word; the six lines after it tried to flag it)",
+  "log": "decision-1793017798599-1.jsonl"
+}

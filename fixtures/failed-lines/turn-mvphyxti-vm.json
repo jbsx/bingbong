@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvphyxti-vm",
+  "transcript": "Title page.",
+  "at": 1793033702281,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on the watch page of Iraada - Niyam (show_idle on the card): the ear heard 'Title page.' for 'Idle page'; Jev read none 0.38 (click-3 0.23) and the Where Ask click-3 'YouTube Home' 0.38, which opened youtube.com and left the playing song's watch page. Hop 1 none 0.50, hop 2 superseded",
+  "meant": "Show the Idle Screen over the pane, the music playing on",
+  "log": "decision-1793033383382-1.jsonl"
+}

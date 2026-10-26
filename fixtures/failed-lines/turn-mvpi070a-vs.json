@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvpi070a-vs",
+  "transcript": "Help.",
+  "at": 1793033760012,
+  "source": "spoken",
+  "stage": "local_match",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com: 'Help.' again, the same as turn-mvphzl3x-vp: no Local Match, Jev none 0.81, Where Ask none 0.72, nothing said",
+  "meant": "Show and say the help",
+  "log": "decision-1793033383382-1.jsonl"
+}

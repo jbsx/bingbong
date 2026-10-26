@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvpdteuq-v10",
+  "transcript": "Mark as junior.",
+  "at": 1793026726894,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Kiosk 0.1.4-local.202610261228, Parakeet, Mammoth, 2026-10-26, on the watch page of Joji - Past Won't Leave My Bed, 33 s after 'Double.' (turn-mvpdsqhy-vx): Parakeet heard 'Mark as junior.', most likely 'mark as failure'; no Flag head matched and Jev and the Where Ask read none 0.75 (click-27 0.09). Even heard right, 'mark as failure' is not one of the Flag's heads ('mark this as a failure', 'flag that', 'that was wrong')",
+  "meant": "Flag the previous Task, 'Double.'",
+  "log": "decision-1793017798599-1.jsonl"
+}
