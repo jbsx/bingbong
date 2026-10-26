@@ -8,10 +8,9 @@ import { usePaneHasPage } from './usePaneHasPage'
 import { SettingsPage } from './SettingsPage'
 import { WeightPage } from './WeightPage'
 import { WeighInPopup } from './WeighInPopup'
-import { IdlePeekCard } from './PeekCard'
 import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
-import { overlaySlotContent, peekCardAnswer, peekCardOnIdleScreen } from '../../core/panel/peekCardState'
+import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { weighInPopupSurface } from '../../core/scale/weighInPopup'
 import { useFeedPanel, useFeedSlotRect, useWeighInSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
@@ -25,6 +24,7 @@ import { defaultUsagePrefs } from '../../core/usage/usage'
 import { JAISH } from '../../core/scale/people'
 import { defaultWeightSettings } from '../../core/scale/weightSettings'
 import { usePeekCard } from './usePeekCard'
+import { useTurnCard } from './useTurnCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
@@ -72,8 +72,8 @@ export function App() {
   // overlay view (ADR 0029); the dashboard folds the same events only
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
-  // The run whose card a tap took off the Idle Screen (#470): it stays off there; the fold's own clock still ends it.
-  const [idlePeekDismissed, setIdlePeekDismissed] = useState<string | null>(null)
+  // The Turn Card (#474): the Idle Screen's report of a line's whole journey, folded from the same seams.
+  const turn = useTurnCard()
   // The Weigh-in pop-up (#350): over the browsing pane it has a view of its
   // own in the Peek Card's place (or rides the open panel's top), so the
   // edge tab stays; over every other view the dashboard draws it.
@@ -185,10 +185,8 @@ export function App() {
   }, [showIdle])
 
   if (showIdle) {
-    // The Peek Card's Idle Screen form (#470): a failure or "No response." only, never while the Idle Prompt is open
-    // (its own Answer says it), and the Weigh-in pop-up outranks it in the place they share.
-    const idleAnswer = promptDraft === null && peek.state.runId !== idlePeekDismissed ? peekCardOnIdleScreen(peek.state, peekCardAnswer(assistant.feed, peek.state.runId)) : null
-    const idlePeek = idleAnswer !== null ? <IdlePeekCard state={peek.state} answer={idleAnswer} onDismiss={() => setIdlePeekDismissed(peek.state.runId)} /> : null
+    // The Turn Card is up while a line is taken, read and done (#474); the Idle Prompt sits at the foot beside it, its scrim stood down.
+    const turnUp = turn.state.phase === 'open'
     return (
       <>
         <IdleScreen
@@ -213,14 +211,13 @@ export function App() {
             setView('weight')
           }}
           onOpenSettings={() => setView('settings')}
-          status={status}
-          progress={assistant.progress}
           voice={earVoice}
-          popup={weighInPopup.phase === 'hidden' ? idlePeek : <WeighInPopup state={weighInPopup} />}
-          popupKind={weighInPopup.phase === 'hidden' && idlePeek !== null ? 'peek' : 'weighin'}
+          popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
+          turn={turnUp ? turn.state : null}
+          onDismissTurn={turn.dismiss}
           result={assistant.lastFailure}
         />
-        {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} /> : null}
+        {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} aside={turnUp} /> : null}
       </>
     )
   }

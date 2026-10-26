@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EAR_FAILED, EAR_FAILED_LINE, EAR_FAILED_MORE, REST_HINT } from '../src/core/voice/voiceHint'
 import { colourFloor } from './colourFloor'
-import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { startFixtureServer, YOUTUBE_FIXTURE_NOTHING, type FixtureServer } from './fixtureServer'
 import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
 import { promptBarScript } from './scripts'
@@ -76,8 +76,8 @@ const CHECK_SCRIPT = `(() => {
     return cls + ' "' + words + '"'
   }
   const contentWidth = (el) => el.clientWidth - parseFloat(getComputedStyle(el).paddingLeft) - parseFloat(getComputedStyle(el).paddingRight)
-  // The glance surface (#436): every status item at 65 px, read from 2 m.
-  for (const el of document.querySelectorAll('.status-pill, .run-hint, .idle-voice-hint, .idle-voice-state, .voice-prompt-state')) {
+  // The glance surface (#436): every status item at 65 px, read from 2 m — the Turn Card's stage word among them (#474).
+  for (const el of document.querySelectorAll('.status-pill, .run-hint, .idle-voice-hint, .idle-voice-state, .voice-prompt-state, .turn-stage-word')) {
     // The panel's TRANSCRIBING steps down to 40 px where 65 px would not fit its width (#447): the panel only, never the Idle Screen or the Toolbar.
     const floor = el.matches('.voice-prompt--transcribing .voice-prompt-state') && contentWidth(el.closest('.voice-prompt')) <= 540 ? 40 : 65
     if (el.getBoundingClientRect().width > 1 && parseFloat(getComputedStyle(el).fontSize) < floor) issues.push('status under ' + floor + ' px (' + getComputedStyle(el).fontSize + '): ' + name(el))
@@ -98,7 +98,7 @@ const CHECK_SCRIPT = `(() => {
   for (const hint of document.querySelectorAll('.run-hint')) {
     if (hint.getBoundingClientRect().width <= 1) continue
     if (sans(getComputedStyle(hint).fontFamily) !== sans(getComputedStyle(document.documentElement).getPropertyValue('--font-sans'))) issues.push('run hint not in the sans (' + getComputedStyle(hint).fontFamily + '): ' + name(hint))
-    const capsule = hint.closest('.status-capsule, .idle-status') ?? hint.parentElement
+    const capsule = hint.closest('.status-capsule') ?? hint.parentElement
     const outer = capsule.getBoundingClientRect()
     const pad = getComputedStyle(capsule)
     const pill = capsule.querySelector('.status-pill')
@@ -132,8 +132,8 @@ const CHECK_SCRIPT = `(() => {
     if (!el.closest('[data-display]')) sizes.add(style.fontSize + ' ' + name(el))
     const clipsX = style.overflowX === 'hidden' || style.overflowX === 'clip'
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
-    // The live words and the kept result in the capsule (#331, #436), a stage's long detail and then its words beside its seconds (#428, #462), the words an ear's wait is on beside its seconds (#442), and a long address after its host (#453), ellipsize by design: the clips allowed.
-    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .run-hint-stage, .ear-wait-object, .url-display')) issues.push('clipped across: ' + name(el))
+    // The live words and the kept result in the capsule (#331, #436), a stage's long detail and then its words beside its seconds (#428, #462), the words an ear's wait is on beside its seconds (#442), a long address after its host (#453), and a Turn Card history row's text (#474), ellipsize by design: the clips allowed.
+    if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .run-hint-stage, .ear-wait-object, .url-display, .turn-step-text')) issues.push('clipped across: ' + name(el))
     if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
@@ -679,6 +679,54 @@ async function walkTheEarFailing(run: Run): Promise<void> {
   expect.soft(records.length, 'the fault record is written').toBeGreaterThan(0)
 }
 
+/**
+ * The Turn Card (#474) through a spoken line over the Idle Screen: the wake with the live words, the transcript held
+ * so Transcribing shows, the reading held so Thinking shows with its seconds, then the end — "No response" for a line
+ * read as no Command — and a typed failure's Failed; each state shot and held to the floor, the geometry read at each
+ * and compared: nothing on the card moves between states.
+ */
+async function walkTheTurnCard(run: Run): Promise<void> {
+  const { harness } = run
+  const onDashboard = <T,>(expression: string): Promise<T> => harness.dashboardEval<T>(expression)
+  const shown = (state: string): Promise<true> =>
+    waitFor(async () => ((await onDashboard<string | null>(`document.querySelector('.turn-card')?.dataset.state ?? null`)) === state ? true : undefined), { timeoutMs: 40_000, intervalMs: 50 }).catch(async (error: unknown) => {
+      await shoot(run, `no-turn-${state}`, false)
+      throw error
+    })
+  const geometry = (): Promise<unknown> =>
+    onDashboard(`(() => {
+      const card = document.querySelector('.turn-card')
+      const r = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)] }
+      return { card: r(card), cells: [...card.querySelectorAll('.turn-rail-cell')].map(r), wordLeft: r(card.querySelector('.turn-stage-word'))[0], markRight: r(card.querySelector('.turn-stage-mark'))[2], words: r(card.querySelector('.turn-words')), rows: [...card.querySelectorAll('.turn-step')].map(r) }
+    })()`)
+  const seen = new Map<string, unknown>()
+  const shot = async (state: string, file: string): Promise<void> => {
+    await shown(state)
+    seen.set(state, await geometry())
+    await shoot(run, file, false)
+    // The panel's overlay view is hidden under the Idle Screen and sized for the collapsed edge tab; the Peek Card it
+    // draws there for the line is off that surface — the dashboard's own card over the screen, not the Turn Card's doing.
+    run.issues.set(file, (run.issues.get(file) ?? []).filter((issue) => !issue.startsWith('panel: off the surface: .peek-')))
+  }
+  await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+  await waitFor(async () => ((await onDashboard<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
+  // The mic's frames play the script: the wake, then the line.
+  await shot('listening', '42-turn-listening')
+  expect.soft(await onDashboard<string>(`document.querySelector('.turn-stage-word')?.textContent ?? ''`), `${run.theme} 42-turn-listening: the Capsule's word`).toBe('Listening…')
+  await shot('transcribing', '43-turn-transcribing')
+  expect.soft(await onDashboard<string>(`document.querySelector('.turn-words')?.textContent ?? ''`), `${run.theme} 43-turn-transcribing: the words being read, whole`).toBe('“what a lovely”')
+  await shot('thinking', '44-turn-thinking')
+  expect.soft(await onDashboard<string>(`document.querySelector('.turn-card')?.textContent ?? ''`), `${run.theme} 44-turn-thinking: the Heard row and the words`).toContain('Heard“what a lovely day”')
+  await shot('dropped', '45-turn-no-response')
+  expect.soft(await onDashboard<string>(`document.querySelector('.turn-stage-word')?.textContent ?? ''`), `${run.theme} 45-turn-no-response: the end in words`).toBe('No response')
+  // A typed failure over the screen: the next line's card.
+  await onDashboard(`window.bingbong.assistant.submit('play ${YOUTUBE_FIXTURE_NOTHING}')`)
+  await shot('failed', '46-turn-failed')
+  expect.soft(await onDashboard<string>(`document.querySelector('.turn-words')?.textContent ?? ''`), `${run.theme} 46-turn-failed: the failure sentence`).toContain('No videos found')
+  const reference = seen.get('listening')
+  for (const [state, read] of seen) expect.soft(read, `${run.theme} the Turn Card at ${state} sits where it sat at listening`).toEqual(reference)
+}
+
 function expectClean(run: Run): void {
   for (const [state, issues] of run.issues) expect.soft(issues, `${run.label} ${state}`).toEqual([])
 }
@@ -765,6 +813,32 @@ describe('the states screenshot review (#359)', () => {
       } finally {
         await close(run)
         // Every state shot before a walk that died is still held to the floor.
+        expectClean(run)
+      }
+    }, 200_000)
+  }
+
+  for (const theme of ['dark', 'light'] as const) {
+    it(`shoots the Turn Card through a spoken line and a typed failure in ${theme}`, async () => {
+      // The wake, quiet, then a line no grammar reads; its transcript and its reading each held long enough to shoot. The
+      // partials stay short of the whole line: a partial that is the whole line is asked of the stand-in and would take its one reading.
+      const run = await launch(
+        theme,
+        {
+          BINGBONG_WAKE_ENGINE: 'node',
+          BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
+          // The ear "loads" until the walk has the Idle Screen up; the line is spoken long enough for its listening shot.
+          BINGBONG_VAD_LOAD_MS: '12000',
+          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 60), ...frames(SPEECH, 90), QUIET]),
+          BINGBONG_STT_SCRIPT: JSON.stringify([{ text: 'what a lovely day', delayMs: 2_500, partials: ['what a', 'what a lovely'] }]),
+          ...decisionScript(readingOf('what a lovely day', 'none', { delayMs: 3_000 }), readingOf(`play ${YOUTUBE_FIXTURE_NOTHING}`)),
+        },
+        FAKE_MIC,
+      )
+      try {
+        await walkTheTurnCard(run)
+      } finally {
+        await close(run)
         expectClean(run)
       }
     }, 200_000)

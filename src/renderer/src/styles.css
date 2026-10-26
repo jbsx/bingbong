@@ -1624,64 +1624,6 @@ details.feed-entry {
   }
 }
 
-/* The Peek Card's Idle Screen form (#470): a failure or "No response." in
-   the Weigh-in pop-up's place, read from the chair — the sentence at the
-   status size. The place grows upward when the sentence wraps, so no
-   word is cut. */
-.idle-popup-place--peek {
-  height: auto;
-  min-height: 246px;
-  display: flex;
-}
-
-.idle-popup-place .peek-card--idle {
-  max-width: none;
-  align-items: flex-start;
-  gap: 26px;
-  padding: 26px 32px 30px;
-  cursor: default;
-  animation: card-in 200ms ease;
-}
-
-.peek-card--idle .peek-orb {
-  width: 32px;
-  height: 32px;
-  margin-top: 46px;
-}
-
-.peek-card--idle .peek-body {
-  gap: 10px;
-}
-
-.peek-heard {
-  margin: 0;
-  color: var(--fg2);
-  font-size: var(--type-m);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.peek-sentence {
-  margin: 0;
-  color: var(--fg);
-  font-size: var(--type-xl);
-  font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-}
-
-.peek-card--failed .peek-sentence {
-  color: var(--fail-text);
-}
-
-.peek-more {
-  margin: 0;
-  color: var(--fg2);
-  font-size: var(--type-m);
-  line-height: 1.3;
-}
-
 /* Settings (ADR 0078): the index down the left — numbered, by group — and
    the sections to its right, each a hairline, a heading and its body; no
    boxes. The Weight page reuses the sheet's parts in one centred column. */
@@ -2364,16 +2306,6 @@ details[open] > .settings-summary::before {
 
 /* The capsule over the Idle Screen while Bing Bong works on a Command that
    needs no pane: floats at the top, out of the layout, so nothing shifts. */
-.idle-status {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 3;
-  width: max-content;
-  max-width: calc(100% - 96px);
-  transform: translateX(-50%);
-}
-
 .idle-col {
   position: relative;
   display: flex;
@@ -2737,6 +2669,289 @@ button.idle-line {
 .idle-voice-word {
   color: var(--fg2);
   font-weight: 500;
+}
+
+/* The Turn Card (#474): one Tile-sized card centred over the Idle Screen on
+   a scrim, up from the wake until the line is over and 15 s after. Its
+   geometry is fixed so nothing moves between states (owner, 2026-10-26):
+   six equal rail cells over one track, the stage word at a fixed left with
+   its mark pinned right, two reserved lines of words, six fixed history
+   rows. Four sizes (65/40/24/16), two faces, the accent only on what is
+   live; Done and Failed said in words and in their colours. */
+.turn-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  /* The depth is a guess (TurnCard.tsx): 0.5 as the prototype drew it. */
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.turn-card {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  grid-template-rows: auto 80px 96px auto;
+  row-gap: 28px;
+  box-sizing: border-box;
+  width: 1240px;
+  height: 680px;
+  margin: -340px 0 0 -620px;
+  padding: 40px 48px;
+  overflow: hidden;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-lg);
+  cursor: default;
+  -webkit-app-region: no-drag;
+  /* No card-in: it is up on the wake and its geometry is read from the first frame (ui.md 4). */
+}
+
+/* The rail: the track between the first and last station, filled to the live one; the live dot the only accent. */
+.turn-rail {
+  position: relative;
+}
+
+.turn-track,
+.turn-track-fill {
+  position: absolute;
+  top: 6px;
+  left: calc(100% / 12);
+  height: 2px;
+}
+
+.turn-track {
+  right: calc(100% / 12);
+  background: var(--hair2);
+}
+
+.turn-track-fill {
+  width: calc(100% * 10 / 12);
+  background: var(--fg2);
+  transform-origin: left center;
+}
+
+.turn-track-fill--none {
+  background: transparent;
+}
+
+.turn-rail-cells {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.turn-rail-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.turn-rail-dot {
+  width: 14px;
+  height: 14px;
+  background: var(--hair2);
+  border-radius: 50%;
+}
+
+.turn-rail-cell--past .turn-rail-dot {
+  background: var(--fg2);
+}
+
+.turn-rail-cell--live .turn-rail-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 6px var(--accentq);
+}
+
+.turn-card--tone-ok .turn-rail-cell--live .turn-rail-dot {
+  background: var(--ok);
+  box-shadow: none;
+}
+
+.turn-card--tone-fail .turn-rail-cell--live .turn-rail-dot {
+  background: var(--fail);
+  box-shadow: none;
+}
+
+.turn-card--tone-quiet .turn-rail-cell--live .turn-rail-dot {
+  background: var(--fg2);
+  box-shadow: none;
+}
+
+.turn-rail-label {
+  font-size: var(--type-m);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg3);
+}
+
+.turn-rail-cell--past .turn-rail-label {
+  color: var(--fg2);
+}
+
+.turn-rail-cell--live .turn-rail-label {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* The stage row: the word at a fixed left, the live mark pinned right. */
+.turn-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  height: 80px;
+}
+
+.turn-stage-word {
+  font-size: var(--type-xl);
+  font-weight: 600;
+  line-height: 80px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.turn-card--tone-ok .turn-stage-word {
+  color: var(--ok);
+}
+
+.turn-card--tone-fail .turn-stage-word {
+  color: var(--fail-text);
+}
+
+.turn-card--tone-quiet .turn-stage-word {
+  color: var(--fg2);
+}
+
+.turn-stage-mark {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+  height: 80px;
+  white-space: nowrap;
+}
+
+.turn-stage-mark .voice-wave {
+  height: 32px;
+}
+
+.turn-stage-secs {
+  font-family: var(--font-mono);
+  font-size: var(--type-xl);
+  font-variant-numeric: tabular-nums;
+  line-height: 80px;
+  color: var(--accent);
+}
+
+.turn-stage-secs--over {
+  color: var(--fg3);
+}
+
+.turn-stage-note {
+  font-size: var(--type-m);
+  color: var(--fg2);
+}
+
+/* The words row: two lines reserved, so the history never shifts; a line that runs longer is cut there. */
+.turn-words {
+  height: 96px;
+  overflow: hidden;
+  font-size: var(--type-l);
+  font-weight: 500;
+  line-height: 48px;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+
+.turn-words--quiet {
+  color: var(--fg3);
+}
+
+.turn-words--fail {
+  color: var(--fail-text);
+}
+
+/* The history: six fixed rows on one grid — the clock, the step, what it was on — oldest first, the newest in the primary ink. */
+.turn-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hair2);
+}
+
+.turn-step {
+  display: grid;
+  grid-template-columns: 72px 200px minmax(0, 1fr);
+  column-gap: 20px;
+  align-items: baseline;
+  height: 36px;
+}
+
+.turn-step-at {
+  font-family: var(--font-mono);
+  font-size: var(--type-s);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg3);
+}
+
+.turn-step-label,
+.turn-step-text {
+  overflow: hidden;
+  font-size: var(--type-m);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.turn-step-label {
+  color: var(--fg3);
+}
+
+.turn-step-text {
+  color: var(--fg2);
+}
+
+.turn-step--newest .turn-step-label {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.turn-step--newest .turn-step-text {
+  color: var(--fg);
+}
+
+.turn-step--ok .turn-step-text {
+  color: var(--ok);
+}
+
+.turn-step--fail .turn-step-text {
+  color: var(--fail-text);
+}
+
+/* The bar along the card's foot draining across the 15 s after the line is over (the Peek Card's own, #470). */
+.turn-linger {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--fg3);
+  transform-origin: left center;
+  animation-name: peek-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* The Idle Prompt beside the Turn Card (#474): at the foot of the screen, the card's own scrim doing the dimming. */
+.idle-prompt-backdrop--aside {
+  align-items: flex-end;
+  background: transparent;
 }
 
 /* The Idle Prompt (#361): the Prompt Bar over the Idle Screen, no Feed

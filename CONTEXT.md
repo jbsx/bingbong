@@ -690,7 +690,9 @@ The Prompt Bar's twin over the Idle Screen (#361), with no Feed beneath it:
 a typed key opens it with that key in it, Space opens it empty, Enter runs
 the line as a Command, and Escape or a tap outside closes it, the screen
 left up. A Command that opens a page wakes the dashboard on it; one that
-leaves the screen up shows its Answer under the line.
+leaves the screen up shows its Answer under the line. While the Turn Card
+is up (#474) the Prompt sits at the foot of the screen, its scrim stood
+down, so the card is read.
 _Avoid_: idle search box
 
 **Voice Prompt**:
@@ -854,12 +856,40 @@ it sooner, and so do the next Command and opening the panel (owner,
 2026-10-26, #470: "i dont want the card to always be on the screen and if
 i want to see the history i will use the activity panel"). The Feed Panel
 is the history; the card is not. It sits bottom-centre over the pane.
-Over the Idle Screen it shows only a failed Command or "No response.", in
-the Weigh-in pop-up's place (the AI Usage chart's), at status size, its
-tap leaving the screen up. It never shows there while the Idle Prompt is
-open, or while the Weigh-in pop-up is up, which outranks it. It is never
-activity.
+Over the Idle Screen the Turn Card reports the line instead (#474), on the
+same 15 s. It is never activity.
 _Avoid_: toast, notification, result pop-up
+
+**Turn Card**:
+The Idle Screen's report of one line's whole journey (#474; owner,
+2026-10-26: "i want to see every bit of the way there"): one Tile-sized
+card centred over the screen on a scrim, up from the wake word or a typed
+Idle Prompt line until the line is over and 15 s after, the Peek Card's
+own constant, so one number governs both; a tap closes it, the screen left
+up, and the next line restarts it. On it: the rail of six stations — Heard,
+Thinking, Acting, Loading, Speaking, Done — the track filled to the live
+one, whose dot is the only accent; the stage row, the Capsule's word for
+the state at status size at a fixed left (Listening…, Transcribing…,
+Thinking…, the action's own word…, Loading…, Speaking…, Done, Failed,
+Stopped, No response) with its live mark pinned right — the waveform while
+the ear hears, else the seconds in the mono face counted on the screen's
+own clock, a stuck stage's wait named beside them; two reserved lines of
+the words it is on — the live partial whole, the words being read, the
+heard line, the action's object, the host, the sentence, the Answer; and
+six fixed rows of history, oldest first, the newest in the primary ink,
+each a step's clock from the wake, its name and what it was on. Nothing
+on it moves between states (owner: "i dont like how the text moves"): the
+geometry is fixed, only the ink changes; the stage and words rows never
+ellipsize, a history row's text does. An open ear that has heard nothing
+yields to the running line or its end, said by the waveform (#472); speech
+starting after a line has ended is the next line's card. A Command that
+acts on the pane wakes the screen as before, and the card goes with it.
+The Status Capsule no longer floats over the Idle Screen, and the Peek
+Card's Idle Screen form is gone: the Turn Card is what the screen shows
+for a line's answer and failure. The Idle Prompt sits at the foot of the
+screen beside it, its own scrim stood down. The scrim's depth and the
+15 s hold are guesses, marked in the code.
+_Avoid_: toast, status pop-up, turn dialog
 
 **Idle Screen**:
 What renders while nothing is happening: flat Tiles on a flat near-black
@@ -874,7 +904,7 @@ same. Down the middle the clock and date, large and bare, the Timer Clock
 beside it while a Timer is set, the Clock Lines under them, and under those
 Now Playing while a song is held, over the AI Usage. Down the right the Calendar, the Weight card and the News
 card. Nothing on it
-moves but the clock, the progress bars and the voice line while it hears. Every redesign keeps every field the screen
+moves but the clock, the progress bars, the voice line while it hears and the Turn Card's ink. Every redesign keeps every field the screen
 shows and changes only placement, order and styling (owner, 2026-10-19: "i
 dont want to collapse the information"). It is laid out for the appliance's 21-inch 1920×1080 display
 (owner, 2026-10-19), to be read from a couple of metres away (owner,
@@ -884,13 +914,13 @@ today's date — are far larger. A smaller window shows the same layout
 scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
-with the Status Capsule shown on it while they run, so a Command that never
+with the Turn Card over it while they run (#474), so a Command that never
 needs the pane (the Timer, a Stop, `done`, a line read as no Command, and
 every Player verb, `play <words>` included — #344) is heard and performed
 over it: a song is searched for and played in the hidden pane, and the
 music plays on there. One that fails there, or a line read as no Command,
-shows the Peek Card in the AI Usage chart's place, as the Weigh-in pop-up
-does, until it goes (#470). A tap, a Command that acts on the pane, or "show the
+ends the Turn Card on Failed or "No response", which stays 15 s (#470,
+#474). A tap, a Command that acts on the pane, or "show the
 video" / "show it" (the one music line that wakes it, onto the watch page)
 unmounts it; the browser pane is only hidden beneath it, never reset. The
 blank pane is never shown (#361; owner, 2026-10-20: "isnt it always better

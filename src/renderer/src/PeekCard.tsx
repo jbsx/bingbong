@@ -1,13 +1,14 @@
 import type { FeedEntry } from '../../core/feed/feedProjection'
 import type { RunProgress } from '../../core/pipeline/runProgress'
-import { PEEK_CARD_LINGER_MS, peekCardAnswer, type PeekCardAnswer, type PeekCardState } from '../../core/panel/peekCardState'
+import { lingerDelayMs, PEEK_CARD_LINGER_MS, peekCardAnswer, type PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'
 import { ChevronIcon } from './WeatherIcon'
 
 // The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
 // report of the live Run and its Answer, for 15 s past its sentence
 // (#470), while the Feed Panel is Collapsed — voice shows it, only a
-// human act opens the panel, and clicking it is that act. It renders from the panel's overlay view
+// human act opens the panel, and clicking it is that act. Over the Idle
+// Screen the Turn Card (#474) reports the line instead. It renders from the panel's overlay view
 // (ADR 0029) — the one surface that floats above the native pane —
 // translucent over the page, bottom-center, replacing the collapsed edge
 // tab; it is not a state of the panel.
@@ -23,7 +24,7 @@ function liveStep(progress: RunProgress | null): string {
  * drained; nothing pauses it.
  */
 function LingerBar({ retiresAt }: { retiresAt: number | null }) {
-  const style = retiresAt === null ? undefined : { animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${Math.min(0, retiresAt - PEEK_CARD_LINGER_MS - Date.now())}ms` }
+  const style = retiresAt === null ? undefined : { animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${lingerDelayMs(retiresAt, Date.now())}ms` }
   return <span key={retiresAt ?? 'held'} className={retiresAt === null ? 'peek-linger peek-linger--held' : 'peek-linger'} style={style} aria-hidden="true" />
 }
 
@@ -84,39 +85,6 @@ export function PeekCard({
         open <ChevronIcon size={14} />
       </span>
       {state.phase === 'answer' ? <LingerBar retiresAt={state.retiresAt} /> : null}
-    </div>
-  )
-}
-
-/**
- * The Peek Card's Idle Screen form (#470, CONTEXT Peek Card): a failed
- * Command or "No response.", in the Weigh-in pop-up's place, read from the
- * chair — the words heard, the sentence at status size, and under it the
- * rest of the Answer, the reason and the `Try “…”` line (#438). Its dot is
- * the failure colour, grey for "No response.". A tap dismisses it on the
- * pointer going down and keeps the tap from the window, so the Idle Screen
- * stays up: it is never activity.
- */
-export function IdlePeekCard({ state, answer, onDismiss }: { state: PeekCardState; answer: PeekCardAnswer; onDismiss(): void }) {
-  const [sentence, ...rest] = answer.text.split('\n\n')
-  return (
-    <div
-      className={`peek-card peek-card--answer peek-card--idle${answer.failure ? ' peek-card--failed' : ''}${answer.muted ? ' peek-card--muted' : ''}`}
-      role="status"
-      aria-label={`${state.commandText ?? ''}: ${answer.text}. Tap to dismiss`}
-      onPointerDown={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        onDismiss()
-      }}
-    >
-      <span className="peek-orb" aria-hidden="true" />
-      <div className="peek-body">
-        {state.commandText !== null ? <p className="peek-heard">“{state.commandText}”</p> : null}
-        <p className="peek-sentence">{sentence}</p>
-        {rest.length > 0 ? <p className="peek-more">{rest.join(' ')}</p> : null}
-      </div>
-      <LingerBar retiresAt={state.retiresAt} />
     </div>
   )
 }

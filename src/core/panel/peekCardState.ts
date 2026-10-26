@@ -6,7 +6,9 @@ import { inferRunOutcome, type PipelineEvent } from '../pipeline/events'
 // fold over the same pipeline event seam every observer rides (the same
 // shape as the panel-state fold beside it). The card reports the live Run
 // and then its Answer, until 15 s past the Answer's spoken sentence (#470,
-// ADR 0026 as amended) or sooner on the next Run or a panel open. The view
+// ADR 0026 as amended) or sooner on the next Run or a panel open. Over the
+// Idle Screen the Turn Card (#474, core/idle/turnCard) reports the line
+// instead, on the same linger. The view
 // owns what renders inside the card; this fold owns only the phase, the
 // run identity, and the answer's retirement.
 
@@ -19,6 +21,14 @@ import { inferRunOutcome, type PipelineEvent } from '../pipeline/events'
  */
 export const PEEK_CARD_LINGER_MS = 15_000
 
+/**
+ * How far into its linger a bar drawn now already is, as a (negative) animation delay from the deadline: a card shown
+ * late starts part drained, and nothing pauses it. The Peek Card's bar and the Turn Card's (#474) share it.
+ */
+export function lingerDelayMs(retiresAt: number, now: number): number {
+  return Math.min(0, retiresAt - PEEK_CARD_LINGER_MS - now)
+}
+
 export type PeekCardPhase = 'hidden' | 'live' | 'answer'
 
 export interface PeekCardState {
@@ -29,8 +39,6 @@ export interface PeekCardState {
   commandText: string | null
   /** When the Answer goes, on the events' clock (#470): null while live, hidden, or while its sentence still sounds. */
   retiresAt: number | null
-  /** The line was read as no Command: its Answer is "No response." (the Idle Screen form shows it). */
-  dropped?: true
 }
 
 const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, retiresAt: null }
@@ -89,7 +97,6 @@ export function createPeekCardFold(): {
             runId: event.turnId,
             commandText: event.text,
             retiresAt: null,
-            ...(event.dropped === true ? { dropped: true as const } : {}),
           }
           lastStatus = null
           sawError = false
@@ -170,17 +177,6 @@ export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | n
   }
   if (error !== null) return { kind: 'error', text: error.text.split('\n', 1)[0]!, failure: true }
   return spoken !== null ? { kind: 'spoken', text: spoken.text, failure: spoken.failure === true } : null
-}
-
-/**
- * The Answer the card shows over the Idle Screen (#470), or null for none:
- * only a failure or a line read as no Command ("No response."). A success
- * shows none — its own card on the screen says it (the Timer Clock, Now
- * Playing) — and a Stop is neutral (#334).
- */
-export function peekCardOnIdleScreen(state: PeekCardState, answer: PeekCardAnswer | null): PeekCardAnswer | null {
-  if (state.phase !== 'answer' || answer === null) return null
-  return answer.failure || (state.dropped === true && answer.muted === true) ? answer : null
 }
 
 /**

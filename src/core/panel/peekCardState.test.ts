@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
 import { createFeedProjection } from '../feed/feedProjection'
-import { createPeekCardFold, overlaySlotContent, PEEK_CARD_LINGER_MS, peekCardAnswer, peekCardOnIdleScreen, peekCardVisible } from './peekCardState'
+import { createPeekCardFold, overlaySlotContent, PEEK_CARD_LINGER_MS, peekCardAnswer, peekCardVisible } from './peekCardState'
 
 // The Peek Card fold (ADR 0021, amended by ADR 0026): a command shows the
 // Peek Card — never the panel — and the card's life is a pure fold over
@@ -186,38 +186,6 @@ describe('the Peek Card linger', () => {
     fold.onEvent(command())
     fold.expire(1_000_000)
     expect(fold.state().phase).toBe('live')
-  })
-
-  it('a line read as no Command is marked dropped, for the Idle Screen form', () => {
-    const fold = createPeekCardFold()
-    fold.onEvent({ type: 'command', turnId: 't1', text: 'what a lovely day', dropped: true, task: { id: 't1', hop: 0 }, at: 1 })
-    fold.onEvent(done(2))
-    expect(fold.state()).toMatchObject({ phase: 'answer', dropped: true })
-    fold.onEvent(command('play jazz', 't2'))
-    expect(fold.state().dropped).toBeUndefined()
-  })
-})
-
-// Over the Idle Screen (#470) the card shows only a failure or "No
-// response.": a success's own card says it, and a Stop is neutral.
-describe('peekCardOnIdleScreen', () => {
-  const answerOf = (dropped = false) => ({ phase: 'answer' as const, runId: 't1', commandText: 'play jazz', retiresAt: 20_000, ...(dropped ? { dropped: true as const } : {}) })
-
-  it('shows a failed Command', () => {
-    const failed = { kind: 'display' as const, text: 'Nothing played.', failure: true }
-    expect(peekCardOnIdleScreen(answerOf(), failed)).toBe(failed)
-  })
-
-  it('shows "No response." for a line read as no Command', () => {
-    const none = { kind: 'display' as const, text: 'No response.\n\nNothing on this page fits the words.', failure: false, muted: true as const }
-    expect(peekCardOnIdleScreen(answerOf(true), none)).toBe(none)
-  })
-
-  it('shows no success, no Stop, no Answer-less end and no live report', () => {
-    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Timer set for 5 minutes.', failure: false })).toBeNull()
-    expect(peekCardOnIdleScreen(answerOf(), { kind: 'display', text: 'Nothing to stop.', failure: false, muted: true })).toBeNull()
-    expect(peekCardOnIdleScreen(answerOf(), null)).toBeNull()
-    expect(peekCardOnIdleScreen({ ...answerOf(), phase: 'live', retiresAt: null }, { kind: 'display', text: 'Nothing played.', failure: true })).toBeNull()
   })
 })
 

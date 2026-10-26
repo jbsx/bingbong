@@ -8,22 +8,24 @@ import { PEEK_CARD_LINGER_MS as LINGER_MS } from '../src/core/panel/peekCardStat
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
-// The Peek Card goes (#470, ADR 0026 as amended): 15 s past its sentence,
-// on the dashboard as over the Idle Screen. Over the Idle Screen it shows
-// only a failure or "No response.", in the Weigh-in pop-up's place, a tap
-// dismissing it with the screen left up, and the Voice Prompt line keeps
-// the failure sentence until the next input. The fixture server stands in
-// for YouTube, its search finding nothing for YOUTUBE_FIXTURE_NOTHING.
+// The Peek Card goes (#470, ADR 0026 as amended): 15 s past its sentence
+// on the dashboard. Over the Idle Screen the Turn Card (#474) reports the
+// line instead, on the same constant: a failure ends it on Failed with the
+// sentence, a Timer on Done, a tap dismissing it with the screen left up,
+// and the Voice Prompt line keeps the failure sentence until the next
+// input. The fixture server stands in for YouTube, its search finding
+// nothing for YOUTUBE_FIXTURE_NOTHING.
 
 const FAILING_PLAY = `play ${YOUTUBE_FIXTURE_NOTHING}`
 
-describe('peek card e2e: the card goes, and over the Idle Screen it tells a failure', () => {
+describe('peek card e2e: the card goes, and over the Idle Screen the Turn Card tells a failure', () => {
   let harness: Harness
   let fixture: FixtureServer
   let userDataDir: string
 
   const idleShown = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
-  const idleCard = (): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('.idle-popup-place .peek-card--idle')?.textContent ?? null`)
+  const idleCard = (): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('.turn-card')?.textContent ?? null`)
+  const idleCardState = (): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('.turn-card')?.dataset.state ?? null`)
   const voiceLine = (): Promise<string> => harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`)
   const submit = (line: string): Promise<unknown> => harness.dashboardEval(`window.bingbong.assistant.submit(${JSON.stringify(line)})`)
 
@@ -37,8 +39,8 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
       launchArgs: ['--mute-audio'],
       env: {
         BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
-        // A `play` with free words is Jev's (ADR 0079): the stand-in reads it as the Appliance Verb.
-        ...decisionScript(readingOf(FAILING_PLAY)),
+        // A `play` with free words is Jev's (ADR 0079): the stand-in reads it as the Appliance Verb, once per case that says it.
+        ...decisionScript(readingOf(FAILING_PLAY), readingOf(FAILING_PLAY)),
       },
     })
     await waitFor(async () => ((await idleShown()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
@@ -50,16 +52,17 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('a failing `play` over the Idle Screen shows the card in the pop-up place, gone 15 s on, the Voice Prompt line keeping the sentence (AC2, AC5, AC7)', async () => {
+  it('a failing `play` over the Idle Screen ends the Turn Card on Failed with the sentence, gone 15 s on, the Voice Prompt line keeping the sentence (AC2, AC5, AC7)', async () => {
     await submit(FAILING_PLAY)
-    const shown = await waitFor(async () => (await idleCard()) ?? undefined, { timeoutMs: 20_000, intervalMs: 100 })
+    const shown = await waitFor(async () => ((await idleCardState()) === 'failed' ? await idleCard() : undefined), { timeoutMs: 20_000, intervalMs: 100 })
     const shownAt = Date.now()
+    // The line heard in the history, the Failed row and the sentence in the words row; a song that would not play names no Try line (#445).
     expect(shown).toContain(`“${FAILING_PLAY}”`)
     expect(shown).toContain('No videos found')
-    // A song that would not play names no Try line (#445); one that does rides under the sentence, as the Answer carries it.
-    // The sentence at status size, the dot in the failure colour.
-    expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.peek-card--idle .peek-sentence')).fontSize`)).toBe('65px')
-    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.peek-card--idle.peek-card--failed')`)).toBe(true)
+    expect(await harness.dashboardEval<string>(`document.querySelector('.turn-stage-word')?.textContent`)).toBe('Failed')
+    expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.turn-stage-word')).fontSize`)).toBe('65px')
+    expect(await harness.dashboardEval<string>(`document.querySelector('.turn-words')?.textContent`)).toContain('No videos found')
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card--tone-fail')`)).toBe(true)
     // Still there well inside its time.
     await new Promise((resolve) => setTimeout(resolve, 10_000))
     expect(await idleCard()).not.toBeNull()
@@ -70,11 +73,12 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     expect(await voiceLine()).toContain('No videos found')
   }, 60_000)
 
-  it('a Timer that succeeds shows no card, and as the next input returns the Voice Prompt line to its rest hint (AC2, AC5)', async () => {
+  it('a Timer that succeeds ends the card on Done, and as the next input returns the Voice Prompt line to its rest hint (AC2, AC5)', async () => {
     await submit('timer 5m')
     await waitFor(async () => ((await harness.dashboardEval<string>(`window.bingbong.timer.get().then((state) => state.status)`)) === 'running' ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    await waitFor(async () => ((await idleCardState()) === 'done' ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    expect(await harness.dashboardEval<string>(`document.querySelector('.turn-stage-word')?.textContent`)).toBe('Done')
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    expect(await idleCard()).toBeNull()
     // Back to the rest hint — the mic-off one here, with no microphone under Xvfb.
     expect(await voiceLine()).toMatch(/^(Say “Bing Bong” or start typing|Microphone off — start typing)/)
     await submit('timer off')
@@ -88,8 +92,8 @@ describe('peek card e2e: the card goes, and over the Idle Screen it tells a fail
     await harness.waitForPaneUrl(page)
     expect(await idleShown()).toBe(true)
     await submit(FAILING_PLAY)
-    await waitFor(async () => (await idleCard()) ?? undefined, { timeoutMs: 20_000, intervalMs: 100 })
-    await harness.clickDashboardElement('.peek-card--idle')
+    await waitFor(async () => ((await idleCardState()) === 'failed' ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 })
+    await harness.clickDashboardElement('.turn-card')
     await waitFor(async () => ((await idleCard()) === null ? true : undefined), { timeoutMs: 2_000, intervalMs: 50 })
     expect(await idleShown()).toBe(true)
   }, 30_000)

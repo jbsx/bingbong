@@ -6,14 +6,15 @@ import { STUCK_STAGE_MS } from '../src/core/pipeline/runProgress'
 
 // The stages a Command passes through (#428): the Status Capsule says
 // "Thinking…" from the moment a line is taken, before any Command is read,
-// and on the Idle Screen too — never "Ready" while a slow reading is under
-// way, never nothing. The scripted stand-in holds its reading long enough
-// to watch, past the stuck-stage bound.
+// and on the Idle Screen the Turn Card's stage row does (#474) — never
+// "Ready" while a slow reading is under way, never nothing. The scripted
+// stand-in holds its reading long enough to watch, past the stuck-stage
+// bound.
 
 const LINE = 'what a lovely day'
 const HELD_MS = 6_500
 
-describe('stage feedback e2e (#428): the Capsule over the Idle Screen while a line is read', () => {
+describe('stage feedback e2e (#428): the Turn Card over the Idle Screen while a line is read', () => {
   let harness: Harness
 
   beforeAll(async () => {
@@ -29,11 +30,14 @@ describe('stage feedback e2e (#428): the Capsule over the Idle Screen while a li
   })
 
   const idleUp = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
+  // The card's stage row as the Capsule's pill and hint: the word, then the words row and the mark joined.
   const capsule = (): Promise<{ pill: string; hint: string } | null> =>
     harness.dashboardEval(`(() => {
-      const pill = document.querySelector('.idle-screen .idle-status .status-pill')
-      if (!pill) return null
-      return { pill: pill.textContent ?? '', hint: document.querySelector('.idle-screen .idle-status .run-hint')?.textContent ?? '' }
+      const word = document.querySelector('.idle-screen .turn-card .turn-stage-word')
+      if (!word) return null
+      const words = document.querySelector('.idle-screen .turn-words')?.textContent ?? ''
+      const mark = document.querySelector('.idle-screen .turn-stage-mark')?.textContent ?? ''
+      return { pill: word.textContent ?? '', hint: words + ' · ' + mark }
     })()`)
 
   it('shows "Thinking…" with the heard words and its own seconds while the line is read, then names the stuck stage', async () => {
@@ -63,8 +67,14 @@ describe('stage feedback e2e (#428): the Capsule over the Idle Screen while a li
     // The screen never names the model that decides.
     expect(`${stuck.pill} ${stuck.hint}`).not.toMatch(/jev|decision/i)
 
-    // Read as no Command: the line ends, the Capsule goes, the Idle Screen stays.
-    expect(await waitFor(async () => ((await capsule()) === null ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })).toBe(true)
+    // Read as no Command: the line ends on "No response", the Idle Screen stays, and the card goes after its 15 s.
+    const ended = await waitFor(async () => {
+      const shown = await capsule()
+      return shown?.pill === 'No response' ? shown : undefined
+    }, { timeoutMs: 10000, intervalMs: 100 })
+    expect(ended.hint).toMatch(/^No response\./)
+    expect(await idleUp()).toBe(true)
+    expect(await waitFor(async () => ((await capsule()) === null ? true : undefined), { timeoutMs: 25000, intervalMs: 200 })).toBe(true)
     expect(await idleUp()).toBe(true)
   })
 })

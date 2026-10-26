@@ -17,7 +17,20 @@ const DONE_HOLD_MS = 1200
  * until then main hands each key over IPC, so a key typed fast after the
  * first is never lost.
  */
-export function IdlePrompt({ draft, onDraft, onClose, onFocused }: { draft: string; onDraft: (draft: string) => void; onClose: () => void; onFocused: (focused: boolean) => void }) {
+export function IdlePrompt({
+  draft,
+  onDraft,
+  onClose,
+  onFocused,
+  aside = false,
+}: {
+  draft: string
+  onDraft: (draft: string) => void
+  onClose: () => void
+  onFocused: (focused: boolean) => void
+  /** The Turn Card is up (#474): the Prompt sits at the foot of the screen, its scrim stood down, so the card is read. */
+  aside?: boolean
+}) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [reply, setReply] = useState<IdleReply>(NO_REPLY)
 
@@ -54,7 +67,7 @@ export function IdlePrompt({ draft, onDraft, onClose, onFocused }: { draft: stri
   return (
     // The tap that closes it is the Prompt's alone: it never reaches the Idle Screen's wake.
     <div
-      className="idle-prompt-backdrop"
+      className={aside ? 'idle-prompt-backdrop idle-prompt-backdrop--aside' : 'idle-prompt-backdrop'}
       onPointerDown={(event) => {
         event.stopPropagation()
         onClose()

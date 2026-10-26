@@ -25,9 +25,9 @@ import type { UsageState } from './useUsage'
 import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
-import { EarWait, PILL_LABELS, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
-import type { OrbStatus } from './useAssistant'
-import type { RunProgress } from '../../core/pipeline/runProgress'
+import { EarWait, PILL_LABELS, VoiceWave } from './AssistantPanel'
+import { TurnCard } from './TurnCard'
+import type { TurnCardState } from '../../core/idle/turnCard'
 import { GlobeIcon } from './WeatherIcon'
 import { ChromeIcon } from './ChromeIcon'
 import { dateLabel } from './dateLabel'
@@ -465,24 +465,6 @@ function useFitZoom(): number {
 }
 
 /**
- * The Status Capsule over the Idle Screen while Bing Bong works (#428):
- * every working stage — thinking from the moment a line is taken, before
- * any Command is read, acting, loading, speaking — with the run hint
- * beside it, until a Command that touches the pane takes the screen down.
- * The ear's own states are the Voice Prompt's to say.
- */
-function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProgress | null }) {
-  if (status === 'idle' || status === 'starting' || status === 'earFailed' || status === 'listening' || status === 'transcribing') return null
-  return (
-    <div className="status-capsule idle-status">
-      <StatusOrb status={status} />
-      <StatusPill status={status} progress={progress} />
-      {progress !== null ? <RunHint progress={progress} status={status} /> : null}
-    </div>
-  )
-}
-
-/**
  * The at-rest screen (T11, CONTEXT.md Idle Screen): F1 Headline's three
  * Columns (ADR 0078) — the weather down the left; the clock and date, the
  * Timer Clock beside it while a Timer is set, the Clock Lines under them
@@ -491,7 +473,9 @@ function IdleStatus({ status, progress }: { status: OrbStatus; progress: RunProg
  * card and the News card down the right. Every pinned card has its home; a
  * hidden one leaves and its Column-mates take its room, stepping down to a
  * smaller form where the Column runs short (core/idle/columns). Over it the
- * Weigh-in pop-up takes the AI Usage chart's place. Never a Feed Entry
+ * Weigh-in pop-up takes the AI Usage chart's place, and the Turn Card
+ * (#474) carries a line's whole journey, centred, while a line runs over
+ * the screen. Never a Feed Entry
  * (#70). Mounts in place of the whole dashboard while nothing is happening
  * — App's gate keeps it off the screen over a running Command, an open mic
  * or the settings page — and any activity unmounts it.
@@ -515,11 +499,10 @@ export function IdleScreen({
   monitorDimmed = false,
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
-  status,
-  progress = null,
   voice,
   popup = null,
-  popupKind = 'weighin',
+  turn = null,
+  onDismissTurn = () => undefined,
   result = null,
 }: {
   weather: WeatherState
@@ -552,14 +535,13 @@ export function IdleScreen({
   onOpenWeight?: (person: string) => void
   /** The settings button in the corner was tapped: show the settings page. */
   onOpenSettings?: () => void
-  status: OrbStatus
-  /** The active run's stage, detail and its start (#428), for the run hint beside the pill. */
-  progress?: RunProgress | null
   voice: IdleVoice
-  /** The Weigh-in pop-up, or else the Peek Card's Idle Screen form (#470), drawn in the AI Usage chart's place. */
+  /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
   popup?: React.ReactNode
-  /** Which of the two the place holds: the card's form grows upward with its sentence. */
-  popupKind?: 'weighin' | 'peek'
+  /** The Turn Card (#474): a line's whole journey over the screen while it runs and 15 s after; null while none. */
+  turn?: TurnCardState | null
+  /** A tap on the Turn Card: it goes. */
+  onDismissTurn?: () => void
   /** The last Command's failure sentence, or "No response." (#470), kept in the Voice Prompt line until the next input. */
   result?: string | null
 }) {
@@ -652,7 +634,6 @@ export function IdleScreen({
       {/* The window's drag region while the Toolbar is unmounted (ADR
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />
-      <IdleStatus status={status} progress={progress} />
       {/* Settings, in the corner and quiet: on the pointer going down, as
           the other idle controls are, before the same tap wakes the screen. */}
       <button
@@ -709,7 +690,7 @@ export function IdleScreen({
             })}
           </div>
         ) : null}
-        {popup !== null ? <div className={popupKind === 'peek' ? 'idle-popup-place idle-popup-place--peek' : 'idle-popup-place'}>{popup}</div> : null}
+        {popup !== null ? <div className="idle-popup-place">{popup}</div> : null}
       </div>
       <div className="idle-col idle-col--right">
         {right.length > 0 ? (
@@ -725,6 +706,8 @@ export function IdleScreen({
           </div>
         ) : null}
       </div>
+      {/* The Turn Card (#474): the line being taken, read and done, over the columns, under the night veil. */}
+      {turn !== null ? <TurnCard state={turn} onDismiss={onDismissTurn} /> : null}
       {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says — unless the monitor itself is down. */}
       {isNightDimmed(now, nightDim) && !monitorDimmed ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
     </div>
