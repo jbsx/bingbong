@@ -1,0 +1,376 @@
+<title>Idle Turn Variants</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* PROTOTYPE, throwaway. Four variants of the Idle Screen's turn surface on the real idle shot of 2026-10-26, a scripted spoken turn played over them. Single dark look: the kiosk's own. */
+:root {
+  color-scheme: dark;
+  --bg: #000; --fg: #fff; --fgh: #fff; --fg2: #bdbdbd; --fg3: #959595; --hair2: #555;
+  --raise: rgba(255,255,255,0.04); --accent: #ffac82; --accent-soft: #ffd2b4; --accentq: rgba(255,172,130,0.14);
+  --ok: #81ffbc; --fail-text: #ffd9d3; --fail: #ff7a66;
+  --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --type-s: 16px; --type-m: 24px; --type-l: 40px; --type-xl: 65px;
+  --tool: #1b1d22; --tool-fg: #e8e8e8; --tool-accent: #7fd0ff;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); overflow-x: hidden; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0; box-sizing: border-box; }
+.wrap { display: flex; flex-direction: column; min-height: 100%; gap: 10px; padding-block: 10px 0; box-sizing: border-box; }
+.head { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; color: var(--tool-fg); font-size: 14px; }
+.head h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+.head .q { color: #a9adb6; }
+.viewport { position: relative; width: 100%; flex: 1 1 auto; min-height: 240px; display: flex; align-items: flex-start; justify-content: center; }
+.screen { position: relative; width: 1920px; height: 1080px; transform-origin: top left; background: var(--bg) url(IDLE_SHOT_URI) 0 0 / 1920px 1080px no-repeat; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2d33; }
+.layer { position: absolute; inset: 0; pointer-events: none; }
+.ground { position: absolute; background: var(--bg); }
+.row { display: flex; align-items: center; gap: 18px; white-space: nowrap; min-width: 0; }
+.xl { font-size: var(--type-xl); font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
+.l { font-size: var(--type-l); font-weight: 500; line-height: 1.15; }
+.m { font-size: var(--type-m); font-weight: 500; line-height: 1.2; }
+.s { font-size: var(--type-s); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.acc { color: var(--accent); } .q2 { color: var(--fg2); } .q3 { color: var(--fg3); } .fail { color: var(--fail-text); } .ok { color: var(--ok); }
+.wrapt { white-space: normal; overflow-wrap: anywhere; }
+.orb { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%); box-shadow: 0 0 0 5px var(--accentq); flex: none; }
+.orb.dead { background: #666; box-shadow: none; }
+.wave { display: inline-flex; gap: 3px; align-items: center; height: 20px; }
+.wave i { display: block; width: 3px; height: 20px; background: var(--accent); border-radius: 2px; transform: scaleY(0.35); }
+.wave.live i { animation: bob 0.9s ease-in-out infinite; }
+.wave.live i:nth-child(2) { animation-delay: 0.15s } .wave.live i:nth-child(3) { animation-delay: 0.3s } .wave.live i:nth-child(4) { animation-delay: 0.45s } .wave.live i:nth-child(5) { animation-delay: 0.6s } .wave.live i:nth-child(6) { animation-delay: 0.75s }
+@keyframes bob { 0%,100% { transform: scaleY(0.35) } 50% { transform: scaleY(1) } }
+@media (prefers-reduced-motion: reduce) { .wave.live i { animation: none; transform: scaleY(0.7) } }
+.sec { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent); }
+.tag { font-family: var(--font-mono); font-size: var(--type-s); letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg3); }
+.note { position: absolute; font: 13px/1.3 var(--font-mono); color: #8fb6cf; background: rgba(0,0,0,0.7); border: 1px dashed #3d5a6e; padding: 4px 8px; border-radius: 4px; max-width: 420px; white-space: normal; }
+
+/* controls */
+.bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--tool); color: var(--tool-fg); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.bar button, .bar select { font: inherit; background: #2a2d34; color: var(--tool-fg); border: 1px solid #3a3e47; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.bar button:focus-visible, .bar select:focus-visible, .switch button:focus-visible { outline: 2px solid var(--tool-accent); outline-offset: 2px; }
+.bar input[type=range] { flex: 1 1 200px; min-width: 120px; accent-color: var(--tool-accent); }
+.bar .t { font-family: var(--font-mono); min-width: 5ch; }
+.events { display: flex; flex-wrap: wrap; gap: 6px; }
+.events button { padding: 3px 8px; font-size: 12px; font-family: var(--font-mono); }
+.events button.now { border-color: var(--tool-accent); color: var(--tool-accent); }
+.state { background: var(--tool); color: #c6cad2; border-radius: 10px; padding: 10px 14px; font: 12px/1.5 var(--font-mono); white-space: pre-wrap; }
+.state summary { cursor: pointer; font-family: var(--font-sans); font-size: 14px; color: var(--tool-fg); }
+.switch { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: #f3f4f7; color: #111; border-radius: 999px; padding: 8px 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.6); z-index: 20; font-size: 14px; max-width: calc(100vw - 32px); }
+.switch button { font: inherit; border: 0; background: #111; color: #fff; border-radius: 999px; width: 34px; height: 34px; cursor: pointer; }
+.switch .lab { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.switch .lab small { font-weight: 400; color: #555; }
+.legend { color: #a9adb6; font-size: 13px; line-height: 1.45; max-width: 70ch; padding-bottom: 80px; }
+.legend b { color: var(--tool-fg); }
+</style>
+
+<div class="wrap">
+  <div class="head"><h1>Idle Turn Variants</h1><span class="q">Prototype, throwaway. A spoken line on the Idle Screen, every step drawn as it arrives. Four variants, ← → to switch, space to play.</span></div>
+  <div class="viewport"><div class="screen" id="screen"><div class="layer" id="layer"></div></div></div>
+  <div class="bar">
+    <button id="play" type="button">Play</button>
+    <button id="restart" type="button">Restart</button>
+    <label>Line <select id="scenario"><option value="play">“play the latest mkbhd video”</option><option value="fail">“turn it up” with nothing playing</option><option value="timer">“set a timer for five minutes”</option></select></label>
+    <label>Speed <select id="speed"><option>0.5</option><option selected>1</option><option>2</option></select></label>
+    <input id="scrub" type="range" min="0" max="16000" step="50" value="0" aria-label="time">
+    <span class="t" id="clock">0.0s</span>
+    <div class="events" id="events"></div>
+  </div>
+  <details class="state"><summary>State at this moment (what the variant is drawn from)</summary><div id="state"></div></details>
+  <div class="legend" id="legend"></div>
+</div>
+<div class="switch"><button id="prev" type="button" aria-label="previous variant">←</button><span class="lab" id="lab"></span><button id="next" type="button" aria-label="next variant">→</button></div>
+
+<script>
+// ---------- the scripted turn ----------
+// times in ms from the wake word. Shapes follow the real seams: voice state (listening/hearing/transcribing, partial, lastWords),
+// the `heard` IPC (final transcript), then pipeline `status` thinking/acting/loading/speaking with detail/word, `command` (the reading), `speak`, `display`, `done`.
+const SCENARIOS = {
+  play: { label: 'play the latest mkbhd video', steps: [
+    [0,    'listen'],
+    [600,  'hearing'],
+    [1100, 'partial', 'play'],
+    [1500, 'partial', 'play the latest'],
+    [2100, 'partial', 'play the latest mkbhd'],
+    [2500, 'partial', 'play the latest mkbhd video'],
+    [3300, 'endpoint'],
+    [4400, 'heard', 'Play the latest MKBHD video'],
+    [4400, 'thinking', 'reading the page'],
+    [6600, 'thinking', 'asking'],
+    [8200, 'reading', { word: 'Searching', object: 'YouTube for the latest MKBHD video', action: 'play · the latest MKBHD video' }],
+    [8200, 'acting'],
+    [9400, 'loading', 'youtube.com'],
+    [11800, 'speaking', 'Playing iPhone 17 Pro review by Marques Brownlee'],
+    [14600, 'done', 'done'],
+  ]},
+  fail: { label: 'turn it up', steps: [
+    [0,    'listen'],
+    [500,  'hearing'],
+    [900,  'partial', 'turn'],
+    [1300, 'partial', 'turn it up'],
+    [2000, 'endpoint'],
+    [2900, 'heard', 'Turn it up'],
+    [2900, 'thinking', 'reading the page'],
+    [3800, 'thinking', 'asking'],
+    [5200, 'reading', { word: 'Speaking', object: '', action: 'none · nothing is playing' }],
+    [5200, 'speaking', 'Nothing is playing. Say play and a song.', true],
+    [8200, 'done', 'failed'],
+  ]},
+  timer: { label: 'set a timer for five minutes', steps: [
+    [0,    'listen'],
+    [500,  'hearing'],
+    [1000, 'partial', 'set a timer'],
+    [1600, 'partial', 'set a timer for five'],
+    [2000, 'partial', 'set a timer for five minutes'],
+    [2700, 'endpoint'],
+    [3500, 'heard', 'Set a timer for five minutes'],
+    [3500, 'thinking', 'grammar'],
+    [3600, 'reading', { word: 'Setting', object: 'a 5 minute timer', action: 'timer 5m' }],
+    [3600, 'acting'],
+    [3800, 'speaking', 'Timer set, 5 minutes'],
+    [5600, 'done', 'done'],
+  ]},
+}
+
+function stateAt(sc, t) {
+  const s = { t, ear: 'rest', partial: '', lastWords: '', earSince: 0, heard: null, heardAt: 0, stage: null, stageSince: 0, detail: '', word: '', reading: null, said: null, saidFailure: false, outcome: null, doneAt: 0, log: [] }
+  for (const step of sc.steps) {
+    const [at, kind, a, b] = step
+    if (at > t) break
+    const push = (label, text, cls) => s.log.push({ at, label, text, cls })
+    switch (kind) {
+      case 'listen': s.ear = 'listening'; s.earSince = at; push('Listening', 'say a command', 'q3'); break
+      case 'hearing': s.ear = 'hearing'; s.earSince = at; break
+      case 'partial': s.partial = a; if (s.log.at(-1)?.label === 'Listening') s.log.pop(); push('Listening', '“' + a + '…”'); break
+      case 'endpoint': s.ear = 'transcribing'; s.earSince = at; s.lastWords = s.partial; s.partial = ''; push('Transcribing', '“' + s.lastWords + '”', 'q2'); break
+      case 'heard': s.ear = 'rest'; s.heard = a; s.heardAt = at; push('Heard', '“' + a + '”'); break
+      case 'thinking': if (s.stage !== 'thinking') { s.stageSince = at } s.stage = 'thinking'; s.detail = a; push('Thinking', a, 'q2'); break
+      case 'reading': s.reading = a; push('Read as', a.action); break
+      case 'acting': s.stage = 'acting'; s.stageSince = at; s.word = s.reading.word; s.detail = s.reading.object; push(s.reading.word, s.reading.object); break
+      case 'loading': s.stage = 'loading'; s.stageSince = at; s.detail = a; push('Loading', a, 'q2'); break
+      case 'speaking': s.stage = 'speaking'; s.stageSince = at; s.said = a; s.saidFailure = !!b; s.detail = a; push('Speaking', a, b ? 'fail' : ''); break
+      case 'done': s.stage = 'done'; s.outcome = a; s.doneAt = at; push(a === 'done' ? 'Done' : 'Failed', '', a === 'done' ? 'ok' : 'fail'); break
+    }
+  }
+  return s
+}
+const secs = (since, t) => Math.max(0, Math.floor((t - since) / 1000)) + 's'
+const STAGE_WORD = { thinking: 'Thinking…', acting: 'Acting…', loading: 'Loading…', speaking: 'Speaking…' }
+const stageWord = (s) => s.stage === 'acting' ? s.word + '…' : STAGE_WORD[s.stage] ?? ''
+const EAR_WORD = { listening: 'Listening…', hearing: 'Listening…', transcribing: 'Transcribing…' }
+const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+const HOLD_MS = 2500 // how long the finished turn stays before the screen returns to rest (a guess, marked)
+const over = (s) => s.stage === 'done' && s.t - s.doneAt > HOLD_MS
+
+// geometry of the shot: middle column x 600..1320 (720 px); clock y 60..200; date ~205..245; voice line 250..330; last page 345..375; usage card from 380.
+const COL = { x: 600, w: 720 }
+const box = (x, y, w, h, extra = '') => `position:absolute;left:${x}px;top:${y}px;width:${w}px;${h ? 'height:' + h + 'px;' : ''}${extra}`
+
+function voiceLineAsToday(s, y = 250) {
+  // the rest line exactly as the shot draws it is already in the image; only paint over it while the ear is taking a line
+  if (s.ear === 'rest') return ''
+  const live = s.ear !== 'transcribing'
+  const words = s.ear === 'transcribing' ? `<span class="m q2">“${esc(s.lastWords)}” <span class="sec">· ${secs(s.earSince, s.t)}</span></span>` : s.partial === '' ? `<span class="m q3">${s.ear === 'hearing' ? '…' : 'say a command'}</span>` : `<span class="m">“${esc(s.partial)}…”</span>`
+  return `<div class="ground" style="${box(COL.x, y, COL.w, 80)}"></div><div class="row" style="${box(COL.x, y, COL.w, 80, 'justify-content:center')}"><span class="orb"></span>${words}${live ? '<span class="wave live"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}<span class="xl acc">${EAR_WORD[s.ear]}</span></div>`
+}
+
+// ---------- Variant A: Rows in place ----------
+// Four rows at most, each updating in place, in the Voice Line's slot; the column below steps down while a turn runs.
+function variantA(s) {
+  if (over(s) || (s.ear === 'rest' && s.stage === null)) return ''
+  const rows = []
+  const earRow = s.ear === 'rest' ? '' : (() => {
+    const words = s.ear === 'transcribing' ? `<span class="l q2 wrapt">“${esc(s.lastWords)}”</span><span class="sec m">· ${secs(s.earSince, s.t)}</span>` : s.partial === '' ? `<span class="l q3">${s.ear === 'hearing' ? '…' : 'say a command'}</span>` : `<span class="l wrapt">“${esc(s.partial)}…”</span>`
+    return `<div class="row" style="gap:22px"><span class="orb"></span><span class="xl acc" style="flex:none">${EAR_WORD[s.ear]}</span>${words}${s.ear !== 'transcribing' ? '<span class="wave live"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}</div>`
+  })()
+  if (earRow) rows.push(earRow)
+  if (s.heard) rows.push(`<div class="row" style="gap:22px"><span class="tag" style="width:120px;flex:none">Heard</span><span class="l wrapt">“${esc(s.heard)}”</span></div>`)
+  if (s.stage && s.stage !== 'done') {
+    const big = s.ear === 'rest'
+    rows.push(`<div class="row" style="gap:22px"><span class="${big ? 'xl' : 'l'} acc" style="flex:none">${stageWord(s)}</span><span class="m q2 wrapt" style="flex:1 1 auto">${esc(s.detail)}${s.reading && s.stage === 'thinking' ? '' : ''}</span><span class="sec m">${secs(s.stageSince, s.t)}</span></div>`)
+    if (s.reading && s.stage === 'thinking') rows.push(`<div class="row" style="gap:22px"><span class="tag" style="width:120px;flex:none">Read as</span><span class="m">${esc(s.reading.action)}</span></div>`)
+  }
+  if (s.stage === 'done') rows.push(`<div class="row" style="gap:22px"><span class="xl ${s.outcome === 'done' ? 'ok' : 'fail'}" style="flex:none">${s.outcome === 'done' ? 'Done' : 'Failed'}</span><span class="l ${s.saidFailure ? 'fail' : ''} wrapt">${esc(s.said ?? '')}</span></div>`)
+  else if (s.said && s.stage !== 'speaking') rows.push(`<div class="row"><span class="tag" style="width:120px;flex:none">Said</span><span class="m q2 wrapt">${esc(s.said)}</span></div>`)
+  const h = 80 + (rows.length - 1) * 64 + 20
+  return `<div class="ground" style="${box(COL.x, 250, COL.w, Math.max(80, h) + 130)}"></div>
+  <div style="${box(COL.x, 250, COL.w, 0, 'display:flex;flex-direction:column;gap:14px;justify-content:flex-start')}">${rows.join('')}</div>
+  <div class="note" style="left:${COL.x + 8}px;top:${250 + Math.max(80, h) + 90}px">↓ column steps down while the turn runs: Last Page and AI Usage move under (not drawn)</div>`
+}
+
+// ---------- Variant B: Ledger ----------
+// Every step appended with its clock, newest at 65 px, older at 24 px; takes the whole middle column under the date while a turn runs.
+function variantB(s) {
+  if (over(s) || s.log.length === 0) return ''
+  const items = s.log.slice(-7)
+  const html = items.map((e, i) => {
+    const last = i === items.length - 1
+    const t = ((e.at) / 1000).toFixed(1) + 's'
+    const clsWord = last ? 'xl acc' : 'm q3'
+    const clsText = last ? 'l ' + (e.cls ?? '') : 'm ' + (e.cls === 'fail' ? 'fail' : 'q2')
+    const live = last && (s.stage && s.stage !== 'done' || s.ear !== 'rest') ? `<span class="sec m" style="margin-left:auto">${secs(s.stage && s.stage !== 'done' && s.ear === 'rest' ? s.stageSince : s.earSince, s.t)}</span>` : ''
+    return `<div class="row" style="gap:20px;align-items:baseline"><span class="mono s q3" style="width:60px;flex:none;text-align:right">${t}</span><span class="${clsWord}" style="flex:none;min-width:${last ? 0 : 150}px">${esc(e.label)}</span><span class="${clsText} wrapt" style="min-width:0">${esc(e.text)}</span>${live}</div>`
+  }).join('')
+  return `<div class="ground" style="${box(COL.x, 250, COL.w, 790)}"></div><div style="${box(COL.x, 250, COL.w, 0, 'display:flex;flex-direction:column;gap:16px')}">${html}</div>`
+}
+
+// ---------- Variant C: Headline ----------
+// The clock yields: the heard words take its place as the receipt, the stage sits where the date was, the ear keeps the Voice Line.
+function variantC(s) {
+  if (over(s) || (s.ear === 'rest' && s.stage === null)) return ''
+  const head = s.heard ? `<div class="wrapt" style="font-size:${s.heard.length > 28 ? 88 : 112}px;font-weight:500;line-height:1.02;letter-spacing:-0.03em;color:var(--fg)">${esc(s.heard)}</div>`
+    : s.partial || s.lastWords ? `<div class="wrapt q2" style="font-size:88px;font-weight:500;line-height:1.02;letter-spacing:-0.03em">${esc(s.partial || s.lastWords)}<span class="q3">…</span></div>`
+    : `<div class="q3" style="font-size:88px;font-weight:500;line-height:1.02;letter-spacing:-0.03em">${s.ear === 'hearing' ? '…' : 'say a command'}</div>`
+  let sub = ''
+  if (s.ear !== 'rest') sub = `<div class="row" style="gap:18px"><span class="orb"></span><span class="xl acc">${EAR_WORD[s.ear]}</span>${s.ear !== 'transcribing' ? '<span class="wave live"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : `<span class="sec l">${secs(s.earSince, s.t)}</span>`}</div>`
+  else if (s.stage && s.stage !== 'done') sub = `<div class="row" style="gap:18px"><span class="xl acc">${stageWord(s)}</span><span class="l q2 wrapt" style="min-width:0">${esc(s.detail)}</span><span class="sec l">${secs(s.stageSince, s.t)}</span></div>`
+  else if (s.stage === 'done') sub = `<div class="row" style="gap:18px"><span class="xl ${s.outcome === 'done' ? 'ok' : 'fail'}">${s.outcome === 'done' ? 'Done' : 'Failed'}</span><span class="l ${s.saidFailure ? 'fail' : 'q2'} wrapt" style="min-width:0">${esc(s.said ?? '')}</span></div>`
+  const third = s.reading && s.stage !== 'done' ? `<div class="row" style="gap:18px"><span class="tag">Read as</span><span class="m">${esc(s.reading.action)}</span></div>` : s.said && s.stage !== 'speaking' && s.stage !== 'done' ? `<div class="row" style="gap:18px"><span class="tag">Said</span><span class="m q2">${esc(s.said)}</span></div>` : ''
+  return `<div class="ground" style="${box(COL.x - 40, 40, COL.w + 80, 340)}"></div>
+  <div style="${box(COL.x, 56, COL.w, 0, 'display:flex;flex-direction:column;gap:22px')}">${head}${sub}${third}</div>
+  <div class="note" style="left:${COL.x + 8}px;top:352px">the clock is away only while the turn runs; Last Page stays</div>`
+}
+
+// ---------- Variant D: Band ----------
+// A full-width band across the top replaces the capsule: the stations of the turn, the live words under them at 65 px. The Voice Line stays as today.
+function variantD(s) {
+  if (over(s) || (s.ear === 'rest' && s.stage === null)) return ''
+  const stations = ['Heard', 'Thinking', 'Acting', 'Loading', 'Speaking', 'Done']
+  const reached = s.stage === 'done' ? 6 : s.stage === 'speaking' ? 5 : s.stage === 'loading' ? 4 : s.stage === 'acting' ? 3 : s.stage === 'thinking' ? 2 : s.heard ? 1 : 0
+  const act = s.stage === 'done' ? 5 : reached - 1
+  const rail = stations.map((n, i) => {
+    const label = i === 2 && s.reading ? s.reading.word : n
+    const on = i === act
+    const past = i < act
+    const col = on ? (s.stage === 'done' ? (s.outcome === 'done' ? 'var(--ok)' : 'var(--fail)') : 'var(--accent)') : past ? 'var(--fg2)' : 'var(--hair2)'
+    return `<span style="display:flex;align-items:center;gap:12px"><span style="width:14px;height:14px;border-radius:50%;background:${col};${on ? 'box-shadow:0 0 0 6px var(--accentq)' : ''}"></span><span class="m" style="color:${col};font-weight:${on ? 600 : 500}">${esc(label)}${on && s.stage !== 'done' ? ` <span class="sec">${secs(s.stageSince, s.t)}</span>` : ''}</span></span>`
+  }).join('<span style="flex:1 1 0;height:2px;background:var(--hair2);margin:0 10px"></span>')
+  let words
+  if (s.ear !== 'rest') words = `<span class="xl acc" style="flex:none">${EAR_WORD[s.ear]}</span><span class="xl wrapt" style="font-weight:500;min-width:0">${s.ear === 'transcribing' ? '“' + esc(s.lastWords) + '”' : s.partial ? '“' + esc(s.partial) + '…”' : '<span class="q3">' + (s.ear === 'hearing' ? '…' : 'say a command') + '</span>'}</span>${s.ear === 'transcribing' ? `<span class="sec xl">${secs(s.earSince, s.t)}</span>` : ''}`
+  else if (s.stage === 'done') words = `<span class="xl ${s.outcome === 'done' ? 'ok' : 'fail'}" style="flex:none">${s.outcome === 'done' ? 'Done' : 'Failed'}</span><span class="xl wrapt ${s.saidFailure ? 'fail' : ''}" style="font-weight:500;min-width:0">${esc(s.said ?? '')}</span>`
+  else words = `<span class="xl acc" style="flex:none">${stageWord(s)}</span><span class="xl wrapt" style="font-weight:500;min-width:0">${esc(s.stage === 'speaking' ? s.said : s.stage === 'thinking' ? '“' + s.heard + '”' : s.detail)}</span>`
+  const second = s.heard && s.stage && s.stage !== 'done' && s.stage !== 'thinking' ? `<div class="row" style="gap:16px"><span class="tag">Heard</span><span class="m q2">“${esc(s.heard)}”</span>${s.reading ? `<span class="tag" style="margin-left:24px">Read as</span><span class="m q2">${esc(s.reading.action)}</span>` : ''}</div>` : s.stage === 'thinking' ? `<div class="row" style="gap:16px"><span class="tag">On</span><span class="m q2">${esc(s.detail)}</span></div>` : ''
+  return `<div class="ground" style="${box(0, 0, 1920, 230, 'border-bottom:1px solid var(--hair2)')}"></div>
+  <div style="${box(48, 26, 1824, 0, 'display:flex;align-items:center')}">${rail}</div>
+  <div class="row" style="${box(48, 84, 1824, 0, 'gap:28px;align-items:baseline')}">${words}</div>
+  <div style="${box(48, 176, 1824, 0)}">${second}</div>
+  ${voiceLineAsToday(s)}
+  <div class="note" style="left:56px;top:244px">the band covers the top 230 px while the turn runs: the weather's 12° and the clock's top are under it (the columns would start lower)</div>`
+}
+
+// ---------- Variant E: Card ----------
+// A Tile-sized card centered on a scrim. Nothing moves between states: the rail is six equal cells over one track,
+// the stage word sits in its own row at a fixed x with the seconds pinned right, the words row reserves two lines,
+// the history is a fixed grid of six rows. Four sizes (65/40/24/16), two faces, the accent only on what is live.
+function variantE(s) {
+  if (over(s) || (s.ear === 'rest' && s.stage === null)) return ''
+  const W = 1240, H = 680, X = (1920 - W) / 2, Y = (1080 - H) / 2
+  const stations = ['Heard', 'Thinking', 'Acting', 'Loading', 'Speaking', 'Done']
+  const reached = s.stage === 'done' ? 6 : s.stage === 'speaking' ? 5 : s.stage === 'loading' ? 4 : s.stage === 'acting' ? 3 : s.stage === 'thinking' ? 2 : s.heard ? 1 : 0
+  const act = reached - 1
+  const endCol = s.stage === 'done' ? (s.outcome === 'done' ? 'var(--ok)' : 'var(--fail)') : 'var(--accent)'
+  const fillPct = act <= 0 ? 0 : (act / 5) * 100
+  const cells = stations.map((n, i) => {
+    const on = i === act, past = i < act
+    const col = on ? endCol : past ? 'var(--fg2)' : 'var(--hair2)'
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:12px"><span style="width:14px;height:14px;border-radius:50%;background:${col};${on ? 'box-shadow:0 0 0 6px var(--accentq)' : ''}"></span><span class="m" style="color:${on ? 'var(--fg)' : past ? 'var(--fg2)' : 'var(--fg3)'};font-weight:${on ? 600 : 500}">${n}</span></div>`
+  }).join('')
+  const rail = `<div style="position:relative"><div style="position:absolute;left:${100 / 12}%;right:${100 / 12}%;top:6px;height:2px;background:var(--hair2)"></div><div style="position:absolute;left:${100 / 12}%;width:calc(${100 - 100 / 6}% * ${fillPct / 100});top:6px;height:2px;background:${act >= 0 ? 'var(--fg2)' : 'transparent'}"></div><div style="position:relative;display:grid;grid-template-columns:repeat(6,1fr)">${cells}</div></div>`
+  // stage row: the word at a fixed x; the live mark (waveform or seconds) pinned right
+  let word, wordCol = 'var(--accent)', mark = ''
+  if (s.ear !== 'rest') { word = EAR_WORD[s.ear]; mark = s.ear === 'transcribing' ? `<span class="sec xl">${secs(s.earSince, s.t)}</span>` : '<span class="wave live" style="height:32px"><i></i><i></i><i></i><i></i><i></i><i></i></span>' }
+  else if (s.stage === 'done') { word = s.outcome === 'done' ? 'Done' : 'Failed'; wordCol = endCol; mark = `<span class="xl mono q3">${((s.doneAt) / 1000).toFixed(1)}s</span>` }
+  else { word = stageWord(s); mark = `<span class="sec xl">${secs(s.stageSince, s.t)}</span>` }
+  const stageRow = `<div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;height:80px"><span class="xl" style="color:${wordCol}">${word}</span><span style="justify-self:end">${mark}</span></div>`
+  // words row: two lines reserved, so the history never shifts
+  let text, textCls = ''
+  if (s.ear !== 'rest') { text = s.ear === 'transcribing' ? '“' + s.lastWords + '”' : s.partial ? '“' + s.partial + '…”' : (s.ear === 'hearing' ? '…' : 'say a command'); textCls = s.partial || s.lastWords ? '' : 'q3' }
+  else if (s.stage === 'done') { text = s.said ?? ''; textCls = s.saidFailure ? 'fail' : '' }
+  else { text = s.stage === 'speaking' ? s.said : s.stage === 'thinking' ? '“' + s.heard + '”' : s.detail }
+  const wordsRow = `<div class="l wrapt ${textCls}" style="height:96px;overflow:hidden;line-height:48px">${esc(text)}</div>`
+  // history: six fixed rows, oldest first, the newest in the primary colour
+  const items = s.log.slice(-6)
+  const rows = []
+  for (let i = 0; i < 6; i++) {
+    const e = items[i]
+    if (!e) { rows.push('<div style="height:36px"></div>'); continue }
+    const last = i === items.length - 1
+    const tc = e.cls === 'fail' ? 'fail' : e.cls === 'ok' ? 'ok' : last ? '' : 'q2'
+    rows.push(`<div style="display:grid;grid-template-columns:72px 200px 1fr;gap:0 20px;align-items:baseline;height:36px"><span class="mono s q3" style="text-align:right">${(e.at / 1000).toFixed(1)}s</span><span class="m" style="color:${last ? 'var(--fg)' : 'var(--fg3)'};font-weight:${last ? 600 : 500}">${esc(e.label)}</span><span class="m ${tc}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.text)}</span></div>`)
+  }
+  return `<div style="${box(0, 0, 1920, 1080, 'background:rgba(0,0,0,0.5)')}"></div>
+  <div style="${box(X, Y, W, H, 'box-sizing:border-box;padding:40px 48px;background:var(--bg);border:1px solid var(--hair2);border-radius:24px;display:grid;grid-template-rows:auto 80px 96px auto;row-gap:28px')}">
+    ${rail}
+    ${stageRow}
+    ${wordsRow}
+    <div style="border-top:1px solid var(--hair2);padding-top:24px;display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>
+  </div>`
+}
+
+const VARIANTS = [
+  { key: 'E', name: 'Card', render: variantE, legend: '<b>E · Card.</b> D\'s rail and B\'s history in one Tile-sized card on a scrim. Nothing moves between states: six equal rail cells over one track that fills as the turn advances; the stage word in its own row at a fixed left, its seconds or waveform pinned to the right; two lines reserved for the words; six fixed history rows, oldest first, the newest in white. Four sizes, two faces, the accent only on what is live; Done and Failed are said in words as well as colour.' },
+  { key: 'A', name: 'Rows in place', render: variantA, legend: '<b>A · Rows in place.</b> The Voice Line grows to at most four rows while a turn runs: the ear row, Heard, the stage (rewriting itself from Thinking to the reading to Acting to Loading), and Said or the outcome. Each row updates in place. The column beneath steps down for the room and returns at rest. The capsule is gone from the Idle Screen.' },
+  { key: 'B', name: 'Ledger', render: variantB, legend: '<b>B · Ledger.</b> Every step is appended with its clock and stays: the newest at 65 px, older ones at 24 px. This is the literal "every bit of the way there". It takes the whole middle column under the date while a turn runs, so AI Usage is covered until the hold ends. Shows the panel-of-text tension in principle 7 plainly.' },
+  { key: 'C', name: 'Headline', render: variantC, legend: '<b>C · Headline.</b> The clock yields for the turn: the heard words take its place at the largest size on screen as the receipt, the stage sits where the date was with its seconds, and one quieter third line carries the reading or what was said. No room is taken from any card. The clock returns at rest.' },
+  { key: 'D', name: 'Band', render: variantD, legend: '<b>D · Band.</b> The capsule becomes a full-width band across the top of the screen: the stations of the turn as a rail with the live one lit and counting, and the live words under it at 65 px, never cut. The Voice Line below keeps its ear states as today. The three columns would start 230 px lower while the band is up.' },
+]
+
+// ---------- player ----------
+const $ = (id) => document.getElementById(id)
+let vi = Math.max(0, VARIANTS.findIndex((v) => v.key === (location.hash.replace('#', '') || 'E')))
+let t = 0, playing = false, last = 0
+const scenario = () => SCENARIOS[$('scenario').value]
+const endOf = (sc) => sc.steps.at(-1)[0] + HOLD_MS + 800
+
+function fit() {
+  const vp = document.querySelector('.viewport')
+  const w = vp.clientWidth
+  const h = Math.max(240, window.innerHeight - 250)
+  const k = Math.min(w / 1920, h / 1080)
+  $('screen').style.transform = `scale(${k})`
+  vp.style.height = (1080 * k) + 'px'
+}
+function render() {
+  const sc = scenario()
+  const s = stateAt(sc, t)
+  const v = VARIANTS[vi]
+  $('layer').innerHTML = v.render(s)
+  $('lab').innerHTML = `${v.key} <small>· ${v.name}</small>`
+  $('legend').innerHTML = v.legend + '<br><br>Time runs on the scrubber. HOLD after Done is 2.5 s here, a guess. The partials, the 1.1 s read, the page collect and the ask are typical kiosk timings, not measured for this page. Every variant draws over the real idle shot of 2026-10-26 (idle-3-dark).'
+  $('clock').textContent = (t / 1000).toFixed(1) + 's'
+  $('scrub').value = t
+  $('scrub').max = endOf(sc)
+  const { log, ...rest } = s
+  $('state').textContent = JSON.stringify(rest, null, 1).replace(/[{}\n]/g, (c) => c === '\n' ? '\n' : '').trim()
+  for (const b of $('events').children) b.classList.toggle('now', Number(b.dataset.at) <= t && (b.nextElementSibling === null || Number(b.nextElementSibling.dataset.at) > t))
+}
+function buildEvents() {
+  const sc = scenario()
+  const seen = new Set()
+  $('events').innerHTML = sc.steps.filter((x) => (seen.has(x[0]) ? false : seen.add(x[0]))).map((x) => `<button type="button" data-at="${x[0]}" title="${esc(x[1])}">${(x[0] / 1000).toFixed(1)} ${x[1]}</button>`).join('')
+  for (const b of $('events').children) b.onclick = () => { t = Number(b.dataset.at); playing = false; $('play').textContent = 'Play'; render() }
+}
+function tick(now) {
+  if (playing) {
+    const dt = (now - last) * Number($('speed').value)
+    t = Math.min(endOf(scenario()), t + dt)
+    if (t >= endOf(scenario())) { playing = false; $('play').textContent = 'Play' }
+    render()
+  }
+  last = now
+  requestAnimationFrame(tick)
+}
+$('play').onclick = () => { if (t >= endOf(scenario())) t = 0; playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play' }
+$('restart').onclick = () => { t = 0; playing = true; $('play').textContent = 'Pause' }
+$('scrub').oninput = (e) => { t = Number(e.target.value); render() }
+$('scenario').onchange = () => { t = 0; buildEvents(); render() }
+const go = (d) => { vi = (vi + d + VARIANTS.length) % VARIANTS.length; history.replaceState(null, '', '#' + VARIANTS[vi].key); render() }
+$('prev').onclick = () => go(-1)
+$('next').onclick = () => go(1)
+window.addEventListener('keydown', (e) => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return
+  if (e.key === 'ArrowLeft') go(-1)
+  else if (e.key === 'ArrowRight') go(1)
+  else if (e.key === ' ') { e.preventDefault(); $('play').click() }
+})
+window.addEventListener('resize', fit)
+buildEvents(); fit(); t = 4900; render()
+requestAnimationFrame((now) => { last = now; requestAnimationFrame(tick) })
+</script>
