@@ -35,7 +35,7 @@ import {
   type CoverProbe,
   type RefAction,
 } from '../../core/browser/actionOutcome'
-import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
+import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser, type ConsentControl } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
   coverOf,
@@ -776,8 +776,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
     const labels = controls.map((ref) => ref.label)
     if (!isConsentDialog(snapshot.dialogText, labels)) return null
-    // Jev's sure pick of the control that declines first (ADR 0089), else the rule's reject (privacy first, ADR 0061), else the accept.
-    const choice = (await chosenConsent(snapshot.dialogText, labels)) ?? consentRejectOf(labels) ?? consentAcceptOf(labels)
+    // Each control as the rule and Jev read it: its label, with how it was found when the markup does not mark it (#476).
+    const consent: ConsentControl[] = controls.map((ref) => (ref.foundBy === undefined ? ref.label : { label: ref.label, foundBy: ref.foundBy }))
+    // Jev's sure pick of the control that declines first (ADR 0089), else the rule's reject (privacy first, ADR 0061), else the accept — a marked control before focusable prose with the same words (#476).
+    const choice = (await chosenConsent(snapshot.dialogText, consent)) ?? consentRejectOf(consent) ?? consentAcceptOf(consent)
     if (choice === null) return null
     const target = controls[choice]
     const at = addressOfRef(target.ref)
@@ -796,10 +798,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /** The control Jev finds declining the wall's optional cookies; null when it finds none, or none is wired. */
-  async function chosenConsent(dialogText: string, labels: readonly string[]): Promise<number | null> {
+  async function chosenConsent(dialogText: string, controls: readonly ConsentControl[]): Promise<number | null> {
     if (deps.chooseConsent === undefined) return null
     try {
-      return await deps.chooseConsent(dialogText, labels)
+      return await deps.chooseConsent(dialogText, controls)
     } catch (error) {
       reportFault('browser.createCdpBrowserController.chooseConsent', error)
       return null

@@ -492,6 +492,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   let regions = new WeakSet()
   // What a frame's collect took for the dialog layer alone (#414): the page merge keeps it only there.
   let dialogOnly = new WeakSet()
+  // How the dialog layer's own cues found a control the markup does not mark (#476): 'tabindex' or 'listener', on its ref.
+  let foundBy = new WeakMap()
   // The collect's images (#466): refs for their Capture Op alone, named by their own alt text.
   let images = new WeakSet()
   const imageLabelOf = (el) => (el.getAttribute('alt') || el.getAttribute('aria-label') || el.title || '').replace(/\\s+/g, ' ').trim().slice(0, 300)
@@ -544,7 +546,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       const layerCue = own === 'tabindex' || (own === null && heard)
       const cue = (dialog || layerUnknown) && layerCue ? 'weak' : own
       if (!marked && cue === null) continue
-      shown.push({ el, marked, cue, dialog, belowFold, dialogOnly: belowFold || (!dialog && layerUnknown && layerCue) })
+      // How the layer's cue found it (#476): the fact rides the ref, so the
+      // card and the consent rule tell focusable prose from a <button>. A
+      // listener is the nearer fact to a control when it has both.
+      const foundBy = (dialog || layerUnknown) && layerCue ? (heard ? 'listener' : 'tabindex') : null
+      shown.push({ el, marked, cue, dialog, belowFold, foundBy, dialogOnly: belowFold || (!dialog && layerUnknown && layerCue) })
     }
     // A label is strong while its control gives no hint; else it falls back as any element does.
     const hinted = new Set(shown.filter((entry) => entry.cue !== 'label').map((entry) => entry.el))
@@ -601,6 +607,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     unmarked = new WeakSet(taken.filter((entry) => !entry.marked && entry.cue !== 'region').map((entry) => entry.el))
     regions = new WeakSet(taken.filter((entry) => entry.cue === 'region').map((entry) => entry.el))
     dialogOnly = new WeakSet(taken.filter((entry) => entry.dialogOnly).map((entry) => entry.el))
+    foundBy = new WeakMap(taken.filter((entry) => entry.foundBy).map((entry) => [entry.el, entry.foundBy]))
     // An image is a ref for its Capture Op (#466): every image drawn in view
     // — inside the open dialog when one is open — at least MIN_IMAGE_SIDE
     // on each side, so an icon is no image to take. Images come after every
@@ -870,6 +877,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       ...(held.length > 0 ? { holds: held } : {}),
       // Taken by a frame for the dialog layer alone (#414): the page merge keeps it only there.
       ...(dialogOnly.has(el) ? { dialogOnly: true } : {}),
+      // How the dialog layer's cue found a control the markup does not mark (#476): its line says so.
+      ...(foundBy.has(el) ? { foundBy: foundBy.get(el) } : {}),
       // A Scroll Region's own facts (#383): what its line's position and length, and its Scroll Ops, are read off.
       ...(regions.has(el) ? { region: { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight } } : {}),
       // An image taken for its capture alone (#466).

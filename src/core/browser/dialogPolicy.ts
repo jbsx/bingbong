@@ -1,3 +1,5 @@
+import type { FoundBy } from './snapshot'
+
 // Dialog policy (issue #18, Tier 1): which open dialogs are trivial enough
 // to dismiss deterministically in code, and which control to press. The
 // consent-label regex is the same narrow precedent the risk gate applies to
@@ -81,15 +83,47 @@ export function isAcceptStyle(label: string): boolean {
 }
 
 /** The control the rule reads as declining, first of them, never one that costs (ADR 0089); null when none does. */
-export function consentRejectOf(controlLabels: readonly string[]): number | null {
-  const reject = controlLabels.findIndex((label) => isRejectStyle(label) && !costsAWayThrough(label))
-  return reject === -1 ? null : reject
+export function consentRejectOf(controls: readonly ConsentControl[]): number | null {
+  return markedFirst(controls, (label) => isRejectStyle(label) && !costsAWayThrough(label))
 }
 
-/** The control the rule reads as accepting, first of them; null when none does. */
-export function consentAcceptOf(controlLabels: readonly string[]): number | null {
-  const accept = controlLabels.findIndex((label) => ACCEPT_STYLE_RE.test(label))
-  return accept === -1 ? null : accept
+/** The control the rule reads as accepting, first of them — a marked one before focusable prose carrying the same words (#476); null when none does. */
+export function consentAcceptOf(controls: readonly ConsentControl[]): number | null {
+  return markedFirst(controls, (label) => ACCEPT_STYLE_RE.test(label))
+}
+
+/**
+ * A control of the consent wall as the rule and Jev's chooser read it: its
+ * label, or — for one the markup does not mark, found inside the dialog's
+ * layer by a tabindex alone or a click listener of its own (#476) — its
+ * label with how it was found.
+ */
+export type ConsentControl = string | UnmarkedConsentControl
+
+/** A consent wall's control the markup does not mark (#476): a `<p tabindex="0">` carrying the accept's words, a `<span>` × with a listener. */
+export interface UnmarkedConsentControl {
+  readonly label: string
+  readonly foundBy: FoundBy
+}
+
+/** The words of a consent control, however it was found. */
+export function consentLabelOf(control: ConsentControl): string {
+  return typeof control === 'string' ? control : control.label
+}
+
+/**
+ * The first control whose label the rule reads a way, a marked one (a tag,
+ * a role, an `onclick`) before an unmarked one (#476): Sourcepoint's walls
+ * make their prose focusable, and the piece carrying the accept's words
+ * comes before the button in document order; a click on it does nothing.
+ * An unmarked one only when no marked control carries the words, so a
+ * dialog whose one way out is a `<span tabindex="0">` keeps it.
+ */
+function markedFirst(controls: readonly ConsentControl[], reads: (label: string) => boolean): number | null {
+  const marked = controls.findIndex((control) => typeof control === 'string' && reads(control))
+  if (marked !== -1) return marked
+  const any = controls.findIndex((control) => reads(consentLabelOf(control)))
+  return any === -1 ? null : any
 }
 
 /**
@@ -98,18 +132,18 @@ export function consentAcceptOf(controlLabels: readonly string[]): number | null
  * A reject the rule cannot read ("Continue without accepting") is Jev's to
  * find before the accept ({@link ConsentChooser}, owner's rule 2026-10-19).
  */
-export function chooseConsentDismissal(controlLabels: string[]): number | null {
-  return consentRejectOf(controlLabels) ?? consentAcceptOf(controlLabels)
+export function chooseConsentDismissal(controls: readonly ConsentControl[]): number | null {
+  return consentRejectOf(controls) ?? consentAcceptOf(controls)
 }
 
 /**
  * Finds the control that declines a consent wall's optional cookies (owner's
  * rule 2026-10-19: the widest net, Jev chooses): the index of a control
- * among the labels, or null when none declines, Jev is unsure, or no one
- * could be asked. Its sure pick ranks above the rule's reject (ADR 0089).
- * Never an accept-style control, nor a way through that costs.
+ * among them, or null when none declines, Jev is unsure, or no one could be
+ * asked. Its sure pick ranks above the rule's reject (ADR 0089). Never an
+ * accept-style control, nor a way through that costs.
  */
-export type ConsentChooser = (dialogText: string, controlLabels: readonly string[]) => Promise<number | null>
+export type ConsentChooser = (dialogText: string, controls: readonly ConsentControl[]) => Promise<number | null>
 
 /**
  * The one line a Tier-1 dismissal reports, wherever it ran — read, navigate,

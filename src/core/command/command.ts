@@ -1,5 +1,5 @@
 import type { KeyPress } from '../ports/browser'
-import type { FileFieldFacts, MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
+import type { FileFieldFacts, FoundBy, MediaFacts, PageMedia, PageSnapshot, PlayerSwitch, RefKind, RegionFacts, SnapshotRef } from '../browser/snapshot'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
@@ -138,6 +138,8 @@ export interface CommandRef {
   readonly inputType: string | null
   /** Its Ref State (`pressed=true`, `expanded=false`, …); absent when the tree said nothing of it. */
   readonly states?: readonly string[]
+  /** How a dialog-layer control the markup does not mark was found (#476): its line says so, and the consent rule takes a marked control first; absent for every marked control. */
+  readonly foundBy?: FoundBy
   /** A media ref's own facts (#372, ADR 0080): its line's state, and what its Media Ops are gated by; absent for every other kind. */
   readonly media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085): its line's position and length, and what a Scroll Op moved; absent for every other kind. */
@@ -196,7 +198,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.fileField !== undefined ? { fileField: ref.fileField } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}), ...searchFactsOf(ref) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.foundBy !== undefined ? { foundBy: ref.foundBy } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.region !== undefined ? { region: ref.region } : {}), ...(ref.fileField !== undefined ? { fileField: ref.fileField } : {}), ...(ref.holds !== undefined ? { holds: ref.holds } : {}), ...(ref.switches !== undefined ? { switches: ref.switches } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}), ...searchFactsOf(ref) }
 }
 
 /** A search box's facts and a search form's submit (#398), off the collect's own: the box's kind and what it holds, the submit's kind. */

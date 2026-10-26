@@ -64,6 +64,19 @@ describe('the state Jev reads', () => {
     expect(commandQuestions('turn on ambient mode', { ...PAGE, refs: [...PAGE.refs, settings] }).action.options['click-4']).toBe('click [4] button "Settings" hasPopup=menu expanded=false menu holds "Ambient mode", "Sleep timer Off"')
   })
 
+  it("says how a dialog-layer control the markup does not mark was found (#476), after its states and before what it holds: focusable prose is told from the button carrying its words", () => {
+    const prose = { ref: 4, kind: 'button' as const, label: 'Accept personalised advertising and all cookies', href: null, inputType: null, frame: 'sourcepoint.theguardian.com', foundBy: 'tabindex' as const }
+    const close = { ref: 5, kind: 'button' as const, label: 'Continue without supporting us', href: null, inputType: null, states: ['role=paragraph'], foundBy: 'listener' as const }
+    const page = { ...PAGE, refs: [...PAGE.refs, prose, close], dialog: { text: 'Personalised advertising', refs: [4, 5] } }
+    const questions = commandQuestions('accept cookies', page)
+    expect(commandState('accept cookies', page).split('\n').slice(-2)).toEqual([
+      '[4] button "Accept personalised advertising and all cookies" in sourcepoint.theguardian.com focusable, not marked as a control',
+      '[5] button "Continue without supporting us" role=paragraph has a click listener, not marked as a control',
+    ])
+    expect(questions.action.options['click-4']).toBe('click [4] button "Accept personalised advertising and all cookies" in sourcepoint.theguardian.com focusable, not marked as a control')
+    expect(dismissPhraseQuestions('close this', page)!.dismiss.options['ref-5']).toBe('button "Continue without supporting us" role=paragraph has a click listener, not marked as a control')
+  })
+
   it("names the host of the frame a ref was read in after its label (#377, ADR 0081): the embedded video is another site's", () => {
     const play = { ref: 4, kind: 'button' as const, label: 'Play', href: null, inputType: null, frame: 'youtube.com', states: ['pressed=false'] }
     const state = commandState('play the video', { ...PAGE, refs: [...PAGE.refs, play] })

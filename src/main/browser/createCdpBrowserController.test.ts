@@ -1,4 +1,4 @@
-import type { ConsentChooser } from '../../core/browser/dialogPolicy'
+import type { ConsentChooser, ConsentControl } from '../../core/browser/dialogPolicy'
 import { createSiteQuestionDesk, type SiteQuestionDesk, type SiteQuestionEvent } from '../../core/browser/siteQuestionDesk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
@@ -1914,7 +1914,7 @@ describe('createCdpBrowserController dialog tiers', () => {
     const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
     const cdp = new FakeCdp(cleared)
     cdp.collectValues = [wall, cleared]
-    const asked: (readonly string[])[] = []
+    const asked: (readonly ConsentControl[])[] = []
     const { controller } = makeController({
       cdp,
       chooseConsent: async (_text, labels) => {

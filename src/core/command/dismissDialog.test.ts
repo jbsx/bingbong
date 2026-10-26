@@ -182,6 +182,25 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
     expect(dismissalLadder(guardian)).not.toContainEqual(click(4))
   })
 
+  it("a wall whose focusable prose carries the accept's words ahead of the button (#476): the rule's rung is the <button>, never the prose; the prose stays a control Jev may choose", () => {
+    const sourcepoint: CommandPage = {
+      ...BANNER,
+      refs: [
+        { ref: 2, kind: 'button', label: 'Personalised advertising', href: null, inputType: null, foundBy: 'tabindex' },
+        { ref: 5, kind: 'button', label: 'Accept personalised advertising and all cookies', href: null, inputType: null, foundBy: 'tabindex' },
+        { ref: 9, kind: 'button', label: 'Reject all and subscribe to Guardian Ad-Lite for £5 per month', href: null, inputType: null, foundBy: 'tabindex' },
+        { ref: 17, kind: 'button', label: 'Accept all', href: null, inputType: null },
+        { ref: 18, kind: 'button', label: 'Reject all and subscribe', href: null, inputType: null },
+      ],
+      dialog: { text: 'Personalised advertising', refs: [2, 5, 9, 17, 18] },
+    }
+    expect(dismissalLadder(sourcepoint)).toEqual([click(17), ESCAPE])
+    expect(dialogControls(sourcepoint).map((ref) => ref.ref)).toEqual([2])
+    // The one way out a <span tabindex="0"> is: with no marked control carrying the words, the unmarked one is the rung.
+    const spanned: CommandPage = { ...sourcepoint, refs: [{ ref: 1, kind: 'button', label: 'Reject all', href: null, inputType: null, foundBy: 'tabindex' }, sourcepoint.refs[3]!], dialog: { text: 'Cookies', refs: [1, 17] } }
+    expect(dismissalLadder(spanned)).toEqual([click(1), ESCAPE])
+  })
+
   it('Jev\'s choice of a way through, a link or a ref outside the dialog is not a rung: the guards hold whoever chose', () => {
     expect(dismissalLadder(SHEET, { choice: { ref: 8 }, probability: 0.95 })).toEqual([click(9), ESCAPE])
     expect(dismissalLadder(SHEET, { choice: { ref: 7 }, probability: 0.95 })).toEqual([click(9), ESCAPE])

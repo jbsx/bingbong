@@ -49,6 +49,8 @@ export interface CollectedElement {
   image?: true
   /** A frame's element taken for the dialog layer alone (#414): below its own frame's fold, or by a cue that holds only there. The page merge keeps it only when its frame sits in the top's open dialog. */
   dialogOnly?: true
+  /** How a dialog-layer element the markup does not mark as a control was found (#476): by a tabindex alone, or by a click listener of its own. Absent for every marked control and every Vimium cue. */
+  foundBy?: FoundBy
   checked?: boolean | null
   selectedOption?: string | null
   value?: string | null
@@ -224,6 +226,21 @@ export function fileFieldClause(facts: FileFieldFacts): string {
 
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe' | 'region' | 'image'
 
+/**
+ * How a control the markup does not mark was found inside the open dialog's
+ * layer (#476, ADR 0083): by a `tabindex` of 0 or more alone, or by a click
+ * listener of its own. A fact the collect already had; on the ref it reaches
+ * the card, the consent rule and Jev's chooser, so focusable prose that
+ * carries a button's words is told from the button. Code keeps the fact,
+ * Jev keeps the choice.
+ */
+export type FoundBy = 'tabindex' | 'listener'
+
+/** The clause a ref line carries for how it was found (#476), the same on the Page Read, the action card and the consent ask. */
+export function foundByClause(foundBy: FoundBy): string {
+  return foundBy === 'tabindex' ? 'focusable, not marked as a control' : 'has a click listener, not marked as a control'
+}
+
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
 // heuristics (autocomplete tokens, name/id matching, form association) are
 // folded into these flags by the in-page collector.
@@ -257,6 +274,8 @@ export interface SnapshotRef {
   states?: readonly string[]
   /** The label is the browser's accessible name (#382, ADR 0084): the page's own script reads this element's label as empty. */
   named?: true
+  /** How a dialog-layer control the markup does not mark was found (#476): its line says so; absent for every marked control. */
+  foundBy?: FoundBy
   /** A media ref's own facts (#372, ADR 0080); absent for every other kind. */
   media?: MediaFacts
   /** A Scroll Region's own facts (#383, ADR 0085); absent for every other kind. */
@@ -574,6 +593,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
       ...(el.dialogOnly === true ? { dialogOnly: true as const } : {}),
+      ...(el.foundBy === 'tabindex' || el.foundBy === 'listener' ? { foundBy: el.foundBy } : {}),
       ...(el.image === true ? { image: true as const } : {}),
       ...mediaFactsEntry(el.media),
       ...regionFactsEntry(el.region),
@@ -756,6 +776,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       className: element.className ?? '',
       ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
       ...(element.named === true ? { named: true as const } : {}),
+      ...(element.foundBy !== undefined ? { foundBy: element.foundBy } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.region !== undefined ? { region: element.region } : {}),
       ...(element.fileField !== undefined ? { fileField: element.fileField } : {}),
@@ -789,7 +810,9 @@ export function formatRefLine(ref: SnapshotRef): string {
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
   // A Scroll Region's position and length (#383, ADR 0085), as the action card's line carries them.
   const region = ref.region !== undefined ? ` ${regionStateOf(ref.region)}` : ''
-  return `[${ref.ref}] ${ref.kind}${subtype}${label}${frame}${region}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
+  // How a control the markup does not mark was found (#476): focusable prose is told from the button carrying its words.
+  const found = ref.foundBy !== undefined ? ` ${foundByClause(ref.foundBy)}` : ''
+  return `[${ref.ref}] ${ref.kind}${subtype}${label}${frame}${region}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${found}${dialogMarker}`
 }
 
 /** How many contained refs a labelled or unlabelled Cover names (ADR 0062). */

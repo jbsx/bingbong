@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
-import { buildPageSnapshot, parseCollectedPage, type CollectedPage, type PageSnapshot } from '../src/core/browser/snapshot.ts'
+import { buildPageSnapshot, formatRefLine, parseCollectedPage, type CollectedPage, type PageSnapshot } from '../src/core/browser/snapshot.ts'
 import { mergeFrames, type CollectedFrame } from '../src/core/browser/frames.ts'
 import { createCdpBrowserController } from '../src/main/browser/createCdpBrowserController.ts'
 import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
@@ -66,7 +66,22 @@ const DELEGATED_DIALOG = `<div id="cover" style="position:fixed;inset:0;backgrou
   })
 </script>`
 
+// A Sourcepoint consent-or-pay frame as the Guardian and bbcgoodfood serve
+// it (#476): its prose made focusable for screen readers, each piece a
+// `<p tabindex="0">`, the one carrying the accept words ahead of the real
+// `<button>`s in document order. A click on the prose does nothing; the
+// Accept button takes the dialog away.
+const SOURCEPOINT_PROSE_FRAME = `<body style="margin:0">
+  <p class="message-text" tabindex="0">Personalised advertising</p>
+  <p class="message-text" tabindex="0">Accept personalised advertising and all cookies</p>
+  <p class="message-text" tabindex="0">We use cookies and similar technologies to support this site.</p>
+  <button id="accept">Accept all</button><button>Reject all and subscribe</button>
+  <script>document.getElementById('accept').addEventListener('click', () => { parent.document.querySelector('[role="dialog"]').remove() })</script>
+</body>`
+
 const PAGES: Record<string, string> = {
+  '/sp-prose-frame': SOURCEPOINT_PROSE_FRAME,
+  '/sp-prose': `<body>${PAGE_BODY}<div role="dialog" style="position:fixed;inset:10%;background:#fff"><iframe src="/sp-prose-frame" style="width:600px;height:300px;border:0"></iframe></div></body>`,
   '/delegated': `<body>${PAGE_BODY}${DELEGATED_DIALOG}</body>`,
   '/sp-frame': SOURCEPOINT_FRAME,
   '/sourcepoint': `<body>${PAGE_BODY}<div role="dialog" style="position:fixed;inset:10%;background:#fff"><iframe src="/sp-frame" style="width:600px;height:300px;border:0"></iframe></div></body>`,
@@ -229,6 +244,51 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     const controller = controllerAt('/delegated')
     await controller.collectPage()
     await expect(controller.clickText({ text: 'Not on this page at all', frame: null, node: 99 })).rejects.toThrow(/no longer on the page/)
+  })
+
+  const framedController = (path: string) =>
+    createCdpBrowserController({
+      cdp: { send: (method, params) => fixtures.chrome.cdp.send(method, params), on: (event, handler) => void fixtures.chrome.cdp.on(event, handler) },
+      page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
+      collectScript: COLLECT_PAGE_SCRIPT,
+      frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] },
+    }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
+
+  it('carries how a dialog-layer ref was found when the markup does not mark it (#476): a tabindex, or a click listener of its own, on the line; a <button> carries nothing', async () => {
+    await fixtures.open('/adblock')
+    const snapshot = buildPageSnapshot(await collected({ commandLineApi: true }))
+    expect(snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => [ref.label, ref.foundBy])).toEqual([
+      ['×', 'tabindex'],
+      ['Disable', undefined],
+      ['Continue without supporting us', 'listener'],
+      ['Inside a button', undefined],
+    ])
+    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === '×')!)).toContain('focusable, not marked as a control')
+    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Continue without supporting us')!)).toContain('has a click listener, not marked as a control')
+    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Disable')!)).not.toContain('not marked as a control')
+  })
+
+  it("lists a framed wall's focusable prose with the fact on its line, never as a plain button (#476), and keeps the fact through the merge", async () => {
+    await fixtures.open('/sp-prose')
+    const merged = mergeFrames(await collected(), [await inFrame()])
+    const refs = buildPageSnapshot(merged.page).refs.filter((ref) => ref.layer === 'dialog')
+    expect(refs.map((ref) => [ref.kind, ref.label, ref.foundBy])).toEqual([
+      ['button', 'Personalised advertising', 'tabindex'],
+      ['button', 'Accept personalised advertising and all cookies', 'tabindex'],
+      ['button', 'We use cookies and similar technologies to support this site.', 'tabindex'],
+      ['button', 'Accept all', undefined],
+      ['button', 'Reject all and subscribe', undefined],
+    ])
+    expect(formatRefLine(refs[1]!)).toMatch(/^\[\d+\] button "Accept personalised advertising and all cookies" in 127\.0\.0\.1 focusable, not marked as a control \(dialog\)$/)
+    expect(formatRefLine(refs[3]!)).toMatch(/^\[\d+\] button "Accept all" in 127\.0\.0\.1 \(dialog\)$/)
+  })
+
+  it("Tier-1's consent dismissal clicks the wall's <button> ahead of the focusable prose carrying the same words (#476), and the dialog reads closed", async () => {
+    await fixtures.open('/sp-prose')
+    const controller = framedController('/sp-prose')
+    const text = await controller.readPage()
+    expect(text).toMatch(/^dismissed consent dialog: clicked \[\d+\] "Accept all"/)
+    expect((await controller.collectPage()).dialogOpen).toBe(false)
   })
 
   it("puts the dialog's own listeners on the very collect that first finds it open, every ref still new to it, and on each collect after", async () => {

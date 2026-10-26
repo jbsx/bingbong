@@ -40,6 +40,22 @@ describe('the consent question', () => {
     expect(Object.keys(consentQuestion('We value your privacy', ['Yes, I’m happy', 'Reject all and subscribe', 'Manage cookies'])!.questions.decline.options)).toEqual(['none', 'c-0', 'c-2'])
     expect(consentQuestion('Choose how you use our site', ['Reject & Pay', 'Accept cookies and read free content'])).toBeNull()
   })
+
+  it("says how a control the markup does not mark was found (#476), on its line and in its option, as the action card does; a marked one says nothing", () => {
+    const ask = consentQuestion('Personalised advertising', [{ label: 'Read the site without personalised advertising', foundBy: 'tabindex' }, 'Manage options', { label: '×', foundBy: 'listener' }, 'Accept all'])!
+    expect(ask.state.split('\n').slice(2)).toEqual([
+      '[c-0] "Read the site without personalised advertising" focusable, not marked as a control',
+      '[c-1] "Manage options"',
+      '[c-2] "×" has a click listener, not marked as a control',
+      '[c-3] "Accept all"',
+    ])
+    expect(ask.questions.decline.options).toEqual({
+      none: 'no control declines the optional cookies',
+      'c-0': '"Read the site without personalised advertising" focusable, not marked as a control',
+      'c-1': '"Manage options"',
+      'c-2': '"×" has a click listener, not marked as a control',
+    })
+  })
 })
 
 describe('the consent chooser', () => {
