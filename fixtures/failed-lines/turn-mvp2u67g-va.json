@@ -7,5 +7,6 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Look there some' for 'Loop this song'; Jev and the Where Ask read none, ended terminal with nothing done",
   "meant": "Loop the song playing",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#456"
+  "claimedBy": "#456",
+  "case": "turn-mvp2u67g-va"
 }

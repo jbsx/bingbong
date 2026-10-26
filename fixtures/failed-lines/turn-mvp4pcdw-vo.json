@@ -7,5 +7,6 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Hope side banner.' for 'Open side panel.'; Jev read none. The owner's next line 'Open side panel.' (turn-mvp4pjfu-vp) worked",
   "meant": "Open the side panel",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#456"
+  "claimedBy": "#456",
+  "case": "turn-mvp4pcdw-vo"
 }

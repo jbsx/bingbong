@@ -7,5 +7,6 @@
   "happened": "heard 'Turn on ambient molt.' for 'ambient mode'; Jev none 0.62 (click-14 0.14), nothing fired",
   "meant": "switch YouTube's Ambient mode on (it lives in the Settings [13] gear menu)",
   "log": "decision-1792589115188-1.jsonl",
-  "claimedBy": "#456"
+  "claimedBy": "#456",
+  "case": "turn-mvi5adcd-3"
 }

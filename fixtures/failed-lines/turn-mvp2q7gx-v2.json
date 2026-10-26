@@ -7,5 +7,6 @@
   "happened": "Kiosk 0.1.4-local.202610260834 (after #408), Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Look this song.' for 'Loop this song'; Jev and the Where Ask read none, ended terminal with nothing done. The owner's later 'Loop this song' (turn-mvp2y5cq-vd) fired from the Local Match",
   "meant": "Loop the song playing",
   "log": "decision-1793008066207-1.jsonl",
-  "claimedBy": "#456"
+  "claimedBy": "#456",
+  "case": "turn-mvp2q7gx-v2"
 }

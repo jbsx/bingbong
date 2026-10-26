@@ -7,5 +7,6 @@
   "happened": "Kiosk 0.1.1, Mammoth, 2026-10-25 15:16: Parakeet heard 'Play Tum Se Tum Tak by Niyam' as 'Play Tum Setum Tuck Bai Diamo'; the Name Match repaired 'Tum Setum Tuck' from a Learned Term but left 'Bai Diamo', and the Player searched 'tum se tum tak Bai Diamo' and played sCKGSbew8ow, not Niyam's version. The owner typed 'play tum se tum tak by niyam' 31 s later and got JTRDwh0BHG4; that typed repair taught nothing, since only spoken lines feed Learned Terms (commandRunner.ts learnFrom)",
   "meant": "Hear 'by Niyam' and play JTRDwh0BHG4, Tum Se Tum Tak by Niyam",
   "log": "decision-1792941446848-1.jsonl",
-  "claimedBy": "#456"
+  "claimedBy": "#456",
+  "fixedBy": "1f93f734"
 }
