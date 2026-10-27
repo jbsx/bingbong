@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610270920, 2026-10-27 09:23, YouTube watch page with music playing: 'Scroll down.' fired by the Local Match at 201 ms, but its readiness wait hit the 150 ms cap and the controller then collected the page again for the scroll's delta (browser-recollection scroll-delta 5,500 ms, browser-ref-states 4,702 ms); the reaction ended at 8.3 s, ~10.5 s from the wake, for an outcome no hop read",
   "meant": "The page scrolls and the line ends as soon as the scroll is seen, within the Instant tier",
   "log": "decision-1793092928196-1.jsonl",
-  "claimedBy": "#484"
+  "claimedBy": "#484",
+  "fixedBy": "2f2b9c1e",
+  "case": "createCdpBrowserController scroll: ends on a cheap check (#484): the new position, with no collect before the wheel or after it"
 }
