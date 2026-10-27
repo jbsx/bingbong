@@ -90,11 +90,14 @@ describe('createCheckNow (#422)', () => {
     expect(faults.map((fault) => fault.site)).toEqual(['update.checkNow'])
   })
 
-  it('reads a check that throws as failed, installing nothing', async () => {
+  it('reads a check that throws as failed, installing nothing, and records it (a feed gone 404s)', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
     const { installs, checkNow } = harness(async () => {
-      throw new Error('net::ERR_INTERNET_DISCONNECTED')
+      throw new Error('HttpError: 404')
     })
     expect(await checkNow()).toEqual({ kind: 'failed' })
     expect(installs).toEqual([])
+    expect(faults.map((fault) => fault.site)).toEqual(['update.checkNow'])
   })
 })

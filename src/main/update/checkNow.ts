@@ -58,7 +58,9 @@ export function createCheckNow(deps: CheckNowDeps): () => Promise<UpdateCheck> {
     let found: ReleaseCheck | null | typeof TIMED_OUT
     try {
       found = await withinWait(deps.check(), deps.waitMs ?? CHECK_NOW_WAIT_MS)
-    } catch {
+    } catch (error) {
+      // The asked-for check's own trace, beside the updater's 'error' fault: a 404 from a feed gone is one of these.
+      reportFault('update.checkNow', error)
       return { kind: 'failed' }
     }
     if (found === TIMED_OUT) {
