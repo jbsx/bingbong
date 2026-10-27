@@ -40,6 +40,11 @@ describe('the spans a person could see in line 1’s life', () => {
     const playing: RunRecords = { events: records.events, pane: [pane(A - 500, 'https://www.youtube.com/watch?v=0', true), pane(A + 800, 'https://www.youtube.com/watch?v=0', true), pane(A + 2000, 'https://www.youtube.com/watch?v=1', true)] }
     expect(spansOf(playing, A)['media-not-started']).toEqual([50, 2000])
   })
+
+  it('a song that never starts was not started for all of line 1’s life, to its last event', () => {
+    const unstarted: RunRecords = { ...records, pane: records.pane.map((sample) => ({ ...sample, media: [] })) }
+    expect(spansOf(unstarted, A)['media-not-started']).toEqual([50, 4100])
+  })
 })
 
 describe('a span as it begins, before anyone knows when it ends', () => {

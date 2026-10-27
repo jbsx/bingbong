@@ -272,6 +272,8 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
     userDataDir: profile,
     args: wav === null ? [] : ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`],
     startupTimeoutMs: SETUP_BOUND_MS,
+    // Piped so a kept run has the app's stdout beside its stderr.
+    pipeStdio: true,
     env: {
       // The run's env is this script's own, the root .env included: the app reads no file of its own.
       BINGBONG_ENV_FILE: join(profile, 'no-env-file'),
@@ -434,6 +436,7 @@ interface RunOutcome {
   readonly end: EndState | null
   readonly records: RunRecords & { voice: VoiceRecord[] }
   readonly stderr: string
+  readonly stdout?: string
   /** The run's perf, decision and ask logs, by file name: `pnpm perf:report` reads them once written out. */
   readonly logs?: Readonly<Record<string, string>>
 }
@@ -459,11 +462,17 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
       const cell: Cell = plan.wall !== null ? { verdict: 'wall', why: `${plan.wall} in the calibration run` } : { verdict: 'red', why: unplaced }
       return { cell, lineAt: null, sentMs: [], end: null, records: { events: [], voice: [], pane: [] }, stderr: '' }
     }
-    wav = spokenWav(sequence, lineMs as number[], noiseMs as number[], profile)
+    try {
+      wav = spokenWav(sequence, lineMs as number[], noiseMs as number[], profile)
+    } catch (error) {
+      rmSync(profile, { recursive: true, force: true })
+      throw error
+    }
   }
   let live: Live | null = null
   try {
     live = await launch(sequence, model, profile, wav?.path ?? null)
+    liveApp = live.app
     const current = live
     if (spoken) {
       const monitoring = await waitUntil(async () => lastOf((await current.records()).voice)?.state.monitoring === true || (await current.targets.evaluate<{ monitoring: boolean }>('dashboard', 'window.bingbong.voice.getState()'))?.monitoring === true, SETUP_BOUND_MS)
@@ -485,7 +494,7 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
         const why = await checkEnd(sequence.expect, end, judge)
         if (why !== null) verdict = { verdict: 'red', why }
       }
-      return { cell: verdict, lineAt, sentMs, end, records, stderr: current.app.stderrTail(), logs: logFiles(join(profile, 'logs')) }
+      return { cell: verdict, lineAt, sentMs, end, records, stderr: current.app.stderrTail(), stdout: current.app.stdoutRaw(), logs: logFiles(join(profile, 'logs')) }
     }
     if (unset !== null) {
       const wall = wallBefore(current.pane, Date.now())
@@ -503,11 +512,13 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
         }
       }
       sentMs.push(...lineMs)
-      const lineB = lineMs[1]
-      if (lineB !== undefined) {
-        await sleep(Math.max(0, lineAt + lineB - Date.now()))
-        const wall = wallBefore(current.pane, lineAt + lineB)
-        if (wall !== null) return await finish({ verdict: 'wall', why: `${wall} before line 2` }, lineAt, 0)
+      // A wall before line 2, or before the noise in a case of one line, stopped line 1 before the case was put.
+      const noiseMs = plan.noise.map((placed) => placedMs(placed) as number)
+      const next = Math.min(...lineMs.slice(1), ...noiseMs)
+      if (Number.isFinite(next)) {
+        await sleep(Math.max(0, lineAt + next - Date.now()))
+        const wall = wallBefore(current.pane, lineAt + next)
+        if (wall !== null) return await finish({ verdict: 'wall', why: `${wall} before ${lineMs.length > 1 && lineMs[1] === next ? 'line 2' : 'the noise'}` }, lineAt, 0)
       }
       return await finish(null, lineAt, t0 + wav!.lastEndMs + ENDPOINT_MS)
     }
@@ -529,7 +540,8 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
       } else ms = placed.ms
       if (typeof ms === 'string') {
         const wall = wallBefore(current.pane, Date.now())
-        return await finish(wall !== null ? { verdict: 'wall', why: `${wall} before line ${index + 1}` } : { verdict: 'red', why: ms }, lineAt, 0)
+        const cell: Cell = wall !== null ? { verdict: 'wall', why: `${wall} before line ${index + 1}` } : plan.wall !== null ? { verdict: 'wall', why: `${plan.wall} in the calibration run` } : { verdict: 'red', why: ms }
+        return await finish(cell, lineAt, 0)
       }
       await sleep(Math.max(0, lineAt + ms - Date.now()))
       const wall = wallBefore(current.pane, Date.now())
@@ -539,6 +551,7 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     }
     return await finish(null, lineAt, Date.now())
   } finally {
+    if (liveApp === live?.app) liveApp = null
     live?.stop()
     await live?.app.quit().catch(() => live?.app.quit({ signal: 'SIGKILL' }).catch(() => {}))
     // The app may still be letting go of its profile as it exits.
@@ -546,11 +559,16 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
   }
 }
 
+/** The app of the run going now, for the bound to kill. */
+let liveApp: LaunchedApp | null = null
+
 /** A run past every bound is a run that failed, never a gate that hangs. */
 async function runBounded(sequence: SequenceCase, model: string, plan: Parameters<typeof runOnce>[2], judge: Parameters<typeof runOnce>[3]): Promise<RunOutcome> {
   try {
     return await bounded(runOnce(sequence, model, plan, judge), RUN_BOUND_MS * 2 + 3 * SETUP_BOUND_MS, 'the run')
   } catch (error) {
+    // The run behind the bound is still going: its app is killed so the next run starts alone (goal:gate's rule, #467).
+    await liveApp?.quit({ signal: 'SIGKILL' }).catch(() => {})
     return { cell: { verdict: 'red', why: `the run failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}` }, lineAt: null, sentMs: [], end: null, records: { events: [], voice: [], pane: [] }, stderr: '' }
   }
 }
@@ -560,20 +578,23 @@ const RERUNS = 2
 /** Runs made again in this table, by why. */
 const rerun = { start: 0, limited: 0 }
 
-/** The 429s a run's Decision Model asks met, from its decision log. */
+/** The 429s a run met, the Decision Model's host's and the Planner's, read from its decision and perf records as goal:gate reads them. */
 function limitedIn(ran: RunOutcome): number {
-  return Object.entries(ran.logs ?? {})
-    .filter(([file]) => file.startsWith('decision-'))
-    .flatMap(([, text]) => text.split('\n'))
-    .filter((line) => /"httpStatus":\s*429/.test(line)).length
+  const records = (prefix: string): unknown[] =>
+    Object.entries(ran.logs ?? {})
+      .filter(([file]) => file.startsWith(prefix))
+      .flatMap(([, text]) => text.split('\n').flatMap((line) => (line.trim() === '' ? [] : [JSON.parse(line) as unknown])))
+  const decided = (records('decision-') as { jev?: { httpStatus?: number } }[]).filter((record) => record.jev?.httpStatus === 429).length
+  const planned = (records('perf-') as { stage?: string; detail?: { httpStatus?: number } }[]).filter((span) => span.stage === 'planner-step' && span.detail?.httpStatus === 429).length
+  return decided + planned
 }
 
 /**
  * One run, made again (twice at most) when it measured something other than
  * its case: a start that never came (YouTube on a fresh profile sometimes
  * never starts the song, 1 run in 4 with or without the ad blocker, measured
- * 2026-10-27), or a Decision Model host that answered 429 (the host, not the
- * case: goal:gate's rule).
+ * 2026-10-27), or a host that answered 429, the Decision Model's or the
+ * Planner's (the host, not the case: goal:gate's rule).
  */
 async function run(sequence: SequenceCase, model: string, plan: Parameters<typeof runOnce>[2], judge: Parameters<typeof runOnce>[3]): Promise<RunOutcome> {
   let ran = await runBounded(sequence, model, plan, judge)
@@ -655,7 +676,10 @@ async function judgeMeaning(means: string, said: readonly string[]): Promise<boo
     reply = await ask()
   }
   if (reply.status === 'unavailable') throw new Error(`the judge was unavailable: ${reply.reason}`)
-  return /"means"\s*:\s*true/.test(reply.content)
+  // An unreadable reply is no verdict: the run fails saying so, never a meaning missed.
+  const verdict = /"means"\s*:\s*(true|false)/.exec(reply.content)?.[1]
+  if (verdict === undefined) throw new Error(`the judge's reply was unreadable: ${reply.content.slice(0, 120)}`)
+  return verdict === 'true'
 }
 
 const cases = readCases()

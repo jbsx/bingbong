@@ -1,0 +1,15 @@
+{
+  "start": { "url": "https://duckduckgo.com/" },
+  "input": "typed",
+  "lines": [
+    { "words": "play hurt" },
+    { "words": "no, the other one", "at": { "while": "media-not-started" } }
+  ],
+  "expect": {
+    "media": { "playing": true },
+    "view": { "has": ["Hurt"] },
+    "said": [{ "means": "the song now playing is another song or version called Hurt than the one picked first" }]
+  },
+  "evidence": ["none yet"],
+  "state": { "is": "red", "on": "unmeasured", "date": "2026-10-27", "models": [] }
+}

@@ -7,7 +7,7 @@
   ],
   "expect": {
     "media": { "playing": false },
-    "said": [{ "means": "the music was stopped or not played, because the person asked for something else" }],
+    "said": [{ "means": "the music was stopped or not played, because the person asked for something else" }, { "means": "the weather: a forecast or the conditions now" }],
     "lines": ["cancelled", "done"]
   },
   "evidence": ["none yet"],

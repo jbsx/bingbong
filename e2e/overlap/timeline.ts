@@ -64,15 +64,21 @@ export function spansOf(records: RunRecords, lineAt: number): Spans {
   const asked = after.find((record) => record.event.type === 'site_question')
   if (asked !== undefined) spans.asked = at(asked.t)
   const before = [...records.pane].reverse().find((sample) => sample.t < lineAt)
-  const later = records.pane.filter((sample) => sample.t >= lineAt)
-  const changed = later.find((sample) => sample.url !== before?.url)
+  const changed = records.pane.find((sample) => sample.t >= lineAt && sample.url !== before?.url)
   if (changed !== undefined) spans.changed = at(changed.t)
   if (spans.shown !== undefined) {
-    // Started: playing on another page than the one in front at line 1, or playing where nothing was.
-    const started = later.find((sample) => playingIn(sample) && (sample.url !== before?.url || !playingIn(before)))
-    if (started !== undefined) spans['media-not-started'] = [spans.shown, at(started.t)]
+    // A song that never starts was not started for all of line 1's life, to the last thing that happened in it.
+    const started = mediaStarted(records, lineAt)
+    const end = started ?? after[after.length - 1]?.t
+    if (end !== undefined) spans['media-not-started'] = [spans.shown, at(end)]
   }
   return spans
+}
+
+/** When new media began playing since line 1: on another page than the one in front at line 1, or where nothing was playing. */
+function mediaStarted(records: RunRecords, lineAt: number): number | undefined {
+  const before = [...records.pane].reverse().find((sample) => sample.t < lineAt)
+  return records.pane.find((sample) => sample.t >= lineAt && playingIn(sample) && (sample.url !== before?.url || !playingIn(before)))?.t
 }
 
 /**
@@ -88,7 +94,7 @@ export function spanBegun(records: RunRecords, lineAt: number, span: NamedWhile)
     const speak = records.events.find((record) => record.t >= lineAt && record.event.type === 'speak')
     return speak === undefined ? undefined : speak.t - lineAt
   }
-  return spans['media-not-started'] === undefined ? spans.shown : undefined
+  return mediaStarted(records, lineAt) === undefined ? spans.shown : undefined
 }
 
 /** The loading stage entered by any turn begun since line 1, its end not yet published. */
