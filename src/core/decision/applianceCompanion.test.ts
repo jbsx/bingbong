@@ -44,6 +44,14 @@ describe('the Appliance companion of a recorded page-card ask (#485)', () => {
     expect(labels).not.toContain('back')
   })
 
+  it('adds the update beside the settings line wherever the page card carried the app (#422), and none where it did not', () => {
+    const withApp: DecisionQuestions = { ...QUESTIONS, action: choice('Which', { ...(QUESTIONS.action as { options: Record<string, string> }).options, settings: 'app setting: change one' }) }
+    const labels = Object.keys((applianceAskOf({ state: STATE, questions: withApp })!.questions.action as { options: Record<string, string> }).options)
+    expect(labels.indexOf('app_update')).toBe(labels.indexOf('settings') + 1)
+    expect(Object.keys((applianceAskOf({ state: STATE, questions: QUESTIONS })!.questions.action as { options: Record<string, string> }).options)).not.toContain('app_update')
+    expect(companionExpectations([{ question: 'action', label: 'app_update' }], withApp)).toEqual([{ question: 'action', label: 'app_update' }])
+  })
+
   it('leaves a never-started element on the page: a paused promo at 0:00 is no media', () => {
     const promoOnly = STATE.replace('[7] media "Tum Se" playing 1:33/2:44 volume 70% loop on\n', '')
     expect(applianceAskOf({ state: promoOnly, questions: QUESTIONS })!.state).toContain('Playing: nothing')

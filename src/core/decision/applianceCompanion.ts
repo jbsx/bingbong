@@ -3,7 +3,7 @@ import type { MediaFacts } from '../browser/snapshot.ts'
 import { applianceQuestions, applianceState, type ApplianceMedia, type ApplianceView } from '../command/applianceCard.ts'
 import { isApplianceVerb, type StepContext } from '../command/jevReading.ts'
 import { factOfLabel } from '../command/applianceFacts.ts'
-import { appCardLabels } from '../command/appOp.ts'
+import { appCardLabels, SETTINGS_LABEL, UPDATE_LABEL, updateOption } from '../command/appOp.ts'
 import { isMediaOp } from '../command/mediaOp.ts'
 import type { NameHearing } from '../command/nameMatch.ts'
 import type { JevCase, JevExpectation } from './jevCase.ts'
@@ -95,7 +95,7 @@ function hearingOf(line: string | undefined): NameHearing[] {
 
 /** Whether a page-card label is one the appliance holds: an Appliance Verb, a fact, an app op, `resume`. */
 function isApplianceLabel(label: string): boolean {
-  return isApplianceVerb(label) || factOfLabel(label) !== null || appCardLabels().includes(label) || label === 'settings' || label === 'resume' || label.startsWith('show_')
+  return isApplianceVerb(label) || factOfLabel(label) !== null || appCardLabels().includes(label) || label === 'settings' || label === UPDATE_LABEL || label === 'resume' || label.startsWith('show_')
 }
 
 /** A page-card Media Op label (`pause-7`) as the Appliance Card names it (`media-pause`); null for any other. */
@@ -110,6 +110,9 @@ export function isHopZeroCommandAsk(ask: { readonly state: string; readonly ques
   const settings = action?.instructions.startsWith("The user's words change one of the app's settings") === true
   return ask.state.startsWith('The user spoke to a web browser: ') && action !== undefined && 'slot' in ask.questions && !settings && !('progress' in ask.questions) && !/^This is step \d+ of the task\./m.test(ask.state)
 }
+
+/** The version the corpus's update line names (#422): a page card records none, and the line carries one as the app's does. */
+const CORPUS_VERSION = '0.1.1'
 
 /** The Appliance companion's ask for a recorded hop-0 page-card ask; null for an ask that has none. */
 export function applianceAskOf(ask: { readonly state: string; readonly questions: DecisionQuestions }): { state: string; questions: DecisionQuestions; view: ApplianceView } | null {
@@ -127,7 +130,14 @@ export function applianceAskOf(ask: { readonly state: string; readonly questions
   const pageTitle = page?.[2] !== undefined ? (JSON.parse(page[2]) as string) : ''
   // The collect titles its media by the element's own title, else the page's (collectPageScript.ts).
   const media = applianceMediaOf(lines, offered, playingTitle !== undefined ? (JSON.parse(playingTitle) as string) : pageTitle)
-  const own = Object.fromEntries(Object.entries(action.options).flatMap(([label, line]) => (isApplianceLabel(label) && line !== null ? [[label, line] as const] : [])))
+  const own = Object.fromEntries(
+    Object.entries(action.options).flatMap(([label, line]) => {
+      if (!isApplianceLabel(label) || line === null) return []
+      // The update (#422) is on the Appliance Card alone: beside the settings line, wherever the page card carried the app's lines.
+      const update = updateOption({ version: CORPUS_VERSION })
+      return label === SETTINGS_LABEL ? [[label, line] as const, [update.label, update.line] as const] : [[label, line] as const]
+    }),
+  )
   const appAmount = 'amount' in ask.questions && !Object.keys(action.options).some((label) => mediaLabelOf(label) !== null)
   const view: ApplianceView = {
     url: page?.[1] ?? '',

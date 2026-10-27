@@ -10,7 +10,7 @@ const choice = (label: string, confidence = 0.9): DecisionChoiceAnswer => ({ typ
 
 const FACTS: MediaFacts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 0.5, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
 
-const APP: AppState = { panel: { mode: 'overlay', open: false, width: 536 }, view: 'dashboard', idle: false, settings: defaultSettings(), voices: ['en_GB-alba-medium'] }
+const APP: AppState = { panel: { mode: 'overlay', open: false, width: 536 }, view: 'dashboard', idle: false, settings: defaultSettings(), voices: ['en_GB-alba-medium'], version: '0.1.1' }
 
 const WATCH: ApplianceView = {
   url: 'https://www.youtube.com/watch?v=abc',
@@ -27,7 +27,7 @@ const answers = (action: string, rest: Partial<Record<'slot' | 'amount' | 'where
 describe('the Appliance Card (#485): built from what the appliance holds, no page ref on it', () => {
   it('offers the playing element\'s every Media Op by kind, the Player, the facts, the app, the Flag, Help, the Timer, stop, page and none', () => {
     const labels = Object.keys(applianceQuestions('lower the volume', WATCH).action.options)
-    for (const label of ['media-pause', 'media-volume', 'media-forward', 'play', 'skip', 'show', 'say_time', 'show_idle', 'show_dashboard', 'settings', 'flag', 'help', 'timer', 'timer_off', 'stop', PAGE_LABEL, 'none']) expect(labels).toContain(label)
+    for (const label of ['media-pause', 'media-volume', 'media-forward', 'play', 'skip', 'show', 'say_time', 'show_idle', 'show_dashboard', 'settings', 'app_update', 'flag', 'help', 'timer', 'timer_off', 'stop', PAGE_LABEL, 'none']) expect(labels).toContain(label)
     expect(labels.some((label) => /^(click|type|menu|open)-\d+$/.test(label))).toBe(false)
     expect(labels).not.toContain('back')
   })
@@ -95,6 +95,14 @@ describe('reading the Appliance Card', () => {
     expect(readApplianceAnswers(answers('timer'), 'set a timer', WATCH)).toEqual({ kind: 'page', chose: 'page' })
     expect(readApplianceAnswers(answers('say_time'), 'what time is it', WATCH)).toMatchObject({ command: { verb: 'say', fact: 'time' } })
     expect(readApplianceAnswers(answers('show_idle'), 'go back to home page', WATCH)).toMatchObject({ command: { verb: 'app', app: { kind: 'view', view: 'idle' } } })
+  })
+
+  it('carries the update beside the settings line, with the version running, and fires it (#422)', () => {
+    const options = applianceQuestions('check for updates', WATCH).action.options
+    const labels = Object.keys(options)
+    expect(labels.indexOf('app_update')).toBe(labels.indexOf('settings') + 1)
+    expect(options.app_update).toBe('app: update — now version 0.1.1')
+    expect(readApplianceAnswers(answers('app_update'), 'check for updates', WATCH)).toMatchObject({ command: { verb: 'app', app: { kind: 'update' } } })
   })
 
   it('goes on to the page card for an option the card cannot fire', () => {

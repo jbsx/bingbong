@@ -8,7 +8,7 @@ import type { NameHearing } from './nameMatch'
 import { isMediaEngine } from './siteScope'
 import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
-import { appCardOptions, appOpOf, DASHBOARD_LINE, takesAmount } from './appOp'
+import { appCardOptions, appOpOf, DASHBOARD_LINE, takesAmount, updateOption } from './appOp'
 import {
   appCommand,
   applianceCommand,
@@ -173,7 +173,8 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const ops = media === undefined ? [] : mediaOpsOf(media.facts)
   const verbs = offeredApplianceVerbs(appliance, media !== undefined)
   const facts = appliance?.facts === undefined ? {} : sayOptions(withPageSong(appliance.facts, pageMediaOf(media)))
-  const app = appliance?.app === undefined ? [] : appCardOptions(appliance.app)
+  // The app's ops, its update among them (#422): on this card alone, which the page card's lines do not crowd.
+  const app = appliance?.app === undefined ? [] : [...appCardOptions(appliance.app), updateOption(appliance.app)]
   const resume = appliance?.lastPage === undefined || isRealPage(view.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`] as const]
   const recorded = view.recorded === undefined ? undefined : Object.fromEntries(Object.entries(view.recorded.lines).map(([label, line]) => [label, appLineOf(label, line)]))
   const own: Readonly<Record<string, string>> = recorded ?? {

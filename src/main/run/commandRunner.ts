@@ -91,6 +91,7 @@ import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl
 import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
+import { updateAnswer, type UpdateCheck } from '../../core/update/updateCheck'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
 import { exactLineHeard } from '../../core/command/heardLine'
 import { SITE_ANSWERS, alertLine, exactSiteAnswer, readSiteAnswer, siteQuestionAsk, siteQuestionLine, type SiteAnswer, type SiteQuestion } from '../../core/command/siteQuestion'
@@ -239,6 +240,8 @@ export interface AppControl {
   findPlace(words: string): Promise<PickedPlace | null>
   /** The folder spoken words name (#424), among the home folder's own, or a path as written; null for none. */
   findFolder(words: string): Promise<string | null>
+  /** An update asked for now (#422): what it found; an `installing` one installs when its `install` is called. */
+  checkUpdate(): Promise<UpdateCheck>
 }
 
 /** How the Appliance Card's ask and the page card's stand (#485, T1): one after the other (S), or both at the Endpoint (P). */
@@ -1254,7 +1257,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
   }
 
-  async function perform(command: Command, page: CommandPage, resume: ReturnType<typeof resumePlan> | null, current: () => boolean, onPlayed: (outcome: PlayerOutcome) => void): Promise<string> {
+  async function perform(
+    command: Command,
+    page: CommandPage,
+    resume: ReturnType<typeof resumePlan> | null,
+    current: () => boolean,
+    onPlayed: (outcome: PlayerOutcome) => void,
+    afterAnswer: (then: () => void) => void,
+  ): Promise<string> {
     switch (command.verb) {
       case 'play': {
         if (deps.player === undefined) throw new Error('no player on this surface')
@@ -1347,6 +1357,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'app': {
         // An op on the app itself (#420, ADR 0091): one change, its Answer filled from the app as it is after it.
         if (deps.app === undefined || command.app === undefined) throw new Error('no app on this surface')
+        if (command.app.kind === 'update') {
+          // An update (#422): its Answer said first, then a downloaded Release installs, quitting the app.
+          const check = await deps.app.checkUpdate()
+          if (check.kind === 'installing') afterAnswer(check.install)
+          return updateAnswer(check)
+        }
         const before = deps.app.state()
         const change = appChangeOf(command.app, before)
         if (change === null) throw new Error('the words carry no value for it')
@@ -1600,6 +1616,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let played: PlayerOutcome | null = null
     /** What the Shelf ask set on the chooser the action opened (#424). */
     let uploaded: UploadDetail | null = null
+    /** What waits for the Answer to be said (#422): a downloaded Release's install. */
+    let afterAnswer: (() => void) | null = null
     let suspect: FireResult['suspect'] | null = null
     const ended = (outcome: FireOutcome): FireResult => ({
       outcome,
@@ -1615,7 +1633,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     try {
       // A chooser the page opened before this action is not its own (#424): dropped, never answered by this line.
       if (OPENS_CHOOSER.has(command.verb)) await browser.takeFileChooser?.()
-      const result = await perform(command, page, resume, current, (outcome) => (played = outcome))
+      const result = await perform(command, page, resume, current, (outcome) => (played = outcome), (then) => (afterAnswer = then))
       performing = false
       if (!current()) return ended('superseded')
       const chooser = OPENS_CHOOSER.has(command.verb) ? ((await browser.takeFileChooser?.()) ?? null) : null
@@ -1639,7 +1657,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       } else if (command.verb === 'say' || command.verb === 'app') {
         // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice — but the Idle Screen's (#458), its own receipt.
         answer(turnId, result)
-        if (deps.speech !== undefined && (command.app === undefined || appOpSpeaks(command.app))) void say(deps.speech, turnId, result)
+        const then = afterAnswer as (() => void) | null
+        const spoken = deps.speech !== undefined && (command.app === undefined || appOpSpeaks(command.app)) ? say(deps.speech, turnId, result) : Promise.resolve()
+        // Spoken to its end, or cut, or failed, the install goes ahead — unless a later line, `stop` among them, came first:
+        // the owner changed their mind (#422, a guess; a live "update" then "stop" that should have quit would settle it).
+        if (then !== null) {
+          const asked = submitted
+          void spoken.then(() => {
+            if (generation === mine && submitted === asked) then()
+          })
+        }
       } else if (uploaded !== null) {
         // An upload's Answer (#424): the file set, said; or that none was, a failure naming why. Nothing is sent.
         if (uploaded.file === null) {

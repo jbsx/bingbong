@@ -66,6 +66,7 @@
           "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
           "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
           "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "app_update": "app: update — now version 0.1.1",
           "timer": "the app: set a timer for the length the words say",
           "timer_off": "the app: turn the timer off",
           "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",

@@ -46,10 +46,11 @@ const LINES = {
   clock: 'use the 24-hour clock',
   dark: 'switch to dark mode',
   idle: 'set the idle timeout to 10 minutes',
+  update: 'check for updates',
 } as const
 
 /** What the CLI prints for an app op: its Answer. */
-const ANSWERED = /^(Showing |Opened |Closed |The activity panel |Ad blocking |Clock |Appearance |Idle timeout |error:|No response)/
+const ANSWERED = /^(Showing |Opened |Closed |The activity panel |Ad blocking |Clock |Appearance |Idle timeout |Updates |error:|No response)/
 
 describe('app ops e2e (#420): the panel, the views and the settings in one hop', () => {
   let harness: Harness
@@ -96,6 +97,7 @@ describe('app ops e2e (#420): the panel, the views and the settings in one hop',
         readingOf(LINES.dark, 'set_appearance_dark'),
         readingOf(LINES.idle, 'settings'),
         readingOf(LINES.idle, 'set_idle_after_minutes_10'),
+        readingOf(LINES.update, 'app_update'),
       ),
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
@@ -135,6 +137,12 @@ describe('app ops e2e (#420): the panel, the views and the settings in one hop',
           : undefined,
       { timeoutMs: 5_000, intervalMs: 100 },
     )
+  }, 30_000)
+
+  it('"check for updates" in a checkout says updates only run in the installed app: the Appliance Card carried the update with the version running (#422)', async () => {
+    expect(await run(LINES.update)).toBe('Updates only run in the installed app.')
+    const ask = (await logLines<AskLine>(userDataDir, 'asks-')).filter((record) => record.state.includes(JSON.stringify(LINES.update))).at(-1)!
+    expect(ask.questions.action.options.app_update).toMatch(/^app: update — now version \d+\.\d+\.\d+/)
   }, 30_000)
 
   it('"open the weight page" shows it, and "go back to the browser" the pane again', async () => {

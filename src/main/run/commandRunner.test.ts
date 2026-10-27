@@ -17,6 +17,7 @@ import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import type { AppChange, AppState } from '../../core/command/appOp'
+import type { UpdateCheck } from '../../core/update/updateCheck'
 import { defaultSettings } from '../../core/settings/settings'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
@@ -415,9 +416,12 @@ describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf 
 describe('the app itself on the card (#420, ADR 0091)', () => {
   /** An app whose changes land at once: the panel's and the settings' as asked, the view as shown. */
   function fakeApp(start: Partial<AppState> = {}) {
-    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', idle: false, settings: defaultSettings(), voices: [], ...start }
+    let state: AppState = { panel: { mode: 'overlay', open: true, width: 536 }, view: 'dashboard', idle: false, settings: defaultSettings(), voices: [], version: '0.1.1', ...start }
     const changes: AppChange[] = []
+    const installs: string[] = []
+    let found: UpdateCheck = { kind: 'current', version: '0.1.1' }
     const app: AppControl = {
+      checkUpdate: async () => found,
       state: () => state,
       apply: async (change) => {
         changes.push(change)
@@ -429,8 +433,77 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
       findPlace: async (words) => (words === 'Paris' ? { name: 'Paris', where: 'Île-de-France, France', latitude: 48.85, longitude: 2.35 } : null),
       findFolder: async (words) => (words === 'documents' ? '/home/u/Documents' : null),
     }
-    return { app, changes }
+    const release = (check: 'installing' | Exclude<UpdateCheck, { kind: 'installing' }>): void => {
+      found = check === 'installing' ? { kind: 'installing', version: '0.1.2', install: () => installs.push('install') } : check
+    }
+    return { app, changes, installs, release }
   }
+
+  // The update is on the Appliance Card alone (#422, ADR 0096): read there, it fires with no page collect.
+  const CARD = { asks: 'sequential' } as const
+
+  it('"update yourself" with a Release downloaded says so on the Appliance Card, then installs once the Answer is spoken (#422)', async () => {
+    const speech = new FakeSpeech()
+    const { app, changes, installs, release } = fakeApp()
+    release('installing')
+    const { browser, decision, asks, runner } = harness({ app, speech, applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('update yourself', { source: 'spoken' })
+    expect(asks.map((ask) => ask.kind)).toEqual(['appliance'])
+    expect(cardOf(decision.requests[0]!).options.app_update).toBe('app: update — now version 0.1.1')
+    expect(browser.collects).toBe(0)
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Installing version 0.1.2, back in a moment.'])
+    await flushMicrotasks()
+    expect(installs).toEqual([])
+
+    speech.finish()
+    await flushMicrotasks()
+    expect(installs).toEqual(['install'])
+    expect(changes).toEqual([])
+    expect(browser.navigations).toEqual([])
+  })
+
+  it('offers no update on the page card: the line reads there only when the Appliance Card sends it on (#422)', async () => {
+    const { app } = fakeApp()
+    const { decision, runner } = harness({ app })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('update yourself', { source: 'typed' })
+    expect(cardOf(decision.requests[0]!).options.app_update).toBeUndefined()
+  })
+
+  it('a later line before the install, "stop" among them, keeps the app running (#422)', async () => {
+    const speech = new FakeSpeech()
+    const { app, installs, release } = fakeApp()
+    release('installing')
+    const { decision, runner } = harness({ app, speech, applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('update yourself', { source: 'spoken' })
+    await runner.run('stop', { source: 'spoken' })
+    speech.finish()
+    await flushMicrotasks()
+    expect(installs).toEqual([])
+  })
+
+  it('"check for updates" with none newer says the running version and installs nothing (#422)', async () => {
+    const { app, installs } = fakeApp()
+    const { decision, events, runner } = harness({ app, applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('check for updates', { source: 'typed' })
+    await flushMicrotasks()
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual(['Up to date, version 0.1.1.'])
+    expect(installs).toEqual([])
+  })
+
+  it('a release check that fails is answered, and the Command ends (#422: the feed unreachable)', async () => {
+    const speech = new FakeSpeech()
+    const { app, installs, release } = fakeApp()
+    release({ kind: 'failed' })
+    const { decision, runner } = harness({ app, speech, applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('app_update'), slot: choice('none') } })
+    await runner.run('check for updates', { source: 'spoken' })
+    expect(speech.spoken.map((line) => line.text)).toEqual(["Couldn't check for updates."])
+    expect(installs).toEqual([])
+  })
 
   it('"hide the activity panel" closes it in one hop, the result said, the dashboard woken', async () => {
     const speech = new FakeSpeech()

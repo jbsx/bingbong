@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { defaultSettings, type AppSettings } from '../settings/settings'
 import { SETTING_KINDS, type SettingKinds } from '../settings/settingKinds'
-import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOpSpeaks, appOptions, settingOptions, timeOfDayIn, type AppOpAction, type AppState } from './appOp'
+import { updateAnswer } from '../update/updateCheck'
+import { appAnswer, appCardOptions, appChangeOf, appOpOf, appOpSpeaks, appOptions, settingOptions, timeOfDayIn, UPDATE_LABEL, updateOption, type AppOpAction, type AppState } from './appOp'
 
 function stateWith(settings: Partial<AppSettings> = {}, rest: Partial<AppState> = {}): AppState {
   return {
@@ -10,6 +11,7 @@ function stateWith(settings: Partial<AppSettings> = {}, rest: Partial<AppState> 
     idle: false,
     settings: { ...defaultSettings(), ...settings },
     voices: ['en_GB-alba-medium', 'en_US-amy-low'],
+    version: '0.1.1',
     ...rest,
   }
 }
@@ -84,6 +86,22 @@ describe('appOptions: the app on the card (#420, ADR 0091)', () => {
     }
     expect(appCardOptions(stateWith({}, { idle: true })).map((option) => option.label)).not.toContain('show_idle')
     expect(appOpOf('show_idle', stateWith({}, { idle: true }))).toBeNull()
+  })
+})
+
+describe('update by voice (#422)', () => {
+  it('words one update line carrying the running version, keeps it off the page card, and resolves its label', () => {
+    expect(updateOption(stateWith())).toEqual({ label: UPDATE_LABEL, line: 'app: update — now version 0.1.1', op: { kind: 'update' } })
+    expect(appCardOptions(stateWith()).map((option) => option.label)).not.toContain(UPDATE_LABEL)
+    expect(appOpOf(UPDATE_LABEL, stateWith())).toEqual({ kind: 'update' })
+  })
+
+  it("says each result's fixed Answer, naming the version", () => {
+    expect(updateAnswer({ kind: 'installing', version: '0.1.2', install: () => {} })).toBe('Installing version 0.1.2, back in a moment.')
+    expect(updateAnswer({ kind: 'downloading', version: '0.1.2' })).toBe('Downloading version 0.1.2; it installs when the screen is idle.')
+    expect(updateAnswer({ kind: 'current', version: '0.1.1' })).toBe('Up to date, version 0.1.1.')
+    expect(updateAnswer({ kind: 'unavailable' })).toBe('Updates only run in the installed app.')
+    expect(updateAnswer({ kind: 'failed' })).toBe("Couldn't check for updates.")
   })
 })
 

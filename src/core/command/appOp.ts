@@ -21,7 +21,7 @@ export type AppView = 'dashboard' | 'weight' | 'settings'
 /** A view an op shows: one of the app's views, or the Idle Screen over them (#458), which the idle timeout and its shortcut bring up. */
 export type ShownView = AppView | 'idle'
 
-/** What the app holds when a line is read: its panel, the view showing (and the Settings section shown), whether the Idle Screen is up over it, its settings and the voices installed. */
+/** What the app holds when a line is read: its panel, the view showing (and the Settings section shown), whether the Idle Screen is up over it, its settings, the voices installed and the version running. */
 export interface AppState {
   readonly panel: FeedPanelState
   readonly view: AppView
@@ -29,6 +29,7 @@ export interface AppState {
   readonly idle: boolean
   readonly settings: AppSettings
   readonly voices: readonly string[]
+  readonly version: string
 }
 
 /** A setting's place in `AppSettings`: `['adblockEnabled']`, `['nightDim', 'from']`. */
@@ -50,6 +51,8 @@ export type AppOp =
   | { readonly kind: 'words'; readonly path: SettingPath }
   /** One of the settings, which the settings ask then reads (the card's one `settings` line). */
   | { readonly kind: 'settings' }
+  /** The app updated now (#422): a newer Release asked for, a downloaded one installed. */
+  | { readonly kind: 'update' }
 
 /** An op as a Command carries it (#420): the op, with the Amount Choice's rung for an amount and the words for one the words carry. */
 export type AppOpAction = AppOp & { readonly rung?: LevelRung; readonly words?: string }
@@ -255,6 +258,22 @@ export const SETTINGS_LABEL = 'settings'
 const SETTINGS_LINE =
   "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder"
 
+/** The card label of the app's update (#422). */
+export const UPDATE_LABEL = 'app_update'
+
+/**
+ * The update's line (#422), carrying the version running as every app line
+ * carries its state. Worded as measured on the page card (gate 2026-10-24,
+ * Mammoth ∩ Elephant): five longer wordings — what it checks, what it
+ * installs, "not the page", an `app setting:` head — took no more lines and
+ * lost as many cases or more. It is on the Appliance Card alone (ADR 0096):
+ * on the page card any app line more flipped `cli-19-mvlgab48`, and over a
+ * page Elephant read two update lines as none.
+ */
+export function updateOption(state: Pick<AppState, 'version'>): AppOption {
+  return { label: UPDATE_LABEL, line: `app: update — now version ${state.version}`, op: { kind: 'update' } }
+}
+
 /**
  * The app's options on the action card (#420, ADR 0091): the panel's, the
  * views', and the settings as one line, each setting's ops asked on the
@@ -284,11 +303,11 @@ export function settingOptions(state: AppState, kinds: SettingKinds<AppSettings>
 }
 
 /**
- * Every app op, the panel's, the views' and every setting's: what a label
- * either ask offers resolves against.
+ * Every app op, the panel's, the views', every setting's and the update's:
+ * what a label any ask offers resolves against.
  */
 export function appOptions(state: AppState, kinds: SettingKinds<AppSettings> = SETTING_KINDS): AppOption[] {
-  return [...panelOptions(state.panel), ...viewOptions(state), ...settingOptions(state, kinds)]
+  return [...panelOptions(state.panel), ...viewOptions(state), ...settingOptions(state, kinds), updateOption(state)]
 }
 
 /** The op a card label names, read against the app as it is; null for a label no app option has. */
@@ -397,6 +416,8 @@ export function appChangeOf(action: AppOpAction, state: AppState, kinds: Setting
       return level === null ? null : { kind: 'settings', settings: withSetting(state.settings, action.path, level) }
     }
     case 'settings':
+    // The update changes no state here: the runner asks the updater (#422), never this.
+    case 'update':
       return null
     case 'words': {
       const kind = kindAt(action.path, state.settings, kinds)
@@ -435,6 +456,8 @@ export function appAnswer(action: AppOpAction, before: AppState, after: AppState
       return `The ${named} card is ${shown(after) ? 'shown' : 'hidden'} on the Idle Screen.${already(shown(before) === shown(after))}`
     }
     case 'settings':
+    // The update's Answer is `updateAnswer`'s (#422); the runner never asks this one.
+    case 'update':
       return 'Done.'
     default: {
       const kind = kindAt(action.path, after.settings, kinds)
@@ -477,6 +500,8 @@ export function describeAppOp(action: AppOpAction): string {
       return `app: set ${action.path.join('.')} ${JSON.stringify(action.words ?? '')}`
     case 'settings':
       return 'app: a setting'
+    case 'update':
+      return 'app: update'
   }
 }
 
