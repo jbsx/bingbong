@@ -6,5 +6,8 @@
   "stage": "local_match",
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear (#463), Mammoth, 2026-10-26, on youtube.com after the Idle-page lines: 'Mark as flagged.' and, 1 s later as its own Utterance, 'Or failure.' (turn-mvphzu9w-vr); neither is a Flag head ('mark this as a failure', 'flag that', 'that was wrong'), so both went to Jev, which read none 0.95 and 0.85; no Flag was kept",
   "meant": "Flag the previous Task (the 'Title page.' that opened youtube.com)",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#478",
+  "fixedBy": "5ac6be8a",
+  "case": "src/core/command/heardLine.test.ts: the lure test lists 'Mark as flagged. → mark as failure'"
 }
