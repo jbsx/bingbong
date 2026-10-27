@@ -351,7 +351,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // 3 levels under it. tabindex alone gives nothing, the cursor and click
   // listeners are never read, and aria-disabled vetoes — outside an open
   // dialog's layer, where tabindex and a listener of the element's own are
-  // weak cues (#414).
+  // weak cues (#414) — a tabindex alone only on an element with no text of
+  // its own (#476).
   const NG_CLICK = []
   for (const prefix of ['', 'data-', 'x-']) for (const separator of ['-', ':', '_']) NG_CLICK.push(prefix + 'ng' + separator + 'click')
   const angular = document.getElementsByClassName('ng-scope').length > 0
@@ -539,7 +540,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const listened = listenedUnder(dialogRoot)
     // A frame with no dialog of its own may sit in the top's (#414, ADR
     // 0081), which only the page merge knows: what that layer alone would
-    // take — a control below the frame's own fold, a tabindex-only one — is
+    // take — a control below the frame's own fold, a textless tabindex-only one — is
     // taken too, marked for the merge to keep there and nowhere else.
     const layerUnknown = inFrame && dialogRoot === null
     const shown = []

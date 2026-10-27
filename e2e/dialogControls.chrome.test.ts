@@ -7,10 +7,12 @@ import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChr
 
 // A dialog's own close controls (#414, ADR 0083): inside the open dialog's
 // layer, a tabindex of 0 or more and a click listener of the element's own
-// are weak cues; the page keeps Vimium's. The page is shaped like
-// publicholidays.co.uk's anti-adblock dialog as the live DOM served it: no
-// role, found by the cover rule; its × a `<span tabindex="0">`, its
-// "Continue without supporting us" a `<p>` with a listener of its own.
+// are weak cues; the page keeps Vimium's. A tabindex-only element with text
+// of its own is prose made focusable, left to the dialog's text pieces
+// (#476). The page is shaped like publicholidays.co.uk's anti-adblock dialog
+// as the live DOM served it: no role, found by the cover rule; its × a
+// `<span tabindex="0">` (a text piece since #476), its "Continue without
+// supporting us" a `<p>` with a listener of its own.
 //
 // It needs a Chrome and a global WebSocket (Node ≥ 22); without either it is
 // skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
@@ -185,11 +187,15 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     expect(labels).not.toContain('Close the wall')
   })
 
-  const controllerAt = (path: string) =>
+  /** A controller on the fixture page; `framed` hands it the page's one iframe, as the app's frames helper does. */
+  const controllerAt = (path: string, options: { framed?: boolean } = {}) =>
     createCdpBrowserController({
       cdp: { send: (method, params) => fixtures.chrome.cdp.send(method, params), on: (event, handler) => void fixtures.chrome.cdp.on(event, handler) },
       page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
       collectScript: COLLECT_PAGE_SCRIPT,
+      ...(options.framed === true
+        ? { frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression: string) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] } }
+        : {}),
     }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
 
   const texts = (snapshot: PageSnapshot) => (snapshot.dialogTexts ?? []).map((piece) => piece.text)
@@ -205,21 +211,14 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
   })
 
   it("asks a framed wall for its text once the merge puts it in the dialog, by its frame, and a page frame's never", async () => {
-    const framed = (path: string) =>
-      createCdpBrowserController({
-        cdp: { send: (method, params) => fixtures.chrome.cdp.send(method, params), on: (event, handler) => void fixtures.chrome.cdp.on(event, handler) },
-        page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
-        collectScript: COLLECT_PAGE_SCRIPT,
-        frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] },
-      }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
     await fixtures.open('/sourcepoint')
-    const walled = await framed('/sourcepoint').collectPage()
+    const walled = await controllerAt('/sourcepoint', { framed: true }).collectPage()
     // In view as the frame stands once its below-fold buttons are shown: the text above them has scrolled out.
     expect(walled.dialogTexts).toContainEqual(expect.objectContaining({ text: 'Your choice applies to this site only.', frame: 'f' }))
     // The frame's own collect carries none: its body is read only when asked.
     expect((await inFrame()).page.dialogTexts).toBeUndefined()
     await fixtures.open('/embed')
-    expect((await framed('/embed').collectPage()).dialogTexts ?? []).toEqual([])
+    expect((await controllerAt('/embed', { framed: true }).collectPage()).dialogTexts ?? []).toEqual([])
   })
 
   it("clicks a piece of the dialog's text at its box's centre: the delegated close lands, and the outcome says the dialog closed", async () => {
@@ -249,14 +248,6 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     await expect(controller.clickText({ text: 'Not on this page at all', frame: null, node: 99 })).rejects.toThrow(/no longer on the page/)
   })
 
-  const framedController = (path: string) =>
-    createCdpBrowserController({
-      cdp: { send: (method, params) => fixtures.chrome.cdp.send(method, params), on: (event, handler) => void fixtures.chrome.cdp.on(event, handler) },
-      page: { loadUrl: async () => {}, goBack: async () => {}, goForward: async () => {}, reload: async () => {}, url: () => path, title: () => path, focus: () => {} },
-      collectScript: COLLECT_PAGE_SCRIPT,
-      frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] },
-    }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
-
   it("leaves a framed wall's focusable prose off the refs (#476) and offers it as the dialog's text pieces, by its frame; the <button>s stay", async () => {
     await fixtures.open('/sp-prose')
     const merged = mergeFrames(await collected(), [await inFrame()])
@@ -273,7 +264,7 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
 
   it("Tier-1's consent dismissal clicks the wall's <button>, the focusable prose carrying the same words no longer a ref (#476), and the dialog reads closed", async () => {
     await fixtures.open('/sp-prose')
-    const controller = framedController('/sp-prose')
+    const controller = controllerAt('/sp-prose', { framed: true })
     const text = await controller.readPage()
     expect(text).toMatch(/^dismissed consent dialog: clicked \[\d+\] "Accept all"/)
     expect((await controller.collectPage()).dialogOpen).toBe(false)
