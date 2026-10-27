@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvpduhyn-v16",
+  "transcript": "Scroll.",
+  "at": 1793026778729,
+  "source": "spoken",
+  "stage": "runner",
+  "happened": "Kiosk, 2026-10-26 14:59: a spoken scroll collected the page before the wheel (5.1 s, no snapshot in hand) and again after it (442 ms): reaction 4,520 ms, fired at 3,833 ms",
+  "meant": "The page scrolls at once, with no collect before the wheel, and the line ends as soon as the scroll is seen",
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#484"
+}
