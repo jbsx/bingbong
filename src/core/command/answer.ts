@@ -190,6 +190,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'say':
     // An app op's Answer (#420) names the new value, known once it has fired.
     case 'app':
+    // A Flag's Answer (#421) is the runner's own, said as it keeps the Task.
+    case 'flag':
     case 'none':
       return null
   }

@@ -25,7 +25,8 @@ import { describeCapture, type CaptureAction } from './captureOp'
  * its op on the Command), the rest as they are — and `play` through the
  * Appliance Verbs (#374), `say` through the facts' options (#402), and
  * `app` through the app's own options — its panel, views and settings (#420),
- * and `capture` through the Capture Ops a ref, a block or the page carries (#466);
+ * and `capture` through the Capture Ops a ref, a block or the page carries (#466),
+ * and `flag` through the Flag's own option while there is a Task to flag (#478);
  * `screenshot`, `help`, `resume` and `timer` are the CLI grammar's alone,
  * reached only through the Local Match.
  */
@@ -54,6 +55,7 @@ export const COMMAND_VERBS = [
   'say',
   'app',
   'capture',
+  'flag',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
@@ -65,9 +67,10 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
  * included. `play` is not one: Jev reaches the Player through the
  * Appliance Verbs, offered beside these while a Player is wired (#374);
  * nor `say`, reached through the option of the fact it says (#402), nor
- * `app`, through the app's own options (#420).
+ * `app`, through the app's own options (#420), nor `flag`, through the
+ * Flag's (#478).
  */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app' && verb !== 'capture') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app' | 'capture'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app' && verb !== 'capture' && verb !== 'flag') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app' | 'capture' | 'flag'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -88,7 +91,7 @@ export interface Command {
   /**
    * The Slot: the Utterance's own words the Command carries verbatim — the
    * address to navigate to, the search terms, the text to type, the key to
-   * press. Null when the verb takes none.
+   * press, a Flag's hint (#478). Null when the verb takes none.
    */
   readonly slot: string | null
   /** For `press`: the key the Slot named (the CLI grammar names it directly). */
@@ -249,12 +252,12 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
  * the hidden pane, and the music plays on there), a Media Op (#372: one
  * evaluate on the element, which plays on under the Idle Screen as a
  * song does), a fact the appliance says (#402) and an op on the app itself
- * (#420), which acts on no page. A Command carrying one
+ * (#420), which acts on no page, and a Flag (#478), which touches no page. A Command carrying one
  * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
  * {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media' || verb === 'say' || verb === 'app'
+  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media' || verb === 'say' || verb === 'app' || verb === 'flag'
 }
 
 /** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
@@ -386,6 +389,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return command.app !== undefined ? describeAppOp(command.app) : 'app'
     case 'capture':
       return command.capture !== undefined ? describeCapture(command.capture) : 'capture'
+    case 'flag':
+      return 'flag'
     case 'none':
       return 'not a command'
     default:

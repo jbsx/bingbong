@@ -778,6 +778,68 @@ describe('the Flag (#421)', () => {
     expect(decision.requests).toEqual([])
     expect(events).toEqual([])
   })
+
+  describe('on the card (#478): a line that means a Flag in other words is Jev\'s to read as one', () => {
+    it('Jev choosing the Flag keeps the previous Task as the grammar line does, the Slot its hint, the page untouched', async () => {
+      const speech = new FakeSpeech()
+      const { browser, events, records, kept, decision, runner } = harness({ speech })
+      await runner.run('reload')
+      const taskId = records.find((record) => record.type === 'decision')!.turnId
+      const reloads = browser.reloads
+      decision.script.push({ answers: { action: choice('flag'), slot: choice('s3-5') } })
+      await runner.run('mark as failure, video never loaded', { source: 'spoken' })
+      expect(decision.requests).toHaveLength(1)
+      expect(Object.keys(cardOf(decision.requests[0]!).options)).toContain('flag')
+      expect(browser.reloads).toBe(reloads)
+      expect(browser.navigations).toEqual([])
+      expect(kept).toEqual([{ flag: expect.objectContaining({ type: 'flag', taskId, hint: 'video never loaded' }), shot: expect.anything() }])
+      expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ action: 'flag', keepsIdle: true })
+      expect(displays(events).at(-1)).toBe('Flagged.')
+      expect(speech.spoken.map((line) => line.text)).toEqual(['Flagged.'])
+    })
+
+    it('with no Slot it keeps the Task without a hint', async () => {
+      const { decision, records, runner } = harness()
+      await runner.run('reload')
+      decision.script.push({ answers: { action: choice('flag'), slot: choice('none') } })
+      await runner.run('mark as junior')
+      expect(records.find((record) => record.type === 'flag')).not.toHaveProperty('hint')
+    })
+
+    it('a Flag Jev read is no Task of its own: the next flag names the Task before it', async () => {
+      const { decision, records, runner } = harness()
+      await runner.run('reload')
+      const taskId = records[0]!.turnId
+      decision.script.push({ answers: { action: choice('flag'), slot: choice('none') } })
+      await runner.run('mark as failure')
+      await runner.run('flag that')
+      const flags = records.filter((record) => record.type === 'flag')
+      expect(flags.map((flag) => flag.type === 'flag' && flag.taskId)).toEqual([taskId, taskId])
+    })
+
+    it('is no Misfire: a Flag Jev reads soon after a Jev-read hop logs no overrun, as any other line read so would', async () => {
+      const { decision, records, runner } = harness()
+      decision.script.push({ answers: { action: choice('reload'), slot: choice('none') } })
+      await runner.run('freshen it up')
+      decision.script.push({ answers: { action: choice('flag'), slot: choice('none') } })
+      await runner.run('mark as failure')
+      expect(records.filter((record) => record.type === 'misfire')).toEqual([])
+      expect(records.some((record) => record.type === 'flag')).toBe(true)
+      decision.script.push({ answers: { action: choice('reload'), slot: choice('none') } })
+      await runner.run('freshen it up')
+      decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+      await runner.run('nothing at all')
+      expect(records.filter((record) => record.type === 'misfire')).toEqual([expect.objectContaining({ signal: 'overrun' })])
+    })
+
+    it('is not offered while there is no Task to flag', async () => {
+      const { decision, runner } = harness()
+      decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+      await runner.run('mark as failure')
+      expect(decision.requests.length).toBeGreaterThan(0)
+      expect(Object.keys(cardOf(decision.requests[0]!).options)).not.toContain('flag')
+    })
+  })
 })
 
 describe('the Timer (CONTEXT.md)', () => {

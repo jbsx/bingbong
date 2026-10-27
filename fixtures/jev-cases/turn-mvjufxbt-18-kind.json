@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] button \"Guide\"",
           "click-2": "click [2] button \"\"",
@@ -79,7 +79,6 @@
           "click-58": "click [58] link \"[G&B] Bomber Horde vs Line Tactics #gutsandblackpowder [G&B] Bomber Horde vs Li…\" https://www.youtube.com/shorts/nKQ9nG_g31M",
           "click-59": "click [59] button \"More actions\"",
           "click-60": "click [60] link \"New\" https://www.youtube.com/shorts/C5FMOXM34Y8",
-          "click-61": "click [61] link \"\" https://www.youtube.com/shorts/cshK09iQFEg",
           "menu-1": "right-click [1] to open its menu",
           "menu-2": "right-click [2] to open its menu",
           "menu-3": "right-click [3] to open its menu",
@@ -140,7 +139,6 @@
           "menu-58": "right-click [58] to open its menu",
           "menu-59": "right-click [59] to open its menu",
           "menu-60": "right-click [60] to open its menu",
-          "menu-61": "right-click [61] to open its menu",
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
           "show-1": "scroll until [text-1] heading \"5 Things About Line Formations Everyone Gets Wrong\" is in view",
@@ -238,6 +236,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
@@ -261,7 +260,6 @@
           "capture-57": "copy the link [57] \"\" (its address) to the Shelf and the clipboard",
           "capture-58": "copy the link [58] \"[G&B] Bomber Horde vs Line Tactics #gutsandblackpowder [G&B] Bomber Horde vs Li…\" (its address) to the Shelf and the clipboard",
           "capture-60": "copy the link [60] \"New\" (its address) to the Shelf and the clipboard",
-          "capture-61": "copy the link [61] \"\" (its address) to the Shelf and the clipboard",
           "capture-text-1": "copy the text [text-1] heading \"5 Things About Line Formations Everyone Gets Wrong\" to the Shelf and the clipboard",
           "capture-text-2": "copy the text [text-2] heading \"Why did Armies fight in lines?\" to the Shelf and the clipboard",
           "capture-text-3": "copy the text [text-3] heading \"Why was the Line Formation Used?\" to the Shelf and the clipboard",

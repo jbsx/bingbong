@@ -70,10 +70,28 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
  */
 type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show' | 'correct' | 'correct_back' | 'forget'
 
-/** Every ref-less label the action card can offer (#456): the browser's verbs, the Appliance Verbs, the facts and the app's options. The Seed Lexicon lifts their words. */
+/** Every ref-less label the action card can offer (#456): the browser's verbs, the Appliance Verbs, the facts, the app's options and the Flag. The Seed Lexicon lifts their words. */
 export function refLessCardLabels(): string[] {
-  return [...REFLESS_VERBS, ...(Object.keys(APPLIANCE_VERBS) as ApplianceVerb[]), ...SAY_LABELS, ...appCardLabels()]
+  return [...REFLESS_VERBS, ...(Object.keys(APPLIANCE_VERBS) as ApplianceVerb[]), ...SAY_LABELS, ...appCardLabels(), FLAG_LABEL]
 }
+
+/**
+ * The Flag on the card (#478): the grammar's heads are exact (#421), so a
+ * line that means a Flag in other words — or heard wrong — had no road to
+ * it. Offered while there is a Task to flag, on the first ask alone: the
+ * Where Ask asks what on the page the words name, and a later hop's words
+ * are the Task's own. Its hint is the Slot's words. Its line stands before
+ * the Appliance Verbs, and the instructions say whose failure the words
+ * judge (measured on the gate, Mammoth ∩ Elephant, 2026-10-27: without the
+ * sentence, at any place and in four wordings, Elephant read "mark as
+ * failure" over a video as its Dislike at 0.89–0.96; with it, after the
+ * app's options, at 0.57). Every arm measured loses cli-3-mvph9ink ("save
+ * the thumbnail of this video") to Mammoth's capture-page, 0.39–0.52: the
+ * issue (#478) stays open on it.
+ */
+const FLAG_LABEL = 'flag'
+const FLAG_LINE = 'app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint'
+const FLAG_JUDGES_THE_APP = 'When the words say the previous command failed or was wrong — "mark as failure", "that was wrong" — choose flag: they judge the app, never the page.'
 
 /** Each Appliance Verb's Player action — the Command the grammar's exact lines make — and its one line on the card. */
 const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAction; readonly line: string }>> = {
@@ -114,12 +132,13 @@ const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click 
 const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
 const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
 
-/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); and the app itself — its panel, view and settings, each op an option (#420). */
+/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); the app itself — its panel, view and settings, each op an option (#420); and whether there is a Task a Flag would keep (#478). */
 export interface Appliance {
   readonly queued?: boolean
   readonly facts?: ApplianceFacts
   readonly lastPage?: string
   readonly app?: AppState
+  readonly flaggable?: boolean
 }
 
 /**
@@ -1060,7 +1079,7 @@ export function commandQuestions(
   options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number>; readonly heard?: readonly NameHearing[]; readonly further?: number } = {},
 ): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), viewTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), resumeOption(options.appliance, pageRead), options.further, options.appliance?.app)
+  const card = actionQuestion(page, pageRead, links, textTargetsOf(pageRead, hop), viewTargetsOf(pageRead, hop), options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked, options.appliance?.facts && withPageSong(options.appliance.facts, pageRead.media), resumeOption(options.appliance, pageRead), options.further, options.appliance?.app, options.appliance?.flaggable === true)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text, options.heard) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek;
   // and beside one that offers an app amount (#420, ADR 0091): a setting's number, the panel's width.
@@ -1181,6 +1200,7 @@ function actionQuestion(
   resume: readonly [string, string][] = [],
   further = Infinity,
   app?: AppState,
+  flaggable = false,
 ): { question: DecisionChoiceQuestion; amounts: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside, texts, views)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
@@ -1197,6 +1217,7 @@ function actionQuestion(
   // The app itself (#420, ADR 0091): its panel, views and settings by kind, each line carrying the state — never on the
   // Where Ask, which asks what would reveal or find the thing on the page, as for the facts.
   const appOps = app === undefined || asked === 'where' ? [] : appCardOptions(app).filter((option) => kept(option.label))
+  const flagOption: [string, string][] = flaggable && asked === 'first' && kept(FLAG_LABEL) ? [[FLAG_LABEL, FLAG_LINE]] : []
   const refLess = Object.entries(REFLESS_DESCRIPTIONS)
     .filter(([verb]) => kept(verb))
     .map(([verb, line]) => [verb, verb === 'none' ? CARD_ASKS[asked].none : line] as const)
@@ -1204,7 +1225,7 @@ function actionQuestion(
   // Mark Ask, its card again with the marks. The page's own on a real page.
   const capturing = asked !== 'where' && asked !== 'mark'
   const pageCapture: [string, string][] = !capturing || !isRealPage(pageRead.url) || !kept('capture-page') ? [] : [['capture-page', CAPTURE_PAGE_LINE]]
-  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length + resume.length + appOps.length + pageCapture.length)
+  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length + factOptions.length + resume.length + appOps.length + flagOption.length + pageCapture.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
@@ -1247,7 +1268,7 @@ function actionQuestion(
   const instructions = `${CARD_ASKS[asked].question} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. ${CARD_ASKS[asked].chooseNone}`
   const question: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: [instructions, ...(ops.length === 0 ? [] : [CLICK_NAMES_A_BUTTON]), ...(showOps.length === 0 || asked === 'where' ? [] : [QUESTION_TAKES_ITS_SHOW])].join(' '),
+    instructions: [instructions, ...(ops.length === 0 ? [] : [CLICK_NAMES_A_BUTTON]), ...(showOps.length === 0 || asked === 'where' ? [] : [QUESTION_TAKES_ITS_SHOW]), ...(flagOption.length === 0 ? [] : [FLAG_JUDGES_THE_APP])].join(' '),
     options: {
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {
@@ -1264,6 +1285,7 @@ function actionQuestion(
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(verbs),
+      ...Object.fromEntries(flagOption),
       ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
       ...Object.fromEntries(factOptions),
       ...Object.fromEntries(resume),
@@ -1888,6 +1910,8 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [], texts, views)
   if (isApplianceVerb(label)) return applianceCommand(label, answers.slot, text, answers, pageRead.url, hop)
   if (label === 'resume') return { verb: 'resume', target: null, slot: null }
+  // The Flag (#478), on hop 0's card alone: the previous Task kept, the Slot's words its hint.
+  if (label === FLAG_LABEL) return hop === undefined ? { verb: 'flag', target: null, slot: slotSpanOf(answers.slot) !== null ? slotWords(answers.slot, text) : null } : none
   // A fact the appliance holds (#402): said, the page untouched.
   const fact = factOfLabel(label)
   if (fact !== null) return { verb: 'say', target: null, slot: null, fact }

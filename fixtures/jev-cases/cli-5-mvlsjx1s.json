@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] link \"500+ other websites 500+ other websites\" in consent.bbcgoodfood.com https://consent.bbcgoodfood.com/index.html?hasCsp=true&message_id=1443434&consentUUID=null&consent_origin=https%3A%2F%2Fconsent.bbcgoodfood.com%2Fconsent%2Ftcfv2&preload_message=true&version=v1#",
           "click-2": "click [2] link \"133 technology partners 133 technology partners\" in consent.bbcgoodfood.com https://consent.bbcgoodfood.com/index.html?hasCsp=true&message_id=1443434&consentUUID=null&consent_origin=https%3A%2F%2Fconsent.bbcgoodfood.com%2Fconsent%2Ftcfv2&preload_message=true&version=v1#",
@@ -131,6 +131,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",

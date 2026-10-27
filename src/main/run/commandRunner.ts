@@ -545,9 +545,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let previous: { turnId: string; verb: Command['verb']; target: number | null; key?: Command['key']; at: number } | null = null
   /** The last Task fired or logged (#421): hop 0's turn id, what a Flag names, and when it began. */
   let lastTask: { id: string; at: number } | null = null
-  /** A `stop` or `help` is no Task a Flag means (#421): "stop", then "flag that", flags what was stopped. */
+  /** A `stop` or `help` is no Task a Flag means (#421): "stop", then "flag that", flags what was stopped; nor is a Flag Jev read (#478). */
   const taskSeen = (id: string, firedAt: number, verb: Command['verb']): void => {
-    if (verb !== 'stop' && verb !== 'help' && lastTask?.id !== id) lastTask = { id, at: firedAt }
+    if (verb !== 'stop' && verb !== 'help' && verb !== 'flag' && lastTask?.id !== id) lastTask = { id, at: firedAt }
   }
   /** The Jev-read hop that last fired (#328), for the overrun signal; null once a Command read otherwise fires, or one is counted. */
   let jevHop: { turnId: string; hop: number; at: number } | null = null
@@ -572,8 +572,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   const appliance = (): Appliance | undefined => {
     const last = deps.lastPage?.() ?? null
-    if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null) return undefined
+    if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null && lastTask === null) return undefined
     return {
+      // The Flag is Jev's to offer while there is a Task for it to keep (#478).
+      ...(lastTask !== null ? { flaggable: true } : {}),
       ...(deps.app !== undefined ? { app: deps.app.state() } : {}),
       ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}),
       ...(deps.facts !== undefined ? { facts: deps.facts() } : {}),
@@ -1221,6 +1223,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'stop':
         return 'stopped'
+      // A Flag (#478) never fires: runStep keeps the Task before it would.
+      case 'flag':
       case 'none':
         return ''
     }
@@ -1705,11 +1709,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * past what the user wanted; it counts against that hop, once.
    */
   function overrun(signalTurnId?: string): void {
-    if (jevHop === null) return
+    const signal = overrunSignal(signalTurnId)
+    if (signal !== null) log(signal)
+  }
+
+  /** The overrun signal a line given now would make (#328), the Jev-read hop it overran cleared; null for none. Logged once the line is read: a Flag is no Misfire (#478). */
+  function overrunSignal(signalTurnId?: string): CommandLogRecord | null {
+    if (jevHop === null) return null
     const now = at()
     const withinMs = now - jevHop.at
-    if (withinMs <= MISFIRE_WINDOW_MS) log({ type: 'misfire', turnId: jevHop.turnId, at: now, signal: 'overrun', ...(signalTurnId !== undefined ? { signalTurnId } : {}), withinMs, hop: jevHop.hop })
+    const signal: CommandLogRecord | null = withinMs <= MISFIRE_WINDOW_MS ? { type: 'misfire', turnId: jevHop.turnId, at: now, signal: 'overrun', ...(signalTurnId !== undefined ? { signalTurnId } : {}), withinMs, hop: jevHop.hop } : null
     jevHop = null
+    return signal
   }
 
   /** A Task under way (#328): its id (hop 0's turn id), the submission that started it, its words, and where it has been. */
@@ -2598,6 +2609,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }
     }
+    if (command.verb === 'flag') {
+      // A Flag Jev read (#478) runs the grammar line's road: the previous Task kept, the page untouched, no Misfire. Unlike the
+      // exact line it was read as any line is, so what was being read or under way for an earlier line was superseded.
+      await flag(turnId, line.text, command.slot ?? undefined)
+      return { ended: endTask(task, ending!, 1), did: '' }
+    }
     if (heard.whereAsk === true && sure(heard.verdict ?? null) && heard.verdict!.outcome === 'yes') {
       // The Where Ask would act, and the Verdict beside it is sure the page already shows what the words ask for (#394):
       // the Task ends done on the page as it is, as a later hop's sure yes does, and the action is never fired — speaking its Answer Passage when the pick is sure (#401).
@@ -3010,8 +3027,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (question === null) thinking()
       // When it was given (#330): an abandoned reading is filed here, however late its reading ends.
       const givenAt = at()
-      // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
-      overrun(turnId)
+      // A new Utterance soon after a Jev-read hop fired: the Task overran (#328) — logged once the line is read, unless Jev read it as a Flag (#478).
+      const overran = overrunSignal(turnId)
       // This submission: a reading still under way for an earlier one is stale now.
       const wasIdle = idle()
       submitted += 1
@@ -3028,6 +3045,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
       const perform = async (): Promise<void> => {
         if (goal !== null) {
+          if (overran !== null) log(overran)
           reading = null
           if (source === 'spoken') observeTerms(trimmed)
           publish({ type: 'command', turnId, text: trimmed, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
@@ -3037,6 +3055,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         lastAnswer = null
         const heard = await read(turnId, trimmed, pending, source === 'spoken')
+        if (overran !== null && heard.command.verb !== 'flag') log(overran)
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }

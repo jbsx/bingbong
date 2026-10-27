@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself. When the words ask something a block of text further down answers, choose the show of that block.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself. When the words ask something a block of text further down answers, choose the show of that block. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] link \"Amazon.co.uk .co.uk\" https://www.amazon.co.uk/ref=nav_logo",
           "click-2": "click [2] button \"Delivering to Tower Ham... E14 Update location\"",
@@ -81,7 +81,6 @@
           "click-60": "click [60] link \"Everything under £1 The art of spending less\" https://www.amazon.co.uk/b/?_encoding=UTF8&_encoding=UTF8&node=220580380031&ref_=hul_cgw_atf_dm_uk_ch_wd_1026_eu1&ishaul=1&pd_rd_w=YPHJ9&content-id=amzn1.sym.da4192de-7cd5-4044-ab12-d9066badef4e&pf_rd_p=da4192de-7cd5-4044-ab12-d9066badef4e&pf_rd_r=EZY1CZ1B0P1TS2KJPAC4&pd_rd_wg=4hJWe&pd_rd_r=703ad437-0b90-4eea-aa91-964ef78e8c82",
           "click-61": "click [61] media \"\" paused 0:00/0:04 muted loop on",
           "click-62": "click [62] button \"Play Play\"",
-          "click-63": "click [63] link \"Carousel next slide\" https://www.amazon.co.uk/#",
           "play-48": "play [48] \"\": start it, or carry on playing it",
           "pause-48": "pause [48] \"\"",
           "forward-48": "go forward in [48] \"\" by a length of time, the amount Choice saying how far",
@@ -166,7 +165,6 @@
           "menu-60": "right-click [60] to open its menu",
           "menu-61": "right-click [61] to open its menu",
           "menu-62": "right-click [62] to open its menu",
-          "menu-63": "right-click [63] to open its menu",
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
           "show-1": "scroll until [text-1] heading \"Playlists on Amazon Music Playlists on Amazon Music\" is in view",
@@ -243,6 +241,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",

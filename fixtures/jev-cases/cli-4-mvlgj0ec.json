@@ -27,7 +27,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] link \"Skip to content\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button",
           "click-2": "click [2] link \"Accessibility Feedback\" https://www.bing.com/search?q=buy+running+shoes&rdr=1&rdrig=7C18D4722FA74F1F895864F91293947B# role=button",
@@ -94,6 +94,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",

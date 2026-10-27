@@ -5,7 +5,7 @@ import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
 import { promptChars } from '../decision/cardBudget'
-import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, refLessCardLabels, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -1393,6 +1393,31 @@ describe('Appliance Verbs (#374)', () => {
     it('reads a fact as `say`: the page untouched, at hop 0 or a later hop', () => {
       expect(readCommandAnswers({ action: choice('say_weather'), slot: choice('none') }, "what's the weather like", WATCH)).toEqual({ verb: 'say', target: null, slot: null, fact: 'weather' })
       expect(readCommandAnswers({ action: choice('say_time'), slot: choice('none'), outcome: choice('not_yet') }, "what's the time", WATCH, HOP)).toEqual({ verb: 'say', target: null, slot: null, fact: 'time' })
+    })
+  })
+
+  describe('the Flag on the card (#478): offered while there is a Task to flag, on the first ask alone', () => {
+    it('offers it on the command ask when a Task is there to flag, never on the Where Ask, a later hop, or with no Task', () => {
+      const flaggable = { flaggable: true }
+      expect(commandQuestions('mark as failure', WATCH, undefined, { appliance: flaggable }).action.options['flag']).toContain('mark the previous command as a failure')
+      expect(Object.keys(commandQuestions('mark as failure', WATCH).action.options)).not.toContain('flag')
+      // Its line stands before the Appliance Verbs, and the instructions say whose failure the words judge — on a card that offers it alone.
+      const labels = Object.keys(commandQuestions('mark as failure', WATCH, undefined, { appliance: { ...flaggable, queued: true } }).action.options)
+      expect(labels.indexOf('flag')).toBe(labels.indexOf('play') - 1)
+      expect(commandQuestions('mark as failure', WATCH, undefined, { appliance: flaggable }).action.instructions).toContain('choose flag: they judge the app, never the page')
+      expect(commandQuestions('mark as failure', WATCH).action.instructions).not.toContain('choose flag')
+      expect(Object.keys(whereQuestions('mark as failure', WATCH, { appliance: flaggable }).action.options)).not.toContain('flag')
+      expect(Object.keys(hopQuestions('mark as failure', WATCH, HOP, { appliance: flaggable }).action.options)).not.toContain('flag')
+    })
+
+    it('reads it as a `flag` at hop 0, the Slot its hint; at a later hop it is no Command', () => {
+      expect(readCommandAnswers({ action: choice('flag'), slot: choice('s3-5') }, 'mark as failure, video never loaded', WATCH)).toEqual({ verb: 'flag', target: null, slot: 'video never loaded' })
+      expect(readCommandAnswers({ action: choice('flag'), slot: choice('none') }, 'Mark as junior.', WATCH)).toEqual({ verb: 'flag', target: null, slot: null })
+      expect(readCommandAnswers({ action: choice('flag'), slot: choice('none'), outcome: choice('not_yet') }, 'mark as failure', WATCH, HOP)).toEqual({ verb: 'none', target: null, slot: null })
+    })
+
+    it('is among the ref-less labels the Seed Lexicon lifts', () => {
+      expect(refLessCardLabels()).toContain('flag')
     })
   })
 

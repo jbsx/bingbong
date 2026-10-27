@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words ask something a block of text further down answers, choose the show of that block. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] button \"Toggle navigation\" expanded=false",
           "click-2": "click [2] link \"Homepage\" https://github.com/",
@@ -210,9 +210,6 @@
           "show-136": "scroll until [text-136] heading \"Other Languages\" is in view",
           "show-137": "scroll until [text-137] \"Playwright is also available for Python, .NET, and Java.\" is in view",
           "show-138": "scroll until [text-138] list item \"Documentation\" is in view",
-          "show-139": "scroll until [text-139] list item \"API reference\" is in view",
-          "show-140": "scroll until [text-140] list item \"MCP server\" is in view",
-          "show-141": "scroll until [text-141] list item \"CLI for coding agents\" is in view",
           "scroll_up": "scroll the page up",
           "scroll_down": "scroll the page down a screen, when no block further down holds what the words ask for",
           "back": "go back to the previous page",
@@ -223,6 +220,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",

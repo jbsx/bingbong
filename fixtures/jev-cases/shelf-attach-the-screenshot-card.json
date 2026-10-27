@@ -13,7 +13,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say the previous command failed or was wrong — \"mark as failure\", \"that was wrong\" — choose flag: they judge the app, never the page.",
         "options": {
           "click-1": "click [1] link \"Forum\" https://forum.example.org/",
           "click-2": "click [2] link \"Messages\" https://forum.example.org/messages",
@@ -38,6 +38,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
+          "flag": "app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint",
           "capture-view-1": "copy the text in view \"Edit profile\" to the Shelf and the clipboard",
           "capture-view-2": "copy the text in view \"PNG, JPG or GIF, up to 2 MB.\" to the Shelf and the clipboard",
           "capture-1": "copy the link [1] \"Forum\" (its address) to the Shelf and the clipboard",
