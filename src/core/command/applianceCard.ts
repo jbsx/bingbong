@@ -8,7 +8,7 @@ import type { NameHearing } from './nameMatch'
 import { isMediaEngine } from './siteScope'
 import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
-import { appCardOptions, appOpOf, takesAmount } from './appOp'
+import { appCardOptions, appOpOf, DASHBOARD_LINE, takesAmount } from './appOp'
 import {
   appCommand,
   applianceCommand,
@@ -123,6 +123,19 @@ function levelsOf(op: 'volume' | 'rate', facts: MediaFacts): string {
   return ` (${way('down')}; ${way('up')})`
 }
 
+/**
+ * The browser view's line on this card names it the app's own home screen,
+ * so a line about a site's home page reads `page` and that home stays a page
+ * ref (#485's close, 2026-10-27: pick, never ask). A guess: the next
+ * home-page line in the ledger settles it.
+ */
+const HOME_LINE = "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page"
+
+/** An app option's line as this card words it, a recorded page-card line among them. */
+function appLineOf(label: string, line: string): string {
+  return label === 'show_dashboard' ? line.replace(DASHBOARD_LINE, HOME_LINE) : line
+}
+
 const NONE_LINE = 'not a command: a remark, a question to no one, noise'
 
 const INSTRUCTIONS =
@@ -162,10 +175,11 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const facts = appliance?.facts === undefined ? {} : sayOptions(withPageSong(appliance.facts, pageMediaOf(media)))
   const app = appliance?.app === undefined ? [] : appCardOptions(appliance.app)
   const resume = appliance?.lastPage === undefined || isRealPage(view.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`] as const]
-  const own: Readonly<Record<string, string>> = view.recorded?.lines ?? {
+  const recorded = view.recorded === undefined ? undefined : Object.fromEntries(Object.entries(view.recorded.lines).map(([label, line]) => [label, appLineOf(label, line)]))
+  const own: Readonly<Record<string, string>> = recorded ?? {
     ...Object.fromEntries(verbs.map((verb) => [verb, applianceVerbLine(verb)])),
     ...facts,
-    ...Object.fromEntries(app.map((option) => [option.label, option.line])),
+    ...Object.fromEntries(app.map((option) => [option.label, appLineOf(option.label, option.line)])),
     ...Object.fromEntries(resume),
   }
   const action: DecisionChoiceQuestion = {

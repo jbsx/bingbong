@@ -217,6 +217,9 @@ function panelOptions(panel: FeedPanelState): AppOption[] {
  */
 const IDLE_LINE = 'app: bring the Idle Screen back over the browser, music playing on'
 
+/** The browser view's line, `show_dashboard`, before its state. */
+export const DASHBOARD_LINE = 'app: show the browser, leaving Settings or the Weight page'
+
 /**
  * The views' options: the browser, the Weight page, and Settings — at the
  * top and at each of its sections — and the Idle Screen (#458) whenever it
@@ -226,7 +229,7 @@ function viewOptions(state: Pick<AppState, 'view' | 'section' | 'idle'>): AppOpt
   const now = shownNow(state)
   return [
     ...(state.idle ? [] : [{ label: 'show_idle', line: `${IDLE_LINE} — ${now}`, op: { kind: 'view', view: 'idle' } } satisfies AppOption]),
-    { label: 'show_dashboard', line: `app: show the browser, leaving Settings or the Weight page — ${now}`, op: { kind: 'view', view: 'dashboard' } },
+    { label: 'show_dashboard', line: `${DASHBOARD_LINE} — ${now}`, op: { kind: 'view', view: 'dashboard' } },
     { label: 'show_weight', line: `app: show the Weight page, the weigh-ins — ${now}`, op: { kind: 'view', view: 'weight' } },
     { label: 'show_settings', line: `app: show the Settings page — ${now}`, op: { kind: 'view', view: 'settings' } },
     ...SETTINGS_SECTIONS.map(({ id, title }): AppOption => ({ label: `show_settings_${slug(id)}`, line: `app: show the Settings page at its ${title} section — ${now}`, op: { kind: 'view', view: 'settings', section: id } })),

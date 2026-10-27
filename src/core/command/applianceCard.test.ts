@@ -56,6 +56,13 @@ describe('the Appliance Card (#485): built from what the appliance holds, no pag
     expect(Object.keys(applianceQuestions('open bbc', WATCH).action.options)).not.toContain('search')
   })
 
+  it("names the browser view the app's own home screen, a recorded page-card line too, so a site's home stays the page's", () => {
+    const recorded = { lines: { show_dashboard: 'app: show the browser, leaving Settings or the Weight page — now showing the browser' }, amount: false }
+    for (const view of [WATCH, { ...WATCH, appliance: undefined, recorded }]) {
+      expect(applianceQuestions('go to the home page', view).action.options.show_dashboard).toMatch(/^app: show the app's own home screen, the browser, .* not a website's home page — now showing the browser$/)
+    }
+  })
+
   it('asks steps only on a whole line with a conjunction', () => {
     expect(applianceQuestions('pause and show the idle screen', WATCH, { steps: true }).steps).toBeDefined()
     expect(applianceQuestions('pause and show the idle screen', WATCH).steps).toBeUndefined()

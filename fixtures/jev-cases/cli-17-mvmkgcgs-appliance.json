@@ -29,7 +29,7 @@
           "panel_overlay": "app: float the activity panel over the page — now closed, docked, 616 px wide",
           "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, docked, 616 px wide",
           "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, docked, 616 px wide",
-          "show_dashboard": "app: show the browser, leaving Settings or the Weight page — now showing the Settings page at its Weather section",
+          "show_dashboard": "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page — now showing the Settings page at its Weather section",
           "show_weight": "app: show the Weight page, the weigh-ins — now showing the Settings page at its Weather section",
           "show_settings": "app: show the Settings page — now showing the Settings page at its Weather section",
           "show_settings_voice": "app: show the Settings page at its Voice section — now showing the Settings page at its Weather section",
