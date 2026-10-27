@@ -48,6 +48,23 @@ const ear = {
 }
 
 /**
+ * Samples the linger bar's drawn length (its scaleX) every 100 ms with the time, and when the card left the screen,
+ * both on the renderer's clock.
+ */
+const LINGER_WATCH = `(() => {
+  window.__linger = { samples: [], closedAt: null }
+  const timer = setInterval(() => {
+    const at = performance.timeOrigin + performance.now()
+    if (!document.querySelector('.turn-card')) { window.__linger.closedAt = at; clearInterval(timer); return }
+    const bar = document.querySelector('.turn-linger')
+    if (!bar) return
+    const transform = getComputedStyle(bar).transform
+    const scale = transform === 'none' ? 1 : Number(transform.slice(transform.indexOf('(') + 1).split(',')[0])
+    window.__linger.samples.push([at, scale])
+  }, 100)
+})()`
+
+/**
  * Records, on every change of the card, the first geometry seen for each of its states: the rail cells, the stage
  * word's left edge, the mark's right edge, the words row and the six history rows — and when the card first showed,
  * against when this renderer learned the ear opened (#441's recipe), both on the renderer's clock.
@@ -163,11 +180,22 @@ describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
 
       // The card goes 15 s after the later of done and the last sentence spoken (AC4), the Idle Screen left up.
       const doneAt = Date.now()
+      await onDashboard(LINGER_WATCH)
       await new Promise((resolve) => setTimeout(resolve, 10_000))
       expect(await onDashboard<boolean>(`!!document.querySelector('.turn-card--failed')`)).toBe(true)
       await waitFor(async () => ((await onDashboard<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 30_000, intervalMs: 100 })
       expect(Date.now() - doneAt).toBeGreaterThanOrEqual(LINGER_MS - 2_000)
       expect(await onDashboard<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+      // The bar drains to the close, not ahead of it: each drawn length is the time then left over the linger, across the
+      // card's once-a-second re-renders. The bound is a guess at a frame's and a sample's slack (0.05 of 15 s is 750 ms).
+      const linger = await waitFor(async () => {
+        const seenLinger = await onDashboard<{ samples: [number, number][]; closedAt: number | null }>('window.__linger')
+        return seenLinger.closedAt !== null ? seenLinger : undefined
+      }, { timeoutMs: 2_000, intervalMs: 50 })
+      expect(linger.samples.length).toBeGreaterThan(20)
+      const worst = Math.max(...linger.samples.map(([at, scale]) => Math.abs(scale - (linger.closedAt! - at) / LINGER_MS)))
+      console.log(`[turn card] linger bar off its close by at most ${worst.toFixed(3)} of its length over ${String(linger.samples.length)} samples`)
+      expect(worst).toBeLessThan(0.05)
     } finally {
       await harness.quit()
       await fixture.close().catch(() => {})

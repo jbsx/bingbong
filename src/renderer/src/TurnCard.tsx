@@ -166,10 +166,13 @@ export function TurnHistory({ state, rows }: { state: TurnCardState; rows?: numb
 
 /**
  * The bar along the card's foot draining across the 15 s after its line is over (the Peek Card's own, #470):
- * drawn from the deadline, so a card shown late starts part drained; nothing pauses it.
+ * drawn from the deadline, so a card shown late starts part drained; nothing pauses it. The delay is taken once, when
+ * the bar first shows: the card re-renders every second, and a running animation given a new delay jumps ahead by it,
+ * which drained the bar at twice the pace of the close. A new deadline is a new bar (its key at the call).
  */
 function LingerBar({ retiresAt }: { retiresAt: number }) {
-  return <span key={retiresAt} className="turn-linger" style={{ animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${lingerDelayMs(retiresAt, Date.now())}ms` }} aria-hidden="true" />
+  const [delayMs] = useState(() => lingerDelayMs(retiresAt, Date.now()))
+  return <span className="turn-linger" style={{ animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${delayMs}ms` }} aria-hidden="true" />
 }
 
 export function TurnCard({ state, onDismiss }: { state: TurnCardState; onDismiss(): void }) {
@@ -197,7 +200,7 @@ export function TurnCard({ state, onDismiss }: { state: TurnCardState; onDismiss
         <TurnStageRow state={state} face={face} now={now} />
         <TurnWordsRow state={state} />
         <TurnHistory state={state} />
-        {state.retiresAt !== null ? <LingerBar retiresAt={state.retiresAt} /> : null}
+        {state.retiresAt !== null ? <LingerBar key={state.retiresAt} retiresAt={state.retiresAt} /> : null}
       </div>
     </>
   )
