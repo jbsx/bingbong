@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvnp7e45-6",
+  "transcript": "Go back to the idle screen.",
+  "at": 1792924920557,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk: 'Go back to the idle screen.' read on the page card, no host answered (best guess none); nothing happened",
+  "meant": "Bring up the Idle Screen",
+  "log": "decision-1792924821131-1.jsonl",
+  "claimedBy": "#485"
+}

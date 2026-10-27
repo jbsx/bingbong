@@ -6,5 +6,6 @@
   "stage": "local_match",
   "happened": "Kiosk 0.1.4-local.202610261228, Parakeet, Mammoth, 2026-10-26, on the watch page of Joji - Past Won't Leave My Bed: 'Flag as failure.' is not a Flag head ('mark this as a failure', 'flag that', 'that was wrong'), so it went to Jev, which read click-24 'Dislike this video' 0.36 (none 0.32, click-28 0.26) and clicked it (signed out: its state did not change; the video restarted at 0:04). Hop 1 got 429 from Baseten and ended unavailable. The owner's fifth try at flagging 'Double.' (turn-mvpdsqhy-vx); no Flag was kept",
   "meant": "Flag the previous Task ('Double.'), nothing clicked on the page",
-  "log": "decision-1793017798599-1.jsonl"
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#485"
 }

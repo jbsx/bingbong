@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvphzu9w-vr",
+  "transcript": "Or failure.",
+  "at": 1793033743526,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk, YouTube watch page: 'Or failure.' (the Flag, retried) read none by Jev on the page card, Where Ask none; nothing flagged",
+  "meant": "Flag the last Task as a failure",
+  "log": "decision-1793033383382-1.jsonl",
+  "claimedBy": "#485"
+}

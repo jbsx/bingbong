@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the watch page of the wrong promo (M9gfi_Uc4LI): 'Play Tum Se Tum Tuck by Neon' read play-7 0.66 (the media op on the promo already playing, title 'Tumm Se Tumm Tak NEW PROMO…') over the Player's play 0.20; nothing changed. The words name a song the Playing line does not carry",
   "meant": "A new play search for Niyam's song, not play on the video already playing",
-  "log": "decision-1793017798599-1.jsonl"
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#485"
 }
