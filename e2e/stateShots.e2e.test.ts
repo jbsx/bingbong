@@ -448,6 +448,7 @@ async function walkTheShell(run: Run): Promise<void> {
   const bandFaces = await harness.overlayEval<Record<string, unknown>>(`window.__faces`)
   expect.soft(Object.keys(bandFaces), `${run.theme}: the faces the band passed through on the held page`).toEqual(expect.arrayContaining(['thinking', 'acting', 'loading', 'done']))
   for (const key of Object.keys(bandFaces)) expect.soft(bandFaces[key], `${run.theme}: the band's geometry at ${key} against done`).toEqual(bandFaces['done'])
+  SHELL_BAND_DONE.set(run.theme, bandFaces['done'])
   await harness.ensurePanelOpen()
   await clickPanel(run, '[aria-label="Dock the feed panel"]')
   await sleep(1200)
@@ -795,6 +796,9 @@ async function walkTheTurnCard(run: Run): Promise<void> {
 }
 
 
+/** The shell walk's band at Done, by theme: the Ledger walk's faces are held to it, so the seven faces are one series (#475). */
+const SHELL_BAND_DONE = new Map<string, unknown>()
+
 /** What a band's face stands on (#475): the rail's cells, the stage word's left edge, the mark's right edge, the words row, the hint and the history's rows, rounded to the pixel. */
 const BAND_GEOMETRY = `(() => {
   window.__faces = {}
@@ -858,6 +862,13 @@ async function walkTheLedger(run: Run): Promise<void> {
   await shoot(run, '43-ledger-transcribing', false)
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the word and its seconds`).toMatch(/^Transcribing…[1-9]s$/)
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the last words`).toBe(`“${LEDGER_PARTIAL}”`)
+  // The read's sentence, held by the scripted player (LEDGER_ENV), so Speaking is a face that holds still.
+  await untilFace('speaking', 'ledger-speaking')
+  await sleep(1_200)
+  // Read before the shot, as the band's words are: the held sentence ends three seconds on.
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 43b-ledger-speaking: the word and its seconds`).toMatch(/^Speaking…[0-9]s$/)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 43b-ledger-speaking: the sentence as the words`).toMatch(/^The lighthouse\s+The keeper climbed/)
+  await shoot(run, '43b-ledger-speaking', false)
   await untilFace('done', 'ledger-done')
   await shoot(run, '44-ledger-done')
   const rows = await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--band .turn-step:not(.turn-step--blank)')].map((row) => row.querySelector('.turn-step-label').textContent + ': ' + row.querySelector('.turn-step-text').textContent)`)
@@ -868,13 +879,14 @@ async function walkTheLedger(run: Run): Promise<void> {
   // Nothing moved (#474's rule, #475): every face's rail cells, stage word, mark, words row, hint and history rows at the same pixels.
   const faces = await harness.overlayEval<Record<string, unknown>>(`window.__faces`)
   const seen = Object.keys(faces)
-  // No one stage after the heard line is demanded here: the stand-in reads at once and the fixture's read is a blink,
-  // so Thinking, Acting and Speaking can share a paint, and a read's muted sentence can end in the same paint as its
-  // `done` — one of them is seen, the action's own row is asserted above, the shell walk's typed line holds Thinking,
-  // Opening and Loading, and the fold's tests hold every row.
-  expect.soft(seen, `${run.theme}: the faces the band passed through`).toEqual(expect.arrayContaining(['listening', 'transcribing', 'done']))
-  expect.soft(seen.some((key) => ['thinking', 'acting', 'speaking'].includes(key)), `${run.theme}: a live stage after the heard line`).toBe(true)
+  // Thinking and Acting are not demanded here: the stand-in reads at once and the fixture's read is a blink, so they
+  // can share a paint; the action's own row is asserted above, the shell walk's typed line holds Thinking, Opening and
+  // Loading, and the fold's tests hold every row. Speaking is held by the scripted player.
+  expect.soft(seen, `${run.theme}: the faces the band passed through`).toEqual(expect.arrayContaining(['listening', 'transcribing', 'speaking', 'done']))
   for (const key of seen) expect.soft(faces[key], `${run.theme}: the band's geometry at ${key} against listening`).toEqual(faces['listening'])
+  // One series across both walks: the shell walk's held page (Thinking, Opening, Loading) stood where this line stands.
+  const shellDone = SHELL_BAND_DONE.get(run.theme)
+  if (shellDone !== undefined) expect.soft(faces['done'], `${run.theme}: the band's geometry at done against the shell walk's held page`).toEqual(shellDone)
   // The receipt (ui.md 1): the band within 100 ms of the wake's state and the Heard row within 100 ms of the heard event, on this renderer's clock.
   const band = await harness.overlayEval<{ heardAt: number | null; heardShownAt: number | null; wakeAt: number | null; wakeShownAt: number | null }>(`window.__band`)
   expect.soft(band.wakeShownAt! - band.wakeAt!, `${run.theme}: the band after the wake`).toBeLessThanOrEqual(100)
@@ -886,8 +898,9 @@ const LEDGER_LINE = 'read the page'
 /** Its last partial, short of the line: a partial that reads as the line would fire on it through the stand-in too. */
 const LEDGER_PARTIAL = 'read the pa'
 
-/** The Ledger walk's ear (#475): the wake, a second of quiet, the line spoken over six seconds, then quiet; read in four seconds. */
+/** The Ledger walk's ear (#475): the wake, a second of quiet, the line spoken over six seconds, then quiet; read in four seconds. Its sentence plays for three seconds. */
 const LEDGER_ENV: Record<string, string> = {
+  BINGBONG_FAKE_APLAY_MS: '3000',
   BINGBONG_WAKE_ENGINE: 'node',
   BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
   BINGBONG_VAD_LOAD_MS: '20000',
@@ -961,11 +974,15 @@ describe('the states screenshot review (#359)', () => {
     }, 120_000)
 
     it(`shoots the Ledger Strip through a spoken line in ${theme}`, async () => {
-      const run = await launch(theme, { ...LEDGER_ENV, ...decisionScript(readingOf(LEDGER_LINE, 'read')) }, FAKE_MIC)
+      // A voice for the scripted piper (e2e/bin), so the read's sentence is spoken and its Speaking face is drawn.
+      const voices = await mkdtemp(join(tmpdir(), 'bingbong-e2e-ledger-voices-'))
+      await writeFile(join(voices, 'en_GB-alba-medium.onnx'), '')
+      await writeFile(join(voices, 'en_GB-alba-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
+      const run = await launch(theme, { ...LEDGER_ENV, BINGBONG_PIPER_VOICE_DIR: voices, ...decisionScript(readingOf(LEDGER_LINE, 'read')) }, FAKE_MIC)
       try {
         await walkTheLedger(run)
       } finally {
-        await close(run)
+        await close(run).finally(() => rm(voices, { recursive: true, force: true }).catch(() => {}))
         expectClean(run)
       }
     }, 200_000)
