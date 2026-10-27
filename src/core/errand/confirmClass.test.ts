@@ -40,42 +40,44 @@ describe('leavingWordOf (#467): the words that make a control leave the applianc
 
 describe('confirmOf (#467): what is said back before an action, or null when it stays', () => {
   it('a click on a control whose label leaves is said back whatever the Planner said, with the text typed before it', () => {
-    expect(confirmOf({ command: click(2), page, plannerClass: 'stays', typed: { text: 'this is great', into: 'Add a comment…' } })).toEqual({ verb: 'comment', what: 'this is great' })
+    expect(confirmOf({ command: click(2), page, plannerClass: 'stays', typed: [{ text: 'this is great', into: 'Add a comment…' }] })).toEqual({ verb: 'comment', what: 'this is great' })
   })
 
   it('a click on one with no text typed says the control', () => {
-    expect(confirmOf({ command: click(5), page, plannerClass: 'stays', typed: null })).toEqual({ verb: 'order', what: '“Place your order”' })
+    expect(confirmOf({ command: click(5), page, plannerClass: 'stays', typed: [] })).toEqual({ verb: 'order', what: '“Place your order”' })
   })
 
   it('a click the Planner names leaves is said back by its own verb', () => {
-    expect(confirmOf({ command: click(4), page, plannerClass: 'leaves', typed: null })).toEqual({ verb: 'click', what: '“Share”' })
+    expect(confirmOf({ command: click(4), page, plannerClass: 'leaves', typed: [] })).toEqual({ verb: 'click', what: '“Share”' })
   })
 
   it('a click that stays and carries no such word is not', () => {
-    expect(confirmOf({ command: click(3), page, plannerClass: 'stays', typed: null })).toBeNull()
-    expect(confirmOf({ command: click(4), page, plannerClass: 'stays', typed: { text: 'x', into: 'Add a comment…' } })).toBeNull()
+    expect(confirmOf({ command: click(3), page, plannerClass: 'stays', typed: [] })).toBeNull()
+    expect(confirmOf({ command: click(4), page, plannerClass: 'stays', typed: [{ text: 'x', into: 'Add a comment…' }] })).toBeNull()
   })
 
   it('an Enter after typing into a field whose label leaves sends what was typed', () => {
     const enter: Command = { verb: 'press', target: null, slot: 'Enter', key: { key: 'Enter' }, times: 1 }
-    expect(confirmOf({ command: enter, page, plannerClass: 'stays', typed: { text: 'hi there', into: 'Reply to Ana' } })).toEqual({ verb: 'reply', what: 'hi there' })
-    expect(confirmOf({ command: enter, page, plannerClass: 'stays', typed: { text: 'shoes', into: 'Search' } })).toBeNull()
-    expect(confirmOf({ command: enter, page, plannerClass: 'leaves', typed: { text: 'shoes', into: 'Search' } })).toEqual({ verb: 'press Enter on', what: 'shoes' })
+    expect(confirmOf({ command: enter, page, plannerClass: 'stays', typed: [{ text: 'hi there', into: 'Reply to Ana' }] })).toEqual({ verb: 'reply', what: 'hi there' })
+    expect(confirmOf({ command: enter, page, plannerClass: 'stays', typed: [{ text: 'shoes', into: 'Search' }] })).toBeNull()
+    expect(confirmOf({ command: enter, page, plannerClass: 'leaves', typed: [{ text: 'shoes', into: 'Search' }] })).toEqual({ verb: 'press Enter on', what: 'shoes' })
+    // Every field typed into on the page, not the last (#468): a reply typed, then a search, and the Enter may still send the reply.
+    expect(confirmOf({ command: enter, page, plannerClass: 'stays', typed: [{ text: 'hi there', into: 'Reply to Ana' }, { text: 'shoes', into: 'Search' }] })).toEqual({ verb: 'reply', what: 'hi there' })
   })
 
   it('an Escape or a Tab never leaves by the policy', () => {
     const escape: Command = { verb: 'press', target: null, slot: 'Escape', key: { key: 'Escape' }, times: 1 }
-    expect(confirmOf({ command: escape, page, plannerClass: 'stays', typed: { text: 'x', into: 'Post a reply' } })).toBeNull()
+    expect(confirmOf({ command: escape, page, plannerClass: 'stays', typed: [{ text: 'x', into: 'Post a reply' }] })).toBeNull()
   })
 
   it('a type that submits a field whose label leaves sends its own words', () => {
     const typed: Command = { verb: 'type', target: 1, slot: 'this is great', submit: true }
     const field = { ...page, refs: [{ ref: 1, kind: 'input' as const, label: 'Post a comment', href: null, inputType: 'text' }] }
-    expect(confirmOf({ command: typed, page: field, plannerClass: 'stays', typed: null })).toEqual({ verb: 'post', what: 'this is great' })
+    expect(confirmOf({ command: typed, page: field, plannerClass: 'stays', typed: [] })).toEqual({ verb: 'post', what: 'this is great' })
   })
 
   it('a plain type stays: nothing has left until it is sent', () => {
-    expect(confirmOf({ command: { verb: 'type', target: 1, slot: 'this is great' }, page, plannerClass: 'stays', typed: null })).toBeNull()
+    expect(confirmOf({ command: { verb: 'type', target: 1, slot: 'this is great' }, page, plannerClass: 'stays', typed: [] })).toBeNull()
   })
 })
 

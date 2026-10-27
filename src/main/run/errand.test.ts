@@ -31,6 +31,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
   const spoken: { text: string; kind: string }[] = []
   const dropped: string[] = []
   const settled: string[] = []
+  const told: { words: string; action: string }[] = []
   const records: ErrandRecord[] = []
   const spans: Record<string, unknown>[] = []
   const replies = [...(options.replies ?? [])]
@@ -69,6 +70,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
     readPart: async () => 'the page text (part 1 of 1)',
     drop: (_turnId, _why, what) => dropped.push(what),
     settle: (turnId) => settled.push(turnId),
+    told: (_turnId, words, action) => told.push({ words, action }),
     ask: async (text, kind) => {
       spoken.push({ text, kind })
       now += 20_000
@@ -79,13 +81,15 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
     span: (_ms, detail) => spans.push(detail),
     log: (record) => records.push(record),
   }
-  return { deps, asked, fired, said, spoken, dropped, settled, records, spans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
+  return { deps, asked, fired, said, spoken, dropped, settled, told, records, spans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
 }
 
 describe('runErrand (#467): the Errand loop', () => {
   it('a two-step goal whose send is said back and refused: nothing leaves, and the Planner ends it in its own sentence', async () => {
     const w = world([typeComment, clickComment, { next: 'done', sentence: 'I did not post the comment: you said no.' }], { replies: ['no'] })
-    expect(await runErrand(w.deps, w.start)).toBe('done')
+    // Ended on the refusal (#468): the outcome the record names for it.
+    expect(await runErrand(w.deps, w.start)).toBe('declined')
+    expect(w.records[0]).toMatchObject({ outcome: 'declined' })
     expect(w.fired.map(({ command }) => command.verb)).toEqual(['type'])
     expect(w.spoken).toEqual([{ text: 'This will comment: this is great. Yes or no?', kind: 'confirm' }])
     expect(w.dropped).toEqual(['not done: the answer was not yes'])
@@ -120,6 +124,11 @@ describe('runErrand (#467): the Errand loop', () => {
     const w = world([{ next: 'ask', question: 'Which video?' }, { next: 'done', sentence: 'Commented on the cat video.' }], { replies: ['the cat one'] })
     expect(await runErrand(w.deps, w.start)).toBe('done')
     expect(w.spoken).toEqual([{ text: 'Which video?', kind: 'question' }])
+    // A step with no action still has its command event, in the Planner's words (#468).
+    expect(w.told).toEqual([
+      { words: 'Which video?', action: 'asks back' },
+      { words: 'Commented on the cat video.', action: 'done' },
+    ])
     expect(w.asked[1]!.memory.steps).toEqual([{ action: 'asked: "Which video?" — a question back', outcome: 'the person answered: "the cat one"', class: 'stays', seconds: 1 }])
     // 20 s waited on the person; 2 s of work.
     expect(w.records[0]!.seconds).toBe(2)
@@ -129,8 +138,9 @@ describe('runErrand (#467): the Errand loop', () => {
     const w = world([{ next: 'ask', question: 'Which shoes?' }], { replies: [] })
     expect(await runErrand(w.deps, w.start)).toBe('unsure')
     expect(w.said).toEqual([{ text: 'Which shoes? Ending there.', failure: true }])
-    // The asking step's stage was ended before the person was asked.
-    expect(w.settled).toEqual(['turn-0'])
+    // The asking step's stage was ended, with its command event, before the person was asked.
+    expect(w.told).toEqual([{ words: 'Which shoes?', action: 'asks back' }])
+    expect(w.settled).toEqual([])
   })
 
   it('the Planner gone ends it saying so, and what was done so far', async () => {

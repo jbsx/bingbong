@@ -56,8 +56,10 @@ export interface ErrandDeps {
   act(turnId: string, why: string, command: Command, card: ErrandCard, step: number): Promise<ActedStep>
   /** A part of the page's text, read into the memory, never aloud; null when it cannot be read. */
   readPart(turnId: string, why: string, part: number, step: number): Promise<string | null>
-  /** A step that fired nothing on its own turn (done, asked, unanswered): its stage ends with it. */
+  /** A step that fired nothing on its own turn (unanswered, cut short): its stage ends with it. */
   settle(turnId: string): void
+  /** A step the Planner answered with no action (done, or a question back, #468): its `command` event in the Planner's own words, and its stage ended. */
+  told(turnId: string, words: string, action: string, step: number): void
   /** A step that fired nothing (refused, or said no to): greyed in the Feed with what it came to. */
   drop(turnId: string, why: string, what: string, step: number): void
   /** The confirm or the question said by the Site Question's road; resolves the next line, or null when none came in the Hot Listen window or it was superseded. */
@@ -89,8 +91,10 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
   const startedAt = deps.now()
   let memory: ErrandMemory = errandMemory(start.goalLine, start.handOff)
   const visited: string[] = []
-  /** What the Errand last typed, and into which field: what an Enter or a send button carries away. */
-  let typed: (Typed & { readonly url: string }) | null = null
+  /** What the Errand typed, and into which fields, on the page each was typed on: what an Enter or a send button carries away. */
+  let typed: (Typed & { readonly url: string })[] = []
+  /** The last action said back was refused and nothing has fired since: an Errand the Planner ends now ends `declined`. */
+  let refused = false
   /** The step whose stage is up and whose turn no action has ended yet: it is ended before the person is asked, and at the end. */
   let openTurn: string | null = null
   const close = (): void => {
@@ -175,9 +179,14 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       }
       slipped = false
       const { answer } = result
-      if (answer.next === 'done') return ending('done', answer.sentence, false)
+      if (answer.next === 'done') {
+        openTurn = null
+        deps.told(turnId, answer.sentence, 'done', step)
+        return ending(refused ? 'declined' : 'done', answer.sentence, false)
+      }
       if (answer.next === 'ask') {
-        close()
+        openTurn = null
+        deps.told(turnId, answer.question, 'asks back', step)
         const reply = await askPerson(answer.question, 'question')
         if (deps.superseded()) return end('superseded')
         if (reply === null) return ending('unsure', unansweredLine(answer.question), true)
@@ -203,7 +212,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       const { command } = resolved
       const action = describeCommand(command, card.page)
       // What was typed on another page is no longer what an Enter or a send carries away.
-      const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed: typed?.url === card.page.url ? typed : null })
+      const confirm = confirmOf({ command, page: card.page, plannerClass: answer.class, typed: typed.filter((field) => field.url === card.page.url) })
       const stepClass = confirm === null ? 'stays' : 'leaves'
       if (confirm !== null) {
         // The confirm class (#467): said back by the Site Question's road, answered by the next line; only a yes fires it.
@@ -211,6 +220,7 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
         if (deps.superseded()) return end('superseded')
         const yes = reply !== null && isYes(reply)
         memory = withStep(memory, confirmStep(confirm, reply, yes, since(began)))
+        refused = !yes
         if (!yes) {
           deps.drop(turnId, why, `not done: ${reply === null ? 'no answer' : 'the answer was not yes'}`, step)
           continue
@@ -221,7 +231,12 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       const done: ErrandStep = { why, action, class: stepClass, outcome: acted.outcome, ...(acted.said !== undefined ? { said: acted.said } : {}), seconds: since(began) }
       memory = withStep(memory, done)
       if (acted.capture !== undefined) memory = withCapture(memory, acted.capture)
-      if (command.verb === 'type' && command.slot !== null) typed = { text: command.slot, into: targetLabel(command, card.page), url: card.page.url }
+      refused = false
+      if (command.verb === 'type' && command.slot !== null) {
+        const into = targetLabel(command, card.page)
+        // A field typed into again holds the newer text.
+        typed = [...typed.filter((field) => field.into !== into || field.url !== card.page.url), { text: command.slot, into, url: card.page.url }]
+      }
     }
   } catch (error) {
     // A step that threw ends the Errand aloud and on the record, never in silence: the card, the action or the reading broke.

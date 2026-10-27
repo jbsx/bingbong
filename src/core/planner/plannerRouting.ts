@@ -27,6 +27,14 @@ const PLANNER_DEFAULT_TIMEOUT_MS = 30_000
 const PLANNER_DEFAULT_PER_SECOND = 2
 const PLANNER_DEFAULT_IN_FLIGHT = 4
 
+/**
+ * The one kill switch (#468, ADR 0095): `BINGBONG_PLANNER=off` keeps every
+ * line on the Command tier — no Errand starts, the card offers no errand,
+ * a Task that ends not done says so as before. Anything else, or nothing,
+ * leaves the Planner on wherever it enters. No Settings line: the owner
+ * excluded voice-deafening settings in #420, and this is of that kind.
+ */
+export const PLANNER_SWITCH_KEY = PLANNER_ENV_PREFIX
 const TIMEOUT_KEY = `${PLANNER_ENV_PREFIX}_TIMEOUT_MS`
 const THINKING_KEY = `${PLANNER_ENV_PREFIX}_THINKING`
 const RATE_KEY = `${PLANNER_ENV_PREFIX}_RATE`
@@ -49,6 +57,7 @@ export type ConfiguredPlannerRouting = Extract<PlannerRouting, { readonly config
 /** Every env var that configures the Planner — what a hermetic harness unsets. */
 export function plannerEnvKeys(): string[] {
   return [
+    PLANNER_SWITCH_KEY,
     `${PLANNER_ENV_PREFIX}_BASE_URL`,
     `${PLANNER_ENV_PREFIX}_MODEL`,
     `${PLANNER_ENV_PREFIX}_API_KEY`,
@@ -65,6 +74,9 @@ function readEnv(env: Record<string, string | undefined>, name: string): string 
   const raw = env[name]
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined
 }
+
+/** Whether the env turns the Planner off (`BINGBONG_PLANNER=off`, case apart): then nothing reaches an Errand. */
+export const plannerSwitchedOff = (env: Record<string, string | undefined>): boolean => readEnv(env, PLANNER_SWITCH_KEY)?.toLowerCase() === 'off'
 
 /**
  * Resolve the Planner: the key from `BINGBONG_PLANNER_API_KEY`, the env var

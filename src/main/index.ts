@@ -119,7 +119,7 @@ import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createDecisionModelSource } from './decision/createDecisionModel'
 import { createPlannerModel } from './planner/createPlannerModel'
 import type { PlannerModel } from '../core/ports/plannerModel'
-import { errandArmed } from '../core/errand/errandLine'
+import { plannerSwitchedOff } from '../core/planner/plannerRouting'
 import { createConsentChooser } from '../core/browser/consentChooser'
 import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
 import { onWindowClosed } from './onWindowClosed'
@@ -657,8 +657,8 @@ async function createWindow(): Promise<BrowserWindow> {
     knownAddress: (word) => knownAddresses.addressOf(word),
     // The page's own question (#423): said when it opens; the next line answers it.
     siteQuestions,
-    // The Errand (#467, ADR 0095): armed by BINGBONG_ERRAND=1 alone until #468 routes; the kiosk never sets it.
-    ...(errandArmed(currentEnv()) ? { errand: { planner: errandPlanner, answerWindowMs: () => settingsStore.get().hotListenSilenceMs } } : {}),
+    // The Errand (#467, #468, ADR 0095): on by default, entered after a Task that ends not done; BINGBONG_PLANNER=off is the one kill switch.
+    ...(plannerSwitchedOff(currentEnv()) ? {} : { errand: { planner: errandPlanner, answerWindowMs: () => settingsStore.get().hotListenSilenceMs } }),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
     // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.

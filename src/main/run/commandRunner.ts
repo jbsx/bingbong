@@ -293,9 +293,10 @@ export interface CommandRunnerDeps {
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
   /**
-   * The Errand (#467, ADR 0095), armed by BINGBONG_ERRAND=1 until #468
-   * routes: `errand <words>` starts one, and a Task that ends cap, unsure
-   * or unavailable hands its line to one. Absent, neither is read.
+   * The Errand (#467, #468, ADR 0095): `errand <words>` starts one, and a
+   * Task that ends cap, unsure or unavailable hands its line to one — where
+   * the Planner enters, measured (#468, arm C). Absent
+   * (BINGBONG_PLANNER=off), neither is read.
    */
   errand?: {
     /** The Planner the env names; null when it has no key. */
@@ -2862,6 +2863,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           readPart: (turnId, why, part, step) => errandRead(run, turnId, why, part, step),
           drop: (turnId, why, what, step) => errandDrop(run, turnId, why, what, step),
           settle: (turnId) => publish({ type: 'done', turnId, outcome: 'done', at: at() }),
+          // A done or a question back is a step too (#468): one command event each, in the Planner's words, as every acting step has.
+          told: (turnId, words, action, step) => {
+            publish({ type: 'command', turnId, text: words, action, keepsIdle: true, task: { id: start.id, hop: step }, at: at() })
+            publish({ type: 'done', turnId, outcome: 'done', at: at() })
+          },
           ask: (text, kind) => errandAsk(run, text, kind),
           say: (text, failure) => {
             publish({ type: 'display', turnId: start.id, text, ...(failure ? { failure: true } : {}), at: at() })
@@ -3049,7 +3055,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared
       prepared = null
-      // `errand <words>` (#467, ruling 1): an exact grammar line, read only while the Errand is armed.
+      // `errand <words>` (#467): an exact grammar line, read unless the Planner is switched off.
       const goal = deps.errand !== undefined ? errandGoalOf(lineRead) : null
 
       const perform = async (): Promise<void> => {

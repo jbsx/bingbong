@@ -61,7 +61,7 @@ describe('errand e2e: a two-step goal whose send is said back and refused', () =
       fixture,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      env: { BINGBONG_ERRAND: '1', BINGBONG_CONFIRM_ANSWER: 'no', BINGBONG_PLANNER_BASE_URL: standIn.url, BINGBONG_PLANNER_API_KEY: 'stand-in', BINGBONG_PLANNER_MODEL: 'stand-in' },
+      env: { BINGBONG_CONFIRM_ANSWER: 'no', BINGBONG_PLANNER_BASE_URL: standIn.url, BINGBONG_PLANNER_API_KEY: 'stand-in', BINGBONG_PLANNER_MODEL: 'stand-in' },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     const url = fixture.url('/errand')

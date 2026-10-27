@@ -6,6 +6,7 @@ import type { MediaOpAction } from './mediaOp'
 import type { ScrollExtent } from './scrollOp'
 import type { CommandAnswers, HopAnswers } from './jevReading'
 import type { SiteAnswer, SiteQuestion } from './siteQuestion'
+import type { ErrandOutcome } from '../planner/plannerSpan'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
 // Command beside the perf log — what was heard, what was read and by whom,
@@ -310,7 +311,7 @@ export interface ErrandRecord {
   readonly at: number
   readonly source: CommandSource
   readonly goalLine: string
-  readonly outcome: 'done' | 'unsure' | 'cap' | 'unavailable' | 'declined' | 'superseded'
+  readonly outcome: ErrandOutcome
   /** What the Errand said as it ended: the Planner's own sentence when done. */
   readonly said?: string
   readonly steps: readonly { readonly why: string; readonly action: string; readonly class: 'stays' | 'leaves'; readonly outcome: string; readonly seconds: number }[]

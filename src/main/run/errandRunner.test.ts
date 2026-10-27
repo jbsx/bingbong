@@ -81,7 +81,7 @@ const decisions = (records: readonly CommandLogRecord[]): DecisionRecord[] => re
 const commands = (events: readonly PipelineEvent[]) => events.filter((event): event is Extract<PipelineEvent, { type: 'command' }> => event.type === 'command')
 
 describe('the Errand through the runner (#467, ADR 0095)', () => {
-  it('`errand <words>` is no Errand while it is not armed: the line is Jev\'s', async () => {
+  it('`errand <words>` is no Errand with the Planner switched off (BINGBONG_PLANNER=off): the line is Jev\'s', async () => {
     const { jev, runner, records } = harness()
     await runner.run('errand find me a cheaper one')
     expect(jev.requests.length).toBeGreaterThan(0)
@@ -103,6 +103,8 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
       ['errand search this site for running shoes', { id: 'line-1', hop: 0 }],
       ['type the search', { id: 'line-1', hop: 1 }],
       ['run the search', { id: 'line-1', hop: 2 }],
+      // The done step has its command event too, in the Planner's own sentence (#468).
+      ['The search for running shoes is on screen.', { id: 'line-1', hop: 3 }],
     ])
     expect(spoken).toEqual(['The search for running shoes is on screen.'])
     // Stage Errand on every step: thinking on the Goal Line while the Planner is asked, acting on its why.
@@ -210,6 +212,17 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(errandOf(records)).toMatchObject({ handedFrom: 'cap' })
   })
 
+  it('a Task whose Decision Model does not answer at hop 0 hands its line over too (#468, arm C: the shipped road)', async () => {
+    const { planner, asked } = scriptedPlanner({ next: 'done', sentence: 'Opened the article.' })
+    const { jev, records, spoken, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 } })
+    jev.ask = async () => ({ status: 'unavailable', reason: 'http', httpStatus: 429, message: 'Rate limit exceeded', latencyMs: 30, model: jev.model }) as never
+    await runner.run('open the wikipedia page for whoever made this', { turnId: 'line-1' })
+    expect(decisions(records).at(-1)!.ended).toBe('unavailable')
+    expect(asked[0]!.goalLine).toBe('open the wikipedia page for whoever made this')
+    expect(errandOf(records)).toMatchObject({ turnId: 'line-1', handedFrom: 'unavailable', outcome: 'done' })
+    expect(spoken).toEqual(['Opened the article.'])
+  })
+
   it('with no Planner configured, a Task\'s end is said as ever, and `errand <words>` says the planner is not set up', async () => {
     const { jev, spoken, runner } = harness({ errand: { planner: () => null, answerWindowMs: () => 0 } })
     for (let hop = 0; hop < 6; hop += 1) jev.script.push('scroll_down')
@@ -218,3 +231,4 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(spoken.map((line) => line.split('\n')[0])).toEqual([expect.stringMatching(/^I couldn't finish that\./), expect.stringMatching(/^The planner is not set up/)])
   })
 })
+

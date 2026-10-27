@@ -32,7 +32,7 @@ export interface Confirm {
   readonly what: string
 }
 
-/** The text the Errand last typed, and into the field of which label: what an Enter or a send button carries away. */
+/** A text the Errand typed, and into the field of which label: what an Enter or a send button carries away. */
 export interface Typed {
   readonly text: string
   readonly into: string | undefined
@@ -56,27 +56,32 @@ function ownVerb(command: Command): string {
 
 /**
  * The confirm an action needs before it fires, or null when it stays. A
- * click leaves by its control's label; an Enter, or a type that submits, by
- * the field's; and either when the Planner said so. What is said is the
- * text that goes — the words typed before a send — else the control.
+ * click leaves by its control's label; a type that submits, by its field's;
+ * an Enter, by every field typed into on the page so far (#468), since the
+ * focus may sit in any of them; and either when the Planner said so. What
+ * is said is the text that goes — the words typed into the leaving field,
+ * else the last typed before a send — else the control.
  */
-export function confirmOf(input: { readonly command: Command; readonly page: CommandPage; readonly plannerClass: PlannerActionClass; readonly typed: Typed | null }): Confirm | null {
+export function confirmOf(input: { readonly command: Command; readonly page: CommandPage; readonly plannerClass: PlannerActionClass; readonly typed: readonly Typed[] }): Confirm | null {
   const { command, page, plannerClass, typed } = input
   const label = targetLabel(command, page)
   const enter = command.verb === 'press' && (command.key?.key ?? 'Enter') === 'Enter'
+  const last = typed.at(-1) ?? null
+  // The field an Enter carries away: the first typed into whose label leaves, else the last typed.
+  const leavingField = enter ? (typed.find((field) => leavingWordOf(field.into) !== null) ?? null) : null
   const word =
     command.verb === 'click'
       ? leavingWordOf(label)
       : command.verb === 'type' && command.submit === true
         ? leavingWordOf(label)
         : enter
-          ? leavingWordOf(typed?.into)
+          ? leavingWordOf(leavingField?.into)
           : null
   if (word === null && plannerClass !== 'leaves') return null
   const verb = word ?? ownVerb(command)
   if (command.verb === 'type') return { verb, what: command.slot ?? quoted(label) }
-  if (enter) return { verb, what: typed?.text ?? 'the field' }
-  return { verb, what: typed !== null && word !== null ? typed.text : quoted(label) }
+  if (enter) return { verb, what: (leavingField ?? last)?.text ?? 'the field' }
+  return { verb, what: last !== null && word !== null ? last.text : quoted(label) }
 }
 
 /** The confirm said aloud (#467): "This will post: <text>. Yes or no?" */

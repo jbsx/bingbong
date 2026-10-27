@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plannerEnvKeys, resolvePlannerRouting } from './plannerRouting'
+import { plannerEnvKeys, resolvePlannerRouting, plannerSwitchedOff } from './plannerRouting'
 
 describe('resolvePlannerRouting (#465): the Planner by env, in the #395 shape', () => {
   it('defaults to GLM-5.3 on Z.ai’s Coding Plan, thinking off, 30 s, 2 a second and 4 in flight, armed by ZAI_API_KEY alone', () => {
@@ -45,6 +45,7 @@ describe('resolvePlannerRouting (#465): the Planner by env, in the #395 shape', 
 
   it('names every env var it reads, for a hermetic harness to unset', () => {
     expect(plannerEnvKeys()).toEqual([
+      'BINGBONG_PLANNER',
       'BINGBONG_PLANNER_BASE_URL',
       'BINGBONG_PLANNER_MODEL',
       'BINGBONG_PLANNER_API_KEY',
@@ -55,5 +56,12 @@ describe('resolvePlannerRouting (#465): the Planner by env, in the #395 shape', 
       'BINGBONG_PLANNER_RATE',
       'BINGBONG_PLANNER_IN_FLIGHT',
     ])
+  })
+})
+
+describe('plannerSwitchedOff (#468, ADR 0095): the one kill switch', () => {
+  it('BINGBONG_PLANNER=off, in any case, turns the Planner off; anything else or nothing leaves it on', () => {
+    for (const value of ['off', 'OFF', ' Off ']) expect(plannerSwitchedOff({ BINGBONG_PLANNER: value })).toBe(true)
+    for (const value of [undefined, '', 'on', '0', 'false']) expect(plannerSwitchedOff({ BINGBONG_PLANNER: value })).toBe(false)
   })
 })
