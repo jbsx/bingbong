@@ -62,8 +62,8 @@ describe.skipIf(!canDriveChrome)('a search box by kind on its line (#398)', () =
   }
 
   it('names a box by its attributes a searchbox holding its words, and the submit of its form button[submit]', async () => {
-    // The button's label joins its aria-label to its own text: the labelOf dedupe is turn-mvjufp7l-15's, not this kind's.
-    expect(await refLines('/youtube')).toEqual(['[1] searchbox "Search" holds "lines tactic"', '[2] button[submit] "Search Search"', '[3] input[text] "Add a comment"'])
+    // The button's aria-label and its own text carry the same word: the label is it once (#481).
+    expect(await refLines('/youtube')).toEqual(['[1] searchbox "Search" holds "lines tactic"', '[2] button[submit] "Search"', '[3] input[text] "Add a comment"'])
   })
 
   it('names a box that declares it searches a searchbox', async () => {

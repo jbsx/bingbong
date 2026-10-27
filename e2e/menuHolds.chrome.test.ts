@@ -76,7 +76,7 @@ describe.skipIf(!canDriveChrome)("a closed menu's contents on its trigger's line
 
   it('names the links of the hidden panel beside a trigger with no aria-controls, or one naming nothing, and none beside a trigger that opens nothing', async () => {
     expect(await refLines('/structure')).toEqual([
-      '[1] button "Tools Tools" hasPopup=menu menu holds "Read", "Edit", "Page information", "Cite this page"',
+      '[1] button "Tools" hasPopup=menu menu holds "Read", "Edit", "Page information", "Cite this page"',
       '[2] button "Share" hasPopup=menu menu holds "Copy link"',
       '[3] button "Plain"',
     ])
