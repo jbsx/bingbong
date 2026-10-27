@@ -56,7 +56,7 @@ import { checkEnd, lineOutcomes, saidFrom, type EndState } from '../e2e/overlap/
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
 import { formatTable, stateDisagreements, through, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
-import { placeMs, spanBegun, spansOf, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
+import { placeMs, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
 import { createPlannerLimiter } from '../src/core/planner/limiter.ts'
@@ -355,7 +355,10 @@ async function waitUntil(check: () => Promise<boolean>, boundMs: number): Promis
 const lastOf = <T>(items: readonly T[]): T | undefined => items[items.length - 1]
 const playingNow = (live: Live): boolean => lastOf(live.pane)?.media.some((media) => media.playing) === true
 
-/** Waits until nothing has happened for QUIET_MS and the app is neither speaking nor running a Command begun since `from`. */
+/**
+ * Waits until nothing has happened for QUIET_MS and the app is neither speaking nor running a Command begun since `from`,
+ * and no turn since `from` has a stage open: an Errand's next step thinks in silence (#491).
+ */
 async function quiet(live: Live, from: number, notBefore: number, boundMs: number): Promise<boolean> {
   return waitUntil(async () => {
     if (Date.now() < notBefore) return false
@@ -371,7 +374,7 @@ async function quiet(live: Live, from: number, notBefore: number, boundMs: numbe
     const playingSet = (sample: PaneSample) => `${sample.url} ${sample.media.map((media) => media.playing).join(',')}`
     const still = latest !== undefined && now - latest.t < 2 * SAMPLE_MS + 1_000 && stretch.length >= 2 && stretch.every((sample) => playingSet(sample) === playingSet(latest))
     const starting = latest?.media.some((media) => media.src !== '' && !media.playing && media.position < 0.5) === true && now - lastEvent < MEDIA_START_MS
-    return !busy && still && !starting && now - lastEvent >= QUIET_MS && lineOutcomes(records, from).every((outcome) => outcome !== 'running')
+    return !busy && still && !starting && now - lastEvent >= QUIET_MS && !stageOpen(records, from) && lineOutcomes(records, from).every((outcome) => outcome !== 'running')
   }, boundMs)
 }
 

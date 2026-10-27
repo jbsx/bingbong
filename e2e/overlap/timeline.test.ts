@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeMs, spanBegun, spansOf, wallBefore, type RunRecords } from './timeline'
+import { placeMs, spanBegun, spansOf, stageOpen, wallBefore, type RunRecords } from './timeline'
 
 const A = 10_000
 const pane = (t: number, url: string, playing = false) => ({ t, url, title: '', text: '', media: playing ? [{ playing: true, src: 'blob:x', position: 1, volume: 1, loop: false }] : [] })
@@ -69,5 +69,49 @@ describe('a wall before line 2 arrived', () => {
     expect(wallBefore([pane(A, 'https://duckduckgo.com/'), wall], A + 2000)).toBe('a login-wall on accounts.google.com')
     expect(wallBefore([bot], A + 2000)).toBe('a challenge on www.youtube.com')
     expect(wallBefore([wall], A + 500)).toBeNull()
+  })
+})
+
+describe('a stage still open keeps the run from ending', () => {
+  // 11-answer-which-one p1 (#491): the Errand asked, `the second` was taken as its answer, and its next step began thinking.
+  const errand: RunRecords = {
+    events: [
+      { t: A - 4031, event: { type: 'status', turnId: 'turn-1', status: 'thinking', at: 0 } },
+      { t: A - 4030, event: { type: 'command', turnId: 'turn-1', text: 'errand open the album I am thinking of', task: { id: 'turn-1', hop: 0 }, at: 0 } },
+      { t: A - 4028, event: { type: 'status', turnId: 'turn-2', status: 'thinking', at: 0 } },
+      { t: A - 2516, event: { type: 'command', turnId: 'turn-2', text: 'Which Radiohead album are you thinking of?', task: { id: 'turn-1', hop: 1 }, at: 0 } },
+      { t: A - 2515, event: { type: 'done', turnId: 'turn-2', outcome: 'done', at: 0 } },
+      { t: A - 2515, event: { type: 'site_question', text: 'Which Radiohead album are you thinking of?', errand: 'question', at: 0 } },
+      { t: A + 1, event: { type: 'command', turnId: 'turn-3', text: 'the second', task: { id: 'turn-3', hop: 0 }, at: 0 } },
+      { t: A + 1, event: { type: 'done', turnId: 'turn-3', outcome: 'done', at: 0 } },
+      { t: A + 2, event: { type: 'status', turnId: 'turn-4', status: 'thinking', at: 0 } },
+    ],
+    pane: [],
+  }
+
+  it('an Errand step thinking since line 1, with no done, is open', () => {
+    expect(stageOpen(errand, A)).toBe(true)
+  })
+
+  it('every stage begun since line 1 ended with its done is not', () => {
+    const ended: RunRecords = {
+      ...errand,
+      events: [...errand.events, { t: A + 6000, event: { type: 'status', turnId: 'turn-4', status: 'acting', at: 0 } }, { t: A + 9000, event: { type: 'done', turnId: 'turn-4', outcome: 'done', at: 0 } }],
+    }
+    expect(stageOpen(ended, A)).toBe(false)
+  })
+
+  it('a stage begun before line 1 is the start’s, not the run’s', () => {
+    expect(stageOpen({ ...errand, events: errand.events.slice(0, 8) }, A)).toBe(false)
+  })
+
+  it('a question asked hands every stage before it to the person: the start’s Errand, waiting on its answer, is not deciding', () => {
+    expect(stageOpen({ ...errand, events: errand.events.slice(0, 6) }, 0)).toBe(false)
+    expect(stageOpen({ ...errand, events: errand.events.slice(0, 3) }, 0)).toBe(true)
+  })
+
+  it('a stage entered after its turn’s done opens it again', () => {
+    const again: RunRecords = { ...errand, events: [...errand.events.slice(0, 8), { t: A + 50, event: { type: 'status', turnId: 'turn-3', status: 'loading', at: 0 } }] }
+    expect(stageOpen(again, A)).toBe(true)
   })
 })

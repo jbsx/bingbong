@@ -103,6 +103,28 @@ function loadingBegun(records: RunRecords, lineAt: number): number | undefined {
   return loading === undefined ? undefined : loading.t - lineAt
 }
 
+const OPEN_STAGES: ReadonlySet<string> = new Set(['thinking', 'acting', 'loading'])
+
+/**
+ * Whether any turn since `from` has entered a stage (thinking, acting,
+ * loading) and published no `done` after it (#491). A Planner or Errand
+ * step publishes nothing while it thinks, so a run that went quiet with one
+ * open has not ended: its next effect is still coming. Every turn counts,
+ * an Errand's next step included, whoever's line it serves; a question the
+ * app asked closes what came before it, since it then waits on the person.
+ */
+export function stageOpen(records: RunRecords, from: number): boolean {
+  const entered = new Set<string>()
+  for (const { t, event } of records.events) {
+    if (t < from) continue
+    if (event.type === 'status' && OPEN_STAGES.has(event.status)) entered.add(event.turnId)
+    else if (event.type === 'done') entered.delete(event.turnId)
+    // A question asked waits on the person: what was thinking before it is not deciding (an alert asks nothing).
+    else if (event.type === 'site_question' && event.alert !== true) entered.clear()
+  }
+  return entered.size > 0
+}
+
 const SAID: Record<NamedAfter | NamedWhile, string> = {
   shown: 'its words were shown',
   changed: 'the page changed',
