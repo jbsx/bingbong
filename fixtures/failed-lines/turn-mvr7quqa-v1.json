@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr7quqa-v1",
+  "transcript": "Back to",
+  "at": 1793137460333,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "overlap:gate 8-split-by-pause at p2 (1379 ms) on baseten-mammoth-27b-latest at 919f058f: spoken `Back to-` then, after a pause, `page.` over a playing song: `Back to` was taken alone and answered 'There's no page to go back to. Try “resume”.'; the line ended failed (Elephant: green at 2 points, a wall at the third)",
+  "meant": "`Back to page.` is taken as one line",
+  "log": "decision-1793137438433-1.jsonl"
+}

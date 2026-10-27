@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr6nwph-2",
+  "transcript": "on loop",
+  "at": 1793135645752,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 3-add-on-loop at p1 (media-not-started 15%) on baseten-mammoth-27b-latest at 919f058f: `on loop` given while `play let down by radiohead` was opening: Let Down sat paused at 0 s, nothing playing (all 3 points, both models)",
+  "meant": "Let Down plays, on loop",
+  "log": "decision-1793135642454-1.jsonl"
+}

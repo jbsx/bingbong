@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr6g44c-2",
+  "transcript": "no, by coldplay",
+  "at": 1793135279107,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 2-correct-by-coldplay at p1 (media-not-started 0%) on baseten-mammoth-27b-latest at 919f058f: `no, by coldplay` given while `play yellow` was opening: it played Meghan Trainor - No, not Yellow by Coldplay",
+  "meant": "One song plays, Yellow by Coldplay",
+  "log": "decision-1793135278812-1.jsonl"
+}

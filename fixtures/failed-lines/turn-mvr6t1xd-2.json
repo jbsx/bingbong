@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr6t1xd-2",
+  "transcript": "pause",
+  "at": 1793135882498,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 4-pause-while-loading at p1 (media-not-started 15%) on baseten-mammoth-27b-latest at 919f058f: `pause` given while `play let down by radiohead` was opening: said 'Nothing is playing.' and the play never landed; the pane stayed on DuckDuckGo with no media (both models)",
+  "meant": "Let Down opens and is paused once it is there",
+  "log": "decision-1793135882497-1.jsonl"
+}

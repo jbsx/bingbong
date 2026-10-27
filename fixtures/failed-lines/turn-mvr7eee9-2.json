@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr7eee9-2",
+  "transcript": "is it working",
+  "at": 1793136882010,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 7-is-it-working at p1 (media-not-started 15%) on baseten-mammoth-27b-latest at 919f058f: `is it working` given while `play let down by radiohead` was opening: nothing was said and Let Down sat paused at 0 s (both models)",
+  "meant": "It says it is opening Let Down, and Let Down goes on to play",
+  "log": "decision-1793136878433-1.jsonl"
+}

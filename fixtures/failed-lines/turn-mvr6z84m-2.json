@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr6z84m-2",
+  "transcript": "search for radiohead tour dates",
+  "at": 1793136172916,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 5-independent-volume at p1 (loading 4%) on baseten-mammoth-27b-latest at 919f058f: `volume down` given while `search for radiohead tour dates` was loading over a playing song: the search ended cancelled and 'Nothing is playing.' was said; the song was gone",
+  "meant": "Both done: the search lands and the song plays quieter",
+  "log": "decision-1793136155454-1.jsonl"
+}

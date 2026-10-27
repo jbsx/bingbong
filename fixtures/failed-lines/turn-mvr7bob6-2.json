@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr7bob6-2",
+  "transcript": "never mind",
+  "at": 1793136751315,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 6-never-mind-during-task at p1 (loading 28%) on baseten-mammoth-27b-latest at 919f058f: `never mind` given while `find the wikipedia page for radiohead` was loading: nothing was said; the Task's ending was silent (all 3 points, both models)",
+  "meant": "The Task ends and the app says it stopped",
+  "log": "decision-1793136751315-1.jsonl"
+}

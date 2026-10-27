@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr7wxnb-2",
+  "transcript": "Read the page.",
+  "at": 1793137743191,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 24%) on baseten-mammoth-27b-latest at 919f058f: spoken `Move on.` while the app was reading the page aloud: it never showed as a line; the reading went on to done (all 3 points; Elephant: every point a wall, start never reached)",
+  "meant": "The app stops talking and takes `Move on.` as the next line",
+  "log": "decision-1793137722400-1.jsonl"
+}

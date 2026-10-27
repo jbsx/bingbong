@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr6qpil-2",
+  "transcript": "and turn it down",
+  "at": 1793135778393,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 3-add-on-turn-it-down at p1 (media-not-started 21%) on baseten-mammoth-27b-latest at 919f058f: `and turn it down` given while `play let down by radiohead` was opening: Let Down sat paused at 0 s, nothing playing",
+  "meant": "Let Down plays, quieter",
+  "log": "decision-1793135773102-1.jsonl"
+}
