@@ -256,6 +256,17 @@ describe('formatPerfReport', () => {
     expect(text.split('\n')).toContain('endpoints: smart turn 1 | pause cap 1 (1 unfinished, 0 failed) | hard cap 0 | turn check p50 40ms p95 60ms')
   })
 
+  it('counts the wake listens silence closed: those that heard no line are the false wakes (#483)', () => {
+    const closed = (turnId: string, durMs: number, heard: boolean, blips: number): PerfSpanRecord => ({
+      ...span(turnId, 'listen-closed', durMs),
+      detail: { reason: 'wake', blips, heard },
+    })
+    const report = buildPerfReport([closed('t1', 8_000, false, 0), closed('t2', 16_500, false, 2), closed('t3', 30_000, true, 0)])
+    expect(report.listensClosed).toEqual({ noWords: 2, afterLine: 1, noWordsP50: 8_000 })
+    expect(formatPerfReport(report, CONTEXT).split('\n')).toContain('wake listens closed by silence: 2 with no words (false wakes, p50 8000ms open) | 1 after a line')
+    expect(buildPerfReport([span('t1', 'stt', 100)]).listensClosed).toBeNull()
+  })
+
   it('lists every mismatch problem under the self-check line', () => {
     const text = formatPerfReport(
       buildPerfReport([

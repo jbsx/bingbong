@@ -48,6 +48,8 @@ export interface PerfReport {
   endpoints: EndpointReport | null
   /** The stt span by the engine that heard (#463), in the order first seen; empty when no span names one. */
   sttEngines: SttEngineStats[]
+  /** The wake listens their silence closed (#483), from the `listen-closed` spans; null when none did. */
+  listensClosed: ListensClosedReport | null
   /** The app's own records: the runs' builds and machines, CPU samples, playback. */
   app: AppReport
   /** The Planner's spans (#465): `planner-step` and `errand`. */
@@ -82,6 +84,14 @@ export interface SttEngineStats {
   p95: number | null
   cold: number
   coldP50: number | null
+}
+
+/** Wake listens closed by silence (#483): one that heard no line is a false wake, and how long it stood open. */
+export interface ListensClosedReport {
+  noWords: number
+  afterLine: number
+  /** Ms a no-words listen stood open; null when none. */
+  noWordsP50: number | null
 }
 
 export interface ReportContext {
@@ -146,6 +156,24 @@ function buildSttEngines(records: readonly PerfSpanRecord[]): SttEngineStats[] {
       coldP50: c.length > 0 ? nearestRankPercentile(c, 50) : null,
     }
   })
+}
+
+function buildListensClosed(records: readonly PerfSpanRecord[]): ListensClosedReport | null {
+  const noWords: number[] = []
+  let afterLine = 0
+  for (const record of records) {
+    if (record.stage !== 'listen-closed') continue
+    if (record.detail?.heard === true) afterLine += 1
+    else noWords.push(record.durMs)
+  }
+  if (noWords.length === 0 && afterLine === 0) return null
+  noWords.sort((a, b) => a - b)
+  return { noWords: noWords.length, afterLine, noWordsP50: noWords.length > 0 ? nearestRankPercentile(noWords, 50) : null }
+}
+
+function formatListensClosedLine(closed: ListensClosedReport): string {
+  const open = closed.noWordsP50 === null ? '' : `, p50 ${formatMs(closed.noWordsP50)} open`
+  return `wake listens closed by silence: ${closed.noWords} with no words (false wakes${open}) | ${closed.afterLine} after a line`
 }
 
 function formatSttEngineLine(engines: readonly SttEngineStats[]): string {
@@ -288,6 +316,7 @@ export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: reado
     decisions: buildDecisionReport(decisions),
     endpoints: buildEndpointReport(records),
     sttEngines: buildSttEngines(records),
+    listensClosed: buildListensClosed(records),
     app: buildAppReport(all),
     planner: buildPlannerReport(records),
   }
@@ -348,6 +377,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   }
   if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
   if (report.sttEngines.length > 0) lines.push(formatSttEngineLine(report.sttEngines))
+  if (report.listensClosed !== null) lines.push(formatListensClosedLine(report.listensClosed))
   lines.push(...formatAppReport(report.app))
   lines.push(...formatPlannerReport(report.planner))
   appendCommandLines(lines, report, context)

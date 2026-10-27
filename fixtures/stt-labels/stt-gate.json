@@ -418,5 +418,17 @@
  "utterance-1793040108831-0072.wav": {
   "heard": "Play Feeling Good.",
   "errors": 0
+ },
+ "wake-1793096291832-0025.wav": {
+  "heard": "Same problem.",
+  "errors": 2
+ },
+ "utterance-1793096297045-0026.wav": {
+  "heard": "",
+  "errors": 0
+ },
+ "utterance-1793096299160-0027.wav": {
+  "heard": "",
+  "errors": 0
  }
 }

@@ -141,9 +141,10 @@ export interface VoiceSession {
  * (#326): after each submitted utterance the ear stays open for the next,
  * with no wake and no chime, until `hotListenSilenceMs` of silence after
  * the last Endpoint, disarm, Escape or the abort head closes it and
- * monitoring resumes. While it is open the monitor hears the listen's own
- * audio, so the abort head and a wake still cut speech; a wake changes
- * nothing else. Speech captured while a line plays is dropped. An
+ * monitoring resumes. While a Hot Listen is open the monitor hears the
+ * listen's own audio, so the abort head and a wake still cut speech; a
+ * wake changes nothing else. A wake that brings no words closes on the
+ * same silence, counted from the wake and restarted at each blip (#483). Speech captured while a line plays is dropped. An
  * activation while a Command is in flight opens a listen like any other
  * (#324): the Command it yields supersedes the one running.
  */
@@ -211,6 +212,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // The Hot Listen (#326): a wake listen that has submitted an utterance
   // and stays open for the next; its silence clock, when running.
   let hot = false
+  // The open listen's start (#483): the listen-closed span runs from here.
+  let listenOpenedAt: number | null = null
   let cancelSilence: (() => void) | null = null
   // Bumped whenever the silence clock is stopped, so a playback wait that
   // ends after it re-arms nothing.
@@ -254,15 +257,21 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     cancelSilence = null
   }
 
+  /** A wake listen runs the silence clock whether or not it has submitted a line (#483); a hotkey listen never does. */
+  function silenceCloses(): boolean {
+    return listening && reason === 'wake'
+  }
+
   /**
-   * The Hot Listen's silence clock (#326), started at each Endpoint: when
-   * it runs out the listen closes. A line playing holds it — the listen
-   * stays open through the playback and the clock restarts when it ends.
+   * The wake listen's silence clock (#326), started as it opens (#483) and
+   * at each Endpoint: when it runs out the listen closes. A line playing
+   * holds it — the listen stays open through the playback and the clock
+   * restarts when it ends.
    */
   function startSilenceClock(): void {
     stopSilenceClock()
     // A Task under way holds the clock (#328): it starts when the Task ends.
-    if (!hot || tasksUnderWay > 0) return
+    if (!silenceCloses() || tasksUnderWay > 0) return
     const epoch = silenceEpoch
     if (speaking()) {
       void deps.speaking?.waitIdle().then(() => {
@@ -275,14 +284,28 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       cancelSilence = null
       if (epoch !== silenceEpoch) return
       if (speaking()) startSilenceClock()
-      else stopListening()
+      else closeForSilence()
     })
+  }
+
+  /** The silence bound ran out (#483): one listen-closed span — heard says whether the listen submitted a line — then the ear is at rest. */
+  function closeForSilence(): void {
+    const tracer = deps.tracer
+    if (tracer && listenOpenedAt !== null) {
+      try {
+        tracer.span(tracer.mintTurnId(), 'listen-closed', tracer.now() - listenOpenedAt, { reason, blips: listenBlips, heard: hot })
+      } catch (error) {
+        reportFault('voice.voiceSession.listenClosedSpan', error)
+        // swallowed — the log is advisory
+      }
+    }
+    stopListening()
   }
 
   /** A submitted Command's Task ended (#328): the open Hot Listen's silence clock starts again from here, once no Task is under way. */
   function restartAfterTask(): void {
     tasksUnderWay -= 1
-    if (hot && !capturing() && !transcribing) startSilenceClock()
+    if (silenceCloses() && !capturing() && !transcribing) startSilenceClock()
   }
 
   function clearPartial(): void {
@@ -383,12 +406,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     listening = true
     reason = nextReason
     commandListenStart = deps.tracer?.now() ?? null
+    listenOpenedAt = commandListenStart
     listenBlips = 0
     resetEndpointer()
     deps.vad.reset()
     // An engine with a connection to make makes it now, while the owner starts to speak (#463).
     deps.transcriber.listenOpened?.()
     emitState()
+    // A wake that brings no words closes after the same bound a Hot Listen does (#483).
+    startSilenceClock()
   }
 
   function stopListening(): void {
@@ -403,6 +429,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     stopSilenceClock()
     reason = null
     commandListenStart = null
+    listenOpenedAt = null
     endpointer.reset()
     deps.vad.reset()
     // Drop any in-flight utterance capture with the listen (#40); a finished

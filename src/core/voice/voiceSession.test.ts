@@ -1559,6 +1559,16 @@ describe('voice session — Hot Listen (#326)', () => {
     expect(harness.states.at(-1)).toEqual(closed)
   })
 
+  it('writes one listen-closed span when its silence closes it, heard: the listen submitted a line (#483)', async () => {
+    const { harness } = await hotListen(['scroll down'], { perf: { sttMs: 0 } })
+    await harness.speakUtterance()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT)
+    expect(harness.states.at(-1)).toEqual(closed)
+    const spans = harness.perf.filter((record) => record.stage === 'listen-closed')
+    expect(spans).toHaveLength(1)
+    expect(spans[0]!.detail).toEqual({ reason: 'wake', blips: 0, heard: true })
+  })
+
   it('the Abort Head still interrupts a run while TTS plays', async () => {
     const speaking = new FakeSpeaking()
     const runState = { value: 'running' as CommandRunState }
@@ -1569,5 +1579,135 @@ describe('voice session — Hot Listen (#326)', () => {
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
     expect(harness.aborts).toHaveLength(1)
     expect(harness.states.at(-1)).toEqual(closed)
+  })
+})
+
+describe('voice session — a wake that brings no words (#483)', () => {
+  async function monitorFrames(harness: SessionHarness, probs: number[]): Promise<void> {
+    for (const prob of probs) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+  }
+
+  /** A sound trips the wake word at t=0; the detector stays quiet after it. */
+  async function falseWake(script: string[], overrides?: Parameters<typeof createSession>[0]) {
+    const detector = new FakeWakeDetector({ wake: [0.9, 0], abort: [0] })
+    const harness = await createSession({ transcriber: new FakeTranscriber(script), wake: { detector }, perf: { sttMs: 0 }, ...overrides })
+    harness.session.enableWakeMonitoring()
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual(open)
+    return { harness, detector }
+  }
+
+  const open = { listening: true, reason: 'wake', monitoring: true, transcribing: false, hearing: false }
+  const closed = { listening: false, reason: null, monitoring: true, transcribing: false, hearing: false }
+  const listenClosed = (harness: SessionHarness) => harness.perf.filter((record) => record.stage === 'listen-closed')
+
+  it('closes after hotListenSilenceMs with nothing said, writes one listen-closed span heard: false, and the monitor hears again', async () => {
+    const { harness, detector } = await falseWake([], { hotListenSilenceMs: () => 5_000 })
+    harness.clock.advance(4_999)
+    expect(harness.states.at(-1)).toEqual(open)
+    const resets = detector.resets
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+    expect(detector.resets).toBe(resets + 1)
+    expect(harness.commands).toEqual([])
+    expect(harness.heard).toEqual([])
+    // No words: no wake-to-transcript; the close is its own record.
+    expect(harness.perf.filter((record) => record.stage === 'wake-to-transcript')).toEqual([])
+    expect(listenClosed(harness)).toHaveLength(1)
+    expect(listenClosed(harness)[0]).toMatchObject({ durMs: 5_000, detail: { reason: 'wake', blips: 0, heard: false } })
+    // A real wake after it opens the ear again (the detector's quiet score from the first wake is still queued).
+    detector.push('wake', 0.9, 0)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toMatchObject({ listening: true, reason: 'wake' })
+    expect(harness.chimes).toHaveLength(2)
+  })
+
+  it('a blip restarts the bound: it closes hotListenSilenceMs after the blip, never sooner', async () => {
+    const { harness } = await falseWake([''], { hotListenSilenceMs: () => 5_000 })
+    harness.clock.advance(3_000)
+    // The blip's empty transcript restarts the bound.
+    await harness.speakUtterance()
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(4_999)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+    expect(listenClosed(harness)).toHaveLength(1)
+    expect(listenClosed(harness)[0]).toMatchObject({ durMs: 8_000, detail: { reason: 'wake', blips: 1, heard: false } })
+  })
+
+  it('a blip the endpointer discards restarts the bound too', async () => {
+    const { harness } = await falseWake([], { hotListenSilenceMs: () => 5_000 })
+    harness.clock.advance(3_000)
+    // Four speech frames and silence: an utterance starts, but under minSpeechMs it is dropped before any transcript.
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)])
+    expect(harness.transcriber.audio).toHaveLength(0)
+    harness.clock.advance(4_999)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('speech under way holds the bound: a line that starts before it and ends after it is still heard', async () => {
+    const { harness } = await falseWake(['scroll down'], { hotListenSilenceMs: () => 5_000 })
+    harness.clock.advance(4_000)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH])
+    harness.clock.advance(2_000)
+    expect(harness.states.at(-1)).toEqual({ ...open, hearing: true })
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['scroll down'])
+    expect(harness.states.at(-1)).toEqual(open)
+  })
+
+  it('defaults to the Hot Listen’s 8 s', async () => {
+    const { harness } = await falseWake([])
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT - 1)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('a line playing holds the bound: it starts when the line ends', async () => {
+    const speaking = new FakeSpeaking()
+    const { harness } = await falseWake([], { speaking })
+    speaking.speaking = true
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT * 2)
+    expect(harness.states.at(-1)).toEqual(open)
+    speaking.finish()
+    await flush()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('a Task still under way holds the bound, and its end starts it (#328)', async () => {
+    let endTask: () => void = () => {}
+    const { harness, detector } = await falseWake(['pull up the latest tweet'], {
+      submitResult: () => new Promise<void>((resolve) => (endTask = resolve)),
+    })
+    await harness.speakUtterance()
+    // Escape closes the Hot Listen while the Task runs; a false wake opens a fresh listen.
+    expect(harness.session.closeHotListen()).toBe(true)
+    detector.push('wake', 0.9, 0)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT * 2)
+    expect(harness.states.at(-1)).toEqual(open)
+    endTask()
+    await flush()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('a hotkey listen with nothing said is unchanged: no bound closes it', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['']), perf: { sttMs: 0 } })
+    harness.session.arm()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT * 10)
+    await harness.speakUtterance()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT * 10)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'hotkey', monitoring: false, transcribing: false, hearing: false })
+    expect(harness.perf.filter((record) => record.stage === 'listen-closed')).toEqual([])
   })
 })

@@ -497,6 +497,18 @@
   "utterance-1793040108831-0072.wav": {
    "said": "play feeling good",
    "evidence": "kiosk 2026-10-26 16:49-18:41, ElevenLabs ear (#463); live heard 'Play feeling good.', Whisper medium.en 'Play feeling good.'; the retry chain and the ledger settle the words (post mortem memory cloud-ear-keyterms-starve-2026-10-26)"
+  },
+  "wake-1793096291832-0025.wav": {
+   "said": "",
+   "evidence": "kiosk 2026-10-27 10:18:11.85, the sound that tripped the wake word (mean -15.9 dB, clipping at 0 dB) with nobody speaking to the app (#483, ledger turn-mvqjb57k-vf); not the wake phrase, no words"
+  },
+  "utterance-1793096297045-0026.wav": {
+   "said": "",
+   "evidence": "kiosk 2026-10-27 10:18:12-17, 4.7 s of loud non-speech after that false wake (-20.7 dB); ElevenLabs live and Parakeet replay both empty; no words (#483, ledger turn-mvqjb57k-vf)"
+  },
+  "utterance-1793096299160-0027.wav": {
+   "said": "",
+   "evidence": "kiosk 2026-10-27 10:18:19, a quiet 0.7 s tick in the same false-wake listen (-34.5 dB); empty live; no words (#483, ledger turn-mvqjb57k-vf)"
   }
  },
  "unlabelled": {
