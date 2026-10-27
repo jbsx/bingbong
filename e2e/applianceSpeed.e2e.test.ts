@@ -22,12 +22,14 @@ import { waitFor } from './waitFor'
 // `pnpm perf:report` reads the logs this copies to BINGBONG_APPLIANCE_SPEED.
 // Opt-in:
 //
-//   pnpm build && BINGBONG_APPLIANCE_SPEED=/tmp/speed-S [BINGBONG_SPEED_REPEAT=3] [BINGBONG_APPLIANCE_CARD=off|BINGBONG_APPLIANCE_ASKS=parallel] \
+//   pnpm build && BINGBONG_APPLIANCE_SPEED=/tmp/speed-S [BINGBONG_SPEED_REPEAT=3] [BINGBONG_SPEED_MATCH=<regex>] [BINGBONG_APPLIANCE_CARD=off|BINGBONG_APPLIANCE_ASKS=parallel] \
 //     xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.e2e.config.ts e2e/applianceSpeed.e2e.test.ts
 
 const out = process.env.BINGBONG_APPLIANCE_SPEED
 const repeat = Number(process.env.BINGBONG_SPEED_REPEAT ?? 3)
 const only = process.env.BINGBONG_SPEED_ONLY
+/** A narrow run (#484): only the lines whose words this matches, case-blind — `scroll|press` for a page verb's change. */
+const match = process.env.BINGBONG_SPEED_MATCH
 const debug = process.env.BINGBONG_SPEED_DEBUG
 const repoRoot = process.cwd()
 const RATE = 16_000
@@ -70,7 +72,8 @@ function linesOf(): Line[] {
   const pages = JSON.parse(readFileSync(join(repoRoot, 'fixtures/stt-labels/dump-pages.json'), 'utf8')) as Record<string, { page: Page }>
   const dumps = readdirSync(join(repoRoot, 'fixtures/stt-dumps')).filter((name) => name.endsWith('.wav')).sort()
   const lines = dumps.flatMap((dump) => (heard[dump] !== undefined && heard[dump].heard.trim() !== '' && pages[dump] !== undefined ? [{ dump, heard: heard[dump].heard, page: pages[dump].page }] : []))
-  return only !== undefined ? lines.slice(0, Number(only)) : lines
+  const matched = match !== undefined ? lines.filter((line) => new RegExp(match, 'i').test(line.heard)) : lines
+  return only !== undefined ? matched.slice(0, Number(only)) : matched
 }
 
 /** The stand-in mic (in the dashboard): getUserMedia answers a stream each line is played into, at real time. */
