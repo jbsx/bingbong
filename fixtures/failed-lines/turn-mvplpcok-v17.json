@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvplpcok-v17",
+  "transcript": "Move on.",
+  "at": 1793039972997,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear, Mammoth, 2026-10-26 18:39, on the watch page of Iraada - Niyam (paused 2:45/4:18): in a run of conversation the ear took as lines ('Hey.', 'Something interesting.', then 'Hey.', 'That is one thing.', all read none), 'Move on.' was read as the Player's skip 0.77 and fired; the app logged it as a misfire (overrun: the next line came 533 ms after it)",
+  "meant": "Nothing: the words were talk, not a command (a guess from the lines around it and the app's own overrun signal); the paused song stays",
+  "log": "decision-1793033383382-1.jsonl"
+}
