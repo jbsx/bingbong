@@ -6,5 +6,6 @@
   "stage": "turn",
   "happened": "overlap:gate 14-remark-during-task at p3 (loading 72%) on baseten-mammoth-27b-latest at 919f058f: another voice said `Oh, I think I left the kettle on.` while `Find the Wikipedia page for Radiohead.` was loading: the Task ended cancelled and the remark showed dropped; nothing reached Wikipedia (both models at 72%; green at 7% and 34%)",
   "meant": "The remark is let pass and the Task goes on to done on Wikipedia",
-  "log": "decision-1793138372996-1.jsonl"
+  "log": "decision-1793138372996-1.jsonl",
+  "claimedBy": "#489"
 }

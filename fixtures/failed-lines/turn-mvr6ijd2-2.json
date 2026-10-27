@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "overlap:gate 2-correct-by-radiohead at p1 (media-not-started 7%) on baseten-mammoth-27b-latest at 919f058f: `no, by radiohead` given while `play let down` was opening: it played Radiohead - No Surprises, not Let Down",
   "meant": "One song plays, Let Down by Radiohead",
-  "log": "decision-1793135391879-1.jsonl"
+  "log": "decision-1793135391879-1.jsonl",
+  "claimedBy": "#489"
 }

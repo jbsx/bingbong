@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "overlap:gate 4-skip-ahead-while-loading at p3 (media-not-started 87%) on baseten-mammoth-27b-latest at 919f058f: `skip ahead a minute` given while `play let down by radiohead` was opening never showed as a Command; Let Down played from 2 s (Elephant: nothing playing at all 3 points)",
   "meant": "Let Down plays, a minute or more in",
-  "log": "decision-1793136050737-1.jsonl"
+  "log": "decision-1793136050737-1.jsonl",
+  "claimedBy": "#489"
 }

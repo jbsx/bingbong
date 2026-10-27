@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "overlap:gate 6-stop-during-task at p1 (loading 6%) on baseten-mammoth-27b-latest at 919f058f: `stop` given while `find the wikipedia page for radiohead` was loading: nothing was said (all 3 points, both models)",
   "meant": "The Task ends and the app says it stopped",
-  "log": "decision-1793136821083-1.jsonl"
+  "log": "decision-1793136821083-1.jsonl",
+  "claimedBy": "#489"
 }

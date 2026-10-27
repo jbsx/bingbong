@@ -6,5 +6,6 @@
   "stage": "runner",
   "happened": "overlap:gate 7-what-are-you-doing at p1 (media-not-started 25%) on baseten-mammoth-27b-latest at 919f058f: `what are you doing` given while `play let down by radiohead` was opening: nothing was said and Let Down sat paused at 0 s (all 3 points, both models)",
   "meant": "It says it is opening Let Down, and Let Down goes on to play",
-  "log": "decision-1793136985729-1.jsonl"
+  "log": "decision-1793136985729-1.jsonl",
+  "claimedBy": "#489"
 }
