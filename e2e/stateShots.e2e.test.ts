@@ -556,9 +556,21 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
     await shown('.idle-screen')
   }
+  // A tap on the Turn Card (#474) closes it and keeps the Idle Screen up, and the card covers the date while the walk's
+  // last line is reported: as a person would, tap it away first (its trailing events may raise it again), then the date.
   const wake = async (): Promise<void> => {
-    await harness.clickDashboardElement('.idle-date')
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    await waitFor(
+      async () => {
+        const face = await harness.dashboardEval<string>(`!document.querySelector('.idle-screen') ? 'awake' : document.querySelector('.turn-card') ? 'card' : 'idle'`)
+        if (face === 'awake') return true
+        await harness.clickDashboardElement(face === 'card' ? '.turn-card' : '.idle-date').catch(() => {})
+        return undefined
+      },
+      { timeoutMs: 10_000, intervalMs: 500 },
+    ).catch(async (error: unknown) => {
+      await shoot(run, 'no-wake')
+      throw error
+    })
   }
 
   await command(run, 'timer off')
