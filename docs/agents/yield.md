@@ -43,7 +43,7 @@ state has a distance from ideal:
 | state | meaning | distance |
 |---|---|---|
 | `works` | ends done, right, within the reaction | 0 |
-| `slow` | right, but over the reaction or more hops than needed | 1 |
+| `slow` | right, but over its Tier's Felt Reaction promise (reliability.md) or more hops than needed | 1 |
 | `partly` | right some of the time, or on some pages of the kind, not others | 2 |
 | `breaks` | ends wrong, unsure, silent or at the cap | 3 |
 | `missing` | no road exists | 4 |

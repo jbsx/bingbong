@@ -195,6 +195,38 @@ the completion summary names the principles it met and any it bends
 with the reason. Thresholds in them are measured (`pnpm perf:report`,
 the kiosk logs), never guessed; a guessed one is marked so in the code.
 
+### Reliability
+
+The app feels reliable when the wait matches the words and nothing needs
+saying twice. Every Command holds a Tier, set by its scenario: **Instant**
+(control what is playing, scroll, back, stop), **Quick** (open, search,
+play), **Task** (a question, an Errand). Each Tier promises a Felt
+Reaction, from the last speech frame to the first effect:
+
+- **Instant**: p50 ≤ 700 ms, p95 ≤ 1.2 s.
+- **Quick**: p50 ≤ 2 s, p95 ≤ 4 s.
+- **Task**: Receipt at once, a narrated wait, done p50 ≤ 15 s.
+
+Five rules hold the promises:
+
+- An exact line fires on its words: before the page collect and before
+  any ask, and on a partial once the partial is the exact line.
+- An Instant line Jev reads is asked on the smallest card that carries
+  its ref; the gate says how small.
+- An Instant line fires when every host fails, on the Local Match's best
+  guess.
+- A Misfire is recovered by the next Command, and that recovery is
+  Instant.
+- Every line is answered: a reading of `none` is shown and said.
+
+The headline is Commands between Frustrations; a Frustration is a
+Command that ended not done, unavailable or unsure, a Misfire, a line
+said again or reworded within 15 s, or a command read as `none`. The
+Tier table, the budget behind each promise, today's numbers and how
+each is measured are in `docs/agents/reliability.md`. A change that adds
+a stage to a Command's path names its Tier and its Felt Reaction before
+and after in the completion summary.
+
 ### Triage labels
 
 Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.

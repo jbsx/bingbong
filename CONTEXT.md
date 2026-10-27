@@ -36,12 +36,19 @@ price of a spoken session.
 _Avoid_: conversation mode, follow-up window, always-on listening
 
 **Reaction**:
-The one clock the user feels: the time from an Utterance's Endpoint to the
+The app's clock: the time from an Utterance's Endpoint to the
 first change in the browser pane that the command caused, or to the first
-spoken word when the command's output is speech. The measure of "instant";
-wake-to-chime is a separate clock. Judged by its distribution, never by one
-turn.
+spoken word when the command's output is speech. The user also waits
+through the pause that made the Endpoint; the two together are the Felt
+Reaction. Wake-to-chime is a separate clock. Judged by its distribution,
+never by one turn.
 _Avoid_: latency, response time, end-to-end time, speed
+
+**Felt Reaction**:
+The Reaction plus the wait that made its Endpoint: from the last speech
+frame to the first effect. The clock the Tiers promise on
+(`docs/agents/reliability.md`).
+_Avoid_: end-to-end latency, perceived latency
 
 **Utterance**:
 A single span of user speech from speech-start to Endpoint, submitted as one
