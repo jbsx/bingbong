@@ -1,5 +1,5 @@
 import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
-import { fileFieldClause, foundByClause, type MediaFacts, type PageLink, type PageMedia, type RegionFacts } from '../browser/snapshot'
+import { fileFieldClause, type MediaFacts, type PageLink, type PageMedia, type RegionFacts } from '../browser/snapshot'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import { isRealPage } from '../browser/lastPage'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, showOpAction, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
@@ -226,9 +226,7 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const words = ref.searchBox !== undefined && ref.searchBox.holds !== '' ? ` holds ${JSON.stringify(ref.searchBox.holds)}` : ''
   // A file field's accept and multiple ride its line (#424): facts of the field, as a media ref's state is (ADR 0080).
   const file = ref.fileField !== undefined ? fileFieldClause(ref.fileField) : ''
-  // How a dialog-layer control the markup does not mark was found (#476): focusable prose is told from the button carrying its words.
-  const found = ref.foundBy !== undefined ? ` ${foundByClause(ref.foundBy)}` : ''
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${file}${states}${found}${holds}${media}${switches}${region}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${file}${states}${holds}${media}${switches}${region}`
 }
 
 /**

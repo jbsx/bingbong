@@ -1,4 +1,4 @@
-import { consentAcceptOf, consentRejectOf, isConsentDialog, isWayThrough, type ConsentControl } from '../browser/dialogPolicy'
+import { consentAcceptOf, consentRejectOf, isConsentDialog, isWayThrough } from '../browser/dialogPolicy'
 import type { DialogText } from '../browser/pageText'
 import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type CommandRef } from './command'
 
@@ -101,11 +101,9 @@ function ruledConsent(page: CommandPage): { command: Command; style: 'reject' | 
   const clickable = clickableControls(page)
   const labels = clickable.map((control) => control.label)
   if (!isConsentDialog(page.dialog.text, labels)) return null
-  // Each control as the rule reads it (#476): a marked one before focusable prose carrying the same words.
-  const consent: ConsentControl[] = clickable.map((control) => (control.foundBy === undefined ? control.label : { label: control.label, foundBy: control.foundBy }))
-  const reject = consentRejectOf(consent)
+  const reject = consentRejectOf(labels)
   if (reject !== null) return { command: click(clickable[reject]!), style: 'reject' }
-  const accept = consentAcceptOf(consent)
+  const accept = consentAcceptOf(labels)
   return accept === null ? null : { command: click(clickable[accept]!), style: 'accept' }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chooseConsentDismissal, CONSENT_LABEL_RE, consentAcceptOf, consentLabelOf, consentRejectOf, isConsentDialog } from './dialogPolicy'
+import { chooseConsentDismissal, CONSENT_LABEL_RE, isConsentDialog } from './dialogPolicy'
 
 // Tier 1 classification (issue #18): a dialog is deterministically
 // "trivial" (auto-dismissable) when one of its controls carries a consent
@@ -57,21 +57,6 @@ describe('chooseConsentDismissal', () => {
     expect(chooseConsentDismissal(['Accept optional cookies', 'Reject optional cookies'])).toBe(1)
     expect(chooseConsentDismissal(['Accept optional cookies', 'Continue without optional cookies'])).toBe(1)
     expect(chooseConsentDismissal(['Accept optional cookies'])).toBe(0)
-  })
-
-  it("takes a marked control before focusable prose carrying the same words (#476): Sourcepoint's <p tabindex=\"0\"> comes first in the frame, the <button> clears the wall", () => {
-    const wall = [{ label: 'Personalised advertising', foundBy: 'tabindex' as const }, { label: 'Accept personalised advertising and all cookies', foundBy: 'tabindex' as const }, 'Accept all', 'Reject all and subscribe']
-    expect(consentAcceptOf(wall)).toBe(2)
-    expect(consentRejectOf(wall)).toBeNull()
-    expect(chooseConsentDismissal(wall)).toBe(2)
-    expect(consentRejectOf([{ label: 'Reject all cookies', foundBy: 'listener' }, 'Accept all', 'Reject all'])).toBe(2)
-  })
-
-  it('falls back to an unmarked control when no marked one carries the words (#476): a dialog whose one way out is a <span tabindex="0"> keeps it', () => {
-    expect(consentAcceptOf([{ label: 'Accept all', foundBy: 'tabindex' }, 'Manage options'])).toBe(0)
-    expect(consentRejectOf(['Accept all', { label: 'Reject all', foundBy: 'listener' }])).toBe(1)
-    expect(consentLabelOf({ label: 'Reject all', foundBy: 'listener' })).toBe('Reject all')
-    expect(consentLabelOf('Accept all')).toBe('Accept all')
   })
 
   it('never takes a control that merely names optional cookies — a manage link or a toggle — for a refusal', () => {

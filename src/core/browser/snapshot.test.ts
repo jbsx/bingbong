@@ -11,7 +11,6 @@ import {
   clickPoint,
   formatPageRead,
   formatPageSnapshot,
-  formatRefLine,
   linkHrefsOf,
   pageReadPartCount,
   pageSignature,
@@ -224,19 +223,6 @@ describe('parseCollectedPage', () => {
     expect(commandPageOf(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, fullScreen: false }))).fullScreen).toBe(false)
     expect(commandPageOf(buildPageSnapshot(parseCollectedPage(youtubeFixture))).fullScreen).toBeUndefined()
     expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, fullScreen: 'yes' })).fullScreen).toBeUndefined()
-  })
-
-  it("carries how a dialog-layer control the markup does not mark was found (#476) to the ref and its line, and nothing for a marked control or a value it does not know", () => {
-    const prose = { ...element({ tag: 'p', role: 'button', label: 'Accept personalised advertising and all cookies', layer: 'dialog' }), foundBy: 'tabindex' }
-    const close = { ...element({ tag: 'p', role: 'button', label: 'Continue without supporting us', layer: 'dialog' }), foundBy: 'listener' }
-    const button = element({ label: 'Accept all', layer: 'dialog' })
-    const odd = { ...element({ label: 'Odd' }), foundBy: 'cursor' }
-    const snapshot = buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, dialogOpen: true, dialogText: 'Personalised advertising', elements: [prose, close, button, odd] }))
-    expect(snapshot.refs.map((ref) => ref.foundBy)).toEqual(['tabindex', 'listener', undefined, undefined])
-    expect(formatRefLine(snapshot.refs[0]!)).toBe('[1] button "Accept personalised advertising and all cookies" focusable, not marked as a control (dialog)')
-    expect(formatRefLine(snapshot.refs[1]!)).toBe('[2] button "Continue without supporting us" has a click listener, not marked as a control (dialog)')
-    expect(formatRefLine(snapshot.refs[2]!)).toBe('[3] button "Accept all" (dialog)')
-    expect(commandPageOf(snapshot).refs.map((ref) => ref.foundBy)).toEqual(['tabindex', 'listener', undefined, undefined])
   })
 
   it('rejects payloads that are not objects', () => {

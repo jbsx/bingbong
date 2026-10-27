@@ -257,27 +257,13 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
       frames: { list: () => [{ key: 'f', parentKey: null, evaluate: (expression) => fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.eval(${JSON.stringify(expression)})`) }] },
     }) as ReturnType<typeof createCdpBrowserController> & { collectPage(): Promise<PageSnapshot> }
 
-  it('carries how a dialog-layer ref was found when the markup does not mark it (#476): a tabindex, or a click listener of its own, on the line; a <button> carries nothing', async () => {
-    await fixtures.open('/adblock')
-    const snapshot = buildPageSnapshot(await collected({ commandLineApi: true }))
-    expect(snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => [ref.label, ref.foundBy])).toEqual([
-      ['Close', 'tabindex'],
-      ['Disable', undefined],
-      ['Continue without supporting us', 'listener'],
-      ['Inside a button', undefined],
-    ])
-    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Close')!)).toContain('focusable, not marked as a control')
-    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Continue without supporting us')!)).toContain('has a click listener, not marked as a control')
-    expect(formatRefLine(snapshot.refs.find((ref) => ref.label === 'Disable')!)).not.toContain('not marked as a control')
-  })
-
-  it("leaves a framed wall's focusable prose off the refs (#476) and offers it as the dialog's text pieces, by its frame; the <button>s stay, with nothing on their lines", async () => {
+  it("leaves a framed wall's focusable prose off the refs (#476) and offers it as the dialog's text pieces, by its frame; the <button>s stay", async () => {
     await fixtures.open('/sp-prose')
     const merged = mergeFrames(await collected(), [await inFrame()])
     const refs = buildPageSnapshot(merged.page).refs.filter((ref) => ref.layer === 'dialog')
-    expect(refs.map((ref) => [ref.kind, ref.label, ref.foundBy])).toEqual([
-      ['button', 'Accept all', undefined],
-      ['button', 'Reject all and subscribe', undefined],
+    expect(refs.map((ref) => [ref.kind, ref.label])).toEqual([
+      ['button', 'Accept all'],
+      ['button', 'Reject all and subscribe'],
     ])
     expect(formatRefLine(refs[0]!)).toMatch(/^\[\d+\] button "Accept all" in 127\.0\.0\.1 \(dialog\)$/)
     // The frame's own text pieces, as the controller asks them once the merge puts the frame in the dialog (the test above): the prose is among them.
@@ -285,7 +271,7 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     expect(pieces).toEqual(['Personalised advertising', 'Accept personalised advertising and all cookies', 'We use cookies and similar technologies to support this site.'])
   })
 
-  it("Tier-1's consent dismissal clicks the wall's <button> ahead of the focusable prose carrying the same words (#476), and the dialog reads closed", async () => {
+  it("Tier-1's consent dismissal clicks the wall's <button>, the focusable prose carrying the same words no longer a ref (#476), and the dialog reads closed", async () => {
     await fixtures.open('/sp-prose')
     const controller = framedController('/sp-prose')
     const text = await controller.readPage()
