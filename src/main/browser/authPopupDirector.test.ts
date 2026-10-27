@@ -36,6 +36,9 @@ function fakeController(name: string): DrivenController & { calls: string[]; scr
     describeRef: record('describeRef', undefined),
     groundingSnapshot: record('groundingSnapshot', { refs: [], url: `https://${name}.example/` }),
     refAtPoint: record('refAtPoint', 1),
+    applianceMedia: record('applianceMedia', { title: `song of ${name}`, facts: {} }),
+    applianceMediaOp: record('applianceMediaOp', `pause [0]: paused`),
+    snapshotInHand: () => ({ url: `https://${name}.example/`, title: name, refs: [] }),
   } as unknown as DrivenController & { calls: string[]; screenshotOptions: unknown[] }
 }
 
@@ -105,6 +108,15 @@ describe('createAuthPopupDirector', () => {
     expect(await routed.click(1)).toBe('clicked by pane')
     expect(routed.state()).toEqual({ url: 'https://pane.example/', title: 'pane' })
     expect(popup.calls).toEqual([])
+  })
+
+  it("keeps the Appliance Card's media on the pane, and reads the page in hand off the page being read (#485)", async () => {
+    const { pane, director, openPopup } = harness()
+    const routed = director.route(pane)
+    await openPopup('https://accounts.google.com/signin')
+    expect(await routed.applianceMedia!()).toEqual({ title: 'song of pane', facts: {} })
+    expect(await routed.applianceMediaOp!({ op: 'pause' })).toBe('pause [0]: paused')
+    expect(routed.snapshotInHand!()?.url).toBe('https://popup.example/')
   })
 
   it('routes page actions to the popup while one is open, marking readPage', async () => {
