@@ -6,6 +6,5 @@
   "stage": "reading",
   "happened": "Kiosk, YouTube watch page: 'Or failure.' (the Flag, retried) read none by Jev on the page card, Where Ask none; nothing flagged",
   "meant": "Flag the last Task as a failure",
-  "log": "decision-1793033383382-1.jsonl",
-  "claimedBy": "#485"
+  "log": "decision-1793033383382-1.jsonl"
 }
