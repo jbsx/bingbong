@@ -1,50 +1,28 @@
-import type { FeedEntry } from '../../core/feed/feedProjection'
-import type { RunProgress } from '../../core/pipeline/runProgress'
-import { lingerDelayMs, PEEK_CARD_LINGER_MS, peekCardAnswer, type PeekCardState } from '../../core/panel/peekCardState'
-import { FeedMarkdown } from './FeedMarkdown'
-import { ChevronIcon } from './WeatherIcon'
+import type { TurnCardState } from '../../core/idle/turnCard'
+import { TurnHistory, TurnRail, TurnStageRow, TurnWordsRow, turnFace, useTurnClock } from './TurnCard'
 
-// The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
-// report of the live Run and its Answer, for 15 s past its sentence
-// (#470), while the Feed Panel is Collapsed — voice shows it, only a
-// human act opens the panel, and clicking it is that act. Over the Idle
-// Screen the Turn Card (#474) reports the line instead. It renders from the panel's overlay view
-// (ADR 0029) — the one surface that floats above the native pane —
-// translucent over the page, bottom-center, replacing the collapsed edge
-// tab; it is not a state of the panel.
+// The Peek Card (ADR 0021, 0026, 0029; glossary), in its Ledger Strip form
+// (#475): the system-pushed report of a spoken or typed line's whole
+// journey while the Feed Panel is Collapsed — a band the pane's width at
+// its bottom, from the wake to 15 s past the Answer's sentence (#470),
+// drawn from the Turn Card's own fold and pieces (#474): the rail, the
+// stage row, the words row and five history rows, in another frame. Voice
+// shows it, only a human act opens the panel, and clicking it is that act.
+// It renders from the panel's overlay view (ADR 0029) — the one surface
+// that floats above the native pane — replacing the collapsed edge tab;
+// it is not a state of the panel. Its geometry is fixed (#474's rule):
+// nothing on it moves between states.
 
-function liveStep(progress: RunProgress | null): string {
-  return progress ? progress.stage : 'working'
-}
+/** The band's history rows (#475): five, where the Turn Card holds six. */
+const BAND_HISTORY_ROWS = 5
 
-/**
- * The bar along the card's foot draining across the Answer's 15 s (#470):
- * full and still while its sentence sounds, then running out with the
- * time. It is drawn from the deadline, so a card shown late starts part
- * drained; nothing pauses it.
- */
-function LingerBar({ retiresAt }: { retiresAt: number | null }) {
-  const style = retiresAt === null ? undefined : { animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${lingerDelayMs(retiresAt, Date.now())}ms` }
-  return <span key={retiresAt ?? 'held'} className={retiresAt === null ? 'peek-linger peek-linger--held' : 'peek-linger'} style={style} aria-hidden="true" />
-}
-
-export function PeekCard({
-  state,
-  entries,
-  progress,
-  onOpen,
-}: {
-  state: PeekCardState
-  entries: FeedEntry[]
-  progress: RunProgress | null
-  onOpen(): void
-}) {
-  // Only the reported Command's own Answer (#329); a failure's mark takes the failure colour.
-  const answer = state.phase === 'answer' ? peekCardAnswer(entries, state.runId) : null
-
+export function PeekCard({ state, onOpen }: { state: TurnCardState; onOpen(): void }) {
+  const now = useTurnClock()
+  const face = turnFace(state)
   return (
     <div
-      className={`peek-card peek-card--${state.phase}${answer?.failure ? ' peek-card--failed' : ''}${answer?.muted ? ' peek-card--muted' : ''}`}
+      className={`peek-card peek-card--band turn-card--tone-${face.tone}`}
+      data-state={face.name}
       role="button"
       tabIndex={0}
       aria-label="Open the activity feed"
@@ -56,35 +34,17 @@ export function PeekCard({
         }
       }}
     >
-      <span className="peek-orb" aria-hidden="true" />
-      {state.phase === 'live' ? (
-        <div className="peek-body">
-          <p className="peek-command">{state.commandText}</p>
-          <p className="peek-step" role="status">
-            {liveStep(progress)}
-          </p>
+      <TurnRail station={face.station} />
+      <div className="peek-columns">
+        <div className="peek-left">
+          <TurnStageRow state={state} face={face} now={now} />
+          <TurnWordsRow state={state} />
+          <span className="peek-open-hint" aria-hidden="true">
+            open the feed ›
+          </span>
         </div>
-      ) : answer ? (
-        <div className="peek-body">
-          {answer.kind === 'display' ? (
-            <div className="peek-text feed-text--markdown">
-              <FeedMarkdown text={answer.text} />
-            </div>
-          ) : answer.kind === 'spoken' ? (
-            <p className="peek-text peek-text--spoken">{answer.text}</p>
-          ) : (
-            <p className="peek-text peek-text--error">{answer.text}</p>
-          )}
-        </div>
-      ) : (
-        <div className="peek-body">
-          <p className="peek-text">Done.</p>
-        </div>
-      )}
-      <span className="peek-open-hint" aria-hidden="true">
-        open <ChevronIcon size={14} />
-      </span>
-      {state.phase === 'answer' ? <LingerBar retiresAt={state.retiresAt} /> : null}
+        <TurnHistory state={state} rows={BAND_HISTORY_ROWS} />
+      </div>
     </div>
   )
 }

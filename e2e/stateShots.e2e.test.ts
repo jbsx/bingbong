@@ -134,7 +134,8 @@ const CHECK_SCRIPT = `(() => {
     const clipsY = style.overflowY === 'hidden' || style.overflowY === 'clip'
     // The live words and the kept result in the capsule (#331, #436), a stage's long detail and then its words beside its seconds (#428, #462), the words an ear's wait is on beside its seconds (#442), a long address after its host (#453), and a Turn Card history row's text (#474), ellipsize by design: the clips allowed.
     if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .run-hint-stage, .ear-wait-object, .url-display, .turn-step-text')) issues.push('clipped across: ' + name(el))
-    if (!field && clipsY && el.scrollHeight > el.clientHeight + 1) issues.push('clipped down: ' + name(el))
+    // The Ledger Strip's words row (#475) holds two lines and cuts a longer Answer there: the Feed holds the rest.
+    if (!field && clipsY && el.scrollHeight > el.clientHeight + 1 && !el.matches('.peek-card--band .turn-words')) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
     if (!field && !style.writingMode.startsWith('vertical') && box.width < 80 && box.height > parseFloat(style.fontSize) * 6) issues.push('squeezed: ' + name(el))
@@ -308,9 +309,12 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
   onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.label}-${state}.png`)}'`)
   const found: string[] = []
   const tinted: string[] = []
+  // While the Idle Screen is up the panel's view is hidden (its slot unmounted): what the overlay page lays out then, in
+  // the last bounds it had, is seen by no one and is not read.
+  const idleUp = await run.harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`).catch(() => false)
   const surfaces: [string, (expression: string) => Promise<string[]>][] = [
     ['dashboard', (expression) => run.harness.dashboardEval<string[]>(expression)],
-    ['panel', (expression) => run.harness.overlayEval<string[]>(expression)],
+    ...(idleUp ? [] : [['panel', (expression: string) => run.harness.overlayEval<string[]>(expression)] as [string, (expression: string) => Promise<string[]>]]),
   ]
   // A surface that cannot be read is a failure too: the guard never passes on what it did not check.
   const read = async (surface: string, evaluate: (expression: string) => Promise<string[]>): Promise<void> => {
@@ -362,6 +366,11 @@ async function expectNextLine(run: Run, state: string): Promise<void> {
 }
 
 /** The round-6 list (`current/log.txt`): the Commands in order, a shot after each state. */
+/** The Ledger Strip's face (#475): its `data-state`, '' while no band shows. */
+function bandFace(harness: Harness): Promise<string> {
+  return harness.overlayEval<string>(`document.querySelector('.peek-card--band')?.dataset.state ?? ''`)
+}
+
 async function walkTheShell(run: Run): Promise<void> {
   const { harness, fixture } = run
   await shoot(run, '06-awake')
@@ -403,15 +412,42 @@ async function walkTheShell(run: Run): Promise<void> {
   await expectNextLine(run, '12-unknown-command')
   await command(run, 'back')
   await shoot(run, '13-back')
+  // The Peek Card in its Ledger Strip form (#475): a Command run with the panel collapsed ends on the band's Done face — the end in words, the journey's rows beside it.
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   await sleep(900)
-  await shoot(run, '14-collapsed-peek')
-  // A typed line still acting with the panel collapsed and the ear monitoring (#480): the run hint has the Capsule's
-  // room and the rest hint is not drawn beside it; the floor's run-hint checks hold its host whole while it fits.
-  await held(run, '14b-collapsed-peek-opening', async () => {
-    expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .voice-hint')`), `${run.theme} 14b-collapsed-peek-opening: no rest hint beside the run`).toBe(false)
-    expect.soft(await harness.dashboardEval<string>(`document.querySelector('.status-capsule .run-hint')?.textContent ?? ''`), `${run.theme} 14b-collapsed-peek-opening: the host, its stage and its seconds`).toMatch(/^127\.0\.0\.1 · (still acting · )?\d+s$/)
+  await harness.dashboardEval(`void window.bingbong.assistant.submit(${JSON.stringify(`navigate ${fixture.url('/story')}`)})`)
+  await waitFor(async () => ((await bandFace(harness)) === 'done' ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 }).catch(async (error: unknown) => {
+    await shoot(run, 'no-peek-done')
+    throw error
   })
+  await shoot(run, '14-collapsed-peek')
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage-word')?.textContent ?? ''`), `${run.theme} 14-collapsed-peek: the end in words`).toBe('Done')
+  expect.soft(await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--band .turn-step:not(.turn-step--blank) .turn-step-label')].map((el) => el.textContent)`), `${run.theme} 14-collapsed-peek: the journey's rows`).toEqual(expect.arrayContaining(['Read as', 'Opening', 'Done']))
+  // A typed line whose page is held, on the band (#475): the response holds the navigate itself, so Opening is the wait
+  // that shows — the action's word, its host, its seconds — and Loading passes in a blink before the end; every face's
+  // geometry is read as it passes. The line is fired, not waited out: `submit` settles at the Command's end.
+  await harness.overlayEval(BAND_GEOMETRY)
+  await harness.dashboardEval(`void window.bingbong.assistant.submit(${JSON.stringify(`navigate ${fixture.url('/held-response')}`)})`)
+  await waitFor(async () => ((await bandFace(harness)) === 'acting' ? true : undefined), { timeoutMs: 20_000, intervalMs: 50 }).catch(async (error: unknown) => {
+    await shoot(run, 'no-peek-opening')
+    throw error
+  })
+  // Past the stage's stuck bound (#442), as 16-loading is shot.
+  await sleep(3_000)
+  // The Capsule beside it (#480): the run hint has the Capsule's room and the rest hint is not drawn beside it; the
+  // floor's run-hint checks hold its host whole while it fits. Read before the shot, as the band's words are.
+  expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .voice-hint')`), `${run.theme} 14b-collapsed-peek-opening: no rest hint beside the run`).toBe(false)
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.status-capsule .run-hint')?.textContent ?? ''`), `${run.theme} 14b-collapsed-peek-opening: the host, its stage and its seconds`).toMatch(/^127\.0\.0\.1 · (still acting · )?\d+s$/)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 14b-collapsed-peek-opening: the action's word, its wait and its seconds`).toMatch(/^Opening…still acting · [1-9]s$/)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 14b-collapsed-peek-opening: the host`).toBe('127.0.0.1')
+  await shoot(run, '14b-collapsed-peek-opening', false)
+  await waitFor(async () => ((await bandFace(harness)) === 'done' ? true : undefined), { timeoutMs: 40_000, intervalMs: 50 }).catch(async (error: unknown) => {
+    await shoot(run, 'no-peek-held-done')
+    throw error
+  })
+  const bandFaces = await harness.overlayEval<Record<string, unknown>>(`window.__faces`)
+  expect.soft(Object.keys(bandFaces), `${run.theme}: the faces the band passed through on the held page`).toEqual(expect.arrayContaining(['thinking', 'acting', 'loading', 'done']))
+  for (const key of Object.keys(bandFaces)) expect.soft(bandFaces[key], `${run.theme}: the band's geometry at ${key} against done`).toEqual(bandFaces['done'])
   await harness.ensurePanelOpen()
   await clickPanel(run, '[aria-label="Dock the feed panel"]')
   await sleep(1200)
@@ -602,8 +638,6 @@ async function held(run: Run, state: string, during: () => Promise<void>): Promi
   // Read before the shot: the floor's reads take seconds, and the held page lets go at 12 s.
   await during()
   await shoot(run, state, false)
-  // The live Peek Card's typed line ellipsizes; #475's Ledger Strip replaces it. Carved out of these shots alone, by that issue.
-  run.issues.set(state, (run.issues.get(state) ?? []).filter((issue) => !issue.startsWith('panel: clipped across: .peek-command ')))
   await harness.dashboardEval(`window.bingbong.assistant.abort()`)
   await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.status-capsule .run-hint')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 }).catch(() => {})
   await sleep(800)
@@ -760,6 +794,107 @@ async function walkTheTurnCard(run: Run): Promise<void> {
   for (const [state, read] of seen) expect.soft(read, `${run.theme} the Turn Card at ${state} sits where it sat at listening`).toEqual(reference)
 }
 
+
+/** What a band's face stands on (#475): the rail's cells, the stage word's left edge, the mark's right edge, the words row, the hint and the history's rows, rounded to the pixel. */
+const BAND_GEOMETRY = `(() => {
+  window.__faces = {}
+  window.__band = { heardAt: null, heardShownAt: null, wakeAt: null, wakeShownAt: null }
+  window.bingbong.voice.onHeard(() => { if (window.__band.heardAt === null) window.__band.heardAt = Date.now() })
+  window.bingbong.voice.onState((state) => { if (state.listening && window.__band.wakeAt === null) window.__band.wakeAt = Date.now() })
+  const rect = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)] }
+  const grab = () => {
+    const card = document.querySelector('.peek-card--band')
+    if (card === null) return
+    if (window.__band.wakeShownAt === null) window.__band.wakeShownAt = Date.now()
+    if (window.__band.heardShownAt === null && [...card.querySelectorAll('.turn-step-label')].some((el) => el.textContent === 'Heard')) window.__band.heardShownAt = Date.now()
+    // The last render of each face wins: the band's first paints come while the native view still has the edge tab's bounds.
+    const face = card.dataset.state
+    if (face === undefined) return
+    window.__faces[face] = {
+      card: rect(card),
+      cells: [...card.querySelectorAll('.turn-rail-cell')].map(rect),
+      wordLeft: rect(card.querySelector('.turn-stage-word'))[0],
+      markRight: rect(card.querySelector('.turn-stage-mark'))[2],
+      words: rect(card.querySelector('.turn-words')),
+      rows: [...card.querySelectorAll('.turn-step')].map(rect),
+      hint: rect(card.querySelector('.peek-open-hint')),
+    }
+  }
+  new MutationObserver(grab).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true })
+  grab()
+})()`
+
+/**
+ * The Ledger Strip (#475): a spoken line over the dashboard with the panel collapsed — the wake, the partial, the
+ * Endpoint and the read, then the Command's stages and its end. Each face is shot where it holds still, and every
+ * face's geometry is read as it passes: nothing on the band moves between states. The typed line whose page is
+ * held (Opening, Loading) is in the shell walk.
+ */
+async function walkTheLedger(run: Run): Promise<void> {
+  const { harness, fixture } = run
+  const untilFace = async (want: string, state: string, timeoutMs = 30_000): Promise<void> => {
+    await waitFor(async () => ((await bandFace(harness)) === want ? true : undefined), { timeoutMs, intervalMs: 50 }).catch(async (error: unknown) => {
+      await shoot(run, `no-${state}`)
+      throw error
+    })
+  }
+
+  await command(run, `navigate ${fixture.url('/story')}`)
+  await clickPanel(run, '[aria-label="Collapse the feed panel"]')
+  await sleep(600)
+  await harness.overlayEval(BAND_GEOMETRY)
+  // The ear still loading once the page is in (BINGBONG_VAD_LOAD_MS), so the mic's frames play the script only now.
+  expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.voice-hint--starting')`), `${run.theme}: the ear still loading once the page is in`).toBe(true)
+  await untilFace('listening', 'ledger-listening', 40_000)
+  await waitFor(async () => ((await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`)).includes(LEDGER_PARTIAL) ? true : undefined), { timeoutMs: 20_000, intervalMs: 50 }).catch(async (error: unknown) => {
+    await shoot(run, 'no-ledger-partial')
+    throw error
+  })
+  await shoot(run, '42-ledger-listening', false)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage-word')?.textContent ?? ''`), `${run.theme} 42-ledger-listening: the Capsule's word`).toBe('Listening…')
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 42-ledger-listening: the live partial, whole`).toBe(`“${LEDGER_PARTIAL}…”`)
+  await untilFace('transcribing', 'ledger-transcribing')
+  await sleep(1_200)
+  await shoot(run, '43-ledger-transcribing', false)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the word and its seconds`).toMatch(/^Transcribing…[1-9]s$/)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the last words`).toBe(`“${LEDGER_PARTIAL}”`)
+  await untilFace('done', 'ledger-done')
+  await shoot(run, '44-ledger-done')
+  const rows = await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--band .turn-step:not(.turn-step--blank)')].map((row) => row.querySelector('.turn-step-label').textContent + ': ' + row.querySelector('.turn-step-text').textContent)`)
+  expect.soft(rows.some((row) => row.startsWith('Reading: the page')), `${run.theme} 44-ledger-done: the action's row`).toBe(true)
+  expect.soft(rows.some((row) => row.startsWith('Done: ')), `${run.theme} 44-ledger-done: the end row`).toBe(true)
+  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 44-ledger-done: the Answer as the words`).toMatch(/lighthouse/i)
+
+  // Nothing moved (#474's rule, #475): every face's rail cells, stage word, mark, words row, hint and history rows at the same pixels.
+  const faces = await harness.overlayEval<Record<string, unknown>>(`window.__faces`)
+  const seen = Object.keys(faces)
+  // No one stage after the heard line is demanded here: the stand-in reads at once and the fixture's read is a blink,
+  // so Thinking, Acting and Speaking can share a paint, and a read's muted sentence can end in the same paint as its
+  // `done` — one of them is seen, the action's own row is asserted above, the shell walk's typed line holds Thinking,
+  // Opening and Loading, and the fold's tests hold every row.
+  expect.soft(seen, `${run.theme}: the faces the band passed through`).toEqual(expect.arrayContaining(['listening', 'transcribing', 'done']))
+  expect.soft(seen.some((key) => ['thinking', 'acting', 'speaking'].includes(key)), `${run.theme}: a live stage after the heard line`).toBe(true)
+  for (const key of seen) expect.soft(faces[key], `${run.theme}: the band's geometry at ${key} against listening`).toEqual(faces['listening'])
+  // The receipt (ui.md 1): the band within 100 ms of the wake's state and the Heard row within 100 ms of the heard event, on this renderer's clock.
+  const band = await harness.overlayEval<{ heardAt: number | null; heardShownAt: number | null; wakeAt: number | null; wakeShownAt: number | null }>(`window.__band`)
+  expect.soft(band.wakeShownAt! - band.wakeAt!, `${run.theme}: the band after the wake`).toBeLessThanOrEqual(100)
+  expect.soft(band.heardShownAt! - band.heardAt!, `${run.theme}: the Heard row after the heard event`).toBeLessThanOrEqual(100)
+}
+
+/** The Ledger walk's line (#475): Jev's, so it waits for its Endpoint — `read` alone is the grammar's and fires on its partial (#326). */
+const LEDGER_LINE = 'read the page'
+/** Its last partial, short of the line: a partial that reads as the line would fire on it through the stand-in too. */
+const LEDGER_PARTIAL = 'read the pa'
+
+/** The Ledger walk's ear (#475): the wake, a second of quiet, the line spoken over six seconds, then quiet; read in four seconds. */
+const LEDGER_ENV: Record<string, string> = {
+  BINGBONG_WAKE_ENGINE: 'node',
+  BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
+  BINGBONG_VAD_LOAD_MS: '20000',
+  BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 30), ...frames(SPEECH, 200), QUIET]),
+  BINGBONG_STT_SCRIPT: JSON.stringify([{ text: LEDGER_LINE, delayMs: 4_000, partials: ['re', 'read th', ...frames(0, 300).map(() => LEDGER_PARTIAL)] }]),
+}
+
 function expectClean(run: Run): void {
   for (const [state, issues] of run.issues) expect.soft(issues, `${run.label} ${state}`).toEqual([])
 }
@@ -824,6 +959,16 @@ describe('the states screenshot review (#359)', () => {
         expectClean(run)
       }
     }, 120_000)
+
+    it(`shoots the Ledger Strip through a spoken line in ${theme}`, async () => {
+      const run = await launch(theme, { ...LEDGER_ENV, ...decisionScript(readingOf(LEDGER_LINE, 'read')) }, FAKE_MIC)
+      try {
+        await walkTheLedger(run)
+      } finally {
+        await close(run)
+        expectClean(run)
+      }
+    }, 200_000)
 
     it(`shoots the Voice Prompt taking an Utterance in ${theme}`, async () => {
       // Chromium's fake mic, as the ear's waits use; the ear "loads" until the walk has its page, so the VAD

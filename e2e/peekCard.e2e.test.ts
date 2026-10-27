@@ -9,7 +9,8 @@ import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
 // The Peek Card goes (#470, ADR 0026 as amended): 15 s past its sentence
-// on the dashboard. Over the Idle Screen the Turn Card (#474) reports the
+// on the dashboard, in its Ledger Strip form (#475) — the journey's rows,
+// the end in words, the band the pane's width at its bottom. Over the Idle Screen the Turn Card (#474) reports the
 // line instead, on the same constant: a failure ends it on Failed with the
 // sentence, a Timer on Done, a tap dismissing it with the screen left up,
 // and the Voice Prompt line keeps the failure sentence until the next
@@ -28,6 +29,14 @@ describe('peek card e2e: the card goes, and over the Idle Screen the Turn Card t
   const idleCardState = (): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('.turn-card')?.dataset.state ?? null`)
   const voiceLine = (): Promise<string> => harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`)
   const submit = (line: string): Promise<unknown> => harness.dashboardEval(`window.bingbong.assistant.submit(${JSON.stringify(line)})`)
+  /** The band's slot (#475): the pane's width at its bottom, 340 px tall. */
+  const expectBandSlot = async (): Promise<void> => {
+    const slot = await harness.dashboardEval<{ left: number; width: number; height: number; bottom: number; paneRight: number; paneBottom: number }>(`(() => { const s = document.querySelector('.feed-slot--peek').getBoundingClientRect(); const p = document.querySelector('.browser-viewport').getBoundingClientRect(); return { left: s.left, width: s.width, height: s.height, bottom: s.bottom, paneRight: p.right, paneBottom: p.bottom } })()`)
+    expect(slot.height).toBe(340)
+    expect(slot.left).toBe(0)
+    expect(Math.abs(slot.left + slot.width - slot.paneRight)).toBeLessThan(1)
+    expect(Math.abs(slot.bottom - slot.paneBottom)).toBeLessThan(1)
+  }
 
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-peek-card-'))
@@ -103,17 +112,26 @@ describe('peek card e2e: the card goes, and over the Idle Screen the Turn Card t
     await harness.overlayEval(`(() => {
       window.__answer = { at: null, gone: null }
       new MutationObserver(() => {
-        // A live report starts the Command this case watches; an Answer left from an earlier case is not it.
-        if (document.querySelector('.peek-card--live')) window.__answer = { at: null, gone: null }
-        const answer = !!document.querySelector('.peek-card--answer')
+        // A live report starts the Command this case watches; an end left from an earlier case is not it.
+        const band = document.querySelector('.peek-card--band')
+        if (band !== null && band.dataset.state !== 'done') window.__answer = { at: null, gone: null }
+        const answer = band !== null && band.dataset.state === 'done'
         if (answer && window.__answer.at === null) window.__answer.at = Date.now()
         if (!answer && window.__answer.at !== null && window.__answer.gone === null) window.__answer.gone = Date.now()
       }).observe(document.body, { subtree: true, childList: true, attributes: true })
     })()`)
-    await submit(`navigate ${fixture.url('/')}`)
+    await submit(`navigate ${fixture.url('/story')}`)
     await waitFor(async () => ((await idleShown()) ? undefined : true), { timeoutMs: 10_000, intervalMs: 100 })
-    await waitFor(async () => ((await harness.overlayEval<boolean>(`!!document.querySelector('.peek-card--answer')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
-    expect(await harness.overlayEval<boolean>(`!!document.querySelector('.peek-card--answer .peek-linger')`)).toBe(true)
+    await waitFor(async () => ((await harness.overlayEval<string>(`document.querySelector('.peek-card--band')?.dataset.state ?? ''`)) === 'done' ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
+    // The Ledger Strip (#475): the end said in words with the turn's total, the Answer under it, the journey in the history — never the raw line in a stage row.
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage-word')?.textContent ?? ''`)).toBe('Done')
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage-mark')?.textContent ?? ''`)).toMatch(/^\d+\.\ds$/)
+    const rows = await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--band .turn-step:not(.turn-step--blank)')].map((row) => row.querySelector('.turn-step-label').textContent + ': ' + row.querySelector('.turn-step-text').textContent)`)
+    expect(rows.some((row) => row.startsWith('Done: '))).toBe(true)
+    expect(rows.some((row) => row.startsWith('Opening: 127.0.0.1'))).toBe(true)
+    expect(rows.some((row) => /^(Acting|Opening): navigate http/.test(row))).toBe(false)
+    expect(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-rail-cell--live .turn-rail-label')?.textContent ?? ''`)).toBe('Done')
+    await expectBandSlot()
     const answer = await waitFor(async () => {
       const seen = await harness.overlayEval<{ at: number | null; gone: number | null }>(`window.__answer`)
       return seen.gone !== null ? seen : undefined
@@ -124,4 +142,12 @@ describe('peek card e2e: the card goes, and over the Idle Screen the Turn Card t
     // The dashboard's slot followed: no card's room is left over the pane.
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--collapsed') && !document.querySelector('.feed-slot--peek')`)).toBe(true)
   }, 60_000)
+
+  it('docked, the band takes the same slot: the pane’s width at its bottom (AC6)', async () => {
+    await harness.dashboardEval(`window.bingbong.feedPanel.setMode('docked')`)
+    await harness.dashboardEval(`void window.bingbong.assistant.submit(${JSON.stringify(`navigate ${fixture.url('/story')}`)})`)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--docked.feed-slot--peek')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 })
+    await expectBandSlot()
+    await harness.dashboardEval(`window.bingbong.feedPanel.setMode('overlay')`)
+  }, 30_000)
 })

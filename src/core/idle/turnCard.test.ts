@@ -305,3 +305,36 @@ describe('the Turn Card fold', () => {
     expect(other.state().retiresAt).toBe(900 + PEEK_CARD_LINGER_MS)
   })
 })
+
+// The stage as the Capsule reads it (#428, #438, #475): one reading for the card, the band and the hint.
+describe('the stage reading the card shares with the Capsule', () => {
+  it("an action's word and object ride into its own hop's Loading only, whose wait carried into the next turn keeps its start and adds no row", () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'status', turnId: 'h0', status: 'thinking', hop: 0, detail: 'open the hub', at: 1_000 })
+    fold.onEvent({ type: 'command', turnId: 'h0', text: 'open the hub', action: 'navigate hub', task: { id: 'h0', hop: 0 }, at: 1_100 })
+    fold.onEvent({ type: 'status', turnId: 'h0', status: 'acting', hop: 0, word: 'Opening', detail: 'hub.example', at: 1_200 })
+    fold.onEvent({ type: 'status', turnId: 'h0', status: 'loading', hop: 0, at: 1_900 })
+    fold.onEvent({ type: 'status', turnId: 'h1', status: 'loading', hop: 0, at: 2_500 })
+    expect(fold.state().stage).toEqual({ status: 'loading', startedAt: 1_900, turnId: 'h1', word: 'Opening', detail: 'hub.example', hop: 0 })
+    expect(labels(fold).filter((label) => label.startsWith('Loading'))).toEqual(['Loading: hub.example'])
+    fold.onEvent({ type: 'status', turnId: 'h1', status: 'loading', hop: 1, at: 3_000 })
+    expect(fold.state().stage).toEqual({ status: 'loading', startedAt: 3_000, turnId: 'h1', hop: 1 })
+    expect(labels(fold).at(-1)).toBe('Loading: ')
+  })
+
+  it('a stage entered in the same millisecond as the last is still a row of its own', () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'status', turnId: 't1', status: 'thinking', hop: 0, detail: 'scroll down', at: 1_000 })
+    fold.onEvent({ type: 'status', turnId: 't1', status: 'acting', hop: 0, word: 'Scrolling', detail: 'down', at: 1_000 })
+    expect(labels(fold)).toEqual(['Thinking: “scroll down”', 'Scrolling: down'])
+  })
+
+  it("a Card's markdown is said plain as the words once the line is over", () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'status', turnId: 't1', status: 'thinking', hop: 0, detail: 'read', at: 1_000 })
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'read', action: 'read', task: { id: 't1', hop: 0 }, at: 1_100 })
+    fold.onEvent({ type: 'display', turnId: 't1', text: '## story fixture\n\nThe **lighthouse**.', at: 2_000 })
+    fold.onEvent({ type: 'done', turnId: 't1', outcome: 'done', at: 2_100 })
+    expect(turnWords(fold.state())).toEqual({ text: 'story fixture The lighthouse.', tone: 'plain' })
+  })
+})

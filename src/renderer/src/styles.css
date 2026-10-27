@@ -102,7 +102,6 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --tb-h: 104px; /* the Toolbar: the capsule's 65 px state word and its frame (#436) */
   /* The Peek Card's ground: the solid panel, a breath see-through. */
-  --panel-peek: rgba(236, 238, 241, 0.96);
   /* The News card's "★ this month": a quiet gold of its own. */
   --news-star: #8f7f58;
   /* The idle screen's weather glyphs: sun yellow, cloud grey, rain blue,
@@ -189,7 +188,6 @@
     --shadow: none;
     --shadow-pop: none;
     --focus-ring: 0 0 0 3px rgba(255, 172, 130, 0.28);
-    --panel-peek: #000;
     --news-star: #ffe5a8;
     --wx-sun: #ffd60a;
     --wx-sun-fill: rgba(255, 214, 10, 0.3);
@@ -980,23 +978,23 @@ body {
   display: none;
 }
 
-/* The Peek Card's slot (ADR 0029): while the card shows, the collapsed
-   slot floats bottom-centre over the pane — away from the panel's
-   right-edge footprint, so switching card <-> panel reveals the page
-   beneath the other. The native view's bounds shrink-wrap this rect and
-   intercept input across all of it, so the card fills it exactly. The
-   overlay slot's top and right anchors are let go (#329), or the top one
-   would outrank the bottom and pin the card under the Toolbar: the card
-   sits in the same place in every mode. */
+/* The Peek Card's slot (ADR 0029, #475): while the card shows, the
+   collapsed slot is a band the pane's width, docked to the pane's bottom
+   edge, 340 px tall — the Ledger Strip. The native view's bounds
+   shrink-wrap this rect and intercept input across all of it, so the band
+   fills it exactly and the page's bottom 340 px is under it while it
+   shows, clickable again when it goes. The overlay slot's top anchor is let
+   go (#329), or it would outrank the bottom and pin the band under the
+   Toolbar: the band sits in the same place in every mode. */
 .feed-slot--peek {
   position: absolute;
   top: auto;
-  right: auto;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(640px, 80%);
-  height: 124px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: none;
+  width: auto;
+  height: 340px;
 }
 
 /* The Weigh-in pop-up's slot over the browsing pane: the Peek Card's
@@ -1484,158 +1482,89 @@ details.feed-entry {
   overscroll-behavior: contain;
 }
 
-/* The Peek Card (ADR 0021): the transient report of the live Run and its
-   Answer while the Feed Panel is Collapsed — voice shows it, clicking it
-   opens the panel (the only interactive square inch; no buttons ride it).
-   One solid panel over the page, the mark the Feed's. */
-.peek-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  flex: none;
-  max-width: 640px;
+/* The Peek Card (ADR 0021), in its Ledger Strip form (#475): the report
+   of a line's whole journey while the Feed Panel is Collapsed — a band the
+   pane's width at its bottom, solid, a hairline on top, no radius; clicking
+   it opens the panel (the only interactive square inch; no buttons ride
+   it). The Turn Card's pieces (#474, .turn-*) in another frame: the rail
+   across the top, then the stage word with its mark, two lines of words
+   and the tap hint on the left, five history rows behind a hairline on the
+   right. Four sizes (65/40/24/16), Inter and the mono face for every
+   number. Nothing moves between states. */
+.peek-card--band {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: 16px;
+  box-sizing: border-box;
   width: 100%;
-  padding: 18px 24px;
-  border: 1px solid var(--hair2);
-  border-radius: var(--radius-lg);
+  height: 340px;
+  padding: 24px 48px;
+  overflow: hidden;
+  color: var(--fg);
   background: var(--surface-solid);
-  box-shadow: var(--shadow-pop);
-  animation: card-in 200ms ease;
+  border-top: 1px solid var(--hair2);
   cursor: pointer;
 }
 
-@keyframes card-in {
-  from {
-    opacity: 0;
-    scale: 0.98;
-  }
-}
-
-.peek-card:focus-visible {
+.peek-card--band:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring), var(--shadow-pop);
+  box-shadow: inset var(--focus-ring);
 }
 
-.peek-orb {
-  width: 14px;
-  height: 14px;
-  margin-top: 8px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%);
-  box-shadow: 0 0 0 6px var(--accentq);
-  flex: none;
+.peek-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 760px;
+  column-gap: 48px;
+  align-items: start;
+  min-height: 0;
 }
 
-.peek-card--answer .peek-orb {
-  background: var(--ok);
-  box-shadow: none;
-}
-
-/* A failed Command's card (#329): the mark and the line take the failure colour. */
-.peek-card--failed .peek-orb {
-  background: var(--fail);
-}
-
-.peek-card--failed .peek-text {
-  color: var(--fail-text);
-}
-
-/* A Stop's card: grey, as in the Feed. */
-.peek-card--muted .peek-orb {
-  background: var(--idle);
-}
-
-.peek-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.peek-left {
+  display: grid;
+  grid-template-rows: 80px 96px 30px;
+  row-gap: 6px;
   min-width: 0;
-  flex: 1;
 }
 
-.peek-command {
-  margin: 0;
-  color: var(--fg);
-  font-size: var(--type-m);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.peek-step {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--type-s);
-  color: var(--accent);
-}
-
-.peek-text {
-  margin: 0;
-  color: var(--fg);
-  font-size: var(--type-m);
-  font-weight: 500;
-  line-height: 1.3;
+/* The words row cuts a longer Answer at its second line — the Feed holds the rest, and the hint says so. */
+.peek-card--band:not(.turn-card--tone-live) .turn-words {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  overflow: hidden;
 }
 
-.peek-text .feed-markdown p {
-  margin: 0;
+/* Live words longer than the two lines keep their newest: the row holds to its last line, the head going first.
+   Words that fit stay on the first line — the spacer below them takes the room, and only overflow packs them down. */
+.peek-card--band.turn-card--tone-live .turn-words {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 
-.peek-text--spoken {
-  font-style: italic;
-}
-
-.peek-text--error {
-  color: var(--fail-text);
+.peek-card--band.turn-card--tone-live .turn-words::after {
+  content: '';
+  flex: 1 0 0;
 }
 
 .peek-open-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: center;
+  font-size: var(--type-m);
+  font-weight: 500;
+  line-height: 30px;
   color: var(--fg3);
-  font-size: var(--type-s);
-  flex: none;
+  white-space: nowrap;
 }
 
-/* The linger (#470): the Answer goes 15 s past its sentence, this bar
-   draining along the card's foot across that time; full and still while
-   the sentence sounds. */
-.peek-card {
-  position: relative;
-  overflow: hidden;
+/* The history stands beside the words, behind a hairline, its five rows on the Turn Card's grid. */
+.peek-card--band .turn-history {
+  gap: 4px;
+  height: 212px;
+  padding: 0 0 0 32px;
+  border-top: none;
+  border-left: 1px solid var(--hair2);
 }
 
-.peek-linger {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
-  background: var(--fg3);
-  transform-origin: left center;
-  animation-name: peek-drain;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
-
-.peek-linger--held {
-  animation: none;
-}
-
-@keyframes peek-drain {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
+.peek-card--band .turn-step {
+  grid-template-columns: 60px 170px minmax(0, 1fr);
 }
 
 /* Settings (ADR 0078): the index down the left — numbered, by group — and
@@ -2949,6 +2878,15 @@ button.idle-line {
 }
 
 /* The bar along the card's foot draining across the 15 s after the line is over (the Peek Card's own, #470). */
+@keyframes turn-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 .turn-linger {
   position: absolute;
   right: 0;
@@ -2957,7 +2895,7 @@ button.idle-line {
   height: 4px;
   background: var(--fg3);
   transform-origin: left center;
-  animation-name: peek-drain;
+  animation-name: turn-drain;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
 }

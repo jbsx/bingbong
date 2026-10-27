@@ -79,7 +79,7 @@ export function App() {
   // edge tab stays; over every other view the dashboard draws it.
   const weighInPopup = useWeighInPopup()
   const weighIns = useWeighIns()
-  const slotContent = overlaySlotContent(panel.open, peek.state)
+  const slotContent = overlaySlotContent(panel.open, peek.visible)
   // Nothing of the panel's ever covers the settings page or the Weight
   // page (#329, #334): while one is open the slot reports no bounds and
   // takes no room, and leaving it brings back whatever showed before —

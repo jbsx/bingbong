@@ -1,5 +1,6 @@
 import { inferRunOutcome, type PipelineEvent, type PipelineStatus } from '../pipeline/events'
 import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
+import { stageEntered } from '../pipeline/runProgress'
 import { earPhase, type EarPhase } from '../voice/voicePrompt'
 import type { VoiceHeardEvent, VoiceState } from '../voice/ipcChannels'
 
@@ -9,7 +10,9 @@ import type { VoiceHeardEvent, VoiceState } from '../voice/ipcChannels'
 // already rides: the voice state and its partials, the `heard` IPC, and
 // the pipeline events. The card is one line's; the next line restarts it.
 // It goes 15 s after the later of the line's `done` and its last sentence
-// spoken, the Peek Card's own constant, so one number governs both.
+// spoken, the Peek Card's own constant, so one number governs both. The
+// Peek Card's Ledger Strip (#475) is the same fold in another frame: the
+// band across the pane's bottom while the Feed Panel is shut.
 
 /** How a step's text reads in the history: the newest in the primary ink, the rest quiet; an outcome in its colour. */
 export type TurnStepTone = 'plain' | 'quiet' | 'ok' | 'fail'
@@ -26,13 +29,14 @@ export interface TurnStep {
   turnId: string | null
 }
 
-/** The stage a line is in, as the card draws it: the Capsule's own fields (runProgress). */
+/** The stage a line is in, as the card draws it: the Capsule's own fields (runProgress), and the turn it came from. */
 export interface TurnStage {
   status: PipelineStatus
   startedAt: number
   turnId: string
   word?: string
   detail?: string
+  hop?: number
 }
 
 /** How a line ended, each said in a word of its own: Done, Failed, Stopped, No response. */
@@ -91,6 +95,16 @@ function hidden(ear: EarPhase, earSince: number, partial: string, lastWords: str
 }
 
 const firstLine = (text: string): string => text.split('\n', 1)[0]!
+
+/** An Answer's words as a card says them: the Card's markdown marks dropped, one paragraph. */
+export function plainAnswer(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_`]+/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/\s*\n+\s*/g, ' ')
+    .trim()
+}
 
 export interface TurnCardFold {
   /** The voice state as main publishes it; `now` is the renderer's clock, used only when main has not said when the phase began. */
@@ -268,12 +282,16 @@ export function createTurnCardFold(): TurnCardFold {
             lastStatus = event.status
             return
           }
-          // An action's Loading is on what the action was on (#438): its word and object ride on.
-          const carried = event.status === 'loading' && event.detail === undefined && state.stage !== null && (state.stage.status === 'acting' || state.stage.status === 'loading') ? state.stage : null
-          const word = event.word ?? carried?.word
-          const detail = event.detail ?? carried?.detail
+          // The stage as the Capsule reads it (#428, #438): the same reading, so the card and the hint never differ —
+          // an action's Loading on what the action was on, the same hop only; the same action's wait carried into the
+          // next hop's turn keeps its start, and is no new row.
+          const last = state.stage
+          const entered = stageEntered(last === null ? null : { stage: last.status, startedAt: last.startedAt, ...(last.word !== undefined ? { word: last.word } : {}), ...(last.detail !== undefined ? { detail: last.detail } : {}), ...(last.hop !== undefined ? { hop: last.hop } : {}) }, event)
+          const { word, detail } = entered
           lastStatus = event.status
-          state = { ...state, stage: { status: event.status, startedAt: event.at, turnId: event.turnId, ...(word !== undefined ? { word } : {}), ...(detail !== undefined ? { detail } : {}) } }
+          state = { ...state, stage: { status: event.status, startedAt: entered.startedAt, turnId: event.turnId, ...(word !== undefined ? { word } : {}), ...(detail !== undefined ? { detail } : {}), ...(entered.hop !== undefined ? { hop: entered.hop } : {}) } }
+          // The same action's wait going on into the next hop's turn: no new row.
+          if (last !== null && last.status === 'loading' && event.status === 'loading' && last.hop === event.hop) return
           const label = event.status === 'acting' ? (word ?? STEP_LABELS.acting) : STEP_LABELS[event.status]
           const text = event.status === 'thinking' ? (detail === undefined || detail === '' ? '' : `“${detail}”`) : event.status === 'speaking' ? (detail ?? state.said?.text ?? '') : (detail ?? '')
           push({ at: event.at, label, text, tone: event.status === 'acting' ? 'plain' : 'quiet', turnId: event.turnId })
@@ -394,7 +412,7 @@ export function turnWords(state: TurnCardState): { text: string; tone: TurnStepT
       if (state.partial !== '') return { text: `“${state.partial}…”`, tone: 'plain' }
       return { text: live.phase === 'hearing' ? '…' : 'say a command', tone: 'quiet' }
     case 'end': {
-      if (state.answer !== null) return { text: state.answer.text.split('\n').filter((part) => part.trim() !== '').join(' '), tone: state.answer.failure ? 'fail' : live.end === 'done' ? 'plain' : 'quiet' }
+      if (state.answer !== null) return { text: plainAnswer(state.answer.text), tone: state.answer.failure ? 'fail' : live.end === 'done' ? 'plain' : 'quiet' }
       if (state.said !== null) return { text: state.said.text, tone: state.said.failure ? 'fail' : 'plain' }
       return { text: state.heard === null ? '' : `“${state.heard}”`, tone: 'quiet' }
     }
@@ -409,10 +427,10 @@ export function turnWords(state: TurnCardState): { text: string; tone: TurnStepT
   }
 }
 
-/** The history's six rows, oldest first, the newest last — the rows before them are gone. */
+/** The history's six rows, oldest first, the newest last — the rows before them are gone. The Ledger Strip (#475) holds five. */
 export const TURN_HISTORY_ROWS = 6
 
-export function turnHistory(state: TurnCardState): readonly (TurnStep | null)[] {
-  const shown = state.steps.slice(-TURN_HISTORY_ROWS)
-  return [...shown, ...Array.from({ length: TURN_HISTORY_ROWS - shown.length }, () => null)]
+export function turnHistory(state: TurnCardState, rows = TURN_HISTORY_ROWS): readonly (TurnStep | null)[] {
+  const shown = state.steps.slice(-rows)
+  return [...shown, ...Array.from({ length: rows - shown.length }, () => null)]
 }

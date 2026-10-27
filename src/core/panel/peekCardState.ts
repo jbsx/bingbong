@@ -1,192 +1,35 @@
-import type { FeedEntry } from '../feed/feedProjection'
-import { inferRunOutcome, type PipelineEvent } from '../pipeline/events'
-
-// The Peek Card state fold (ADR 0021, amended by ADR 0026): voice never
-// opens the feed panel — a command shows the Peek Card instead, as a pure
-// fold over the same pipeline event seam every observer rides (the same
-// shape as the panel-state fold beside it). The card reports the live Run
-// and then its Answer, until 15 s past the Answer's spoken sentence (#470,
-// ADR 0026 as amended) or sooner on the next Run or a panel open. Over the
-// Idle Screen the Turn Card (#474, core/idle/turnCard) reports the line
-// instead, on the same linger. The view
-// owns what renders inside the card; this fold owns only the phase, the
-// run identity, and the answer's retirement.
+// The Peek Card's rules that are not the line's own (ADR 0021, 0026, 0029):
+// how long an ended line stays on screen (#470), and which one element the
+// overlay slot shows. The line itself — the ear taking it, its stages, its
+// end — is the Turn Card's fold (#474, core/idle/turnCard), which the
+// Ledger Strip (#475) draws across the pane's bottom while the Feed Panel
+// is shut and the Turn Card draws over the Idle Screen: one fold, two
+// frames.
 
 /**
- * How long the Answer stays past its sentence (#470): one constant for every
- * form of the card. The owner's guess (2026-10-26 grill) — no measure in
- * the repo can settle 10 s against 15 s; what would is the owner reading a
- * failure from the chair on a normal day and saying the card went too soon
- * or stayed too long.
+ * How long an ended line stays past its sentence (#470): one constant for
+ * every form of the card. The owner's guess (2026-10-26 grill) — no measure
+ * in the repo can settle 10 s against 15 s; what would is the owner reading
+ * a failure from the chair on a normal day and saying the card went too
+ * soon or stayed too long.
  */
 export const PEEK_CARD_LINGER_MS = 15_000
 
 /**
  * How far into its linger a bar drawn now already is, as a (negative) animation delay from the deadline: a card shown
- * late starts part drained, and nothing pauses it. The Peek Card's bar and the Turn Card's (#474) share it.
+ * late starts part drained, and nothing pauses it. The Turn Card's bar (#474) reads it.
  */
 export function lingerDelayMs(retiresAt: number, now: number): number {
   return Math.min(0, retiresAt - PEEK_CARD_LINGER_MS - now)
 }
 
-export type PeekCardPhase = 'hidden' | 'live' | 'answer'
-
-export interface PeekCardState {
-  phase: PeekCardPhase
-  /** The run the card reports — the view matches feed entries by it. */
-  runId: string | null
-  /** The command echo shown while live. */
-  commandText: string | null
-  /** When the Answer goes, on the events' clock (#470): null while live, hidden, or while its sentence still sounds. */
-  retiresAt: number | null
-}
-
-const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, retiresAt: null }
-
 /**
- * Folds pipeline events into the card's phase: `command` shows it live,
- * the run's `done` moves it to the answer (a cancelled or interrupted run
- * hides it), and a new command always restarts it live. The answer's end is
- * 15 s past the later of `done` and the end of the run's last sentence; a
- * sentence still sounding holds it off. Busy rejections emit no events, so
- * they never show a card.
+ * Whether an open panel retires the line the band reports (#331, ADR 0026): an ended line, yes — the user saw it up
+ * close, whether the panel opened over the end or the line ended while it was held open; a live one, never — closing
+ * the panel mid-run revives the band.
  */
-export function createPeekCardFold(): {
-  onEvent(event: PipelineEvent): void
-  /**
-   * The renderer's hide when the panel opens: it retires the answer — the
-   * user saw it up close — while the live report survives (ADR 0026), so
-   * closing the panel again revives the card.
-   */
-  retireAnswer(): void
-  /** The answer's time is up at `now` (#470): it goes. Nothing else does. */
-  expire(now: number): void
-  state(): PeekCardState
-} {
-  let state: PeekCardState = HIDDEN
-  // The run-end outcome fork feeds inferRunOutcome (the same derivation
-  // every run observer rides): a `done` may omit its outcome, and the
-  // status/error trail of the reported run is the fallback.
-  let lastStatus: string | null = null
-  let sawError = false
-  // The reported run's sentences still sounding, and when the run, or its last sentence, last fell quiet.
-  let sounding = 0
-  let quietAt = 0
-
-  const hide = (): void => {
-    state = HIDDEN
-    lastStatus = null
-    sawError = false
-    sounding = 0
-  }
-  const reschedule = (): void => {
-    if (state.phase === 'answer') state = { ...state, retiresAt: sounding > 0 ? null : quietAt + PEEK_CARD_LINGER_MS }
-  }
-  const fromReportedRun = (event: { runId?: string; turnId?: string }): boolean =>
-    state.phase !== 'hidden' && event.turnId === state.runId
-
-  return {
-    onEvent(event) {
-      switch (event.type) {
-        case 'command':
-          // A hop past the first that fires nothing (done, no next step, not read, abandoned) is no Command of its own (#336):
-          // it never takes the card — not from its own Task's hop that answered, nor from a later Command's, whichever Task it is of.
-          if (event.dropped && event.task !== undefined && event.task.hop > 0) return
-          state = {
-            phase: 'live',
-            runId: event.turnId,
-            commandText: event.text,
-            retiresAt: null,
-          }
-          lastStatus = null
-          sawError = false
-          sounding = 0
-          quietAt = event.at
-          return
-        case 'speak':
-          if (!fromReportedRun(event)) return
-          sounding += 1
-          reschedule()
-          return
-        case 'spoken':
-          if (!fromReportedRun(event) || sounding === 0) return
-          sounding -= 1
-          quietAt = Math.max(quietAt, event.at)
-          reschedule()
-          return
-        case 'status':
-          if (fromReportedRun(event)) lastStatus = event.status
-          return
-        case 'error':
-          // Only the reported run's errors count toward its outcome — an
-          // out-of-turn error from unrelated activity never fails it.
-          if (fromReportedRun(event)) sawError = true
-          return
-        case 'done': {
-          // Only the reported run's own end moves the card (#336): a Task's closing hop — abandoned, done or no next step — ends a turn the card never reported.
-          if (!fromReportedRun(event)) return
-          // The outcome fork (ADR 0026): done and failed show as the
-          // card's answer; cancelled and interrupted hide it — an abort is
-          // the user's last word, and the screen goes quiet.
-          const outcome = inferRunOutcome(event.outcome, lastStatus, sawError)
-          if (outcome === 'cancelled') return hide()
-          state = { ...state, phase: 'answer' }
-          quietAt = Math.max(quietAt, event.at)
-          reschedule()
-          return
-        }
-        default:
-          return
-      }
-    },
-    retireAnswer() {
-      if (state.phase === 'answer') hide()
-    },
-    expire(now) {
-      if (state.phase === 'answer' && state.retiresAt !== null && now >= state.retiresAt) hide()
-    },
-    state: () => state,
-  }
-}
-
-/** What the card shows as its Answer, and whether it tells a failure (#329): the mark then takes the failure colour. */
-export interface PeekCardAnswer {
-  kind: 'display' | 'spoken' | 'error'
-  text: string
-  failure: boolean
-  /** A Stop's Answer: the mark is grey, neither done nor failed. */
-  muted?: true
-}
-
-/**
- * The reported Command's Answer (#329) — its Card when it has one, else its
- * failure line, else its Spoken Rendering — read only from the entries its
- * own turn stamped, so a Command with no Answer of its own shows none
- * rather than a neighbour's. Null when it has none: the view says it is
- * done.
- */
-export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | null): PeekCardAnswer | null {
-  if (turnId === null) return null
-  let error: FeedEntry | null = null
-  let spoken: FeedEntry | null = null
-  for (const entry of entries) {
-    if (entry.turnId !== turnId) continue
-    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: entry.failure === true, ...(entry.muted ? { muted: true as const } : {}) }
-    if (entry.role === 'system' && entry.kind === 'error') error ??= entry
-    if (entry.role === 'assistant' && entry.kind === 'speak') spoken ??= entry
-  }
-  if (error !== null) return { kind: 'error', text: error.text.split('\n', 1)[0]!, failure: true }
-  return spoken !== null ? { kind: 'spoken', text: spoken.text, failure: spoken.failure === true } : null
-}
-
-/**
- * The visible/hidden decision, separated from the fold so the renderer's
- * panel-open fact can suppress the card without touching its state (ADR
- * 0026: the live report survives an open panel — closing it revives the
- * card).
- */
-export function peekCardVisible(state: PeekCardState): boolean {
-  return state.phase !== 'hidden'
+export function retiredByPanel(panelOpen: boolean, card: { phase: 'open' | 'hidden'; end: unknown }): boolean {
+  return panelOpen && card.phase === 'open' && card.end !== null
 }
 
 /**
@@ -202,7 +45,7 @@ export function peekCardVisible(state: PeekCardState): boolean {
  */
 export type OverlaySlotContent = 'panel' | 'card' | 'tab'
 
-export function overlaySlotContent(panelOpen: boolean, peek: PeekCardState): OverlaySlotContent {
+export function overlaySlotContent(panelOpen: boolean, cardShown: boolean): OverlaySlotContent {
   if (panelOpen) return 'panel'
-  return peekCardVisible(peek) ? 'card' : 'tab'
+  return cardShown ? 'card' : 'tab'
 }

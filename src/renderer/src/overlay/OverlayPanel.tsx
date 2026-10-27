@@ -45,7 +45,7 @@ export function OverlayPanel() {
   const peek = usePeekCard(open)
   // The Weigh-in pop-up (#350) rides the open panel's top here; collapsed, it has a view of its own (attachWeighInView).
   const weighIn = useWeighInPopup()
-  const slotContent = overlaySlotContent(open, peek.state)
+  const slotContent = overlaySlotContent(open, peek.visible)
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.
@@ -172,12 +172,7 @@ export function OverlayPanel() {
           bounds shrink-wrap whichever one shows. */}
       {weighInPopupSurface(weighIn, true, open) === 'panel' ? <WeighInPopup state={weighIn} /> : null}
       {slotContent === 'card' ? (
-        <PeekCard
-          state={peek.state}
-          entries={feed}
-          progress={progress}
-          onOpen={() => window.bingbong.feedPanel.toggle()}
-        />
+        <PeekCard state={peek.state} onOpen={() => window.bingbong.feedPanel.toggle()} />
       ) : slotContent === 'tab' ? (
         <button
           type="button"
