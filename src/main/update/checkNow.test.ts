@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { createIdleInstall } from './idleInstall'
 import { CHECK_NOW_WAIT_MS, createCheckNow, type ReleaseCheck } from './checkNow'
 
@@ -69,10 +70,13 @@ describe('createCheckNow (#422)', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    setFaultSink(null)
   })
 
   it('reads a check that never answers as failed once its wait is up, so the line is answered (the feed unreachable)', async () => {
     vi.useFakeTimers()
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
     const { installs, checkNow } = harness(() => new Promise(() => {}))
     const result = checkNow()
     await vi.advanceTimersByTimeAsync(CHECK_NOW_WAIT_MS - 1)
@@ -83,6 +87,7 @@ describe('createCheckNow (#422)', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(await result).toEqual({ kind: 'failed' })
     expect(installs).toEqual([])
+    expect(faults.map((fault) => fault.site)).toEqual(['update.checkNow'])
   })
 
   it('reads a check that throws as failed, installing nothing', async () => {

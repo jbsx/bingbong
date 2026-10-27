@@ -1,3 +1,4 @@
+import { reportFault } from '../../core/trace/fault'
 import type { UpdateCheck } from '../../core/update/updateCheck'
 import type { IdleInstall } from './idleInstall'
 
@@ -60,7 +61,11 @@ export function createCheckNow(deps: CheckNowDeps): () => Promise<UpdateCheck> {
     } catch {
       return { kind: 'failed' }
     }
-    if (found === TIMED_OUT) return installing() ?? { kind: 'failed' }
+    if (found === TIMED_OUT) {
+      // A feed that never answers leaves a trace, as one that errors does through the updater's own fault.
+      reportFault('update.checkNow', new Error(`no answer from the Release feed in ${deps.waitMs ?? CHECK_NOW_WAIT_MS} ms`))
+      return installing() ?? { kind: 'failed' }
+    }
     if (found === null) return { kind: 'unavailable' }
     // A download that landed while the check was out is installed, as one there before it.
     return installing() ?? (found.available ? { kind: 'downloading', version: found.version } : { kind: 'current', version: deps.runningVersion })
