@@ -1,0 +1,57 @@
+{
+  "turnId": "cli-3-mvm6vcp4",
+  "transcript": "accept cookies",
+  "note": "The Appliance Card's ask for cli-3-mvm6vcp4 (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792833660335,
+  "expect": [
+    {
+      "question": "action",
+      "label": "page|none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"accept cookies\"\nPage open: https://www.bbcgoodfood.com/ — \"Good Food | Recipes and cooking tips | Good Food\"\nPlaying: nothing",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 10:21, Saturday 24 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 10°C, overcast now; today high 16°C, low 8°C, rain 100%; coming hours 11:00 10°C, 12:00 10°C, 13:00 10°C, 14:00 11°C, 15:00 12°C, 16:00 12°C; coming days 2026-10-25 13°C/9°C light drizzle, rain 97%, 2026-10-26 16°C/9°C drizzle, rain 99%, 2026-10-27 16°C/11°C light drizzle, rain 54%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"Good Food | Recipes and cooking tips | Good Food\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "accept",
+          "s0-1": "accept cookies",
+          "s1-1": "cookies"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on bbcgoodfood.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on bbcgoodfood.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

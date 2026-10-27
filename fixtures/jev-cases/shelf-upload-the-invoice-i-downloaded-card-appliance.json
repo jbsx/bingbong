@@ -1,0 +1,51 @@
+{
+  "transcript": "upload the invoice I downloaded",
+  "note": "The Appliance Card's ask for shelf-upload-the-invoice-i-downloaded-card (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "recordedAt": 1792900000000,
+  "expect": [
+    {
+      "question": "action",
+      "label": "page|none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"upload the invoice I downloaded\"\nPage open: https://expenses.example.com/claims/new — \"New expense claim — Expenses\"\nPlaying: nothing",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"New expense claim — Expenses\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "upload",
+          "s0-1": "upload the",
+          "s0-2": "upload the invoice",
+          "s0-3": "upload the invoice I",
+          "s0-4": "upload the invoice I downloaded",
+          "s1-1": "the",
+          "s1-2": "the invoice",
+          "s1-3": "the invoice I",
+          "s1-4": "the invoice I downloaded",
+          "s2-2": "invoice",
+          "s2-3": "invoice I",
+          "s2-4": "invoice I downloaded",
+          "s3-3": "I",
+          "s3-4": "I downloaded",
+          "s4-4": "downloaded"
+        }
+      }
+    }
+  }
+}

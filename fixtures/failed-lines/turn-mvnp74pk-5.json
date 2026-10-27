@@ -4,8 +4,7 @@
   "at": 1792924908345,
   "source": "spoken",
   "stage": "reading",
-  "happened": "Kiosk: 'Go back to the idol screen.' read on the page card, no host answered (best guess none); nothing happened",
+  "happened": "Kiosk: 'Go back to the idol screen.' read on the page card, no host answered (best guess none); nothing happened — no Decision Model was configured on that build (v0.1.1): nothing was asked, so no card bore on it",
   "meant": "Bring up the Idle Screen",
-  "log": "decision-1792924821131-1.jsonl",
-  "claimedBy": "#485"
+  "log": "decision-1792924821131-1.jsonl"
 }

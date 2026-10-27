@@ -57,6 +57,13 @@ export interface ApplianceView {
   readonly flaggable?: boolean
   /** A Timer is wired: its set and off are offered. */
   readonly timer?: boolean
+  /**
+   * The appliance's own lines as a recorded page-card ask carried them (the
+   * corpus converter, #485): its Appliance Verbs, facts, app ops and
+   * resume, each line as the appliance worded it then, standing in for the
+   * lines `appliance` would make; `amount` whether that card asked one.
+   */
+  readonly recorded?: { readonly lines: Readonly<Record<string, string>>; readonly amount: boolean }
 }
 
 /** How the card is asked: whether `steps` rides it (hop 0 of a whole line), and the Hearing. */
@@ -145,15 +152,18 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const facts = appliance?.facts === undefined ? {} : sayOptions(withPageSong(appliance.facts, pageMediaOf(media)))
   const app = appliance?.app === undefined ? [] : appCardOptions(appliance.app)
   const resume = appliance?.lastPage === undefined || isRealPage(view.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`] as const]
+  const own: Readonly<Record<string, string>> = view.recorded?.lines ?? {
+    ...Object.fromEntries(verbs.map((verb) => [verb, applianceVerbLine(verb)])),
+    ...facts,
+    ...Object.fromEntries(app.map((option) => [option.label, option.line])),
+    ...Object.fromEntries(resume),
+  }
   const action: DecisionChoiceQuestion = {
     type: 'choice',
     instructions: INSTRUCTIONS,
     options: {
       ...Object.fromEntries(ops.map((op) => [mediaLabel(op), mediaOpLineOf(op, named)])),
-      ...Object.fromEntries(verbs.map((verb) => [verb, applianceVerbLine(verb)])),
-      ...facts,
-      ...Object.fromEntries(app.map((option) => [option.label, option.line])),
-      ...Object.fromEntries(resume),
+      ...own,
       ...(view.timer === true ? { timer: OWN_LINES.timer, timer_off: OWN_LINES.timer_off } : {}),
       ...(view.flaggable === true ? { flag: OWN_LINES.flag } : {}),
       help: OWN_LINES.help,
@@ -163,8 +173,8 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
       none: NONE_LINE,
     },
   }
-  const amounts = ops.length > 0 || app.some((option) => takesAmount(option.op))
-  const site = verbs.includes('play') ? scopableSite(view.url, undefined) : null
+  const amounts = ops.length > 0 || (view.recorded?.amount ?? app.some((option) => takesAmount(option.op)))
+  const site = Object.hasOwn(own, 'play') ? scopableSite(view.url, undefined) : null
   const steps = options.steps === true ? stepsQuestion(text) : null
   return {
     action,

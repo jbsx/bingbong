@@ -7,5 +7,7 @@
   "happened": "Kiosk, Mammoth, 2026-10-25 21:37, typed: 'mark as failure with the hint did not open stats for nerds' is not a Flag head (the head is 'mark this as a failure'), so it went to Jev, which read none 0.93 and the Where Ask none 0.94; no Flag was kept. Same class as turn-mvpdu2bl-v14 and turn-mvphzt81-vq: the Flag's heads are fixed phrases and the owner says them other ways",
   "meant": "Flag the previous Task with the hint 'did not open stats for nerds'",
   "log": "decision-1792964010928-1.jsonl",
-  "claimedBy": "#485"
+  "claimedBy": "#478",
+  "fixedBy": "5ac6be8a",
+  "case": "src/core/command/cliGrammar.test.ts"
 }

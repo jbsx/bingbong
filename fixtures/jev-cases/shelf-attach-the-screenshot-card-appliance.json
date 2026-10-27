@@ -1,0 +1,42 @@
+{
+  "transcript": "attach the screenshot",
+  "note": "The Appliance Card's ask for shelf-attach-the-screenshot-card (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "recordedAt": 1792900000000,
+  "expect": [
+    {
+      "question": "action",
+      "label": "page|none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"attach the screenshot\"\nPage open: https://forum.example.org/account/profile — \"Edit profile | Example Forum\"\nPlaying: nothing",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"Edit profile | Example Forum\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "attach",
+          "s0-1": "attach the",
+          "s0-2": "attach the screenshot",
+          "s1-1": "the",
+          "s1-2": "the screenshot",
+          "s2-2": "screenshot"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "turnId": "cli-2-mvjta0q0",
+  "transcript": "Turn on ambient mode.",
+  "note": "The Appliance Card's ask for cli-2-mvjta0q0-where (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792689897759,
+  "expect": [
+    {
+      "question": "action",
+      "label": "page|none"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"Turn on ambient mode.\"\nPage open: https://www.youtube.com/watch?v=ZVgHPSyEIqk — \"Let Down (Remastered) - YouTube\"\nPlaying: \"Let Down (Remastered) - YouTube\" playing 0:05/4:59 volume 53% loop off",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "media-play": "play the media playing, \"Let Down (Remastered) - YouTube\": start it, or carry on playing it",
+          "media-pause": "pause the media playing, \"Let Down (Remastered) - YouTube\"",
+          "media-forward": "go forward in the media playing, \"Let Down (Remastered) - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-back": "go back in the media playing, \"Let Down (Remastered) - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-restart": "play the media playing, \"Let Down (Remastered) - YouTube\" again from the start",
+          "media-volume": "change the volume of the media playing, \"Let Down (Remastered) - YouTube\": up, down or to the number the words carry, the amount Choice saying which and how far",
+          "media-mute": "mute the media playing, \"Let Down (Remastered) - YouTube\"",
+          "media-unmute": "unmute the media playing, \"Let Down (Remastered) - YouTube\"",
+          "media-loop": "put the media playing, \"Let Down (Remastered) - YouTube\" on loop, so it repeats",
+          "media-unloop": "stop looping the media playing, \"Let Down (Remastered) - YouTube\"",
+          "media-rate": "change the playback speed of the media playing, \"Let Down (Remastered) - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "show": "music: show the video playing on the screen",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"Let Down (Remastered) - YouTube\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Turn",
+          "s0-1": "Turn on",
+          "s0-2": "Turn on ambient",
+          "s0-3": "Turn on ambient mode",
+          "s1-1": "on",
+          "s1-2": "on ambient",
+          "s1-3": "on ambient mode",
+          "s2-2": "ambient",
+          "s2-3": "ambient mode",
+          "s3-3": "mode"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

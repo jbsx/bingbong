@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandLogRecord, DecisionRecord, TaskEnded } from '../command/decisionRecord'
 import type { PerfSpanRecord } from './perfTracer'
-import { buildDecisionReport, buildReactionReport, formatCommandReport } from './commandReport'
+import { buildDecisionReport, buildReactionReport, formatCommandReport, tierOf } from './commandReport'
 
 // The Command half of the perf report (#324): Reaction p50/p95 per verb
 // from the `reaction` spans, and the decision log's shares — Jev's share
@@ -59,7 +59,7 @@ describe('buildReactionReport', () => {
   })
 
   it('is empty, not a crash, with no reaction spans; a span without a verb counts as unknown', () => {
-    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null, split: null, byReading: [] })
+    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null, split: null, byReading: [], felt: null })
     const report = buildReactionReport([{ turnId: 't1', stage: 'reaction', durMs: 100, at: AT, t: 0 }])
     expect(report.byVerb).toEqual([{ verb: 'unknown', count: 1, p50: 100, p95: 100, max: 100 }])
   })
@@ -82,17 +82,18 @@ describe('buildDecisionReport', () => {
       commands: 5,
       readings: { local_match: 2, jev: 2, best_guess: 1 },
       jevAsked: 3,
+      asks: 3,
       jevAnswered: 2,
       jevLatency: { p50: 260, p95: 800 },
       jevRefused: {},
       fellOver: { count: 0, answered: 0 },
       jevInputTokens: null,
       // The answers before #406 carry no token count; the timeout is banded nowhere.
-      jevLatencyByTokens: [{ model: 'jev-1.14.0', band: 'no count', count: 2, p50: 180, p95: 260 }],
+      jevLatencyByTokens: [{ card: 'page', model: 'jev-1.14.0', band: 'no count', count: 2, p50: 180, p95: 260 }],
       misfires: 3,
       misfiresBySignal: { back: 2, opposite_scroll: 1 },
       names: { page: 0, learned: 0 },
-      earlyFire: { spoken: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
+      earlyFire: { spoken: 5, utterances: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
       // Records from before #328 carry no Task.
       tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {}, split: 0 },
       picks: { remembered: 0, searched: 0 },
@@ -146,10 +147,11 @@ describe('formatCommandReport', () => {
       'open       1  400ms  400ms  400ms',
       '',
       'jev latency by input tokens:',
-      'model         tokens  count    p50    p95',
-      'jev-1.14.0  no count      1  220ms  220ms',
+      'model       card    tokens  count    p50    p95',
+      'jev-1.14.0  page  no count      1  220ms  220ms',
       '',
       'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | fell over 0 | local match 1, jev 1, best guess 0 | misfires 1 (back 1) | names matched 0',
+      'refusals per 100 asks: 0.0 (0 refused attempts over 1 asks)',
       'early fire: 0 of 2 spoken (0%) | jev calls per spoken utterance 0.50 (0 on partials)',
     ])
   })
@@ -180,10 +182,11 @@ describe('formatCommandReport', () => {
       'endpoint      2  200ms  400ms  400ms',
       '',
       'jev latency by input tokens:',
-      'model         tokens  count    p50    p95',
-      'jev-1.14.0  no count      1  220ms  220ms',
+      'model       card    tokens  count    p50    p95',
+      'jev-1.14.0  page  no count      1  220ms  220ms',
       '',
       'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | fell over 0 | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
+      'refusals per 100 asks: 0.0 (0 refused attempts over 1 asks)',
       'early fire: 2 of 4 spoken (50%), lead p50 300ms p95 500ms | jev calls per spoken utterance 1.00 (3 on partials)',
     ])
   })
@@ -292,14 +295,14 @@ describe('formatCommandReport', () => {
     ])
 
     expect(report.jevLatencyByTokens).toEqual([
-      { model: 'mammoth', band: '< 1.5k', count: 2, p50: 600, p95: 700 },
-      { model: 'mammoth', band: '1.5–3k', count: 1, p50: 650, p95: 650 },
-      { model: 'mammoth', band: '3–6k', count: 1, p50: 700, p95: 700 },
-      { model: 'mammoth', band: '6k+', count: 2, p50: 1300, p95: 1500 },
-      { model: 'jev-1.14.0', band: 'no count', count: 1, p50: 240, p95: 240 },
+      { card: 'page', model: 'mammoth', band: '< 1.5k', count: 2, p50: 600, p95: 700 },
+      { card: 'page', model: 'mammoth', band: '1.5–3k', count: 1, p50: 650, p95: 650 },
+      { card: 'page', model: 'mammoth', band: '3–6k', count: 1, p50: 700, p95: 700 },
+      { card: 'page', model: 'mammoth', band: '6k+', count: 2, p50: 1300, p95: 1500 },
+      { card: 'page', model: 'jev-1.14.0', band: 'no count', count: 1, p50: 240, p95: 240 },
     ])
     expect(formatCommandReport(buildReactionReport([]), report).join('\n')).toContain(
-      ['jev latency by input tokens:', 'model         tokens  count     p50     p95', 'mammoth       < 1.5k      2   600ms   700ms', 'mammoth       1.5–3k      1   650ms   650ms'].join('\n'),
+      ['jev latency by input tokens:', 'model       card    tokens  count     p50     p95', 'mammoth     page    < 1.5k      2   600ms   700ms', 'mammoth     page    1.5–3k      1   650ms   650ms'].join('\n'),
     )
   })
 
@@ -318,6 +321,99 @@ describe('formatCommandReport', () => {
     expect(formatCommandReport(report, buildDecisionReport([])).join('\n')).toContain(
       ['reaction by reading:', 'reading                count     p50     p95     max', 'jev jev-1.14.0             3   800ms   900ms   900ms', 'local match                2   150ms   170ms   170ms'].join('\n'),
     )
+  })
+
+  // The Appliance Card (#485): the Felt Reaction by Tier and road, its own call in every per-call count, its band apart.
+  const answer = (model: string, latencyMs: number, inputTokens?: number) => ({ model, latencyMs, ...(inputTokens !== undefined ? { inputTokens } : {}), confidence: { action: 0.9, slot: 0.8 }, probabilities: { action: {}, slot: {} } })
+  const endOfSpeech = (turnId: string, durMs: number): PerfSpanRecord => ({ turnId, stage: 'end-of-speech', durMs, at: AT, t: 0, detail: { endedBy: 'turn' } })
+
+  it('reads each spoken turn\'s Felt Reaction, end of speech plus Reaction, by Tier and by road, one per turn (#485)', () => {
+    const exact: DecisionRecord = { ...decision('pause', 'local_match'), verb: 'play', music: { kind: 'pause' } }
+    const viaAppliance: DecisionRecord = { ...decision('louder', 'jev'), verb: 'media', card: 'appliance' }
+    const song: DecisionRecord = { ...decision('song', 'jev'), verb: 'play', music: { kind: 'search', place: 'now' }, card: 'appliance' }
+    const onPage: DecisionRecord = { ...decision('link', 'jev'), verb: 'click', card: 'page', appliance: { ask: 'link-appliance', jev: answer('mammoth', 500), chose: 'page' } }
+    // A record before #485 names no card: its Jev reading is the page card's.
+    const old: DecisionRecord = { ...decision('old', 'jev'), verb: 'none' }
+    const where: DecisionRecord = { ...decision('old', 'jev'), verb: 'click', whereAsk: true }
+    const hop: DecisionRecord = { ...decision('old-1', 'jev'), verb: 'scroll_down', task: { id: 'old', hop: 1 } }
+    // The Appliance Card's host failed and the Local Match's guess fired: a best guess.
+    const failed: DecisionRecord = { ...decision('fail', 'local_match'), verb: 'scroll_down', jevAsked: true, card: 'appliance', jev: { model: 'mammoth', latencyMs: 300, reason: 'timeout' } }
+    const typed: DecisionRecord = { ...decision('typed', 'local_match'), source: 'typed' }
+    const spans = [
+      endOfSpeech('pause', 700), reaction('pause', 'play', 100),
+      endOfSpeech('louder', 800), reaction('louder', 'media', 900),
+      endOfSpeech('song', 800), reaction('song', 'play', 2000),
+      endOfSpeech('link', 900), reaction('link', 'click', 2500),
+      endOfSpeech('old', 1000), reaction('old', 'none', 3000),
+      endOfSpeech('old-1', 900), reaction('old-1', 'scroll_down', 50),
+      endOfSpeech('fail', 700), reaction('fail', 'scroll_down', 400),
+      endOfSpeech('typed', 0), reaction('typed', 'navigate', 600),
+      // An Early Fire has no end-of-speech span of its own: counted out.
+      reaction('early', 'scroll_down', 0),
+    ]
+    const report = buildReactionReport(spans, [exact, viaAppliance, song, onPage, old, where, hop, failed, typed, { ...decision('early', 'local_match'), verb: 'scroll_down' }])
+
+    expect(report.felt).toEqual({
+      byTier: [
+        { verb: 'Instant', count: 3, p50: 1100, p95: 1700, max: 1700 },
+        { verb: 'Quick', count: 2, p50: 2800, p95: 3400, max: 3400 },
+        { verb: 'Task', count: 1, p50: 4000, p95: 4000, max: 4000 },
+      ],
+      byRoad: [
+        { verb: 'exact', count: 1, p50: 800, p95: 800, max: 800 },
+        { verb: 'appliance', count: 2, p50: 1700, p95: 2800, max: 2800 },
+        { verb: 'page', count: 2, p50: 3400, p95: 4000, max: 4000 },
+        { verb: 'best guess', count: 1, p50: 1100, p95: 1100, max: 1100 },
+      ],
+      noEndOfSpeech: 1,
+    })
+    expect(formatCommandReport(report, buildDecisionReport([])).slice(-11)).toEqual([
+      'felt reaction (end of speech to first effect), spoken turns, 1 without an end-of-speech span left out:',
+      'tier     n     p50     p95',
+      'Instant  3  1100ms  1700ms',
+      'Quick    2  2800ms  3400ms',
+      'Task     1  4000ms  4000ms',
+      '',
+      'road        n     p50     p95',
+      'exact       1   800ms   800ms',
+      'appliance   2  1700ms  2800ms',
+      'page        2  3400ms  4000ms',
+      'best guess  1  1100ms  1100ms',
+    ])
+  })
+
+  it('maps the verbs onto the Tiers, a play by its music kind (#485)', () => {
+    expect(tierOf({ verb: 'play', music: { kind: 'skip' } })).toBe('Instant')
+    expect(tierOf({ verb: 'play', music: { kind: 'search', place: 'end' } })).toBe('Quick')
+    expect(['scroll_up', 'back', 'stop', 'press', 'timer'].map((verb) => tierOf({ verb: verb as DecisionRecord['verb'] }))).toEqual(['Instant', 'Instant', 'Instant', 'Instant', 'Instant'])
+    expect(['navigate', 'search', 'click', 'capture'].map((verb) => tierOf({ verb: verb as DecisionRecord['verb'] }))).toEqual(['Quick', 'Quick', 'Quick', 'Quick'])
+    expect(['say', 'read', 'none'].map((verb) => tierOf({ verb: verb as DecisionRecord['verb'] }))).toEqual(['Task', 'Task', 'Task'])
+  })
+
+  it('counts the Appliance Card\'s ask as a call of its own: per Utterance, in the refusals per 100 asks, its band apart (#485)', () => {
+    const http = (model: string) => ({ model, host: 'a', outcome: 'http' as const, httpStatus: 429, latencyMs: 100 })
+    const ok = (model: string) => ({ model, host: 'b', outcome: 'answered' as const, latencyMs: 400 })
+    // Appliance, then page, then a Where Ask: three calls on one Utterance.
+    const page: DecisionRecord = { ...decision('t1', 'jev', 2000), card: 'page', jev: answer('mammoth', 2000, 8000), appliance: { ask: 't1-appliance', jev: { ...answer('elephant', 400, 1200), attempts: [http('mammoth'), ok('elephant')] }, chose: 'page' } }
+    const where: DecisionRecord = { ...decision('t1', 'jev', 1500), whereAsk: true, jev: answer('mammoth', 1500, 8100) }
+    // The Appliance Card's own pick: one call.
+    const own: DecisionRecord = { ...decision('t2', 'jev', 500), card: 'appliance', jev: answer('mammoth', 500, 1000) }
+    const exact = decision('t3', 'local_match')
+    const report = buildDecisionReport([page, where, own, exact])
+
+    expect(report.asks).toBe(4)
+    expect(report.jevRefused).toEqual({ 429: 1 })
+    expect(report.fellOver).toEqual({ count: 1, answered: 1 })
+    expect(report.earlyFire).toMatchObject({ spoken: 4, utterances: 3, spokenJevAsked: 4 })
+    expect(report.jevLatencyByTokens).toEqual([
+      { card: 'page', model: 'mammoth', band: '6k+', count: 2, p50: 1500, p95: 2000 },
+      { card: 'appliance', model: 'elephant', band: '< 1.5k', count: 1, p50: 400, p95: 400 },
+      { card: 'appliance', model: 'mammoth', band: '< 1.5k', count: 1, p50: 500, p95: 500 },
+    ])
+    const lines = formatCommandReport(buildReactionReport([]), report)
+    expect(lines).toContain('refusals per 100 asks: 25.0 (1 refused attempts over 4 asks)')
+    expect(lines.join('\n')).toContain('jev calls per spoken utterance 1.33 (0 on partials)')
+    expect(lines.join('\n')).toContain('mammoth   appliance  < 1.5k')
   })
 
   it('prints nothing when neither family has a record', () => {

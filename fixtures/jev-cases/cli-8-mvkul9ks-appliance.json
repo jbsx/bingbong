@@ -1,0 +1,64 @@
+{
+  "turnId": "cli-8-mvkul9ks",
+  "transcript": "Search for weather in London",
+  "note": "The Appliance Card's ask for cli-8-mvkul9ks (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792752566729,
+  "expect": [
+    {
+      "question": "action",
+      "label": "page|none"
+    },
+    {
+      "question": "action",
+      "not": "say_weather"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"Search for weather in London\"\nPage open: https://www.google.com/ — \"Google\"\nPlaying: nothing",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 11:49, Friday 23 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 13°C, partly cloudy now; today high 15°C, low 8°C, rain 20%; coming hours 14:00 14°C, 15:00 15°C, 16:00 15°C, 17:00 14°C, 18:00 13°C, 19:00 12°C; coming days 2026-10-24 14°C/9°C Rain, rain 70%, 2026-10-25 13°C/7°C Overcast, rain 30%, 2026-10-26 15°C/8°C Clear sky, rain 5%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"Google\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "Search",
+          "s0-1": "Search for",
+          "s0-2": "Search for weather",
+          "s0-3": "Search for weather in",
+          "s0-4": "Search for weather in London",
+          "s1-1": "for",
+          "s1-2": "for weather",
+          "s1-3": "for weather in",
+          "s1-4": "for weather in London",
+          "s2-2": "weather",
+          "s2-3": "weather in",
+          "s2-4": "weather in London",
+          "s3-3": "in",
+          "s3-4": "in London",
+          "s4-4": "London"
+        }
+      }
+    }
+  }
+}

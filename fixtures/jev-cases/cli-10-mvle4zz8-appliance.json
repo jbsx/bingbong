@@ -1,0 +1,161 @@
+{
+  "turnId": "cli-10-mvle4zz8",
+  "transcript": "turn it down a bit more",
+  "note": "The Appliance Card's ask for cli-10-mvle4zz8 (#485): built by `pnpm jev:appliance` from the state that case recorded.",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1792785401013,
+  "expect": [
+    {
+      "question": "action",
+      "label": "media-volume"
+    },
+    {
+      "question": "amount",
+      "not": "words"
+    },
+    {
+      "question": "amount",
+      "not": "moment"
+    },
+    {
+      "question": "amount",
+      "not": "little"
+    },
+    {
+      "question": "amount",
+      "not": "chunk"
+    },
+    {
+      "question": "amount",
+      "not": "lot"
+    },
+    {
+      "question": "amount",
+      "not": "half"
+    },
+    {
+      "question": "amount",
+      "not": "end"
+    },
+    {
+      "question": "amount",
+      "not": "to"
+    },
+    {
+      "question": "amount",
+      "not": "up-little"
+    },
+    {
+      "question": "amount",
+      "not": "up-step"
+    },
+    {
+      "question": "amount",
+      "not": "up-lot"
+    },
+    {
+      "question": "amount",
+      "not": "up-all"
+    },
+    {
+      "question": "amount",
+      "not": "down-all"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"turn it down a bit more\"\nPage open: https://www.youtube.com/watch?v=kt_0b4RwerY — \"YE - HIGHS AND LOWS - YouTube\"\nPlaying: \"YE - HIGHS AND LOWS - YouTube\" playing 0:04/1:51 volume 43% loop off",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "media-play": "play the media playing, \"YE - HIGHS AND LOWS - YouTube\": start it, or carry on playing it",
+          "media-pause": "pause the media playing, \"YE - HIGHS AND LOWS - YouTube\"",
+          "media-forward": "go forward in the media playing, \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-back": "go back in the media playing, \"YE - HIGHS AND LOWS - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-restart": "play the media playing, \"YE - HIGHS AND LOWS - YouTube\" again from the start",
+          "media-volume": "change the volume of the media playing, \"YE - HIGHS AND LOWS - YouTube\": up, down or to the number the words carry, the amount Choice saying which and how far",
+          "media-mute": "mute the media playing, \"YE - HIGHS AND LOWS - YouTube\"",
+          "media-unmute": "unmute the media playing, \"YE - HIGHS AND LOWS - YouTube\"",
+          "media-loop": "put the media playing, \"YE - HIGHS AND LOWS - YouTube\" on loop, so it repeats",
+          "media-unloop": "stop looping the media playing, \"YE - HIGHS AND LOWS - YouTube\"",
+          "media-rate": "change the playback speed of the media playing, \"YE - HIGHS AND LOWS - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "show": "music: show the video playing on the screen",
+          "say_time": "appliance: say the time and date — 20:56, Friday 23 October",
+          "say_weather": "appliance: say today's weather in the home city — words naming another place or a website are a search, not this — no forecast yet",
+          "say_playing": "appliance: say the song playing — \"YE - HIGHS AND LOWS - YouTube\", 0:04 of 1:51",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"YE - HIGHS AND LOWS - YouTube\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "turn",
+          "s0-1": "turn it",
+          "s0-2": "turn it down",
+          "s0-3": "turn it down a",
+          "s0-4": "turn it down a bit",
+          "s0-5": "turn it down a bit more",
+          "s1-1": "it",
+          "s1-2": "it down",
+          "s1-3": "it down a",
+          "s1-4": "it down a bit",
+          "s1-5": "it down a bit more",
+          "s2-2": "down",
+          "s2-3": "down a",
+          "s2-4": "down a bit",
+          "s2-5": "down a bit more",
+          "s3-3": "a",
+          "s3-4": "a bit",
+          "s3-5": "a bit more",
+          "s4-4": "bit",
+          "s4-5": "bit more",
+          "s5-5": "more"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

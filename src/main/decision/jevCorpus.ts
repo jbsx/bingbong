@@ -406,7 +406,19 @@ export function formatCandidates(candidates: readonly Candidate[], logsDir: stri
  * checked against the ask's own questions first: nothing is written for
  * one the replay could not judge.
  */
-export function caseFromLog(logsDir: string, id: string, expectations: readonly string[], corpusDir: string): { path: string; replaced: boolean } | { error: string } {
+export function caseFromLog(
+  logsDir: string,
+  id: string,
+  expectations: readonly string[],
+  corpusDir: string,
+  /**
+   * `jev:case --appliance` (#485): the logged page-card ask turned into its
+   * Appliance companion by `convert` — the real builder over the state it
+   * recorded — and written as `<id>-appliance`, for a line logged before the
+   * Appliance Card asked it itself.
+   */
+  appliance?: { readonly convert: (ask: { readonly state: string; readonly questions: DecisionQuestions }) => { readonly state: string; readonly questions: DecisionQuestions } | null },
+): { path: string; replaced: boolean } | { error: string } {
   if (expectations.length === 0) return { error: 'no --expect given' }
   const parsed: JevExpectation[] = []
   for (const text of expectations) {
@@ -418,11 +430,15 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
   const decision = collectDecisionRecords(logsDir).records.findLast((record): record is DecisionRecord => record.type === 'decision' && (record.turnId === id || record.ask === id))
   const asks = collectAsks(logsDir)
   // A line read as Steps (#364) holds two asks on its first Step's turn: the Step's own, and the one that split the line — taken when the expectations judge a question only it asked.
-  const askIds = decision !== undefined ? [decision.ask, decision.split?.ask].filter((askId): askId is string => askId !== undefined && (askId === id || id === decision.turnId)) : [id]
+  // A line the Appliance Card sent on to the page card (#485) holds both cards' asks: the expectations decide which.
+  const askIds = decision !== undefined ? [decision.ask, decision.split?.ask, decision.appliance?.ask].filter((askId): askId is string => askId !== undefined && (askId === id || id === decision.turnId)) : [id]
   const judged = askIds.find((askId) => parsed.every((expectation) => expectation.question in (asks.get(askId)?.questions ?? {})))
   const askId = judged ?? askIds[0]
-  const ask = askId === undefined ? undefined : asks.get(askId)
-  if (ask === undefined) return { error: `no ask recorded for ${id} in ${logsDir}` }
+  const logged = askId === undefined ? undefined : asks.get(askId)
+  if (logged === undefined) return { error: `no ask recorded for ${id} in ${logsDir}` }
+  const converted = appliance === undefined ? logged : appliance.convert(logged)
+  if (converted === null) return { error: `the ask for ${id} is no hop-0 page-card ask: it has no Appliance companion` }
+  const ask = { ...logged, state: converted.state, questions: converted.questions }
   for (const expectation of parsed) {
     const problem = expectationProblem(ask.questions, expectation)
     if (problem !== null) return { error: problem }
@@ -436,6 +452,7 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
   const jevCase: JevCase = {
     turnId: decision?.turnId ?? ask.turnId ?? ask.id,
     ...(transcript !== undefined ? { transcript } : {}),
+    ...(appliance !== undefined ? { note: `The Appliance Card's ask for ${id} (#485): built by \`pnpm jev:case --appliance\` from the page-card ask the log recorded.` } : {}),
     model: ask.model,
     recordedAt: ask.at,
     expect: parsed,
@@ -443,7 +460,7 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
   }
   mkdirSync(corpusDir, { recursive: true })
   for (const image of images) copyFileSync(image.from, join(corpusDir, image.to))
-  const path = join(corpusDir, `${id}.json`)
+  const path = join(corpusDir, `${id}${appliance !== undefined ? '-appliance' : ''}.json`)
   // Promoting a case again with other expectations replaces it, and says so.
   const replaced = existsSync(path)
   writeFileSync(path, `${JSON.stringify(jevCase, null, 2)}\n`)
