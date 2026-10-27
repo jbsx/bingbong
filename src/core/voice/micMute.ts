@@ -8,6 +8,9 @@ import type { VoiceState } from './ipcChannels'
  * not shown either: nothing said would be heard however it ends.
  */
 export function micMutedState(state: VoiceState): VoiceState {
-  const { loading: _loading, since: _since, speaking: _speaking, ...rest } = state
-  return { ...rest, listening: false, reason: null, monitoring: false, transcribing: false, hearing: false, micMuted: true }
+  const shown: VoiceState = { ...state, listening: false, reason: null, monitoring: false, transcribing: false, hearing: false, micMuted: true }
+  delete shown.loading
+  delete shown.since
+  delete shown.speaking
+  return shown
 }
