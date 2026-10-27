@@ -6,5 +6,8 @@
   "stage": "stt",
   "happened": "Kiosk 0.1.4-local.202610261228, Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam: Parakeet heard 'Look this song.' for 'Loop this song.' again (as turn-mvp2q7gx-v2 this morning); Jev and the Where Ask read none",
   "meant": "Put the song on loop",
-  "log": "decision-1793017798599-1.jsonl"
+  "log": "decision-1793017798599-1.jsonl",
+  "claimedBy": "#456",
+  "fixedBy": "6a6f35a1",
+  "case": "utterance-1793017975096-0024.wav"
 }
