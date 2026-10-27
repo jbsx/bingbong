@@ -14,7 +14,7 @@ import { fakePerfHarness } from '../../core/testing/doubles'
 import type { Clock } from '../../core/ports/clock'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival, PageFrame, PageFrames } from './createCdpBrowserController'
-import { createCdpBrowserController, READINESS_CAP_MS, SUBMIT_START_MS } from './createCdpBrowserController'
+import { createCdpBrowserController, READINESS_CAP_MS, REF_STATES_GRACE_MS, SUBMIT_START_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
 import type { AxNode } from '../../core/browser/refStates'
 
@@ -169,6 +169,20 @@ class FakeCdp implements CdpDebugger {
    */
   readyOutcome: ActionEffect | 'timeout' = 'mutation'
   readyHangs = false
+  /**
+   * Where the page stands for a page scroll's cheap check (#484), read in
+   * turn — before the wheel, then after it, then after its settle — the
+   * last answering every read past it; `slot` is the iframe under the
+   * viewport's centre on the read before.
+   */
+  scrollSpots: { scrollX: number; scrollY: number; inner?: number | null; slot?: number; room?: { up: boolean; down: boolean }; scrolled?: boolean; shell?: boolean }[] = [{ scrollX: 0, scrollY: 0 }, { scrollX: 0, scrollY: 360 }]
+  /** How many times a scroll was let settle. */
+  scrollSettles = 0
+  /** When set, a scroll's settle never answers: only a newer scroll ends its wait. */
+  settleHangs = false
+  private nextScrollSpot(): { scrollX: number; scrollY: number; inner?: number | null; slot?: number; room?: { up: boolean; down: boolean }; scrolled?: boolean; shell?: boolean } {
+    return (this.scrollSpots.length > 1 ? this.scrollSpots.shift() : this.scrollSpots[0])!
+  }
   /** How many readiness watches were armed and waited on. */
   readyArmed = 0
   readyWaited = 0
@@ -213,6 +227,19 @@ class FakeCdp implements CdpDebugger {
         this.readyWaited += 1
         if (this.readyHangs) return new Promise<T>(() => {})
         return { result: { value: this.readyOutcome } } as T
+      }
+      if (expression.includes('/* SCROLL_SPOT */')) {
+        const { slot, ...spot } = this.nextScrollSpot()
+        return { result: { value: { width: 1280, height: 800, inner: null, slot: slot ?? -1, ...spot } } } as T
+      }
+      if (expression.includes('/* SCROLL_READ */')) {
+        const spot = this.nextScrollSpot()
+        return { result: { value: { scrollX: spot.scrollX, scrollY: spot.scrollY, inner: spot.inner ?? null, scrolled: spot.scrolled ?? false } } } as T
+      }
+      if (expression.includes('/* SCROLL_SETTLED */')) {
+        this.scrollSettles += 1
+        if (this.settleHangs) return new Promise<T>(() => {})
+        return { result: { value: true } } as T
       }
       if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
       if (expression.includes('/* FRAME_BOX */')) return { result: { value: this.frameBox } } as T
@@ -1624,37 +1651,32 @@ describe('createCdpBrowserController ref staleness', () => {
     expect(collects()).toBe(1)
 
     // ...but acting invalidates them: a click may navigate, and scrolling
-    // shifts every viewport-relative rect. A scroll re-reads the page it
-    // scrolled off and the one it landed on — the second is what it reports
-    // as newly in view (#194) — so the refs it hands back are already fresh
-    // and the click after it spends no collect of its own.
+    // shifts every viewport-relative rect. A scroll ends on its cheap check
+    // and collects nothing (#484): the click after it reads the page anew.
     await controller.scroll('down')
-    expect(collects()).toBe(3)
+    expect(collects()).toBe(1)
     await controller.click(2)
-    expect(collects()).toBe(3)
+    expect(collects()).toBe(2)
     await controller.type(3, 'query\n')
-    expect(collects()).toBe(4)
+    expect(collects()).toBe(3)
     await controller.click(4)
-    expect(collects()).toBe(5)
+    expect(collects()).toBe(4)
   })
 })
 
 describe('createCdpBrowserController ref identity (ADR 0033)', () => {
-  it('resolves a number the scroll printed, and refuses a pre-scroll number the scroll moved', async () => {
-    // [1] leaves the viewport, [2] survives it as [1], and a new element
-    // arrives as [2] — the only number the delta printed.
+  it('refuses a pre-scroll number the scroll moved, once the next action reads the page the scroll deferred (#484)', async () => {
+    // [1] leaves the viewport, [2] survives it as [1], and a new element arrives as [2].
     const leaving = link('Leaving')
     const kept = link('Kept')
-    const entered = link('Entered')
-    const after = { ...youtubeFixture, elements: [kept, entered] }
+    const after = { ...youtubeFixture, elements: [kept, link('Entered')] }
     const cdp = new FakeCdp(after)
     cdp.collectValues = [{ ...youtubeFixture, elements: [leaving, kept] }, after]
     const { controller } = makeController({ cdp })
     await showRefs(controller)
 
-    expect(await controller.scroll('down')).toContain('new in view:\n[2] link "Entered"')
+    expect(await controller.scroll('down')).not.toContain('new in view')
 
-    await expect(controller.click(2)).resolves.toContain('clicked [2]')
     // [1] was shown as "Leaving"; it now names "Kept".
     await expect(controller.click(1)).rejects.toThrow(/ref 1 refused/)
   })
@@ -1725,61 +1747,118 @@ describe('createCdpBrowserController scroll', () => {
     }
   }
 
-  it('reports the new scroll position and what the scroll brought into view', async () => {
+  it('ends on a cheap check (#484): the new position, with no collect before the wheel or after it', async () => {
     const before = scrolledPage({ viewportText: ['The opening paragraph.'], elements: [paragraph('top')] })
-    const after = scrolledPage({
-      scrollX: 12,
-      scrollY: 360,
-      viewportText: ['The second paragraph.'],
-      elements: [paragraph('next')],
-    })
     const cdp = new FakeCdp(before)
-    cdp.collectValues = [before, after]
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0 }, { scrollX: 12, scrollY: 360 }]
     const { controller } = makeController({ cdp })
     await controller.readPage()
-
-    const outcome = await controller.scroll('down')
-
-    expect(outcome).toBe(
-      [
-        'scrolled down: x=12 y=360',
-        'new in view:',
-        '[1] link "next" href="https://example.com/next"',
-        'page text:',
-        'The second paragraph.',
-      ].join('\n'),
-    )
-  })
-
-  it('says end of page when the scroll brought nothing new in', async () => {
-    const stuck = scrolledPage({ scrollY: 3200, viewportText: ['The last paragraph.'], elements: [paragraph('footer')] })
-    const cdp = new FakeCdp(stuck)
-    cdp.collectValues = [stuck, stuck]
-    const { controller } = makeController({ cdp })
-    await controller.readPage()
-
-    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=3200\nend of page')
-  })
-
-  it('falls back to the probed position when the settled collect fails', async () => {
-    const cdp = new FakeCdp()
-    cdp.actionProbe = {
-      target: null,
-      signature: {
-        url: youtubeFixture.url,
-        title: youtubeFixture.title,
-        scrollX: 12,
-        scrollY: 360,
-        refCount: 20,
-        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => ref.label),
-        dialogOpen: false,
-      },
-    }
-    const { controller } = makeController({ cdp })
-    await controller.readPage()
-    cdp.collectException = 'collector blew up'
 
     expect(await controller.scroll('down')).toBe('scrolled down: x=12 y=360')
+    expect(cdp.collectCalls()).toHaveLength(1)
+    expect(cdp.scrollSettles).toBe(0)
+  })
+
+  it('collects nothing before the wheel when no snapshot exists yet', async () => {
+    const { cdp, controller } = makeController()
+
+    await controller.scroll('down')
+
+    expect(cdp.collectCalls()).toHaveLength(0)
+    expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseWheel' })
+  })
+
+  it('says end of page when nothing moved, read again once the wheel has settled', async () => {
+    const cdp = new FakeCdp(scrolledPage({ scrollY: 3200 }))
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 3200 }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=3200\nend of page')
+    expect(cdp.scrollSettles).toBe(1)
+  })
+
+  it('says end of page with no settle when the page had no room to move that way before the wheel', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, room: { up: false, down: true } }, { scrollX: 0, scrollY: 0 }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('up')).toBe('scrolled up: x=0 y=0\nend of page')
+    expect(cdp.scrollSettles).toBe(0)
+  })
+
+  it('is no end of page when the witness heard some other scroller move (a focused region an End key reached)', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, room: { up: false, down: false } }, { scrollX: 0, scrollY: 0, scrolled: true }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down', { rung: 'end' })).toBe('scrolled down: x=0 y=0')
+  })
+
+  it('lets an End key settle before it calls the end in an app shell, whose focused region the key moves', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, room: { up: false, down: false }, shell: true }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down', { rung: 'end' })).toBe('scrolled down: x=0 y=0\nend of page')
+    expect(cdp.scrollSettles).toBe(1)
+  })
+
+  it('calls the end at once for an End key on a page that scrolls and has no room left', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 3200, room: { up: true, down: false } }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down', { rung: 'end' })).toBe('scrolled down: x=0 y=3200\nend of page')
+    expect(cdp.scrollSettles).toBe(0)
+  })
+
+  it('never reads a frame under the centre as the end of the page', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, slot: 0, room: { up: false, down: false } }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=0')
+  })
+
+  it("drops an older scroll's settle when a newer scroll starts", async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, room: { up: true, down: true } }]
+    cdp.settleHangs = true
+    const { controller } = makeController({ cdp })
+
+    const older = controller.scroll('down')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    cdp.settleHangs = false
+    await controller.scroll('down')
+
+    expect(await older).toBe('scrolled down: x=0 y=0')
+  })
+
+  it('reads a wheel that lands late again after its settle, and says where it went', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0 }, { scrollX: 0, scrollY: 0 }, { scrollX: 0, scrollY: 360 }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=360')
+    expect(cdp.scrollSettles).toBe(1)
+  })
+
+  it('is no end of page when the scroller under the centre moved and the page did not (an app shell)', async () => {
+    const cdp = new FakeCdp()
+    cdp.scrollSpots = [{ scrollX: 0, scrollY: 0, inner: 0 }, { scrollX: 0, scrollY: 0, inner: 300 }]
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=0')
+  })
+
+  it('marks the snapshot stale, so the next action that needs the page reads it anew', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+
+    await controller.scroll('down')
+    await controller.readPage()
+
+    expect(cdp.collectCalls()).toHaveLength(2)
   })
 
   it('sends paced wheel ticks downward from the viewport center', async () => {
@@ -1803,15 +1882,6 @@ describe('createCdpBrowserController scroll', () => {
 
     expect(cdp.inputCalls().filter((call) => call.params?.type === 'mouseWheel')).toHaveLength(3)
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ deltaY: -120 })
-  })
-
-  it('collects a snapshot first when none exists yet, then again for the delta', async () => {
-    const { cdp, controller } = makeController()
-
-    await controller.scroll('down')
-
-    expect(cdp.collectCalls()).toHaveLength(2)
-    expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseWheel' })
   })
 })
 
@@ -3005,18 +3075,33 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     expect(records.filter((record) => record.stage === 'browser-ready').map((record) => record.detail)).toEqual([{ action: 'type', outcome: 'mutation' }])
   })
 
-  it('emits one readiness wait for a scroll — no tick is paced — beside the missing-snapshot collect and the delta collect', async () => {
+  it('emits a scroll as its check before, its input, one readiness wait — no tick is paced — and its check after, with no collect (#484)', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
 
     await subspans.runInTurn('turn-1', () => controller.scroll('down'))
 
-    expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
-      { reason: 'no-snapshot' },
-      { reason: 'scroll-delta' },
-    ])
-    expect(records.filter((record) => record.stage === 'browser-settle')).toEqual([])
-    expect(records.filter((record) => record.stage === 'browser-ready').map((record) => record.detail)).toEqual([{ action: 'scroll', outcome: 'mutation' }])
+    expect(records.map((record) => record.stage)).toEqual(['browser-scroll-check', 'browser-input', 'browser-ready', 'browser-scroll-check'])
+    expect(records.map((record) => record.detail)).toEqual([{ at: 'before' }, { action: 'scroll', ticks: 3 }, { action: 'scroll', outcome: 'mutation' }, { at: 'after', moved: true, settled: false }])
+  })
+
+  it('leaves the Ref States off a collect whose tree is later than the grace, and says so on the span (#484)', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const clock: Clock = { now: () => 0, setTimer: (ms, fn) => { const handle = setTimeout(fn, ms === REF_STATES_GRACE_MS ? 0 : ms); return () => clearTimeout(handle) } }
+    const cdp = new FakeCdp()
+    const late = cdp.send.bind(cdp)
+    cdp.send = (async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'Accessibility.getPartialAXTree') await new Promise((resolve) => setTimeout(resolve, 20))
+      return late(method, params)
+    }) as typeof cdp.send
+    const { controller } = makeController({ cdp, subspans, clock })
+
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    expect(records.find((record) => record.stage === 'browser-ref-states')?.detail).toMatchObject({ late: true })
+    // The late read still runs: the next collect starts no tree read beside it.
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+    expect(records.filter((record) => record.stage === 'browser-ref-states').map((record) => record.detail)).toContainEqual({ asked: 0, read: 0, skipped: true })
   })
 
   it('emits the stale-ref recollection when a click is refused', async () => {
@@ -3546,8 +3631,8 @@ describe('createCdpBrowserController readiness wait and effects (#324)', () => {
     const waitedAt = cdp.calls.findIndex((call) => String(call.params?.expression ?? '').includes('/* READY_WAIT */'))
     expect(armedAt).toBeLessThan(pressedAt)
     expect(pressedAt).toBeLessThan(waitedAt)
-    // The one timer is the cap, cancelled when the effect lands first.
-    expect(timers).toEqual([READINESS_CAP_MS])
+    // The one timer the action asks is the cap, cancelled when the effect lands first; a collect's is its Ref States' grace (#484).
+    expect(timers.filter((ms) => ms !== REF_STATES_GRACE_MS)).toEqual([READINESS_CAP_MS])
   })
 
   it('ends the wait at the cap on its own clock when the page never answers', async () => {

@@ -17,7 +17,7 @@ import { settledStateFromSnapshot, type SettledPageState } from '../../core/brow
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { Mark } from '../../core/browser/marks'
-import type { BrowserSubspans } from '../../core/perf/browserSubspans'
+import type { BrowserSubspanStage, BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
   ARRIVED_CLAUSE,
@@ -61,7 +61,7 @@ import type { DialogText, TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
 import { captureImage, type ImageFetch } from '../../core/command/captureOp'
 import { HEARD_VOLUME_FN, MEDIA_FACTS_FN, PAGE_MEDIA_JS, SET_HEARD_VOLUME_FN } from './pageMediaScript'
-import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
+import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
   clearFocusedScript,
@@ -75,7 +75,9 @@ import {
   overlayShownRefsScript,
   readinessArmScript,
   readinessWaitScript,
+  scrollReadScript,
   scrollSettledScript,
+  scrollSpotScript,
   refIsShownScript,
   type ClickPrep,
   type CoverNaming,
@@ -137,6 +139,16 @@ export interface PageFrames {
  * no frame ever holds up the read.
  */
 export const FRAME_GRACE_MS = 50
+
+/**
+ * The most a collect waits for its refs' Ref States (#484): a tree read
+ * past it leaves the page on the card without them, so a renderer slow to
+ * build the tree never holds up the read (the kiosk's 4.7 s on a 5.5 s
+ * collect, 2026-10-27). A guess, as {@link FRAME_GRACE_MS} once was: the
+ * kiosk's `browser-ref-states` span (p50 165 ms, p95 3,872 ms over 104
+ * collects) read against what the late cards lost would settle it.
+ */
+export const REF_STATES_GRACE_MS = 1000
 
 /**
  * What an action's watch saw of the page it left for (#309, ADR 0027): no
@@ -595,8 +607,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   let frameSlots = new Map<string, { parentKey: string | null; slot: number }>()
   // The frames whose registries hold shown numbers: a marking that leaves one out empties it, as the top's empties past its count.
   let markedFrames = new Set<string>()
-  // Each frame's own scroll offset, by the collect that read it (#481): a scroll that lands in a frame is that frame's to report.
-  const frameScrolls = new WeakMap<PageSnapshot, readonly FrameScroll[]>()
+  // Each frame's host and scroll offset as the last collect read them (#481): a scroll that lands in a frame names it by its host.
+  let lastFrames: readonly FrameScroll[] = []
 
   // Verbose sub-span instrumentation (#32). Timing-only wrappers: the wait,
   // collect, or probe always runs exactly as before; a channel is present
@@ -943,20 +955,32 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return reports.length > 0 ? `; ${reports.join('; ')}` : ''
   }
 
-  /** The collect with each ref's Ref State, or as it was when the tree cannot be read. */
+  /** A tree read a collect stopped waiting for, still running (#484): no read is started beside it, so a late tree never stacks another on a busy renderer. */
+  let lateRefStates: Promise<unknown> | null = null
+
+  /** The collect with each ref's Ref State, or as it was when the tree cannot be read, or not by {@link REF_STATES_GRACE_MS}, or while a late read still runs. */
   async function withRefStates(page: CollectedPage): Promise<CollectedPage> {
     const start = subspans?.now()
+    if (lateRefStates !== null) {
+      if (subspans !== undefined && start !== undefined) subspans.emit('browser-ref-states', 0, { asked: 0, read: 0, skipped: true })
+      return page
+    }
     let counts: RefStatesTally = { asked: 0, read: 0 }
-    try {
-      // The tree is read over the top document's session: a frame's refs keep no Ref State (#377).
-      return await readRefStates(cdp, page, (index) => (addresses[index]?.frame === null ? addresses[index].index : null), (told) => (counts = told))
-    } catch (error) {
+    // The tree is read over the top document's session: a frame's refs keep no Ref State (#377).
+    const read = readRefStates(cdp, page, (index) => (addresses[index]?.frame === null ? addresses[index].index : null), (told) => (counts = told)).catch((error: unknown) => {
       reportFault('browser.createCdpBrowserController.refStates', error)
       return page
-    } finally {
-      // The tree's read on its own (#432): inside browser-collect, the part the refs' states cost.
-      if (subspans !== undefined && start !== undefined) subspans.emit('browser-ref-states', subspans.now() - start, { ...counts })
+    })
+    const stated = await withDeadline(read, clock, REF_STATES_GRACE_MS)
+    if (stated === null) {
+      const late = read.finally(() => {
+        if (lateRefStates === late) lateRefStates = null
+      })
+      lateRefStates = late
     }
+    // The tree's read on its own (#432): inside browser-collect, the part the refs' states cost; `late` when the grace ended it (#484).
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-ref-states', subspans.now() - start, { ...counts, ...(stated === null ? { late: true } : {}) })
+    return stated ?? page
   }
 
   /**
@@ -1008,7 +1032,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     addresses = merged.addresses
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
     const snapshot = buildPageSnapshot(await withRefStates(await withFramedDialogText(merged, answered)))
-    frameScrolls.set(snapshot, answered.map(({ key, page }) => ({ key, host: frameHostOfPage(page), scrollX: page.viewport.scrollX ?? 0, scrollY: page.viewport.scrollY })))
+    lastFrames = answered.map(({ key, page }) => ({ key, host: frameHostOfPage(page), scrollX: page.viewport.scrollX ?? 0, scrollY: page.viewport.scrollY }))
     // Every collect, timed (#377): what the frames' fan-out costs is read off these.
     if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
     visualPoints.clear()
@@ -1357,6 +1381,39 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `scrolled ${direction}${at.host === undefined ? '' : ` in ${at.host}`}: x=${Math.round(at.scrollX)} y=${Math.round(at.scrollY)}`
   }
 
+  /** The page's own offsets as one evaluate reads them (#484): the window's, the kept scroller's, and whether any scroll was heard since the read before the wheel. */
+  interface PageScrollRead {
+    readonly scrollX: number
+    readonly scrollY: number
+    readonly inner: number | null
+    readonly scrolled?: boolean
+  }
+
+  /** Where a scroll stands: the page's read, and the wheeled frame's own offset. */
+  interface ScrollSpot extends PageScrollRead {
+    readonly frame: { readonly scrollX: number; readonly scrollY: number } | null
+  }
+
+  /** A frame's own offset, read in place (#481); null for a frame gone or unread. */
+  async function frameOffsetOf(frame: string | null): Promise<ScrollSpot['frame']> {
+    if (frame === null) return null
+    const read = await evaluateInFrame<[number, number]>(frame, '[window.scrollX, window.scrollY]').catch(() => null)
+    return read === null || read === undefined ? null : { scrollX: read[0], scrollY: read[1] }
+  }
+
+  /** The cheap check's read after an action that scrolls (#484): one evaluate in the page, one in the frame it reached; null when the page could not be read. */
+  async function scrollSpotNow(frame: string | null, expression = scrollReadScript()): Promise<ScrollSpot | null> {
+    const top = await evaluateInPage<PageScrollRead | null>(expression).catch((error: unknown) => {
+      reportFault('browser.createCdpBrowserController.scrollRead', error)
+      return null
+    })
+    if (top === null || top === undefined) return null
+    return { ...top, frame: await frameOffsetOf(frame) }
+  }
+
+  /** The page's offsets alone, for an action that keeps no scroller of its own (a Show Op). */
+  const PAGE_OFFSETS_JS = '({ scrollX: window.scrollX, scrollY: window.scrollY, inner: null })'
+
   /**
    * Which document a scroll moved (#481): the page when it moved, else the
    * frame the input reached when that did — a wheel over a consent wall's
@@ -1364,53 +1421,73 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * moved. Named by its host, as its refs are. Any other frame that moved
    * on its own (a carousel, a ticker) is not the scroll's.
    */
-  function scrolledDocument(before: PageSnapshot, after: { viewport: PageSnapshot['viewport']; frames: readonly FrameScroll[] }, frame: string | null): ScrolledAt {
-    const top = { scrollX: after.viewport.scrollX ?? 0, scrollY: after.viewport.scrollY, moved: after.viewport.scrollY - before.viewport.scrollY }
-    if (frame === null || top.moved !== 0 || top.scrollX !== (before.viewport.scrollX ?? 0)) return top
-    const was = (frameScrolls.get(before) ?? []).find((one) => one.key === frame)
-    const now = after.frames.find((one) => one.key === frame)
-    if (was === undefined || now === undefined || (was.scrollY === now.scrollY && was.scrollX === now.scrollX)) return top
-    return { scrollX: now.scrollX, scrollY: now.scrollY, moved: now.scrollY - was.scrollY, host: now.host }
+  function scrolledAt(before: ScrollSpot, after: ScrollSpot, frame: string | null): ScrolledAt {
+    const top = { scrollX: after.scrollX, scrollY: after.scrollY, moved: after.scrollY - before.scrollY }
+    if (frame === null || top.moved !== 0 || after.scrollX !== before.scrollX) return top
+    const [was, now] = [before.frame, after.frame]
+    const host = lastFrames.find((one) => one.key === frame)?.host
+    if (was === null || now === null || host === undefined || (was.scrollY === now.scrollY && was.scrollX === now.scrollX)) return top
+    return { scrollX: now.scrollX, scrollY: now.scrollY, moved: now.scrollY - was.scrollY, host }
   }
 
-  /** The frame under a point of the top's viewport (#481), by its key: the iframe a wheel there scrolls. Null over the page, or a frame no collect has keyed. */
-  async function frameAt(x: number, y: number): Promise<string | null> {
-    const slot = await evaluateInPage<number>(`(() => {
-      const el = document.elementFromPoint(${x}, ${y})
-      return el !== null && el.tagName === 'IFRAME' ? Array.from(window.frames).indexOf(el.contentWindow) : -1
-    })()`).catch(() => -1)
-    if (slot < 0) return null
-    for (const [key, at] of frameSlots) if (at.parentKey === null && at.slot === slot) return key
-    return null
+  /** Whether anything a scroll reaches moved: the page, the scroller under the centre, the frame, or any scroller the witness heard. */
+  function scrollMoved(before: ScrollSpot, after: ScrollSpot): boolean {
+    const frameMoved = before.frame !== null && after.frame !== null && (before.frame.scrollX !== after.frame.scrollX || before.frame.scrollY !== after.frame.scrollY)
+    return after.scrolled === true || after.scrollX !== before.scrollX || after.scrollY !== before.scrollY || (before.inner !== null && after.inner !== before.inner) || frameMoved
   }
 
-  /** A collector hiccup's position line (#481): the frame the input reached, read in place, when the page did not move. */
-  async function fallbackHeader(direction: 'up' | 'down', before: PageSnapshot, frame: string | null): Promise<string> {
-    const { signature } = await probeAction(null)
-    const viewport = { ...before.viewport, scrollX: signature.scrollX, scrollY: signature.scrollY }
-    const read = frame === null
-      ? null
-      : await evaluateInFrame<[number, number]>(frame, '[window.scrollX, window.scrollY]').catch(() => null)
-    const host = (frameScrolls.get(before) ?? []).find((one) => one.key === frame)?.host
-    const frames = read === null || frame === null || host === undefined ? [] : [{ key: frame, host, scrollX: read[0], scrollY: read[1] }]
-    return scrollHeader(direction, scrolledDocument(before, { viewport, frames }, frame))
+  /** Wait, bounded by {@link SCROLL_SETTLE_CAP_MS}, for a page scroll to stop (#383). */
+  async function scrollSettled(): Promise<void> {
+    await evaluateInPage(scrollSettledScript(SCROLL_STILL_MS, SCROLL_SETTLE_CAP_MS), { awaitPromise: true }).catch((error: unknown) => reportFault('browser.createCdpBrowserController.scrollSettled', error))
   }
+
+  /** One sub-span of an action's own work (#484), timed from `start`. */
+  function spanSince(stage: BrowserSubspanStage, start: number | undefined, detail: Record<string, unknown>): void {
+    if (subspans !== undefined && start !== undefined) subspans.emit(stage, subspans.now() - start, detail)
+  }
+
+  /** Ends the page scroll in flight's wait for its settle (#484): a newer scroll drops an older one's check. */
+  let dropScrollCheck: () => void = () => {}
 
   /**
-   * Scroll, then say what scrolled in (#194). The position alone left the
-   * model blind — it had to spend a whole round on read_page to see the
-   * new viewport — so the outcome carries the refs and text that entered
-   * it, and `end of page` when nothing did.
+   * Scroll, then confirm it with a cheap check (#484). A page scroll is
+   * seen by the person, undone by the next line and read by no hop — the
+   * next hop, an Errand's next step and the next line's reading each
+   * collect the page anyway — so it ends on one evaluate of where the page
+   * stands, never a collect: none before the wheel, and the recollection
+   * after it (#194's delta, 5.5 s on the kiosk) deferred to the next line
+   * that needs the page, the snapshot marked stale. A check that finds
+   * nothing moved says `end of page` at once when no scroller a wheel there
+   * could chain to had room that way; with room, an End or Home key in an
+   * app shell, or a frame under the centre, it lets the scroll settle and
+   * reads again. A
+   * frame under the centre is never read as the page's end. A newer scroll
+   * drops an older one's wait.
    */
   async function scroll(direction: 'up' | 'down', extent?: ScrollExtent): Promise<string> {
-    const before = await currentSnapshot()
+    dropScrollCheck()
+    let dropped = false
+    const newer = new Promise<void>((resolve) => {
+      dropScrollCheck = () => {
+        dropped = true
+        resolve()
+      }
+    })
+    const allTheWay = extent !== undefined && extent.screens === undefined
+    // Before the wheel: the viewport and where it stands, the frame under its centre (#481), and the room to move, in one evaluate.
+    const probeStart = subspans?.now()
+    const spot = await evaluateInPage<PageScrollRead & { width: number; height: number; slot: number; frame?: boolean; room?: { up: boolean; down: boolean }; shell?: boolean }>(scrollSpotScript())
+    let wheeled: string | null = null
+    if (!allTheWay && spot.slot >= 0) for (const [key, at] of frameSlots) if (at.parentKey === null && at.slot === spot.slot) wheeled = key
+    const before: ScrollSpot = { scrollX: spot.scrollX, scrollY: spot.scrollY, inner: spot.inner, frame: await frameOffsetOf(wheeled) }
+    spanSince('browser-scroll-check', probeStart, { at: 'before' })
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
-    const x = Math.floor(before.viewport.width / 2)
-    const y = Math.floor(before.viewport.height / 2)
-    // The End and Home keys go to the page, the focus given back to it; a wheel goes to what is under it.
-    const wheeled = extent !== undefined && extent.screens === undefined ? null : await frameAt(x, y)
+    const x = Math.floor(spot.width / 2)
+    const y = Math.floor(spot.height / 2)
+    const inputStart = subspans?.now()
     await armReadiness()
-    if (extent !== undefined && extent.screens === undefined) {
+    let ticks = 0
+    if (allTheWay) {
       // All the way (#383, ADR 0085): the browser's own End or Home key, which reaches the document's scroller — or, in an app shell whose body does not scroll, the focused region.
       page.focus()
       // A field or a frame holding the focus would take the key for its own (a caret to the line's end): the page is given it back.
@@ -1418,34 +1495,36 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchShortcut(shortcutEventFor({ key: direction === 'down' ? 'End' : 'Home' }))
     } else {
       // The Extent's screens in wheel notches (#383); the grammar's line, with none, its fixed three.
-      const ticks = extent?.screens !== undefined ? notchesFor(extent.screens, before.viewport.height) : SCROLL_TICKS
+      ticks = extent?.screens !== undefined ? notchesFor(extent.screens, spot.height) : SCROLL_TICKS
       for (let tick = 0; tick < ticks; tick++) {
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
       }
     }
+    spanSince('browser-input', inputStart, { action: 'scroll', ticks })
     // The scroll's first effect, or the cap (#324); no tick is paced.
-    if ((await awaitReadiness('scroll')) === 'scroll' && extent !== undefined) {
-      // An Extent's scroll is long, and Chromium animates it (#383): it is read where it stops, not on its first frame.
-      await evaluateInPage(scrollSettledScript(SCROLL_STILL_MS, SCROLL_SETTLE_CAP_MS), { awaitPromise: true }).catch((error: unknown) => reportFault('browser.createCdpBrowserController.scrollSettled', error))
-    }
-    // Viewport-relative rects shift with the scroll; refs must be re-read.
+    const effect = await awaitReadiness('scroll')
+    // Viewport-relative rects shift with the scroll: the refs are read anew by the next line that needs them.
     lastSnapshot = undefined
-    try {
-      const after = await recollection('scroll-delta', () => collectSnapshot())
-      const header = scrollHeader(direction, scrolledDocument(before, { viewport: after.viewport, frames: frameScrolls.get(after) ?? [] }, wheeled))
-      const delta = formatNewInView(before, after)
-      // Only the delta's numbers were shown; the rest keep the nodes the
-      // last full read gave them, so a ref the scroll shifted is refused
-      // rather than silently retargeted (ADR 0033).
-      if (delta) await overlayShown(delta.shownRefs)
-      return `${header}\n${delta?.block ?? SCROLL_END_OF_PAGE}`
-    } catch (error) {
-      // A collector hiccup must not fail a scroll that happened: the
-      // outcome degrades to the position line, the way withSettledState
-      // degrades a navigation.
-      reportFault('browser.createCdpBrowserController.scroll', error)
-      return fallbackHeader(direction, before, wheeled)
+    // An Extent's scroll is long, and Chromium animates it (#383): it is read where it stops, not on its first frame.
+    if (effect === 'scroll' && extent !== undefined) await Promise.race([scrollSettled(), newer])
+    const checkStart = subspans?.now()
+    let after = await scrollSpotNow(wheeled)
+    // A frame under the centre is the frame's to move, read or not: its stillness is never the page's end.
+    const overFrame = spot.frame === true || spot.slot >= 0
+    // Nothing moved yet where something could: a wheel into a busy renderer lands late, and in an app shell an End key moves a focused region no read names, so the scroll is let settle and read again.
+    // An End key on a page that scrolls reaches the page, whose room was read (measured, #484: a settle on every Home key cost a Jev Task's scroll hops 150 ms each).
+    const mayMove = (allTheWay && spot.shell === true) || overFrame || spot.room === undefined || spot.room[direction]
+    let settled = false
+    if (after !== null && !scrollMoved(before, after) && mayMove && !dropped) {
+      await Promise.race([scrollSettled(), newer])
+      settled = true
+      if (!dropped) after = await scrollSpotNow(wheeled)
     }
+    const moved = after === null || scrollMoved(before, after)
+    spanSince('browser-scroll-check', checkStart, { at: 'after', moved, settled })
+    const header = scrollHeader(direction, scrolledAt(before, after ?? before, wheeled))
+    // A check that could not read, that a newer scroll dropped, or that stood over a frame says only where the page stood.
+    return moved || dropped || overFrame ? header : `${header}\n${SCROLL_END_OF_PAGE}`
   }
 
   /**
@@ -2344,7 +2423,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // The key's first effect, or the cap (#324); then a key that left the
     // page (#309) waits for the load it started. No outcome carries a page here.
     await awaitReadiness('press-key')
-    if (watch !== undefined && (await watch.arrival()) !== 'none') lastSnapshot = undefined
+    // A key may move the page under its refs, now or after the cap on a busy renderer (#484): the next line that needs them reads them anew.
+    lastSnapshot = undefined
+    await watch?.arrival()
   }
 
   function readMediaState(): Promise<MediaState | null> {
@@ -2530,12 +2611,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * the registry node the number names, scrolling that element — never the
    * page, since an explicit scroll on an element never chains — by the
    * Extent's screens of its own view, instantly, or to its end or top. Its
-   * facts are read before and after in the same tick; a region that moved
-   * is waited for through the readiness watch, so its scroll event is the
-   * op's own, then read again to say what entered the view.
+   * facts are read before and after in the same tick — the op's own cheap
+   * check (#484) — and a region that moved is waited for through the
+   * readiness watch, so its scroll event is the op's own; the recollection
+   * is the next line's that needs the page, the snapshot marked stale.
    */
   async function scrollRegionOn(ref: number, direction: 'up' | 'down', extent: ScrollExtent): Promise<string> {
-    const { snapshot: before, target } = await resolveRef(ref)
+    const { target } = await resolveRef(ref)
     if (target.kind !== 'region') throw new Error(`ref ${ref} is no scroll region`)
     const at = addressOfRef(target.ref)
     const head = scrollOpHead(direction, ref)
@@ -2558,19 +2640,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const change = regionChangeOf(was, now)
     if (change === null) return `${head}${SCROLL_END_OF_REGION}`
     await awaitReadiness('scroll-region', at.frame)
-    // Rects inside the region moved, and its own facts: the refs are read anew.
+    // Rects inside the region moved, and its own facts: the refs are read anew by the next line that needs them.
     lastSnapshot = undefined
-    try {
-      const after = await recollection('scroll-delta', () => collectSnapshot())
-      const delta = formatNewInView(before, after)
-      // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
-      if (delta) await overlayShown(delta.shownRefs)
-      return `${head}${change}${delta !== null ? `\n${delta.block}` : ''}`
-    } catch (error) {
-      // A collector hiccup must not fail a scroll that happened: the outcome is the position line.
-      reportFault('browser.createCdpBrowserController.scrollRegion', error)
-      return `${head}${change}`
-    }
+    return `${head}${change}`
   }
 
   /**
@@ -2581,10 +2653,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * sticky header does not cover it: an element by its own scrollIntoView,
    * which reaches the scroller it sits in, a prose run by the page's
    * scroll to its Range, by its container's when the page did not move it.
-   * The outcome reads as a page scroll's, which the Verdict judges it as.
+   * The outcome reads as a page scroll's, which the Verdict judges it as:
+   * where the page stands, read in one evaluate before and after (#484),
+   * the recollection the next line's that needs the page.
    */
   async function showTextOn(block: TextBelow): Promise<string> {
-    const before = await currentSnapshot()
+    const spot = await evaluateInPage<PageScrollRead>(PAGE_OFFSETS_JS)
+    const before: ScrollSpot = { ...spot, frame: await frameOffsetOf(block.frame) }
     await armReadiness(block.frame)
     const shown = await evaluateInFrame<boolean | null>(block.frame, `((at) => {
       /* SHOW_TEXT */
@@ -2609,21 +2684,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // A null comes back as undefined (`evaluateInPage`): either is no block.
     if (shown == null) throw new Error('the text block is no longer on the page')
     await awaitReadiness('show-text', block.frame)
-    // Viewport-relative rects shifted: the refs are read anew.
+    // Viewport-relative rects shifted: the refs are read anew by the next line that needs them.
     lastSnapshot = undefined
-    try {
-      const after = await recollection('scroll-delta', () => collectSnapshot())
-      const scrolled = scrolledDocument(before, { viewport: after.viewport, frames: frameScrolls.get(after) ?? [] }, block.frame)
-      const header = scrollHeader((scrolled.moved ?? 0) < 0 ? 'up' : 'down', scrolled)
-      const delta = formatNewInView(before, after)
-      // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
-      if (delta) await overlayShown(delta.shownRefs)
-      return delta === null ? header : `${header}\n${delta.block}`
-    } catch (error) {
-      // A collector hiccup must not fail a scroll that happened: the outcome is the position line.
-      reportFault('browser.createCdpBrowserController.showText', error)
-      return fallbackHeader('down', before, block.frame)
-    }
+    const after = (await scrollSpotNow(block.frame, PAGE_OFFSETS_JS)) ?? before
+    const scrolled = scrolledAt(before, after, block.frame)
+    return scrollHeader((scrolled.moved ?? 0) < 0 ? 'up' : 'down', scrolled)
   }
 
   /**
@@ -2760,9 +2825,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       refs: [...snapshot.refs.filter((candidate) => candidate.ref !== ref), target],
       totalVisible: Math.max(snapshot.totalVisible, ref),
     }
-    // The same page, its frames where they stood (#481).
-    const frames = frameScrolls.get(snapshot)
-    if (frames !== undefined) frameScrolls.set(lastSnapshot, frames)
     visualPoints.set(ref, point)
     // The one number this round hands the model (ADR 0033).
     await overlayShown([ref])

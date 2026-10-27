@@ -88,15 +88,14 @@ describe.skipIf(!canDriveChrome)('Text Further Down in a real Chrome (#393)', ()
     expect(page.viewportText).toContain('Chicken Biryani')
   })
 
-  it('a Show Op brings its block a quarter down the view and says what came in, as a page scroll does', async () => {
+  it('a Show Op brings its block a quarter down the view and says where the page stands, as a page scroll does (#484)', async () => {
     await chrome.evaluate('window.scrollTo(0, 0)')
     const page = await controller.collectPage()
     const code = page.textBelow!.find((block) => block.text.startsWith('json.dumps'))!
 
     const outcome = await controller.showText(code)
 
-    expect(outcome.split('\n')[0]).toMatch(/^scrolled down: x=0 y=\d+$/)
-    expect(outcome).toContain('json.dumps(data, indent=4)')
+    expect(outcome).toMatch(/^scrolled down: x=0 y=\d+$/)
     expect(await topOf(`document.getElementById('code')`)).toBe(175)
   })
 

@@ -772,8 +772,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
 
 const MAX_DIALOG_TEXT = 200
 
-/** One numbered ref as the model reads it — the same line whether it arrives
- * in a whole page read or in a scroll's `new in view` block (#194). */
+/** One numbered ref as the model reads it, in a page read and on the action card. */
 export function formatRefLine(ref: SnapshotRef): string {
   const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
   const label = ref.label ? ` "${ref.label}"` : ''

@@ -1209,9 +1209,9 @@ export function markShownAtScript(indices: readonly number[]): string {
 }
 
 /**
- * Overlay the shown registry at these zero-based positions only: a scroll's
- * `new in view` block shows just the numbers it printed, so every other
- * number keeps the node it was shown as.
+ * Overlay the shown registry at these zero-based positions only: a number
+ * handed over outside a page read (a grounded ref, the ref a Command lights)
+ * is shown alone, so every other number keeps the node it was shown as.
  */
 export function overlayShownRefsScript(indices: number[]): string {
   return `(() => typeof window.__bingbongOverlayShown === 'function' ? window.__bingbongOverlayShown(${JSON.stringify(indices)}) : false)()`
@@ -1597,6 +1597,63 @@ export function scrollSettledScript(stillMs: number, capMs: number): string {
     onScroll()
     const cap = setTimeout(() => end(false), ${capMs})
   })`
+}
+
+/**
+ * A page scroll's cheap check, before the wheel (#484): one evaluate in
+ * place of a collect. It answers the viewport, the page's offset, the
+ * iframe under the viewport's centre (its slot in `window.frames`, -1 over
+ * the page; `frame` whenever one is there, keyed or not), and the offset of
+ * the scroller a wheel there reaches first — the nearest ancestor of the
+ * element under the centre that scrolls on its own, kept for
+ * {@link scrollReadScript} — and whether any scroller a wheel there can
+ * chain to, up to the page's own, has room to move up and down, so a
+ * scroll already at its end is known before the wheel; `shell` when the
+ * document itself does not scroll (an app shell, whose End key moves the
+ * focused region instead). It arms a witness every scroll event in the
+ * document reaches, so a scroller none of these names is seen moving too.
+ */
+export function scrollSpotScript(): string {
+  return `(() => {
+    /* SCROLL_SPOT */
+    const width = window.innerWidth
+    const height = window.innerHeight
+    const hit = document.elementFromPoint(Math.floor(width / 2), Math.floor(height / 2))
+    const slot = hit !== null && hit.tagName === 'IFRAME' ? Array.from(window.frames).indexOf(hit.contentWindow) : -1
+    const root = ${ROOT_SCROLLER}
+    let node = hit
+    while (node !== null && node !== root && node !== document.body) {
+      if (/(auto|scroll|overlay)/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight) break
+      node = node.parentElement
+    }
+    const inner = node !== null && node !== root && node !== document.body ? node : null
+    window.__bingbongScrollSpot = inner
+    const room = { up: false, down: false }
+    for (let el = hit; el !== null; el = el.parentElement) {
+      const scrolls = el === root || (/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight)
+      if (!scrolls) continue
+      if (el.scrollTop > 0) room.up = true
+      if (el.scrollTop + el.clientHeight < el.scrollHeight - 1) room.down = true
+    }
+    if (root.scrollTop > 0) room.up = true
+    if (root.scrollTop + root.clientHeight < root.scrollHeight - 1) room.down = true
+    const witness = window.__bingbongScrollWitness
+    if (witness) window.removeEventListener('scroll', witness, { capture: true })
+    window.__bingbongScrolled = false
+    window.__bingbongScrollWitness = () => { window.__bingbongScrolled = true }
+    window.addEventListener('scroll', window.__bingbongScrollWitness, { capture: true, passive: true })
+    const shell = root.scrollHeight <= root.clientHeight + 1
+    return { width, height, scrollX: window.scrollX, scrollY: window.scrollY, slot, frame: hit !== null && hit.tagName === 'IFRAME', inner: inner === null ? null : inner.scrollTop, room, shell }
+  })()`
+}
+
+/** The cheap check after the wheel (#484): the page's offset and the kept scroller's, read again, and whether the witness heard any scroll since. */
+export function scrollReadScript(): string {
+  return `(() => {
+    /* SCROLL_READ */
+    const inner = window.__bingbongScrollSpot
+    return { scrollX: window.scrollX, scrollY: window.scrollY, inner: inner && inner.isConnected ? inner.scrollTop : null, scrolled: window.__bingbongScrolled === true }
+  })()`
 }
 
 /**

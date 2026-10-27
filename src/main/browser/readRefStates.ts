@@ -21,8 +21,14 @@ import { refElementIndices, refKindOf, type CollectedPage } from '../../core/bro
 import { reportFault } from '../../core/trace/fault'
 import type { CdpDebugger } from './createCdpBrowserController'
 
-/** The object group the registry's handles are taken in, so one call releases them all. */
+/**
+ * The object groups the registry's handles are taken in, one per read, so
+ * one call releases them all — and a read a collect stopped waiting for
+ * (#484, `REF_STATES_GRACE_MS`) lets go of its own when it ends, never the
+ * next read's.
+ */
 const HANDLES = 'bingbong-ref-states'
+let readsStarted = 0
 
 interface RemoteObjectResponse {
   readonly result?: { readonly objectId?: string }
@@ -54,6 +60,7 @@ export async function readRefStates(
   registryIndexOf: (index: number) => number | null = (index) => index,
   tally?: (counts: RefStatesTally) => void,
 ): Promise<CollectedPage> {
+  const group = `${HANDLES}-${(readsStarted += 1)}`
   const indices = refElementIndices(page).filter((index) => registryIndexOf(index) !== null)
   if (indices.length === 0) {
     tally?.({ asked: 0, read: 0 })
@@ -62,7 +69,7 @@ export async function readRefStates(
   try {
     const registry = await cdp.send<RemoteObjectResponse>('Runtime.evaluate', {
       expression: '/* REF_HANDLES */ window.__bingbongRefs',
-      objectGroup: HANDLES,
+      objectGroup: group,
     })
     const objectId = registry.result?.objectId
     if (objectId === undefined) throw new Error('the page holds no ref registry')
@@ -101,6 +108,6 @@ export async function readRefStates(
     }
   } finally {
     // A page gone by now took its handles with it: the states read still stand.
-    await cdp.send('Runtime.releaseObjectGroup', { objectGroup: HANDLES }).catch((error: unknown) => reportFault('browser.readRefStates.release', error))
+    await cdp.send('Runtime.releaseObjectGroup', { objectGroup: group }).catch((error: unknown) => reportFault('browser.readRefStates.release', error))
   }
 }

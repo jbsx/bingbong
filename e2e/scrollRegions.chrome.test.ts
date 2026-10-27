@@ -104,7 +104,7 @@ describe.skipIf(!canDriveChrome)('Scroll Regions in a real Chrome (#383)', () =>
     for (const word of ['Menu', 'We use cookies', 'Clipped', 'Wide']) expect(labels.some((label) => label.includes(word))).toBe(false)
   })
 
-  it('AC3: down by a screen moves the region one view and says what entered it; up to the top brings it back', async () => {
+  it('AC3: down by a screen moves the region one view and says how far, on its own check with no collect (#484); up to the top brings it back', async () => {
     const page = await controller.collectPage()
     const chat = page.refs.find((ref) => ref.label === 'Live chat')!
     const scrollY = await chrome.evaluate<number>('window.scrollY')
@@ -112,7 +112,7 @@ describe.skipIf(!canDriveChrome)('Scroll Regions in a real Chrome (#383)', () =>
     const outcome = await controller.scrollRegion(chat.ref, 'down', { rung: 'screen', screens: 1 })
 
     expect(outcome.split('\n')[0]).toBe(`scroll [${chat.ref}] down: at top → scrolled 46%`)
-    expect(outcome).toContain('new in view:')
+    expect(outcome).toBe(`scroll [${chat.ref}] down: at top → scrolled 46%`)
     expect(await scrollTopOf(`document.getElementById('chat')`)).toBe(300)
     expect(await chrome.evaluate<number>('window.scrollY')).toBe(scrollY)
     await controller.collectPage()
