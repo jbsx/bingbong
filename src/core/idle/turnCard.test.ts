@@ -205,6 +205,44 @@ describe('the Turn Card fold', () => {
     expect(fold.state().openedAt).toBe(9000)
   })
 
+  it("a typed line's first stage after a line ended already draws none of the old line's rows", () => {
+    const fold = createTurnCardFold()
+    speak(fold, 'turn it up')
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'turn it up', action: 'volume up', keepsIdle: true, task: { id: 't1', hop: 0 }, at: 4600 })
+    fold.onEvent({ type: 'done', turnId: 't1', outcome: 'done', at: 4700 })
+    fold.onEvent({ type: 'status', turnId: 't2', status: 'thinking', hop: 0, detail: 'timer 5m', at: 9000 })
+    expect(labels(fold)).toEqual(['Thinking: “timer 5m”'])
+    expect(fold.state().heard).toBeNull()
+    expect(fold.state().reading).toBeNull()
+  })
+
+  it('a new wake over a card whose line ended opens it afresh, the old rows gone', () => {
+    const fold = createTurnCardFold()
+    speak(fold, 'turn it up')
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'turn it up', action: 'volume up', keepsIdle: true, task: { id: 't1', hop: 0 }, at: 4600 })
+    fold.onEvent({ type: 'done', turnId: 't1', outcome: 'done', at: 4700 })
+    // The Hot Listen closes on its silence, then the wake word again within the card's 15 s.
+    fold.onVoice(voice({ since: 8000 }), 8000)
+    expect(fold.state().end).toBe('done')
+    fold.onVoice(voice({ listening: true, reason: 'wake', since: 9000 }), 9000)
+    expect(fold.state().end).toBeNull()
+    expect(fold.state().openedAt).toBe(9000)
+    expect(labels(fold)).toEqual(['Listening: say a command'])
+  })
+
+  it("speech over a running line draws only the new line's rows, never the running line's", () => {
+    const fold = createTurnCardFold()
+    speak(fold, 'read')
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'read', action: 'read', task: { id: 't1', hop: 0 }, at: 4500 })
+    fold.onEvent({ type: 'status', turnId: 't1', status: 'speaking', hop: 0, at: 4600 })
+    fold.onVoice(voice({ listening: true, reason: 'wake', hearing: true, since: 8000 }), 8000)
+    fold.onPartial('stop')
+    expect(labels(fold)).toEqual(['Listening: “stop…”'])
+    // The running line's own later rows are not drawn either.
+    fold.onEvent({ type: 'speak', turnId: 't1', text: 'The page says hello', at: 8100 })
+    expect(labels(fold)).toEqual(['Listening: “stop…”'])
+  })
+
   it('a typed line opens the card on its first event, with no ear rows', () => {
     const fold = createTurnCardFold()
     fold.onEvent({ type: 'status', turnId: 't1', status: 'thinking', hop: 0, detail: 'timer 5m', at: 100 })

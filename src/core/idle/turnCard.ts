@@ -12,7 +12,10 @@ import type { VoiceHeardEvent, VoiceState } from '../voice/ipcChannels'
 // It goes 15 s after the later of the line's `done` and its last sentence
 // spoken, the Peek Card's own constant, so one number governs both. The
 // Peek Card's Ledger Strip (#475) is the same fold in another frame: the
-// band across the pane's bottom while the Feed Panel is shut.
+// band across the pane's bottom while the Feed Panel is shut. Its history
+// is the one line's alone: a new line, a new wake over an ended card, or
+// speech over a running line clears the rows the line before drew (owner,
+// 2026-10-27: the old command's history on the card "is confusing").
 
 /** How a step's text reads in the history: the newest in the primary ink, the rest quiet; an outcome in its colour. */
 export type TurnStepTone = 'plain' | 'quiet' | 'ok' | 'fail'
@@ -141,6 +144,8 @@ export function createTurnCardFold(): TurnCardFold {
   let lineText: string | null = null
   // Speech started over a running line: its ear rows are the next line's, and that line's first turn keeps them.
   let speechPending = false
+  // The running line's turns when speech started over it: their rows are the old command's, never drawn again.
+  let superseded = new Set<string>()
 
   /** What one line kept: its turns, its outcome trail, its sentences sounding, its words. */
   const clearLine = (): void => {
@@ -165,8 +170,10 @@ export function createTurnCardFold(): TurnCardFold {
     state = { ...state, openedAt: at }
     line += 1
     speechPending = false
+    superseded = new Set()
   }
   const push = (step: Omit<TurnStep, 'line'>): void => {
+    if (step.turnId !== null && superseded.has(step.turnId)) return
     const last = state.steps.at(-1)
     // The same step twice (a stage published again on the same object) is one row.
     if (last !== undefined && last.label === step.label && last.text === step.text && last.turnId === step.turnId) return
@@ -187,19 +194,20 @@ export function createTurnCardFold(): TurnCardFold {
     if (last !== undefined && last.label === 'Listening' && last.turnId === null && last.line === line) replaceLast({ at: last.at, label: 'Listening', text, tone, turnId: null })
     else push({ at, label: 'Listening', text, tone, turnId: null })
   }
-  const adopt = (turnId: string, at: number): void => {
+  const adopt = (turnId: string, at: number, hop: number): void => {
     if (turns.has(turnId)) return
     if (state.phase === 'hidden') {
       open(at)
+    } else if (state.end !== null && hop === 0 && !speechPending) {
+      // The next line's first turn after this one ended — a typed line, or the next step of a line in steps: its own
+      // card from its first event, the ended line's rows gone with it.
+      open(at)
     } else if (state.end !== null) {
-      // A hop after its forerunner's `done`, or the next line's thinking before its own `command`: the card is live again,
-      // and an end row the hop's own `done` left is not the Task's.
+      // A hop after its forerunner's `done`, or the turn of speech that started over the running line: the card is live
+      // again, and an end row the forerunner's `done` left is not this line's.
       const last = state.steps.at(-1)
       const steps = last !== undefined && last.label === TURN_END_WORDS[state.end] ? state.steps.slice(0, -1) : state.steps
       state = { ...state, end: null, endedAt: null, retiresAt: null, steps }
-      // A typed line's turn after a spoken line ended: the ear rows before it are not its. Speech that started over the
-      // running line already opened the next line's rows, and this turn is theirs.
-      if (!speechPending) line += 1
       speechPending = false
     }
     if (state.end === null) state = { ...state, retiresAt: null }
@@ -215,8 +223,8 @@ export function createTurnCardFold(): TurnCardFold {
       const hearing = voice.listening && voice.hearing
       const taking = voice.listening || voice.transcribing
       state = { ...state, ear, earSince: ear === was ? state.earSince : since }
-      if (taking && !wasTaking && (ear === 'listening' || ear === 'hearing' || ear === 'starting') && state.phase === 'hidden') {
-        // The wake: the card opens on the ear opening for an Utterance.
+      if (taking && !wasTaking && (ear === 'listening' || ear === 'hearing' || ear === 'starting') && (state.phase === 'hidden' || state.end !== null)) {
+        // The wake: the card opens on the ear opening for an Utterance — afresh over a line that ended, whose rows are not this one's.
         open(since)
         push({ at: since, label: 'Listening', text: 'say a command', tone: 'quiet', turnId: null })
       }
@@ -228,8 +236,11 @@ export function createTurnCardFold(): TurnCardFold {
         } else if (state.end !== null) {
           open(since)
         } else if (state.turnId !== null || state.stage !== null || state.heard !== null) {
+          // The running line's rows go: the history is the new line's from its first word.
           line += 1
           speechPending = true
+          superseded = new Set(turns)
+          state = { ...state, steps: [] }
         }
         state = { ...state, partial: '' }
         earRow(since, '…', 'quiet')
@@ -277,7 +288,7 @@ export function createTurnCardFold(): TurnCardFold {
     onEvent(event) {
       switch (event.type) {
         case 'status': {
-          adopt(event.turnId, event.at)
+          adopt(event.turnId, event.at, event.hop ?? 0)
           if (event.status === 'cancelled') {
             lastStatus = event.status
             return
@@ -305,7 +316,7 @@ export function createTurnCardFold(): TurnCardFold {
             // The next line: its card, keeping what this line's ear and its own thinking already drew.
             reset((step) => step.turnId === event.turnId || (step.turnId === null && step.line === line))
           }
-          adopt(event.turnId, event.at)
+          adopt(event.turnId, event.at, hop)
           const reading = event.action ?? (event.dropped === true ? NO_COMMAND : null)
           if (hop === 0) lineText = event.text
           state = { ...state, turnId: hop === 0 ? event.turnId : (state.turnId ?? event.turnId), reading, dropped: event.dropped === true }
