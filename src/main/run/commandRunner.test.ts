@@ -148,7 +148,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture']; applianceCard?: CommandRunnerDeps['applianceCard'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -204,6 +204,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(options?.lastPage ? { lastPage: options.lastPage } : {}),
     ...(player ? { player } : {}),
     ...(options?.siteQuestions ? { siteQuestions: options.siteQuestions } : {}),
+    ...(options?.applianceCard ? { applianceCard: options.applianceCard } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
     knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com', settings: 'settings.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
     flags: {
@@ -5271,5 +5272,108 @@ describe('the stages a Command passes through (#428)', () => {
     decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
     await runner.run('sign me in please')
     for (const event of events) if (event.type === 'status') expect(JSON.stringify(event)).not.toMatch(/jev|decision model/i)
+  })
+})
+
+describe('the Appliance Card (#485)', () => {
+  const CARD = { asks: 'sequential' } as const
+  const FACTS = { paused: false, ended: false, currentTime: 16, duration: 200, volume: 0.5, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 200 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false }
+  const playing = (browser: FakeBrowser): void => {
+    browser.applianceMediaNow = { title: 'Tum Se', facts: FACTS }
+  }
+  const kinds = (asks: AskRecord[]): string[] => asks.map((ask) => ask.kind)
+  const NEXT_IN_HAND = (browser: FakeBrowser): PageSnapshot => ({ ...browser.snapshot, refs: [...PAGE_REFS, ref(9, 'link', 'Next')] })
+
+  it('an exact line fires on its words with no page in hand: no collect, no ask', async () => {
+    const { browser, decision, runner } = harness({ applianceCard: CARD })
+    await runner.run('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
+    expect(browser.collects).toBe(0)
+    expect(decision.requests).toEqual([])
+  })
+
+  it('an exact line whose words a ref in hand carries as its label is read by Jev, never fired past it (ADR 0089 on the page in hand)', async () => {
+    const { browser, decision, asks, runner } = harness({ applianceCard: CARD })
+    browser.inHand = NEXT_IN_HAND(browser)
+    browser.snapshot = NEXT_IN_HAND(browser)
+    decision.script.push({ answers: { action: choice('page'), slot: choice('none') } }, { answers: { action: choice('click-9'), slot: choice('none') } })
+    await runner.run('next')
+    // A click goes on to its next hop (#328), as on today's road.
+    expect(kinds(asks).slice(0, 2)).toEqual(['appliance', 'command'])
+    expect(browser.clicks).toEqual([9])
+  })
+
+  it("a media line fires on the Appliance Card by kind: one small ask, no collect, the element's op", async () => {
+    const { browser, decision, asks, records, runner } = harness({ applianceCard: CARD })
+    playing(browser)
+    decision.script.push({ answers: { action: choice('media-volume'), slot: choice('none'), amount: choice('down-step') } })
+    await runner.run('lower the volume', { source: 'spoken' })
+    expect(browser.applianceMediaOps).toEqual([{ op: 'volume', to: 40 }])
+    expect(browser.collects).toBe(0)
+    expect(kinds(asks)).toEqual(['appliance'])
+    expect(asks[0]!.state).toContain('Playing: "Tum Se" playing 0:16/3:20 volume 50%')
+    expect(asks[0]!.state).not.toContain('Refs')
+    expect(records.find((record) => record.type === 'decision')).toMatchObject({ verb: 'media', reading: 'jev', card: 'appliance', ask: `${asks[0]!.turnId}-appliance`, ended: 'terminal' })
+  })
+
+  it("`page` goes on to today's page card, unchanged, and the record names the Appliance ask that sent it", async () => {
+    const { browser, decision, asks, records, events, runner } = harness({ applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('page'), slot: choice('none') } }, { answers: { action: choice('click-2'), slot: choice('none') } })
+    await runner.run('sign in')
+    expect(browser.clicks).toEqual([2])
+    expect(kinds(asks).slice(0, 2)).toEqual(['appliance', 'command'])
+    const record = records.find((record) => record.type === 'decision')
+    expect(record).toMatchObject({ verb: 'click', card: 'page', appliance: { ask: asks[0]!.id, chose: 'page' } })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'status', status: 'thinking', word: 'Looking', detail: 'at example.com' }))
+  })
+
+  it('`none` goes on to the page card too, whose none asks where as today (ADR 0082)', async () => {
+    const { decision, asks, runner } = harness({ applianceCard: CARD })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('thank you')
+    expect(kinds(asks)).toEqual(['appliance', 'command', 'where'])
+  })
+
+  it("the Flag is offered while there is a Task, and its pick keeps it as the grammar's Flag does", async () => {
+    const { decision, asks, kept, records, runner } = harness({ applianceCard: CARD })
+    await runner.run('reload')
+    const taskId = records.find((record) => record.type === 'decision')!.turnId
+    decision.script.push({ answers: { action: choice('flag'), slot: choice('none') } })
+    await runner.run('flag it as failure', { source: 'spoken' })
+    expect(Object.keys((asks[0]!.questions.action as DecisionChoiceQuestion).options)).toContain('flag')
+    expect(kept).toEqual([expect.objectContaining({ flag: expect.objectContaining({ taskId }) })])
+  })
+
+  it("the Appliance Card's host failing fires an Instant line's best guess; any other line goes on to the page card", async () => {
+    const one = harness({ applianceCard: CARD })
+    one.browser.inHand = { ...one.browser.snapshot, refs: [...PAGE_REFS, ref(9, 'button', 'scroll down')] }
+    one.decision.script.push({ unavailable: 'timeout' })
+    await one.runner.run('scroll down')
+    expect(one.browser.scrolls).toEqual(['down'])
+    expect(one.browser.collects).toBe(0)
+    const two = harness({ applianceCard: CARD })
+    two.decision.script.push({ unavailable: 'timeout' }, { answers: { action: choice('click-2'), slot: choice('none') } })
+    await two.runner.run('sign in')
+    expect(two.browser.clicks).toEqual([2])
+    expect(kinds(two.asks).slice(0, 2)).toEqual(['appliance', 'command'])
+  })
+
+  it("the parallel arm asks both cards at the Endpoint; the Appliance pick fires and the page card's answer is dropped", async () => {
+    const { browser, decision, runner } = harness({ applianceCard: { asks: 'parallel' } })
+    playing(browser)
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, { answers: { action: choice('media-pause'), slot: choice('none') } })
+    await runner.run('hold it')
+    await flushMicrotasks()
+    expect(browser.applianceMediaOps).toEqual([{ op: 'pause' }])
+    expect(browser.clicks).toEqual([])
+    expect(decision.requests).toHaveLength(2)
+  })
+
+  it("switched off (BINGBONG_APPLIANCE_CARD=off), the line takes today's road: one ask, on the page card", async () => {
+    const { decision, asks, runner } = harness()
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } })
+    await runner.run('sign in')
+    expect(kinds(asks).slice(0, 1)).toEqual(['command'])
+    expect(asks.some((ask) => ask.kind === 'appliance')).toBe(false)
   })
 })

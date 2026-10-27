@@ -19,6 +19,8 @@ import { dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
+import { applianceQuestions, applianceState, appliancePage, readApplianceAnswers, type ApplianceMedia, type ApplianceView } from '../../core/command/applianceCard'
+import { hostOf } from '../../core/pipeline/stageWords'
 import {
   commandQuestions,
   fitCard,
@@ -28,6 +30,7 @@ import {
   isTextlessGuess,
   MARKS_IMAGE,
   type CommandQuestions,
+  type CommandAnswers,
   commandState,
   doneAction,
   doneFacts,
@@ -238,7 +241,19 @@ export interface AppControl {
   findFolder(words: string): Promise<string | null>
 }
 
+/** How the Appliance Card's ask and the page card's stand (#485, T1): one after the other (S), or both at the Endpoint (P). */
+export type ApplianceAsks = 'sequential' | 'parallel'
+
 export interface CommandRunnerDeps {
+  /**
+   * The Appliance Card (#485): every line the Local Match cannot settle is
+   * read first on a card built from what the appliance holds, with no page
+   * collect, and the page card is asked only when Jev picks `page` or
+   * `none`; an exact line fires on its words before any collect. `asks`
+   * is T1's arm (BINGBONG_APPLIANCE_ASKS, sequential by default); `web`
+   * T2's arm B. Absent (BINGBONG_APPLIANCE_CARD=off), today's road.
+   */
+  applianceCard?: { readonly asks: ApplianceAsks; readonly web?: boolean }
   browser: BrowserController & Pick<VisualGroundingController, 'showRef'>
   /** The Decision Model the role resolves to now; null when none is configured. */
   decisionModel(): DecisionModel | null
@@ -348,6 +363,17 @@ function screenshotCardOf(result: string): string {
  * speech the VAD let go, and the page may have moved on since.
  */
 const PREPARED_MAX_AGE_MS = 30_000
+
+/**
+ * The most the Appliance Card waits for its one media evaluate (#485). A
+ * guess, cheapest to reverse: the read is issued at speech start ahead of
+ * the page collect, so it is in hand by the Endpoint; the `appliance-media`
+ * span's p95 on the kiosk would settle it.
+ */
+const APPLIANCE_MEDIA_BOUND_MS = 1_000
+
+/** The stage a line going on from the Appliance Card to the page card shows (#485, ui.md 2 and 9): the page named by its host. */
+const PAGE_CARD_WORD = 'Looking'
 
 /**
  * How long a retry chain stays open (ADR 0077): a Slot spoken this long
@@ -521,6 +547,8 @@ interface ErrandRun {
 interface PreparedPage {
   readonly at: number
   readonly snapshot: Promise<PageSnapshot | null>
+  /** The appliance's media, read at speech start ahead of the collect (#485), for the Appliance Card. */
+  readonly media?: Promise<ApplianceMedia | null>
 }
 
 export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
@@ -820,6 +848,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     passage?: readonly ViewBlock[]
     /** The Mark Ask's reading (#382, ADR 0084), read after a Where Ask whose top choice was `none`, over a card with a Textless Ref. */
     markAsk?: true
+    /** The card it came from (#485): the Appliance Card's own pick, or the page card's while the Appliance Card is on. */
+    card?: 'appliance' | 'page'
+    /** The Appliance Card's ask that sent the line on to the page card (#485). */
+    appliance?: DecisionRecord['appliance']
+    /** The Appliance Card read the line as the Flag (#485): kept as the grammar's Flag is, with its hint. */
+    flag?: { readonly hint?: string }
   }
 
   /** How a hop 0 is read (#364): whether Jev may split the line, and, for a Step's own words, where the Step stands and the ask's own id. */
@@ -896,6 +930,123 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
     if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
+    const card = deps.applianceCard
+    // A spoken Slot a name could be misheard in waits for the page as before (ADR 0077): only its Name Match needs it.
+    if (card === undefined || (quick !== null && spoken && slotIsNameable(quick))) return readPageCard(turnId, text, pending, spoken, options, quick, dismissed)
+    if (quick !== null) {
+      // An exact line fires on its words (reliability.md rule 1, ADR 0089 as amended, #485): the label test reads the page in hand — the
+      // speech-start collect once it has settled, else the last one while the pane is on its address — and never waits for one.
+      const inHand = dismissed ?? (await pageInHand(pending)) ?? lastPageInHand()
+      if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+      const local = localMatch(text, inHand.refs, knownAddress)
+      if (local !== null) return { command: local, page: inHand, reading: 'local_match', jevAsked: false }
+    }
+    const model = deps.decisionModel()
+    if (model === null) return readPageCard(turnId, text, pending, spoken, options, quick, dismissed)
+    // T1 (#485): arm P asks the page card at the Endpoint beside the Appliance Card, dropping its answer when the Appliance Card's pick fires.
+    const beside = card.asks === 'parallel' ? readPageCard(turnId, text, pending, spoken, options, quick, dismissed) : null
+    beside?.catch(() => {})
+    const first = await readAppliance(turnId, text, pending, spoken, options, model, card.web === true)
+    if ('reading' in first) return first.reading
+    // The Appliance Card's host failed (reliability.md rule 3): an Instant line fires the Local Match's best guess; any other goes on.
+    if (first.failed && quick !== null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: true, jev: first.appliance.jev, ask: first.appliance.ask, card: 'appliance' }
+    if (reading?.turnId === turnId && reading.submission === submitted && beside === null) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
+    const onward = await (beside ?? readPageCard(turnId, text, pending, spoken, options, quick, dismissed))
+    return { ...onward, appliance: first.appliance }
+  }
+
+  /** The page card's object on the Status Capsule (#485): the host of the page open, or "the page". */
+  function pageObject(): string {
+    const url = browser.state().url ?? ''
+    return isRealPage(url) ? `at ${hostOf(url)}` : 'at the page'
+  }
+
+  /** The page last collected while the pane is still on it (#485): the page in hand when the speech-start collect has not settled. */
+  function lastPageInHand(): CommandPage | null {
+    const snapshot = browser.snapshotInHand?.() ?? null
+    return snapshot === null ? null : commandPageOf(snapshot)
+  }
+
+  /**
+   * The appliance's media as the Appliance Card reads it (#485): the read
+   * issued at speech start, else one now — at most
+   * {@link APPLIANCE_MEDIA_BOUND_MS}, waited at the Endpoint and spanned.
+   */
+  async function mediaNow(turnId: string, pending: PreparedPage | null): Promise<ApplianceMedia | null> {
+    if (browser.applianceMedia === undefined) return null
+    const started = monotonic()
+    const prepared = pending !== null && started - pending.at <= PREPARED_MAX_AGE_MS ? pending.media : undefined
+    const read = prepared ?? readMedia()
+    let timedOut = false
+    const media = await Promise.race([read, sleep(APPLIANCE_MEDIA_BOUND_MS).then(() => {
+      timedOut = true
+      return null
+    })])
+    try {
+      tracer?.span(turnId, 'appliance-media', Math.max(0, monotonic() - started), { found: media !== null, prepared: prepared !== undefined, ...(timedOut ? { timedOut: true } : {}) })
+    } catch (error) {
+      reportFault('run.commandRunner.applianceMediaSpan', error, { turnId })
+    }
+    return media
+  }
+
+  /** One media evaluate (#485); a failure to read is no media. */
+  function readMedia(): Promise<ApplianceMedia | null> {
+    return (browser.applianceMedia?.() ?? Promise.resolve(null)).catch((error: unknown) => {
+      reportFault('run.commandRunner.applianceMedia', error)
+      return null
+    })
+  }
+
+  /** What the Appliance Card is built from (#485): the page by its address and title, the media, and what the appliance holds. */
+  async function applianceView(turnId: string, pending: PreparedPage | null): Promise<ApplianceView> {
+    const state = browser.state()
+    const media = await mediaNow(turnId, pending)
+    const own = appliance()
+    return { url: state.url ?? '', title: state.title ?? '', ...(media !== null ? { media } : {}), ...(own !== undefined ? { appliance: own } : {}), flaggable: lastTask !== null, timer: deps.timer !== undefined }
+  }
+
+  /**
+   * The Appliance Card's ask (#485): its own reading when its pick fires —
+   * a Command, the Flag, or the line split into Steps — else the ask that
+   * sends the line on to the page card, and whether its host failed.
+   */
+  async function readAppliance(
+    turnId: string,
+    text: string,
+    pending: PreparedPage | null,
+    spoken: boolean,
+    options: ReadOptions,
+    model: DecisionModel,
+    web: boolean,
+  ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean }> {
+    const view = await applianceView(turnId, pending)
+    // The Hearing reads the Page Terms of the page in hand, never waiting for one.
+    const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
+    const questions = applianceQuestions(text, view, { steps: options.split, heard, web })
+    const state = applianceState(text, view, heard, options.step)
+    const result = await askJev(model, 'appliance', turnId, state, questions, `${options.askId ?? turnId}-appliance`)
+    if (result.status !== 'answered') return { appliance: { ask: result.askId, jev: jevUnavailableOf(result) }, failed: true }
+    const answers = result.answers as unknown as CommandAnswers
+    const jev = jevDetailOf(answers, result.latencyMs, result.model, result.inputTokens, result.attempts)
+    const page = appliancePage(view)
+    const own: Pick<Reading, 'page' | 'reading' | 'jevAsked' | 'jev' | 'ask' | 'card'> = { page, reading: 'jev', jevAsked: true, jev, ask: result.askId, card: 'appliance' }
+    const read = readApplianceAnswers(answers, text, view)
+    const split = readSteps(answers, text)
+    if (split !== null) return { reading: { ...own, command: read.kind === 'command' ? read.command : UNREAD, steps: [split.first, split.rest] } }
+    if (read.kind === 'page') return { appliance: { ask: result.askId, jev, chose: read.chose }, failed: false }
+    if (read.kind === 'flag') return { reading: { ...own, command: UNREAD, flag: read.hint !== undefined ? { hint: read.hint } : {} } }
+    const reading: Reading = { ...own, command: read.command }
+    return { reading: isSettingsLine(read.command) ? await readSetting(turnId, text, state, reading, heard) : reading }
+  }
+
+  /**
+   * Today's page card (#324, ADR 0076): the page collected — the one
+   * prepared at speech start while it is fresh — the Local Match over its
+   * refs, else one Jev call on the whole page's card. While the Appliance
+   * Card is on, it is the card a line goes on to (#485), unchanged.
+   */
+  async function readPageCard(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions, quick: Command | null, dismissed: CommandPage | null): Promise<Reading> {
     const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(text, page.refs, knownAddress)
@@ -907,7 +1058,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const result = await askJev(model, 'command', turnId, ask.state, ask.questions, options.askId)
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
-    const reading: Reading = { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
+    const reading: Reading = { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}), ...(deps.applianceCard !== undefined ? { card: 'page' as const } : {}) }
     return split === null && isSettingsLine(reading.command) ? readSetting(turnId, text, ask.state, reading, heard) : reading
   }
 
@@ -1138,7 +1289,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'media': {
         // A Media Op (#372, ADR 0080): one evaluate on the media ref's own element, beside click and type.
-        if (command.mediaOp === undefined || command.target === null) throw new Error('a media Command names no op, or no ref')
+        if (command.mediaOp === undefined) throw new Error('a media Command names no op')
+        // The Appliance Card's op (#485) reaches the appliance's element by kind, never through a ref.
+        if (command.target === null) {
+          if (browser.applianceMediaOp === undefined) throw new Error('no media on this surface')
+          return browser.applianceMediaOp(command.mediaOp)
+        }
         const result = await browser.mediaOp(command.target, command.mediaOp)
         flash(command.target)
         return result
@@ -1304,6 +1460,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       jevAsked: read.jevAsked,
       ...(read.jev !== undefined ? { jev: read.jev } : {}),
       ...(read.ask !== undefined ? { ask: read.ask } : {}),
+      ...(read.card !== undefined ? { card: read.card } : {}),
+      ...(read.appliance !== undefined ? { appliance: read.appliance } : {}),
       ...(read.whereAsk ? { whereAsk: true as const } : {}),
       ...(read.markAsk ? { markAsk: true as const } : {}),
       ...(truncated ? { truncated: true } : {}),
@@ -2476,6 +2634,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A dismiss phrase over a pop-up waits for its Endpoint, where the Dismissal Ladder is read with Jev's choice on it and walked rung by rung.
     if (dismissed?.dialog !== undefined) return null
     if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    if (deps.applianceCard !== undefined && quick !== null && firesEarly(quick)) {
+      // A partial that already is the exact line fires there (reliability.md rule 1, #485): the label test on the page in hand, never a wait.
+      const inHand = dismissed ?? (await pageInHand(prepared)) ?? lastPageInHand()
+      if (stale()) return null
+      if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+      const local = localMatch(words, inHand.refs, knownAddress)
+      return local !== null && firesEarly(local) ? { command: local, page: inHand, reading: 'local_match', jevAsked: false } : null
+    }
     const page = dismissed ?? (await collectPage(prepared))
     if (stale()) return null
     const local = localMatch(words, page.refs, knownAddress)
@@ -2932,8 +3098,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // Speech started: a new Utterance. An Early Fire whose Utterance never reached an Endpoint is recorded without one.
       if (early !== null) closeEarly(early, null)
       nextUtterance()
+      // The Appliance Card's media read goes first (#485): issued ahead of the collect, it is not queued behind it in the page.
+      const media = deps.applianceCard !== undefined && browser.applianceMedia !== undefined ? readMedia() : undefined
       prepared = {
         at: monotonic(),
+        ...(media !== undefined ? { media } : {}),
         snapshot: browser.collectPage().catch((error: unknown) => {
           reportFault('run.commandRunner.prepare', error)
           return null
@@ -3071,6 +3240,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const heard = await read(turnId, lineRead, pending, source === 'spoken')
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
+        if (heard.flag !== undefined && submission === submitted) {
+          // The Appliance Card read the line as the Flag (#485): kept as the grammar's Flag is.
+          await flag(turnId, trimmed, heard.flag.hint)
+          span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'flag', effect: 'settled', reading: 'jev', card: 'appliance', source })
+          return
+        }
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
         const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, lineRead, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.

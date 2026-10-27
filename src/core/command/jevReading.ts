@@ -68,7 +68,7 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
  * the appliance's own features, never per site: the song's own ops are the
  * Media Ops its ref carries (ADR 0080).
  */
-type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show' | 'correct' | 'correct_back' | 'forget'
+export type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show' | 'correct' | 'correct_back' | 'forget'
 
 /** Every ref-less label the action card can offer (#456): the browser's verbs, the Appliance Verbs, the facts and the app's options. The Seed Lexicon lifts their words. */
 export function refLessCardLabels(): string[] {
@@ -141,14 +141,22 @@ function resumeOption(appliance: Appliance | undefined, page: CommandPage): [str
  * song is on, the Player's or the page's.
  */
 function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): ApplianceVerb[] {
+  return offeredApplianceVerbs(appliance, page.media !== undefined)
+}
+
+/** The Appliance Verbs on offer (#374), by ability: `songOn` is whether a song plays or has started anywhere — the Player's, or the page's (#485: the Appliance Card's media fact). */
+export function offeredApplianceVerbs(appliance: Appliance | undefined, mediaOn: boolean): ApplianceVerb[] {
   if (appliance?.queued === undefined) return []
-  const songOn = appliance.queued || page.media !== undefined
+  const songOn = appliance.queued || mediaOn
   const corrections = appliance.queued ? (['correct', 'correct_back', 'forget'] as const) : []
   return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : []), ...corrections]
 }
 
+/** An Appliance Verb's one line on the card. */
+export const applianceVerbLine = (verb: ApplianceVerb): string => APPLIANCE_VERBS[verb].line
+
 /** Whether an action card label names an Appliance Verb. */
-const isApplianceVerb = (label: string): label is ApplianceVerb => Object.hasOwn(APPLIANCE_VERBS, label)
+export const isApplianceVerb = (label: string): label is ApplianceVerb => Object.hasOwn(APPLIANCE_VERBS, label)
 
 /** The Appliance Verb whose Player action a `play` Command carries; null for one no Appliance Verb fires (a loop, a pause: the ref's own ops). */
 function applianceVerbOf(music: MusicAction): ApplianceVerb | null {
@@ -307,7 +315,7 @@ function decodedSegment(segment: string): string {
  * first only while the Task has not searched it — one search per site per
  * Task. Null when there is none.
  */
-function scopableSite(url: string, hop: HopContext | undefined): string | null {
+export function scopableSite(url: string, hop: HopContext | undefined): string | null {
   const site = siteOf(url)
   return site !== null && hop?.searched?.includes(site) === true ? null : site
 }
@@ -1012,7 +1020,7 @@ export function stepBoundaries(text: string): StepBoundary[] {
 }
 
 /** The `steps` Choice (#364): one Command, or two split at a boundary; null when the line has none. */
-function stepsQuestion(text: string): DecisionChoiceQuestion | null {
+export function stepsQuestion(text: string): DecisionChoiceQuestion | null {
   const boundaries = stepBoundaries(text)
   if (boundaries.length === 0) return null
   return {
@@ -1031,7 +1039,7 @@ export function readSteps(answers: CommandAnswers, text: string): StepBoundary |
 }
 
 /** The `where` Choice (#340): on this page, on this site, or elsewhere on the web. */
-function whereQuestion(site: string): DecisionChoiceQuestion {
+export function whereQuestion(site: string): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions: `Where do the words point: at something on this page, at something on ${site} that is not on this page, or somewhere else on the web?`,
@@ -1300,7 +1308,7 @@ export function spanOption(words: string, heard: readonly NameHearing[] | undefi
   return hearing === undefined ? words : `${words} (sounds like ${JSON.stringify(hearing.candidate)})`
 }
 
-function slotQuestion(text: string, heard?: readonly NameHearing[]): DecisionChoiceQuestion {
+export function slotQuestion(text: string, heard?: readonly NameHearing[]): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.',
@@ -1660,15 +1668,21 @@ function scrollCommand(op: ScrollOp, ref: CommandRef, answers: CommandAnswers | 
  * give no level for.
  */
 function mediaCommand(op: MediaOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
-  if (!isMediaRef(ref) || !mediaOpsOf(ref.media).includes(op)) return null
-  const command = (mediaOp: MediaOpAction): Command => ({ verb: 'media', target: ref.ref, slot: null, mediaOp })
-  if (isSeek(op)) return command({ op, ...seekAmount(amountOf(answers), op, ref.media, text) })
+  if (!isMediaRef(ref)) return null
+  const mediaOp = mediaActionOf(op, ref.media, answers, text)
+  return mediaOp === null ? null : { verb: 'media', target: ref.ref, slot: null, mediaOp }
+}
+
+/** The Media Op an element with these facts takes for a card's op (#372, #485): its seek's seconds, its volume's or speed's level; null as {@link mediaCommand}. */
+export function mediaActionOf(op: MediaOp, facts: MediaFacts, answers: CommandAnswers | HopAnswers, text: string): MediaOpAction | null {
+  if (!mediaOpsOf(facts).includes(op)) return null
+  if (isSeek(op)) return { op, ...seekAmount(amountOf(answers), op, facts, text) }
   if (op === 'volume' || op === 'rate') {
     const rung = levelOf(answers)
-    const to = rung === null ? null : op === 'volume' ? volumeLevel(rung, text, ref.media) : rateLevel(rung, text, ref.media)
-    return to === null ? null : command({ op, to })
+    const to = rung === null ? null : op === 'volume' ? volumeLevel(rung, text, facts) : rateLevel(rung, text, facts)
+    return to === null ? null : { op, to }
   }
-  return command({ op })
+  return { op }
 }
 
 /** The ref an action names, when the hop offers it — for a type, only a text field; for a Search Op, only a search box. */
@@ -1774,7 +1788,7 @@ function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number 
  * An Appliance Verb reading (#374): the `play` Command the grammar's exact
  * lines make, carrying the Player's action — a search's words off the Slot.
  */
-function applianceCommand(verb: ApplianceVerb, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command {
+export function applianceCommand(verb: ApplianceVerb, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command {
   const { music } = APPLIANCE_VERBS[verb]
   const words = music.kind === 'search' ? slotWords(slot, text) : null
   // A song to play reads `where` as a search does (AGENTS.md, "Jev decides;
@@ -1841,7 +1855,7 @@ function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside
  * without its unit); for a setting the words carry, a place or a time, the
  * Slot's words, else the whole line.
  */
-function appCommand(op: AppOp, answers: CommandAnswers | HopAnswers, text: string): Command {
+export function appCommand(op: AppOp, answers: CommandAnswers | HopAnswers, text: string): Command {
   const words = slotSpanOf(answers.slot) !== null ? slotWords(answers.slot, text) : text
   const amount = takesAmount(op) ? { rung: levelOf(answers) ?? 'to', words: text } : {}
   const carried = op.kind === 'words' ? { words } : {}

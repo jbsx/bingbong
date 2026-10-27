@@ -120,6 +120,7 @@ import { createDecisionModelSource } from './decision/createDecisionModel'
 import { createPlannerModel } from './planner/createPlannerModel'
 import type { PlannerModel } from '../core/ports/plannerModel'
 import { plannerSwitchedOff } from '../core/planner/plannerRouting'
+import { applianceCardOf } from '../core/command/applianceCard'
 import { createConsentChooser } from '../core/browser/consentChooser'
 import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
 import { onWindowClosed } from './onWindowClosed'
@@ -626,7 +627,10 @@ async function createWindow(): Promise<BrowserWindow> {
   onWindowClosed(win, appControl.detach)
   // Each Status Capsule stage timed (#442): the p95s that date its "still …" bound.
   const stageSpans = createStageSpans((stage, durMs, detail) => perfTracer.span(APP_TURN_ID, stage, durMs, detail))
+  const applianceCard = applianceCardOf(currentEnv())
   const commandRunner = createCommandRunner({
+    // The Appliance Card (#485): on by default; BINGBONG_APPLIANCE_CARD=off is today's road, with no Settings line.
+    ...(applianceCard !== null ? { applianceCard } : {}),
     browser: controller,
     decisionModel,
     publish: (event) => {

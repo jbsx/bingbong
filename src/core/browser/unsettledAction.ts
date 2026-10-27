@@ -148,12 +148,15 @@ interface Outstanding {
 }
 
 /**
- * `state()` is the port's one synchronous reader. Everything else answers a
+ * `state()` and `snapshotInHand()` (#485) are the port's synchronous readers. Everything else answers a
  * promise, so a withheld call rejects rather than throwing — a refusal
  * reaches every caller the way a failed action does, including the seams
  * that hand a bare `() => controller.settledState()` to a rail.
  */
-const SYNCHRONOUS_READERS = ['state'] as const
+const SYNCHRONOUS_READERS = ['state', 'snapshotInHand'] as const
+
+/** What a synchronous reader answers while the resource is withheld: no page. */
+const WITHHELD_READS: Readonly<Record<(typeof SYNCHRONOUS_READERS)[number], unknown>> = { state: { url: null, title: null }, snapshotInHand: null }
 
 /**
  * Stop (#330) passes custody even while it withholds: it acts on no page,
@@ -238,7 +241,7 @@ export function holdBrowserCustody<T extends BrowserController>(controller: T): 
         return (...args: unknown[]): unknown =>
           // No stale page while withheld: a later Run must not read, or act
           // through, the state an abandoned action left behind.
-          withheld() ? { url: null, title: null } : method.apply(target, args)
+          withheld() ? WITHHELD_READS[action as (typeof SYNCHRONOUS_READERS)[number]] : method.apply(target, args)
       }
       if (ALWAYS_ALLOWED.includes(action)) return (...args: unknown[]): unknown => method.apply(target, args)
       return (...args: unknown[]): unknown => {

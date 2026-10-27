@@ -50,6 +50,7 @@ import {
   parseMediaFacts,
   parseRegionFacts,
   type CollectedPage,
+  type MediaFacts,
   type PageLink,
   type PageSnapshot,
   type SnapshotRef,
@@ -59,7 +60,7 @@ import { notchesFor, regionChangeOf, SCROLL_END_OF_REGION, type ScrollExtent } f
 import type { DialogText, TextBelow } from '../../core/browser/pageText'
 import { mediaChangesOf } from '../../core/command/mediaOp'
 import { captureImage, type ImageFetch } from '../../core/command/captureOp'
-import { HEARD_VOLUME_FN, MEDIA_FACTS_FN, SET_HEARD_VOLUME_FN } from './pageMediaScript'
+import { HEARD_VOLUME_FN, MEDIA_FACTS_FN, PAGE_MEDIA_JS, SET_HEARD_VOLUME_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
@@ -540,6 +541,42 @@ class StaleRefError extends Error {
     this.name = 'StaleRefError'
   }
 }
+
+/**
+ * A JS function source `(el, op) => { before, after }` (#372, ADR 0080): a Media Op applied to one
+ * element, its facts read before and after in the same tick. Shared by the op on a ref and the
+ * Appliance Card's op on the appliance's element by kind (#485).
+ */
+const APPLY_MEDIA_OP_FN = `((el, op) => {
+  const facts = ${MEDIA_FACTS_FN}
+  const before = facts(el)
+  // The seeks are offered only with a seekable range (ADR 0080): the bounds are the facts' own.
+  const start = before.seekable ? before.seekable.start : 0
+  const end = before.seekable ? before.seekable.end : el.currentTime
+  const tracks = el.textTracks ? Array.from(el.textTracks) : []
+  switch (op.op) {
+    case 'play': el.play().catch(() => {}); break
+    case 'pause': el.pause(); break
+    case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
+    case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
+    case 'restart': el.currentTime = start; el.play().catch(() => {}); break
+    // Under a duck (#459) the level put back is set, the element left at its floor until the duck lets go.
+    case 'volume': ${SET_HEARD_VOLUME_FN}(el, Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100); break
+    case 'mute':
+    case 'unmute': el.muted = op.op === 'mute'; break
+    case 'loop':
+    case 'unloop': el.loop = op.op === 'loop'; break
+    case 'rate': el.playbackRate = op.to || 1; break
+    case 'captions': {
+      const track = tracks.find((t) => t.kind === 'subtitles' || t.kind === 'captions') || tracks[0]
+      for (const t of tracks) t.mode = t === track ? 'showing' : 'disabled'
+      break
+    }
+    case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
+  }
+  // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
+  return { before, after: facts(el) }
+})`
 
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
@@ -2342,34 +2379,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       /* MEDIA_OP */
       const el = (window.__bingbongRefs || [])[${at.index}]
       if (!el || !el.isConnected || !(el instanceof HTMLMediaElement)) return null
-      const facts = ${MEDIA_FACTS_FN}
-      const before = facts(el)
-      // The seeks are offered only with a seekable range (ADR 0080): the bounds are the facts' own.
-      const start = before.seekable ? before.seekable.start : 0
-      const end = before.seekable ? before.seekable.end : el.currentTime
-      const tracks = el.textTracks ? Array.from(el.textTracks) : []
-      switch (op.op) {
-        case 'play': el.play().catch(() => {}); break
-        case 'pause': el.pause(); break
-        case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
-        case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
-        case 'restart': el.currentTime = start; el.play().catch(() => {}); break
-        // Under a duck (#459) the level put back is set, the element left at its floor until the duck lets go.
-        case 'volume': ${SET_HEARD_VOLUME_FN}(el, Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100); break
-        case 'mute':
-        case 'unmute': el.muted = op.op === 'mute'; break
-        case 'loop':
-        case 'unloop': el.loop = op.op === 'loop'; break
-        case 'rate': el.playbackRate = op.to || 1; break
-        case 'captions': {
-          const track = tracks.find((t) => t.kind === 'subtitles' || t.kind === 'captions') || tracks[0]
-          for (const t of tracks) t.mode = t === track ? 'showing' : 'disabled'
-          break
-        }
-        case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
-      }
-      // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
-      return { before, after: facts(el) }
+      return ${APPLY_MEDIA_OP_FN}(el, op)
     })(${JSON.stringify(op)})`)
     // A null comes back as undefined (`evaluateInPage`): either is no media element.
     if (read == null) throw new Error(`ref ${ref} is no video or audio element`)
@@ -2381,6 +2391,44 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `${mediaOpHead(op.op, ref)}${changes.length > 0 ? changes.join(', ') : NO_OBSERVABLE_CHANGE}`
   }
 
+
+  /**
+   * The appliance's media element, by kind (#485, ADR 0079 as amended):
+   * `#movie_player video` first — the Player's own — else the page's own
+   * media as the collect picks it, the one playing, else the first that
+   * started. A never-started element (a promo) is page content: none. One
+   * evaluate in the top document, never a collect; with `op`, the Media Op
+   * applied to it and its facts read before and after in the same tick.
+   */
+  function onApplianceMedia(op: MediaOpAction | null): Promise<{ title: string; before: unknown; after: unknown } | null | undefined> {
+    return evaluateInPage<{ title: string; before: unknown; after: unknown } | null>(`((op) => {
+      /* APPLIANCE_MEDIA */
+      const player = document.querySelector('#movie_player')
+      const owned = player ? player.querySelector('video') : null
+      const el = (owned && (owned.currentTime > 0 || !owned.paused) ? owned : null) || ${PAGE_MEDIA_JS}
+      if (!el) return null
+      const title = (el.getAttribute('title') || el.getAttribute('aria-label') || document.title || '').trim()
+      if (op === null) { const facts = ${MEDIA_FACTS_FN}(el); return { title, before: facts, after: facts } }
+      return { title, ...${APPLY_MEDIA_OP_FN}(el, op) }
+    })(${JSON.stringify(op)})`)
+  }
+
+  async function applianceMedia(): Promise<{ title: string; facts: MediaFacts } | null> {
+    const read = await onApplianceMedia(null)
+    const facts = read == null ? undefined : parseMediaFacts(read.before)
+    return read == null || facts === undefined ? null : { title: read.title, facts }
+  }
+
+  /** The Appliance Card's Media Op (#485): on the appliance's element by kind, never through a ref, so nothing re-collects to resolve one. */
+  async function applianceMediaOp(op: MediaOpAction): Promise<string> {
+    const read = await onApplianceMedia(op)
+    if (read == null) throw new Error('no media is playing or started')
+    const [before, after] = [parseMediaFacts(read.before), parseMediaFacts(read.after)]
+    if (before === undefined || after === undefined) throw new Error("the element's media facts could not be read")
+    lastSnapshot = undefined
+    const changes = mediaChangesOf(before, after)
+    return `${mediaOpHead(op.op, 0)}${changes.length > 0 ? changes.join(', ') : NO_OBSERVABLE_CHANGE}`
+  }
 
   /**
    * A Capture Op (#466, ADR 0095): one evaluate, on any site. A ref's in
@@ -2776,6 +2824,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return { url: page.url(), title: page.title(), ...(status !== null ? { status } : {}) }
   }
 
+  /** The page last collected, while the pane is still on its address (#485): the page in hand an exact line's label test reads, never a collect. */
+  function snapshotInHand(): PageSnapshot | null {
+    return lastSnapshot !== undefined && lastSnapshot.url === page.url() ? lastSnapshot : null
+  }
+
   // ADR 0010 classifier facts off the freshest collected snapshot — free
   // right after readPage() set lastSnapshot; recollects otherwise.
   async function pageFacts() {
@@ -2831,6 +2884,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     click,
     openMenu,
     mediaOp,
+    applianceMedia,
+    applianceMediaOp,
     type,
     scroll,
     scrollRegion,
@@ -2850,6 +2905,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     evaluate: (expression) => evaluateInPage(expression),
     evaluateInFrames,
     state,
+    snapshotInHand,
     pageFacts,
     settledState,
     describeRef,

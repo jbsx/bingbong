@@ -7,8 +7,8 @@ import type { DecisionAttempt, DecisionQuestions } from '../ports/decisionModel'
 // record names its ask by id; the corpus of replayable cases is grown
 // from these (`pnpm jev:candidates`, `pnpm jev:case`).
 
-/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, or a consent wall's decline; `site` reads the user's answer to a Site Question (#423); `shelf` asks which file on the Shelf an upload sets (#424). `partial`, an Early Fire partial's, was written before #477 only: no partial is asked now, and the old logs still carry it. */
-export type AskKind = 'command' | 'where' | 'mark' | 'hop' | 'partial' | 'consent' | 'setting' | 'site' | 'shelf'
+/** Which call asked: the Appliance Card, read first on every line the Local Match cannot settle (#485); hop 0's reading on the page card, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, or a consent wall's decline; `site` reads the user's answer to a Site Question (#423); `shelf` asks which file on the Shelf an upload sets (#424). `partial`, an Early Fire partial's, was written before #477 only: no partial is asked now, and the old logs still carry it. */
+export type AskKind = 'appliance' | 'command' | 'where' | 'mark' | 'hop' | 'partial' | 'consent' | 'setting' | 'site' | 'shelf'
 
 /** The file an ask's image is saved as (#382, ADR 0084): its ask's id, and the image's place among the ask's after the first. */
 export function askImageFile(askId: string, index: number): string {

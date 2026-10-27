@@ -108,6 +108,17 @@ export interface DecisionRecord {
   readonly jev?: JevDetail | JevUnavailable
   /** The id of the ask this reading came from, in asks-*.jsonl (#338); absent when Jev was not asked. */
   readonly ask?: string
+  /**
+   * The card the reading came from (#485): `appliance`, the Appliance Card's own pick; `page`, today's page
+   * card. Absent on a Local Match reading, and in logs before #485.
+   */
+  readonly card?: 'appliance' | 'page'
+  /**
+   * The Appliance Card's ask that sent the line on to the page card (#485): its id, its answer, and whether
+   * it chose `page` or `none`; or, the Appliance Card's host failing, why it gave none. On a page-card reading
+   * only: the road's first call, which `perf:report` counts per Utterance.
+   */
+  readonly appliance?: { readonly ask: string; readonly jev: JevDetail | JevUnavailable; readonly chose?: 'page' | 'none' }
   /** The Utterance spoken over the page hit the 30 s cap. */
   readonly truncated?: boolean
   /** The Command fired on a partial transcript, before the Endpoint (#326), a Local Match line since #477; absent for one read at the Endpoint. */

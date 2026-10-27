@@ -18,7 +18,7 @@ import type {
 } from '../ports/browser'
 import { settledStateFromSnapshot } from '../browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
-import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
+import { linkHrefsOf, type MediaFacts, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
 import { blockedActionHead, clickFlagsHead, mediaOpHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, scrollOpHead, type BlockedAction } from '../browser/actionOutcome'
 import { SCROLL_END_OF_REGION, type ScrollExtent } from '../browser/scrollOp'
 import type { MediaOpAction } from '../browser/mediaOp'
@@ -252,6 +252,29 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async mediaOp(ref: number, op: MediaOpAction): Promise<string> {
     this.mediaOps.push({ ref, op })
     return `${mediaOpHead(op.op, ref)}${this.mediaOpChanges}`
+  }
+
+  /** The appliance's media (#485): what the Appliance Card's one evaluate reads; none by default. */
+  applianceMediaNow: { title: string; facts: MediaFacts } | null = null
+  /** Every read of it, and every Media Op fired on it by kind (#485), in order. */
+  applianceMediaReads = 0
+  readonly applianceMediaOps: MediaOpAction[] = []
+
+  async applianceMedia(): Promise<{ title: string; facts: MediaFacts } | null> {
+    this.applianceMediaReads += 1
+    return this.applianceMediaNow
+  }
+
+  async applianceMediaOp(op: MediaOpAction): Promise<string> {
+    this.applianceMediaOps.push(op)
+    return `${mediaOpHead(op.op, 0)}${this.mediaOpChanges}`
+  }
+
+  /** The page last collected while the pane is on it (#485); none by default. */
+  inHand: PageSnapshot | null = null
+
+  snapshotInHand(): PageSnapshot | null {
+    return this.inHand
   }
 
   async type(ref: number, text: string, options?: TypeOptions): Promise<string> {

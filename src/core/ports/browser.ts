@@ -1,5 +1,5 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
-import type { FileFieldFacts, PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
+import type { FileFieldFacts, MediaFacts, PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
 import type { CapturedImage } from '../command/captureOp'
 import type { ScrollExtent } from '../browser/scrollOp'
@@ -165,6 +165,16 @@ export interface BrowserController {
    */
   mediaOp(ref: number, op: MediaOpAction): Promise<string>
   /**
+   * The appliance's media element by kind (#485, ADR 0079 as amended): the
+   * Player's `#movie_player video` first, else the page's own playing or
+   * started one — its title and facts; null for none. One evaluate, no
+   * collect. Optional: a controller without it offers the Appliance Card no
+   * media.
+   */
+  applianceMedia?(): Promise<{ title: string; facts: MediaFacts } | null>
+  /** A Media Op on that element by kind (#485): one evaluate, read as {@link mediaOp}'s outcome; rejects when none plays or has started. */
+  applianceMediaOp?(op: MediaOpAction): Promise<string>
+  /**
    * Scroll the page (#194): with no Extent, three wheel notches at the
    * viewport's centre, the grammar's line; with one (#383, ADR 0085), that
    * many screens of notches, or `end` the browser's own End or Home key.
@@ -229,6 +239,12 @@ export interface BrowserController {
    */
   evaluateInFrames?<T>(expression: string): Promise<T[]>
   state(): BrowserState
+  /**
+   * The page last collected, while the pane is still on its address (#485);
+   * null when there is none. Never collects: the page in hand an exact
+   * line's label test reads (ADR 0089 as amended).
+   */
+  snapshotInHand?(): PageSnapshot | null
   /**
    * Facts for the mechanical Blocker classifier (ADR 0010): URL, title,
    * leading body text, dialog text, and ref kinds/srcs of the current page.
