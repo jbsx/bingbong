@@ -6,5 +6,6 @@
   "stage": "reading",
   "happened": "'next' typed on xkcd.com/100 (#408 build, Mammoth): hop 0 clicked [19] 'Next >' to /101/, right; hop 1 clicked [19] 'Next >' again on /101/ and landed on /102/ before ending done",
   "meant": "End done on /101/: one click of Next is what 'next' asks",
-  "log": "decision-1792789363339-1.jsonl"
+  "log": "decision-1792789363339-1.jsonl",
+  "ruled": "not a failure: a sure yes ended the Task before anything fired (commandRunner.ts:2229); the record keeps Jev's pick beside ended: done (orchestrator ruling 2026-10-27)"
 }
