@@ -89,6 +89,7 @@ import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noRespo
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { grammarErrorOf, headsFlagLine, readFlagLine } from '../../core/command/cliGrammar'
+import { exactLineHeard } from '../../core/command/heardLine'
 import { SITE_ANSWERS, alertLine, exactSiteAnswer, readSiteAnswer, siteQuestionAsk, siteQuestionLine, type SiteAnswer, type SiteQuestion } from '../../core/command/siteQuestion'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 import { describeDuration } from '../../core/timer/duration'
@@ -1250,6 +1251,25 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return spoken ? hearNames(text, page.terms ?? [], learnedTerms(), commandHearing()) : []
   }
 
+  /** The words the ear gave, by turn, for each spoken line read as the exact line it was wholly heard as (#478); its records carry them. */
+  const linesHeard = new Map<string, string>()
+
+  /**
+   * The exact line a spoken line is wholly heard as (#478). Read before the
+   * page is collected, so without the Page Terms: a guess, the cheapest to
+   * reverse, as the corpus has no page name a whole line sounds like. A
+   * spoken line on a page whose name sounds like a command would settle it.
+   */
+  /** The record's `lineHeard` for a turn read as the exact line it was heard as; nothing for any other. */
+  function heardAs(turnId: string): { lineHeard?: string } {
+    const heard = linesHeard.get(turnId)
+    return heard === undefined ? {} : { lineHeard: heard }
+  }
+
+  function heardExactly(text: string): string | null {
+    return exactLineHeard(text, learnedTerms(), commandHearing(), knownAddress)
+  }
+
   function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
     if (!spoken || !slotIsNameable(heard)) return { command: heard, matched: null }
     const pageTerms = page.terms ?? []
@@ -1279,6 +1299,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,
       ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
+      ...heardAs(turnId),
       jevAsked: read.jevAsked,
       ...(read.jev !== undefined ? { jev: read.jev } : {}),
       ...(read.ask !== undefined ? { ask: read.ask } : {}),
@@ -1608,7 +1629,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     } catch (error) {
       reportFault('run.commandRunner.flagShot', error, { turnId })
     }
-    const record: Omit<FlagRecord, 'shot'> = { type: 'flag', turnId, taskId: task.id, at: firedAt, ...(hint !== undefined ? { hint } : {}), url: browser.state().url ?? '' }
+    const record: Omit<FlagRecord, 'shot'> = { type: 'flag', turnId, taskId: task.id, at: firedAt, ...(hint !== undefined ? { hint } : {}), ...heardAs(turnId), url: browser.state().url ?? '' }
     let kept: string | null = null
     try {
       kept = deps.flags?.keep(record, shot, task.at) ?? null
@@ -2989,6 +3010,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         return true
       }
+      // A spoken line wholly heard as one exact line (#478) is read as that line, as if the ear had heard it right. The words heard are
+      // still what is shown (the Receipt) and ride its record.
+      const exact = source === 'spoken' ? heardExactly(trimmed) : null
+      if (exact !== null) linesHeard.set(turnId, trimmed)
+      const lineRead = exact ?? trimmed
       // Thinking (#428): the line is taken, before anything reads it — the page read and every ask after it are under way,
       // so the Status Capsule never says Ready while it is read. The heard words ride it, so the user sees they were heard right.
       const thinking = (): void => publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: trimmed, at: at() })
@@ -3000,7 +3026,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return true
       }
       // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command — and no stage of its own, so the pill stays on the Task it leaves.
-      const flagged = readFlagLine(trimmed)
+      const flagged = readFlagLine(lineRead)
       if (flagged !== null) {
         if (source === 'spoken') observeTerms(trimmed)
         await flag(turnId, trimmed, flagged.hint)
@@ -3024,25 +3050,25 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const pending = prepared
       prepared = null
       // `errand <words>` (#467, ruling 1): an exact grammar line, read only while the Errand is armed.
-      const goal = deps.errand !== undefined ? errandGoalOf(trimmed) : null
+      const goal = deps.errand !== undefined ? errandGoalOf(lineRead) : null
 
       const perform = async (): Promise<void> => {
         if (goal !== null) {
           reading = null
           if (source === 'spoken') observeTerms(trimmed)
-          publish({ type: 'command', turnId, text: trimmed, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
+          publish({ type: 'command', turnId, text: lineRead, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
           span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'errand', effect: 'settled', reading: 'local_match', source })
           await startErrand({ id: turnId, goalLine: goal, source }, submission)
           return
         }
         lastAnswer = null
-        const heard = await read(turnId, trimmed, pending, source === 'spoken')
+        const heard = await read(turnId, lineRead, pending, source === 'spoken')
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, trimmed, heard, {}, { measured: true })
+        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, lineRead, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
-        if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: trimmed, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
+        if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
       await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
       return true

@@ -87,9 +87,9 @@ export function grammarErrorOf(line: string): string | null {
 /**
  * The Flag's fixed heads (#421): two words or more, so a ref labelled
  * "flag" or "mark" keeps its own reading (ADR 0089). Adding one is a
- * grammar change.
+ * grammar change: "mark as failure" is the owner's own (#478).
  */
-export const FLAG_HEADS: readonly string[] = ['mark this as a failure', 'flag that', 'that was wrong']
+export const FLAG_HEADS: readonly string[] = ['mark this as a failure', 'mark as failure', 'flag that', 'that was wrong']
 const HINT_MARK = 'with the hint'
 /** The mark in the line as given: its words with whatever {@link flagWords} reads as a space between them. */
 const HINT_MARK_RE = /with[^\p{L}\p{N}']+the[^\p{L}\p{N}']+hint/iu

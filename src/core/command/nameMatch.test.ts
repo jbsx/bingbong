@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commandHearingTerms, HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, typedRepair, wordSoundKey } from './nameMatch'
+import { commandHearingTerms, HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, typedRepair, wholeCommandHearing, wordSoundKey } from './nameMatch'
 
 // The Name Match (ADR 0077, #325): a Slot that sounds like a name the page
 // shows, or one the user taught the app, is carried as that name. The
@@ -118,6 +118,28 @@ describe('hearNames', () => {
   it('hears at most the cap', () => {
     const names = ['Alpha Bravo', 'Charlie Delta', 'Echo Foxtrot', 'Golf Hotel']
     expect(hearNames('alfa brava charly delda eko foxtrat gulf hotell', names, [])).toHaveLength(HEARING_CAP)
+  })
+})
+
+describe('wholeCommandHearing (#478)', () => {
+  const commands = commandHearingTerms(['mark this as a failure', 'mark as failure', 'loop this song', 'skip this song'])
+
+  it('is the one command phrase a whole line sounds like: "Mark as junior." is "mark as failure" (turn-mvpdteuq-v10)', () => {
+    expect(wholeCommandHearing('Mark as junior.', [], commands)).toBe('mark as failure')
+    expect(wholeCommandHearing('Mark this as a junior.', [], commands)).toBe('mark this as a failure')
+    expect(wholeCommandHearing('Loop the song.', [], commands)).toBe('loop this song')
+  })
+
+  it('is nothing for a line only partly covered, said as spelled, or a name the user taught', () => {
+    expect(wholeCommandHearing('Mark as junior and play the next one', [], commands)).toBeNull()
+    expect(wholeCommandHearing('mark as failure', [], commands)).toBeNull()
+    expect(wholeCommandHearing('mark as junior', ['marcus junior'], commands)).toBeNull()
+  })
+
+  it('is nothing when the verb was heard as another: "Stop this song." (meant "loop") is no "skip this song"', () => {
+    expect(hearNames('Stop this song.', [], [], commands)).toEqual([{ heard: 'Stop this song', candidate: 'skip this song', from: 'command' }])
+    expect(wholeCommandHearing('Stop this song.', [], commands)).toBeNull()
+    expect(wholeCommandHearing('Look this song.', [], commands)).toBeNull()
   })
 })
 

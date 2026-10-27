@@ -534,7 +534,12 @@ are never matched, a typed line never is, and nothing asks "did you mean":
 a wrong Name Match is a Misfire. It is how the recogniser is allowed to be
 wrong about a name. Before the ask, the Hearing says on the card which of a
 spoken line's words sound like a name, and which; the match after the ask
-stays.
+stays. A spoken line the Hearing hears wholly as one command phrase, its
+first word the phrase's own, is read as that exact line when the phrase
+fires with no ask (a Flag head, a Local Match that needs no page): as if
+the ear had heard it right, with no Jev call; the words heard are still
+what is shown, and are kept on the record (#478). A line only partly covered, or whose verb was heard as
+another ("Stop this song." is no "skip this song"), goes to Jev as heard.
 _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
@@ -628,9 +633,11 @@ _Avoid_: bug report, ticket, known issue
 
 **Flag**:
 The user's word, in normal use, that the previous Task did not do what
-was meant: "mark this as a failure", "flag that" or "that was wrong",
-optionally followed by "with the hint <words>" (#421). An exact line, never
-Jev's and never a Command: it touches no page and ends or resumes no Task.
+was meant: "mark this as a failure", "mark as failure", "flag that" or
+"that was wrong", optionally followed by "with the hint <words>" (#421,
+#478). An exact line, never Jev's and never a Command: it touches no page
+and ends or resumes no Task. Spoken, it is also a line wholly heard as a
+head ("Mark as junior.", see Name Match).
 It keeps the previous Task — every hop and Step, by its Task id — with the
 pane's shot as it stood, out of reach of the 7-day purge. A Flag is the
 strongest candidate `pnpm bugs:candidates` has, and the one from a normal

@@ -99,6 +99,8 @@ export interface DecisionRecord {
   readonly slotHeard?: string
   /** Where the Slot's name came from: the Page Terms, or the Learned Terms. */
   readonly slotFrom?: NameSource
+  /** The Hearing (#478): the words heard where `transcript` is the exact line they were wholly heard as; absent when the line is as heard. */
+  readonly lineHeard?: string
   /** Whether a Jev call was made for this Command. */
   readonly jevAsked: boolean
   /** Jev's answer, or why it gave none; absent when it was not asked. */
@@ -256,6 +258,8 @@ export interface FlagRecord {
   readonly taskId: string
   readonly at: number
   readonly hint?: string
+  /** The words heard, where the flag line was wholly heard as a Flag head (#478); absent when it was said as one. */
+  readonly lineHeard?: string
   readonly url: string
   /** The pane as the flag fired, as a path under the logs dir; absent when the shot failed. */
   readonly shot?: string

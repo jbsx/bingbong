@@ -248,6 +248,12 @@ describe('the Flag line (#421)', () => {
     expect(readFlagLine('That was wrong!')).toEqual({})
   })
 
+  it('reads "mark as failure" as a Flag head, with its hint slot (#478)', () => {
+    expect(readFlagLine('Mark as failure.')).toEqual({})
+    expect(readFlagLine('mark as failure with the hint it doubled nothing')).toEqual({ hint: 'it doubled nothing' })
+    expect(readFlagLine('mark as failed')).toBeNull()
+  })
+
   it('takes the words after "with the hint" as the hint, as they were said', () => {
     expect(readFlagLine("mark this as a failure with the hint couldn't load the page")).toEqual({ hint: "couldn't load the page" })
     expect(readFlagLine('Mark this as a failure, with the hint: it opened the wrong video.')).toEqual({ hint: 'it opened the wrong video' })

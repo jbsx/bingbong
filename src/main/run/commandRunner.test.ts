@@ -692,6 +692,32 @@ describe('the Flag (#421)', () => {
     expect(speech.spoken.map((line) => line.text)).toEqual(['Flagged.'])
   })
 
+  it('"mark as failure" is a head (#478); "Mark as junior.", spoken, is wholly heard as it and flags with no Jev call (turn-mvpdteuq-v10)', async () => {
+    const { decision, events, kept, records, runner } = harness()
+    await runner.run('reload')
+    const taskId = records[0]!.turnId
+    await runner.run('mark as failure with the hint it doubled nothing')
+    await runner.run('Mark as junior.', { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(kept).toHaveLength(2)
+    const flags = records.filter((record) => record.type === 'flag')
+    expect(flags).toEqual([expect.objectContaining({ taskId, hint: 'it doubled nothing' }), expect.objectContaining({ taskId, lineHeard: 'Mark as junior.' })])
+    expect(flags[0]).not.toHaveProperty('lineHeard')
+    // The Receipt: the Feed shows the words heard, beside what was done.
+    expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ text: 'Mark as junior.', action: 'flag' })
+  })
+
+  it('"Mark as junior." typed, or past its head, is no Flag: it goes to Jev with the words as given (#478)', async () => {
+    const { decision, kept, runner } = harness()
+    await runner.run('reload')
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('Mark as junior.')
+    await runner.run('Mark as junior and reload', { source: 'spoken' })
+    expect(kept).toEqual([])
+    expect(decision.requests.length).toBeGreaterThan(0)
+    expect(decision.requests.some((request) => request.state.includes('"Mark as junior" sounds like "mark as failure"'))).toBe(true)
+  })
+
   it('a typed flag with no hint does the same, without a hint', async () => {
     const { records, runner } = harness()
     await runner.run('reload')
@@ -1984,6 +2010,21 @@ describe('the Name Match (ADR 0077)', () => {
     expect(spoken.state.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "Look this song" sounds like "loop this song", a command the app answers to')
     const typed = jev.requests.filter((request) => request.state.includes('Look this song')).at(-1)!
     expect(typed.state).not.toMatch(/Heard by ear/)
+  })
+
+  it('fires the exact line a spoken line is wholly heard as, for every command phrase, with no Jev call; what was heard rides the record (#478)', async () => {
+    const { records, decision: jev, runner } = harness()
+    await runner.run('Loop the song.', { source: 'spoken' })
+    expect(jev.requests).toEqual([])
+    expect(decision(records[0])).toMatchObject({ transcript: 'loop this song', lineHeard: 'Loop the song.', verb: 'play', music: { kind: 'loop', on: true }, jevAsked: false })
+  })
+
+  it('leaves a line whose verb was heard as another to Jev, the Hearing on its card: "Stop this song." is no "skip this song" (#478)', async () => {
+    const { records, decision: jev, runner } = harness()
+    jev.script.push({ answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('Stop this song.', { source: 'spoken' })
+    expect(jev.requests[0]!.state.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "Stop this song" sounds like "skip this song", a command the app answers to')
+    expect(records.some((record) => record.type === 'decision' && record.lineHeard !== undefined)).toBe(false)
   })
 
   it('never rewrites a Slot to a command phrase, nor offers one beside a span (#456)', async () => {

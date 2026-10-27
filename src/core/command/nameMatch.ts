@@ -370,3 +370,23 @@ export function hearNames(text: string, page: readonly string[], learned: readon
   }
   return hearings.sort((a, b) => a.start - b.start).map(({ start: _start, ...hearing }) => hearing)
 }
+
+/**
+ * The command phrase a spoken line is wholly heard as (#478): its Hearing
+ * is one command phrase over every word of the line, and the line's first
+ * word is the phrase's own. A phrase heard over a line whose verb was heard
+ * otherwise is no mishearing of it: on the ledger "Stop this song." (meant
+ * "loop") sounds like "skip this song", and so do the other verbs a song
+ * takes — the one lure in the corpus, gone by the verb (#478, arms T1–T3).
+ * Null for a line only partly covered, two hearings, a name, or a verb
+ * heard as another.
+ */
+export function wholeCommandHearing(text: string, learned: readonly string[], commands: readonly string[]): string | null {
+  const hearings = hearNames(text, [], learned, commands)
+  const [hearing] = hearings
+  if (hearings.length !== 1 || hearing === undefined || hearing.from !== 'command') return null
+  const words = wordsOf(text)
+  const heard = wordsOf(hearing.heard)
+  const candidate = wordsOf(hearing.candidate)
+  return heard.length === words.length && words[0] === candidate[0] ? hearing.candidate : null
+}
