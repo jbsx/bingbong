@@ -5344,6 +5344,39 @@ describe('the Appliance Card (#485)', () => {
     expect(kept).toEqual([expect.objectContaining({ flag: expect.objectContaining({ taskId }) })])
   })
 
+  it('the Flag read there writes its ask on a decision record of its own, which no later Flag names', async () => {
+    const { decision, asks, records, kept, runner } = harness({ applianceCard: CARD })
+    await runner.run('reload')
+    const taskId = records.find((record) => record.type === 'decision')!.turnId
+    decision.script.push({ answers: { action: choice('flag'), slot: choice('none') } }, { answers: { action: choice('flag'), slot: choice('none') } })
+    await runner.run('flag it as failure', { source: 'spoken' })
+    await runner.run('that was wrong too', { source: 'spoken' })
+    expect(records.filter((record) => record.type === 'decision' && record.flagged === true)).toEqual([
+      expect.objectContaining({ ask: asks[0]!.id, card: 'appliance', ended: 'terminal' }),
+      expect.objectContaining({ ask: asks[1]!.id }),
+    ])
+    expect(kept.map((each) => each.flag.taskId)).toEqual([taskId, taskId])
+  })
+
+  it("a Step's words read as the Flag keep the Flag (ruling 16)", async () => {
+    const { decision, kept, records, runner } = harness({ applianceCard: CARD })
+    await runner.run('reload')
+    decision.script.push({ answers: { action: choice('page'), slot: choice('none'), steps: choice('w3') } }, { answers: { action: choice('stop'), slot: choice('none') } }, { answers: { action: choice('flag'), slot: choice('none') } })
+    await runner.run('stop that and flag it', { source: 'spoken' })
+    expect(kept).toHaveLength(1)
+    expect(records.some((record) => record.type === 'decision' && record.flagged === true)).toBe(true)
+  })
+
+  it('an unsure pick goes on to the page card, which reads the whole page', async () => {
+    const { browser, decision, asks, runner } = harness({ applianceCard: CARD })
+    playing(browser)
+    decision.script.push({ answers: { action: choice('media-pause', 0.4), slot: choice('none') } }, { answers: { action: choice('click-2'), slot: choice('none') } })
+    await runner.run('sign in')
+    expect(browser.applianceMediaOps).toEqual([])
+    expect(browser.clicks).toEqual([2])
+    expect(kinds(asks).slice(0, 2)).toEqual(['appliance', 'command'])
+  })
+
   it("the Appliance Card's host failing fires an Instant line's best guess; any other line goes on to the page card", async () => {
     const one = harness({ applianceCard: CARD })
     one.browser.inHand = { ...one.browser.snapshot, refs: [...PAGE_REFS, ref(9, 'button', 'scroll down')] }

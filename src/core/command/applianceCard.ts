@@ -1,4 +1,4 @@
-import type { DecisionChoiceQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { MediaFacts, PageMedia } from '../browser/snapshot'
 import { isRealPage } from '../browser/lastPage'
 import { parseDuration } from '../timer/duration'
@@ -7,7 +7,7 @@ import type { Command, CommandPage } from './command'
 import type { NameHearing } from './nameMatch'
 import { isAddressShaped } from './openAddress'
 import { isMediaEngine } from './siteScope'
-import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, type MediaOp } from './mediaOp'
+import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
 import { appCardOptions, appOpOf, takesAmount } from './appOp'
 import {
@@ -99,7 +99,7 @@ const MEDIA_LABEL_RE = /^media-([a-z]+)$/
 
 /** The appliance's own verbs past the Player's, each one line (T3 wording, measured on the gate). */
 const OWN_LINES = {
-  flag: 'the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint',
+  flag: 'app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint',
   help: 'the app: show and say what it can be asked to do',
   timer: 'the app: set a timer for the length the words say',
   timer_off: 'the app: turn the timer off',
@@ -111,6 +111,24 @@ const OWN_LINES = {
 /** The line that sends the line on to the page card (T3). */
 function pageLine(view: ApplianceView): string {
   return isRealPage(view.url) ? `something on the page open, ${JSON.stringify(view.title)}: its links, buttons, fields or text` : 'something on a web page: the screen shows none'
+}
+
+/** #478's X5 sentence: words that judge the app's last command are the Flag's. */
+const FLAG_JUDGES_THE_APP = 'When the words say the previous command failed or was wrong — "mark as failure", "that was wrong" — choose flag: they judge the app, never the page.'
+
+/** The ops whose card line says the media is the one already on (T3): a title in the words is a new song, the music's `play`. */
+const MEDIA_LINES: Partial<Record<MediaOp, (named: string) => string>> = {
+  play: (named) => `carry on playing ${named}, the one already on: unpause it — never a song the words name, which is the music's play`,
+  restart: (named) => `play ${named} again from the start: repeat it once, now`,
+  loop: (named) => `put ${named} on loop, so it plays again each time it ends`,
+}
+
+/** Each up and down rung's resulting level, on the volume's and the speed's own line (the B rider, T3): `down a little → 45%`. */
+function levelsOf(op: 'volume' | 'rate', facts: MediaFacts): string {
+  const sizes = ['little', 'step', 'lot'] as const
+  const level = (rung: LevelRung): string => (op === 'volume' ? `${volumeLevel(rung, '', facts)}%` : `${rateLevel(rung, '', facts)}×`)
+  const way = (dir: 'up' | 'down'): string => sizes.map((size) => `${dir} a ${size} → ${level(`${dir}-${size}` as LevelRung)}`).join(', ')
+  return ` (${way('down')}; ${way('up')})`
 }
 
 const NONE_LINE = 'not a command: a remark, a question to no one, noise'
@@ -160,9 +178,9 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   }
   const action: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: INSTRUCTIONS,
+    instructions: view.flaggable === true ? `${INSTRUCTIONS} ${FLAG_JUDGES_THE_APP}` : INSTRUCTIONS,
     options: {
-      ...Object.fromEntries(ops.map((op) => [mediaLabel(op), mediaOpLineOf(op, named)])),
+      ...Object.fromEntries(ops.map((op) => [mediaLabel(op), `${MEDIA_LINES[op]?.(named) ?? mediaOpLineOf(op, named)}${(op === 'volume' || op === 'rate') && media !== undefined ? levelsOf(op, media.facts) : ''}`])),
       ...own,
       ...(view.timer === true ? { timer: OWN_LINES.timer, timer_off: OWN_LINES.timer_off } : {}),
       ...(view.flaggable === true ? { flag: OWN_LINES.flag } : {}),
@@ -204,6 +222,8 @@ const ON_TO_PAGE: ApplianceReading = { kind: 'page', chose: 'page' }
 export function readApplianceAnswers(answers: CommandAnswers, text: string, view: ApplianceView): ApplianceReading {
   const label = answers.action.choice
   if (label === 'none') return { kind: 'page', chose: 'none' }
+  // Only a sure pick fires here (the rulings' "a sure appliance pick fires"): the page card, a superset, reads an unsure one.
+  if (choiceProbability(answers.action) < DEFAULT_DECISION_THRESHOLDS.choice) return ON_TO_PAGE
   if (label === PAGE_LABEL) return ON_TO_PAGE
   const command = (made: Command): ApplianceReading => ({ kind: 'command', command: made })
   const media = MEDIA_LABEL_RE.exec(label)

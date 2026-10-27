@@ -627,7 +627,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   function log(record: CommandLogRecord): void {
-    if (record.type === 'decision') taskSeen(record.task?.id ?? record.turnId, record.at, record.verb)
+    if (record.type === 'decision' && record.flagged !== true) taskSeen(record.task?.id ?? record.turnId, record.at, record.verb)
     // An Errand (#467) is what "flag that" means after it, as a Task is.
     if (record.type === 'errand') taskSeen(record.turnId, record.at, 'none')
     try {
@@ -950,7 +950,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if ('reading' in first) return first.reading
     // The Appliance Card's host failed (reliability.md rule 3): an Instant line fires the Local Match's best guess; any other goes on.
     if (first.failed && quick !== null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: true, jev: first.appliance.jev, ask: first.appliance.ask, card: 'appliance' }
-    if (reading?.turnId === turnId && reading.submission === submitted && beside === null) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
+    if (reading?.turnId === turnId && reading.submission === submitted) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
     const onward = await (beside ?? readPageCard(turnId, text, pending, spoken, options, quick, dismissed))
     return { ...onward, appliance: first.appliance }
   }
@@ -2718,6 +2718,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { source, endpointAt, truncated, submission, givenAt } = line
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
+    if (first.flag !== undefined && submission === submitted) {
+      // The Appliance Card read the line, or a Step's words, as the Flag (#485): kept as the grammar's Flag is, then its ask recorded —
+      // after, so the Flag's own record is never the Task a next Flag names.
+      await flag(turnId, line.text, first.flag.hint)
+      if (options.measured) span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'flag', effect: 'settled', reading: 'jev', card: 'appliance', source })
+      log({ ...recordOf(turnId, at(), source, words, first, UNREAD, null, truncated), ...extra, task: hop0, ended: 'terminal', flagged: true })
+      return { ended: 'terminal', did: 'flag' }
+    }
     let heard = first
     // The Where Ask's reading, when one was made: a line that ends on none says it, whether a Mark Ask followed or not.
     let whereRead: Reading | null = null
@@ -3240,12 +3248,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const heard = await read(turnId, lineRead, pending, source === 'spoken')
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
-        if (heard.flag !== undefined && submission === submitted) {
-          // The Appliance Card read the line as the Flag (#485): kept as the grammar's Flag is.
-          await flag(turnId, trimmed, heard.flag.hint)
-          span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'flag', effect: 'settled', reading: 'jev', card: 'appliance', source })
-          return
-        }
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
         const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, lineRead, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.

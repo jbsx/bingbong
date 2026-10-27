@@ -145,6 +145,8 @@ export interface DecisionRecord {
   readonly runnerUp?: true
   /** The Where Ask's reading (#379, ADR 0082): hop 0 read `none`, and this is the Choice asked after it, its own record beside the first's. */
   readonly whereAsk?: true
+  /** The Appliance Card read the line as the Flag (#485): the Flag was kept, and this record is its ask's. */
+  readonly flagged?: true
   /** The Mark Ask's reading (#382, ADR 0084): the Where Ask read `none` over a Textless Ref, and this is the card asked again with the marked page, its own record beside the other two. */
   readonly markAsk?: true
   /**
