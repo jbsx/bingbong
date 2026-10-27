@@ -22,6 +22,9 @@ const ICONS = {
   // Lucide's "volume-2" and "volume-x": the Sound Mute's button, sound on and muted.
   sound: [SPEAKER, { d: 'M16 9a5 5 0 0 1 0 6' }, { d: 'M19.364 18.364a9 9 0 0 0 0-12.728' }],
   muted: [SPEAKER, { d: 'M22 9l-6 6' }, { d: 'M16 9l6 6' }],
+  // Lucide's "mic" and "mic-off": the Mic Mute's button, the ear open and shut.
+  mic: [{ d: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z' }, { d: 'M19 10v2a7 7 0 0 1-14 0v-2' }, { d: 'M12 19v3' }],
+  micOff: [{ d: 'M12 19v3' }, { d: 'M15 9.34V5a3 3 0 0 0-5.68-1.33' }, { d: 'M16.95 16.95A7 7 0 0 1 5 12v-2' }, { d: 'M18.89 13.23A7 7 0 0 0 19 12v-2' }, { d: 'm2 2 20 20' }, { d: 'M9 9v3a3 3 0 0 0 5.12 2.12' }],
   dock: [{ d: 'M17 12H3' }, { d: 'm11 18 6-6-6-6' }, { d: 'M21 5v14' }],
   undock: [{ d: 'M3 19V5' }, { d: 'm13 6-6 6 6 6' }, { d: 'M7 12h14' }],
   collapse: CHEVRON,

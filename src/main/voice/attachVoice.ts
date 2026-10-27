@@ -9,6 +9,8 @@ import type { VoiceSession } from '../../core/voice/voiceSession'
 import { createVoiceChainClient, type ChainBias, type ChainModelLoad, type VoiceChainClient, type VoiceChainEvents, type VoiceChainLink } from '../../core/voice/voiceChain'
 import { createEarState, type EarLoads } from '../../core/voice/earState'
 import { EAR_FAILED_SPOKEN } from '../../core/voice/voiceHint'
+import { micMutedState } from '../../core/voice/micMute'
+import type { MuteSwitch } from '../../core/sound/soundMute'
 import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { forwardFault, reportFault } from '../../core/trace/fault'
@@ -41,17 +43,20 @@ function sessionFor(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent):
   return win ? sessions.get(win) : undefined
 }
 
-export function registerVoiceIpc(): void {
+/** The Mic Mute (the button beside the settings cog): while it holds no listen opens and no frame reaches the ear. */
+export function registerVoiceIpc(micMute: MuteSwitch): void {
   ipcMain.handle(VOICE_IPC.arm, (event) => {
-    sessionFor(event)?.arm()
+    if (!micMute.muted()) sessionFor(event)?.arm()
   })
+
+  ipcMain.handle(VOICE_IPC.toggleMic, () => micMute.toggle())
 
   ipcMain.handle(VOICE_IPC.disarm, (event) => {
     sessionFor(event)?.disarm()
   })
 
   ipcMain.on(VOICE_IPC.audio, (event, chunk: unknown) => {
-    if (!(chunk instanceof Float32Array)) return
+    if (!(chunk instanceof Float32Array) || micMute.muted()) return
     const win = BrowserWindow.fromWebContents(event.sender)
     const session = win ? sessions.get(win) : undefined
     if (!win || !session) return
@@ -101,7 +106,12 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   let raw: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
   // The app's own voice rides the shown state (#472): an ear that drops what it hears while a line plays is not said to listen.
   const withSpeech = (state: VoiceState): VoiceState => (deps.speaking?.isSpeaking() === true ? { ...state, speaking: true } : state)
-  const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: ear.show(withSpeech(raw)) })
+  // The Mic Mute shows the ear shut on every surface, and the renderer closes the microphone on it.
+  const shown = (state: VoiceState): VoiceState => {
+    const told = ear.show(withSpeech(state))
+    return deps.micMute?.muted() === true ? micMutedState(told) : told
+  }
+  const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: shown(raw) })
   const onModelLoad = (load: ChainModelLoad): void => {
     recordModelLoad(load)
     const told = ear.modelLoaded(load)
@@ -182,12 +192,18 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   })
 
   sessions.set(win, session)
-  shownStates.set(win, () => ear.show(withSpeech(session.getState())))
+  shownStates.set(win, () => shown(session.getState()))
   const unsubSpeech = deps.speaking?.onSpeakingChange(() => publishState())
+  // Muting closes a listen under way; the screen hears the change either way.
+  const unsubMic = deps.micMute?.onChange((muted) => {
+    if (muted && session.getState().listening) session.disarm()
+    publishState()
+  })
   win.on('closed', () => {
     sessions.delete(win)
     shownStates.delete(win)
     unsubSpeech?.()
+    unsubMic?.()
     session.stop()
   })
   // The always-on ear (T10): monitoring starts with the window when a wake
@@ -220,6 +236,8 @@ export interface AttachVoiceDeps {
   speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange'>
   /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */
   ducking?: Ducking
+  /** The Mic Mute: the ear is shown shut while it holds, and a listen under way closes as it comes on; absent never mutes. */
+  micMute?: MuteSwitch
   /** Told on every voice state whether the ear is open; absent tells no one. */
   onEar?(open: boolean): void
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */

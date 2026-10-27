@@ -19,6 +19,8 @@ export const VOICE_IPC = {
   partial: 'voice:partial',
   /** Main → renderer: the voice pipeline failed (surfaced next to the orb). */
   error: 'voice:error',
+  /** Renderer → main: flip the Mic Mute (the button beside the settings cog); resolves with the new state. */
+  toggleMic: 'voice:toggleMic',
 } as const
 
 export type VoiceListenReason = 'hotkey' | 'wake'
@@ -58,6 +60,12 @@ export interface VoiceState {
   loading?: EarLoading
   /** When the ear's phase began, on main's wall clock (#442): the screen counts a wait's seconds from it on its own. */
   since?: number
+  /**
+   * The Mic Mute is on: the ear is shown shut — not listening, monitoring
+   * or transcribing, so every surface says "Microphone off" — and the
+   * renderer releases the microphone. Absent while it is off.
+   */
+  micMuted?: boolean
 }
 
 /** What a cold ear waits for (#442): the models that hear, then the one that reads the words — or that one of them failed (#447). */

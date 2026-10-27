@@ -180,6 +180,8 @@ export interface IdleVoice {
   loading?: EarLoading
   /** When the ear's phase began, on main's wall clock (#442). */
   since?: number
+  /** The Mic Mute is on: the ear is shut and the microphone closed. */
+  micMuted?: boolean
 }
 
 // The Capsule's own words (#455, ui.md 9): one state, one word. Hearing keeps the pill's word (#441): the said-line emptying is what changes when speech starts.
@@ -501,6 +503,7 @@ export function IdleScreen({
   onOpenSettings = () => undefined,
   muted = false,
   onToggleMute = () => undefined,
+  onToggleMic = () => undefined,
   voice,
   popup = null,
   turn = null,
@@ -541,6 +544,8 @@ export function IdleScreen({
   muted?: boolean
   /** The mute button beside the settings cog was tapped. */
   onToggleMute?: () => void
+  /** The mic button beside the mute button was tapped; its state is `voice.micMuted`. */
+  onToggleMic?: () => void
   voice: IdleVoice
   /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
   popup?: React.ReactNode
@@ -669,6 +674,22 @@ export function IdleScreen({
         }}
       >
         <ChromeIcon name={muted ? 'muted' : 'sound'} size={32} />
+      </button>
+      {/* The Mic Mute, beside the Sound Mute: the same tap, the screen left up. */}
+      <button
+        type="button"
+        className="idle-mute idle-mic"
+        aria-label={voice.micMuted === true ? 'Unmute the microphone' : 'Mute the microphone'}
+        aria-pressed={voice.micMuted === true}
+        onPointerDown={(event) => {
+          event.stopPropagation()
+          onToggleMic()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') onToggleMic()
+        }}
+      >
+        <ChromeIcon name={voice.micMuted === true ? 'micOff' : 'mic'} size={32} />
       </button>
       {/* The version, in the bottom corner and quiet: which Release the kiosk runs. */}
       {window.bingbong.version !== '' ? <span className="app-version idle-version">v{window.bingbong.version}</span> : null}

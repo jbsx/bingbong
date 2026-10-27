@@ -171,6 +171,7 @@ export function App() {
   const timer = useTimer()
   const nowPlaying = useNowPlaying()
   const sound = useSoundMute()
+  const toggleMic = (): void => void window.bingbong.voice.toggleMic()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
   const news = useNews(showIdle)
 
@@ -216,6 +217,7 @@ export function App() {
           onOpenSettings={() => setView('settings')}
           muted={sound.muted}
           onToggleMute={sound.toggle}
+          onToggleMic={toggleMic}
           voice={earVoice}
           popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
           turn={turnUp ? turn.state : null}
@@ -294,6 +296,16 @@ export function App() {
               onClick={() => window.bingbong.feedPanel.toggle()}
             >
               <ChromeIcon name="panel" />
+            </button>
+            <button
+              type="button"
+              className="chrome-button mic-toggle"
+              aria-label={voice.micMuted ? 'Unmute the microphone' : 'Mute the microphone'}
+              aria-pressed={voice.micMuted}
+              title={voice.micMuted ? 'Microphone muted' : 'Mute the microphone'}
+              onClick={toggleMic}
+            >
+              <ChromeIcon name={voice.micMuted ? 'micOff' : 'mic'} />
             </button>
             <button
               type="button"

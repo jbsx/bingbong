@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createSoundMute } from './soundMute'
+import { createMuteSwitch } from './soundMute'
 
-describe('createSoundMute', () => {
+describe('createMuteSwitch', () => {
   it('starts unmuted and flips on toggle', () => {
-    const mute = createSoundMute()
+    const mute = createMuteSwitch()
     expect(mute.muted()).toBe(false)
     expect(mute.toggle()).toBe(true)
     expect(mute.muted()).toBe(true)
@@ -11,7 +11,7 @@ describe('createSoundMute', () => {
   })
 
   it('tells its listeners of a change only', () => {
-    const mute = createSoundMute()
+    const mute = createMuteSwitch()
     const heard: boolean[] = []
     const unsubscribe = mute.onChange((on) => heard.push(on))
     mute.set(true)

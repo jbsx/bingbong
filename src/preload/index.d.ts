@@ -148,6 +148,8 @@ export interface BingbongLearnedTermsApi {
 export interface BingbongVoiceApi {
   arm(): Promise<void>
   disarm(): Promise<void>
+  /** Flip the Mic Mute; resolves with the new state, which the voice state carries as `micMuted`. */
+  toggleMic(): Promise<boolean>
   /** One chunk of mono 16 kHz PCM from the mic worklet (multiple of 512 samples). */
   sendAudio(chunk: Float32Array): void
   /** Current voice state — pulled on mount since events can predate the renderer. */

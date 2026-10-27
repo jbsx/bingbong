@@ -24,6 +24,8 @@ export interface VoiceApi {
   loading?: EarLoading
   /** When the ear's phase began, on main's wall clock (#442). */
   since?: number
+  /** The Mic Mute is on: the ear is shown shut and the microphone is closed. */
+  micMuted: boolean
 }
 
 export interface UseVoiceDeps {
@@ -68,6 +70,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const hearingRef = useRef(false)
   const [loading, setLoading] = useState<EarLoading | undefined>(undefined)
   const [since, setSince] = useState<number | undefined>(undefined)
+  const [micMuted, setMicMuted] = useState(false)
 
   // Latest deps without resubscribing when callers rebuild the object.
   const depsRef = useRef(deps)
@@ -122,6 +125,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
       setMonitoring(state.monitoring)
       setLoading(state.loading)
       setSince(state.since)
+      setMicMuted(state.micMuted === true)
       // The mic also stays up through the STT window: a discarded blip
       // returns to listening, and re-acquiring the device would eat the
       // first frames of whatever the user says next (#38).
@@ -152,5 +156,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, hearing, speaking, reason, monitoring, partial, lastWords, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
+  return { listening, transcribing, hearing, speaking, reason, monitoring, partial, lastWords, micMuted, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
 }

@@ -226,6 +226,7 @@ contextBridge.exposeInMainWorld('bingbong', {
   voice: {
     arm: (): Promise<void> => ipcRenderer.invoke(VOICE_IPC.arm),
     disarm: (): Promise<void> => ipcRenderer.invoke(VOICE_IPC.disarm),
+    toggleMic: (): Promise<boolean> => ipcRenderer.invoke(VOICE_IPC.toggleMic),
     sendAudio: (chunk: Float32Array): void => {
       ipcRenderer.send(VOICE_IPC.audio, chunk)
     },

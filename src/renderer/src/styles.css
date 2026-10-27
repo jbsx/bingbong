@@ -885,7 +885,8 @@ body {
 }
 
 .settings-toggle[aria-pressed='true'],
-.sound-toggle[aria-pressed='true'] {
+.sound-toggle[aria-pressed='true'],
+.mic-toggle[aria-pressed='true'] {
   border-color: var(--hair);
   background: var(--raise);
   color: var(--fgh);
@@ -2230,6 +2231,11 @@ details[open] > .settings-summary::before {
 /* The Sound Mute, beside settings: one glyph's width and a gap to its left. */
 .idle-mute {
   right: 84px;
+}
+
+/* The Mic Mute, one more glyph and gap to the left: the same quiet button. */
+.idle-mic {
+  right: 148px;
 }
 
 /* Muted is a state to see from the chair: lit, and kept in sight while the cursor rests. */

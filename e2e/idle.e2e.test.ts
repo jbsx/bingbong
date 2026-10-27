@@ -308,6 +308,42 @@ describe('idle screen e2e: the Last Page and resume', () => {
     expect(await muted()).toBe(false)
   })
 
+  it('mutes the microphone from beside the mute button: the ear is shown shut, the speakers untouched, and the Toolbar agrees', async () => {
+    const shown = (selector: string): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('${selector}')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    const pressed = (selector: string): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('${selector}')?.getAttribute('aria-pressed') ?? null`)
+    const ear = (): Promise<{ micMuted: boolean; open: boolean }> =>
+      harness.dashboardEval(`window.bingbong.voice.getState().then((s) => ({ micMuted: s.micMuted === true, open: s.listening || s.monitoring || s.transcribing }))`)
+
+    await shown('.url-input')
+    await harness.clickDashboardElement('.idle-toggle')
+    await shown('.idle-screen')
+    expect((await ear()).micMuted).toBe(false)
+
+    // Left of the mute button, level with it.
+    const sideBySide = await harness.dashboardEval<{ beside: boolean; level: boolean }>(`(() => {
+      const mic = document.querySelector('.idle-mic').getBoundingClientRect()
+      const mute = document.querySelector('.idle-mute:not(.idle-mic)').getBoundingClientRect()
+      return { beside: mic.right <= mute.left && mute.left - mic.right < 16, level: mic.top === mute.top }
+    })()`)
+    expect(sideBySide).toEqual({ beside: true, level: true })
+
+    await harness.clickDashboardElement('.idle-mic')
+    await waitFor(async () => ((await pressed('.idle-mic')) === 'true' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    expect(await ear()).toEqual({ micMuted: true, open: false })
+    expect(await harness.dashboardEval<string | null>(`document.querySelector('.idle-voice')?.getAttribute('aria-label') ?? null`)).toBe('microphone off')
+    expect(await harness.dashboardEval<boolean>(`window.bingbong.sound.muted()`)).toBe(false)
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+
+    await harness.clickDashboardElement('.idle-screen')
+    await shown('.mic-toggle')
+    expect(await harness.dashboardEval<boolean>(`document.querySelector('.mic-toggle').nextElementSibling?.classList.contains('sound-toggle') ?? false`)).toBe(true)
+    expect(await pressed('.mic-toggle')).toBe('true')
+    await harness.clickDashboardElement('.mic-toggle')
+    await waitFor(async () => ((await pressed('.mic-toggle')) === 'false' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    expect((await ear()).micMuted).toBe(false)
+  })
+
   it('opens settings from the idle screen, and the Toolbar’s home button or the shortcut shows the idle screen from every other view', async () => {
     const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
     const shown = (selector: string): Promise<true> =>

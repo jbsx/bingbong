@@ -1,9 +1,10 @@
 /**
- * The Sound Mute: one app-global switch, off at launch, that silences the
- * pane's audio and the app's own speech and chime while on. The Timer's
- * alarm still rings through it, so a mute never costs a missed alarm.
+ * A mute switch, app-global and off at launch: the Sound Mute (the pane's
+ * audio, the app's own speech and chime; the Timer's alarm still rings
+ * through it, so a mute never costs a missed alarm) and the Mic Mute (the
+ * ear shut, the microphone released) are one each.
  */
-export interface SoundMute {
+export interface MuteSwitch {
   muted(): boolean
   set(on: boolean): void
   toggle(): boolean
@@ -11,7 +12,9 @@ export interface SoundMute {
   onChange(listener: (muted: boolean) => void): () => void
 }
 
-export function createSoundMute(): SoundMute {
+export type SoundMute = MuteSwitch
+
+export function createMuteSwitch(): MuteSwitch {
   let muted = false
   const listeners = new Set<(muted: boolean) => void>()
   const set = (on: boolean): void => {

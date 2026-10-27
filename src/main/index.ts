@@ -88,7 +88,7 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
-import { createSoundMute } from '../core/sound/soundMute'
+import { createMuteSwitch } from '../core/sound/soundMute'
 import { registerSoundMuteIpc } from './sound/attachSoundMute'
 import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
@@ -345,7 +345,9 @@ const boot = startBootClock(
 boot.mark('main-loaded')
 const chimeWav = createChimeWav()
 // The Sound Mute (the mute buttons beside the settings cogs): the pane, speech and the chime; never the alarm.
-const soundMute = createSoundMute()
+const soundMute = createMuteSwitch()
+// The Mic Mute (the button beside the Sound Mute's): the ear shut and the microphone released.
+const micMute = createMuteSwitch()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
 const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice, muted: soundMute.muted })
 // The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
@@ -735,7 +737,7 @@ async function createWindow(): Promise<BrowserWindow> {
     listen: () => {
       if (voiceSession === null) return
       if (voiceSession.getState().listening) voiceSession.disarm()
-      else voiceSession.arm()
+      else if (!micMute.muted()) voiceSession.arm()
     },
     // A packaged appliance keeps its DevTools shut; detached, they never squeeze the layout.
     ...(app.isPackaged ? {} : { devTools: (contents: Electron.WebContents) => contents.openDevTools({ mode: 'detach' }) }),
@@ -755,6 +757,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // the page collected at speech start, set for the one Utterance over it.
   const biasUnion = createBiasUnion({ lexicon: () => learnedTermsStore.biasPhrases() })
   const voice = attachVoiceToWindow(win, {
+    micMute,
     startVoiceProcess: voiceProcessStarter(join(__dirname, 'voiceProcess.js')),
     config: { voice: voiceConfig, wake: wakeConfig, dumps: utteranceDumps },
     getBiasPhrases: () => biasUnion.phrases(),
@@ -858,7 +861,7 @@ app.whenReady().then(async () => {
   app.on('will-quit', quitTrace.hook('scale', () => scaleListener?.stop()))
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
-  registerVoiceIpc()
+  registerVoiceIpc(micMute)
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own
   // webRequest listeners from the first request. Disabling the adblocker
