@@ -83,7 +83,7 @@ import {
   TAG_OF_FN,
 } from './collectPageScript'
 import { readRefStates, type RefStatesTally } from './readRefStates'
-import { frameHostOf, mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
+import { frameHostOfPage, mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 
@@ -114,6 +114,14 @@ interface FrameScroll {
   readonly host: string
   readonly scrollX: number
   readonly scrollY: number
+}
+
+/** Where a scroll left the document it moved (#481): the page's offset, or a frame's with its host; `moved` the vertical change. */
+interface ScrolledAt {
+  readonly scrollX: number
+  readonly scrollY: number
+  readonly moved?: number
+  readonly host?: string
 }
 
 /** Every frame below the top document, at any depth, from any site (#377). */
@@ -963,12 +971,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     addresses = merged.addresses
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
     const snapshot = buildPageSnapshot(await withRefStates(await withFramedDialogText(merged, answered)))
-    frameScrolls.set(snapshot, answered.map(({ key, page: { viewport, origin, url } }) => ({
-      key,
-      host: frameHostOf(origin !== undefined && origin !== 'null' ? origin : url),
-      scrollX: viewport.scrollX ?? 0,
-      scrollY: viewport.scrollY,
-    })))
+    frameScrolls.set(snapshot, answered.map(({ key, page }) => ({ key, host: frameHostOfPage(page), scrollX: page.viewport.scrollX ?? 0, scrollY: page.viewport.scrollY })))
     // Every collect, timed (#377): what the frames' fan-out costs is read off these.
     if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
     visualPoints.clear()
@@ -1313,27 +1316,47 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** Zoomed pages (#53) scroll on fractional CSS pixels; the outcome line
    * keeps its integer-pixel contract. */
-  function scrollHeader(direction: 'up' | 'down', scrollX: number, scrollY: number, host?: string): string {
-    return `scrolled ${direction}${host === undefined ? '' : ` in ${host}`}: x=${Math.round(scrollX)} y=${Math.round(scrollY)}`
+  function scrollHeader(direction: 'up' | 'down', at: ScrolledAt): string {
+    return `scrolled ${direction}${at.host === undefined ? '' : ` in ${at.host}`}: x=${Math.round(at.scrollX)} y=${Math.round(at.scrollY)}`
   }
 
   /**
-   * Which document a scroll moved, between two collects (#481): the page
-   * when it moved, else the first frame that did — a wheel over a consent
-   * wall's frame scrolls the frame, and the page's offset under it says
-   * nothing moved. Named by its host, as its refs are.
+   * Which document a scroll moved (#481): the page when it moved, else the
+   * frame the input reached when that did — a wheel over a consent wall's
+   * frame scrolls the frame, and the page's offset under it says nothing
+   * moved. Named by its host, as its refs are. Any other frame that moved
+   * on its own (a carousel, a ticker) is not the scroll's.
    */
-  function scrolledDocument(before: PageSnapshot, after: PageSnapshot): { scrollX: number; scrollY: number; moved: number; host?: string } {
+  function scrolledDocument(before: PageSnapshot, after: { viewport: PageSnapshot['viewport']; frames: readonly FrameScroll[] }, frame: string | null): ScrolledAt {
     const top = { scrollX: after.viewport.scrollX ?? 0, scrollY: after.viewport.scrollY, moved: after.viewport.scrollY - before.viewport.scrollY }
-    if (top.moved !== 0 || top.scrollX !== (before.viewport.scrollX ?? 0)) return top
-    const earlier = frameScrolls.get(before) ?? []
-    for (const frame of frameScrolls.get(after) ?? []) {
-      const was = earlier.find((one) => one.key === frame.key)
-      if (was !== undefined && (was.scrollY !== frame.scrollY || was.scrollX !== frame.scrollX)) {
-        return { scrollX: frame.scrollX, scrollY: frame.scrollY, moved: frame.scrollY - was.scrollY, host: frame.host }
-      }
-    }
-    return top
+    if (frame === null || top.moved !== 0 || top.scrollX !== (before.viewport.scrollX ?? 0)) return top
+    const was = (frameScrolls.get(before) ?? []).find((one) => one.key === frame)
+    const now = after.frames.find((one) => one.key === frame)
+    if (was === undefined || now === undefined || (was.scrollY === now.scrollY && was.scrollX === now.scrollX)) return top
+    return { scrollX: now.scrollX, scrollY: now.scrollY, moved: now.scrollY - was.scrollY, host: now.host }
+  }
+
+  /** The frame under a point of the top's viewport (#481), by its key: the iframe a wheel there scrolls. Null over the page, or a frame no collect has keyed. */
+  async function frameAt(x: number, y: number): Promise<string | null> {
+    const slot = await evaluateInPage<number>(`(() => {
+      const el = document.elementFromPoint(${x}, ${y})
+      return el !== null && el.tagName === 'IFRAME' ? Array.from(window.frames).indexOf(el.contentWindow) : -1
+    })()`).catch(() => -1)
+    if (slot < 0) return null
+    for (const [key, at] of frameSlots) if (at.parentKey === null && at.slot === slot) return key
+    return null
+  }
+
+  /** A collector hiccup's position line (#481): the frame the input reached, read in place, when the page did not move. */
+  async function fallbackHeader(direction: 'up' | 'down', before: PageSnapshot, frame: string | null): Promise<string> {
+    const { signature } = await probeAction(null)
+    const viewport = { ...before.viewport, scrollX: signature.scrollX, scrollY: signature.scrollY }
+    const read = frame === null
+      ? null
+      : await evaluateInFrame<[number, number]>(frame, '[window.scrollX, window.scrollY]').catch(() => null)
+    const host = (frameScrolls.get(before) ?? []).find((one) => one.key === frame)?.host
+    const frames = read === null || frame === null || host === undefined ? [] : [{ key: frame, host, scrollX: read[0], scrollY: read[1] }]
+    return scrollHeader(direction, scrolledDocument(before, { viewport, frames }, frame))
   }
 
   /**
@@ -1347,6 +1370,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
     const x = Math.floor(before.viewport.width / 2)
     const y = Math.floor(before.viewport.height / 2)
+    // The End and Home keys go to the page, the focus given back to it; a wheel goes to what is under it.
+    const wheeled = extent !== undefined && extent.screens === undefined ? null : await frameAt(x, y)
     await armReadiness()
     if (extent !== undefined && extent.screens === undefined) {
       // All the way (#383, ADR 0085): the browser's own End or Home key, which reaches the document's scroller — or, in an app shell whose body does not scroll, the focused region.
@@ -1370,8 +1395,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     lastSnapshot = undefined
     try {
       const after = await recollection('scroll-delta', () => collectSnapshot())
-      const scrolled = scrolledDocument(before, after)
-      const header = scrollHeader(direction, scrolled.scrollX, scrolled.scrollY, scrolled.host)
+      const header = scrollHeader(direction, scrolledDocument(before, { viewport: after.viewport, frames: frameScrolls.get(after) ?? [] }, wheeled))
       const delta = formatNewInView(before, after)
       // Only the delta's numbers were shown; the rest keep the nodes the
       // last full read gave them, so a ref the scroll shifted is refused
@@ -1383,8 +1407,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // outcome degrades to the position line, the way withSettledState
       // degrades a navigation.
       reportFault('browser.createCdpBrowserController.scroll', error)
-      const { signature } = await probeAction(null)
-      return scrollHeader(direction, signature.scrollX, signature.scrollY)
+      return fallbackHeader(direction, before, wheeled)
     }
   }
 
@@ -2542,8 +2565,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     lastSnapshot = undefined
     try {
       const after = await recollection('scroll-delta', () => collectSnapshot())
-      const scrolled = scrolledDocument(before, after)
-      const header = scrollHeader(scrolled.moved < 0 ? 'up' : 'down', scrolled.scrollX, scrolled.scrollY, scrolled.host)
+      const scrolled = scrolledDocument(before, { viewport: after.viewport, frames: frameScrolls.get(after) ?? [] }, block.frame)
+      const header = scrollHeader((scrolled.moved ?? 0) < 0 ? 'up' : 'down', scrolled)
       const delta = formatNewInView(before, after)
       // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
       if (delta) await overlayShown(delta.shownRefs)
@@ -2551,8 +2574,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     } catch (error) {
       // A collector hiccup must not fail a scroll that happened: the outcome is the position line.
       reportFault('browser.createCdpBrowserController.showText', error)
-      const { signature } = await probeAction(null)
-      return scrollHeader('down', signature.scrollX, signature.scrollY)
+      return fallbackHeader('down', before, block.frame)
     }
   }
 
@@ -2690,6 +2712,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       refs: [...snapshot.refs.filter((candidate) => candidate.ref !== ref), target],
       totalVisible: Math.max(snapshot.totalVisible, ref),
     }
+    // The same page, its frames where they stood (#481).
+    const frames = frameScrolls.get(snapshot)
+    if (frames !== undefined) frameScrolls.set(lastSnapshot, frames)
     visualPoints.set(ref, point)
     // The one number this round hands the model (ADR 0033).
     await overlayShown([ref])

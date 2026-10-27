@@ -42,6 +42,11 @@ export function frameHostOf(url: string): string {
   return host === '' ? url : host.replace(/^www\./, '')
 }
 
+/** A collected frame's host: its document's origin, else its address — a script-written frame's origin is its parent's. */
+export function frameHostOfPage(page: Pick<CollectedPage, 'origin' | 'url'>): string {
+  return frameHostOf(page.origin !== undefined && page.origin !== 'null' ? page.origin : page.url)
+}
+
 /** A Reachable Frame's iframe is larger than this in both directions (ADR 0081): a tracking pixel is no frame to read. */
 const MIN_FRAME_PX = 2
 
@@ -108,7 +113,7 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
         const { x, y, width, height } = element.rect
         const rect = { x: x + offset.x, y: y + offset.y, width, height }
         if (layer !== 'dialog' && (dialogOnly === true || !meetsViewport(rect, top.viewport))) return
-        elements.push({ ...rest, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOf(page.origin !== undefined && page.origin !== 'null' ? page.origin : page.url) })
+        elements.push({ ...rest, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOfPage(page) })
       }
       addresses.push({ frame: key, index })
     })

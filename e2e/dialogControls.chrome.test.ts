@@ -321,4 +321,14 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     expect(frameY).toBeLessThan(startY)
     expect(line.split('\n')[0]).toBe(`scrolled up in 127.0.0.1: x=0 y=${Math.round(frameY)}`)
   })
+
+  it('leaves a frame that moved on its own, away from the wheel, out of the scroll it did not take (#481)', async () => {
+    await fixtures.open('/embed')
+    const controller = controllerAt('/embed', { framed: true })
+    await controller.collectPage()
+    // A carousel's or a ticker's own scroll, beside the page's centre where the wheel goes.
+    await fixtures.chrome.evaluate(`document.querySelector('iframe').contentWindow.scrollTo(0, 50); true`)
+    const line = await controller.scroll('down')
+    expect(line.split('\n')[0]).toBe('scrolled down: x=0 y=0')
+  })
 })
