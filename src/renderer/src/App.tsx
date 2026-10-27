@@ -18,6 +18,7 @@ import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
 import { ToolbarWidgets } from './ToolbarWidgets'
 import { useNowPlaying } from './useNowPlaying'
+import { useSoundMute } from './useSoundMute'
 import { useUsage } from './useUsage'
 import { useNews } from './useNews'
 import { defaultUsagePrefs } from '../../core/usage/usage'
@@ -169,6 +170,7 @@ export function App() {
   // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.
   const timer = useTimer()
   const nowPlaying = useNowPlaying()
+  const sound = useSoundMute()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
   const news = useNews(showIdle)
 
@@ -212,6 +214,8 @@ export function App() {
             setView('weight')
           }}
           onOpenSettings={() => setView('settings')}
+          muted={sound.muted}
+          onToggleMute={sound.toggle}
           voice={earVoice}
           popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
           turn={turnUp ? turn.state : null}
@@ -290,6 +294,16 @@ export function App() {
               onClick={() => window.bingbong.feedPanel.toggle()}
             >
               <ChromeIcon name="panel" />
+            </button>
+            <button
+              type="button"
+              className="chrome-button sound-toggle"
+              aria-label={sound.muted ? 'Unmute the sound' : 'Mute the sound'}
+              aria-pressed={sound.muted}
+              title={sound.muted ? 'Sound muted' : 'Mute'}
+              onClick={sound.toggle}
+            >
+              <ChromeIcon name={sound.muted ? 'muted' : 'sound'} />
             </button>
             <button
               type="button"

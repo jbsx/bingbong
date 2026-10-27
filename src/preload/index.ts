@@ -11,6 +11,7 @@ import { appVersionFromArgv, resolveLaunchConfig } from '../core/app/launchConfi
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
+import { SOUND_IPC } from '../core/sound/ipcChannels'
 import { WEATHER_IPC } from '../core/weather/ipcChannels'
 import type { WeatherReport } from '../core/weather/weather'
 import { MUSIC_IPC } from '../core/music/ipcChannels'
@@ -100,6 +101,15 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, state: TimerState): void => listener(state)
       ipcRenderer.on(TIMER_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(TIMER_IPC.changed, wrapped)
+    },
+  },
+  sound: {
+    muted: (): Promise<boolean> => ipcRenderer.invoke(SOUND_IPC.get),
+    toggle: (): Promise<boolean> => ipcRenderer.invoke(SOUND_IPC.toggle),
+    onChange: (listener: (muted: boolean) => void): (() => void) => {
+      const wrapped = (_event: unknown, muted: boolean): void => listener(muted === true)
+      ipcRenderer.on(SOUND_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(SOUND_IPC.changed, wrapped)
     },
   },
   weather: {

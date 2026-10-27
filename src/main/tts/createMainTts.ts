@@ -16,6 +16,8 @@ export interface MainTtsDeps {
   prefetch?: boolean
   /** Piper's first-launch install (#419), retriable: each line waits for it, and the prefetch starts once it is done. */
   ready?: () => Promise<unknown>
+  /** The Sound Mute: speech goes to no device while it holds. */
+  muted?: () => boolean
 }
 
 /**
@@ -40,7 +42,7 @@ export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
   }
   return createSpeechCoordinator({
     synth,
-    player: createAplayPlayer({ bin: deps.config.playerBin, device: deps.config.playerDevice }),
+    player: createAplayPlayer({ bin: deps.config.playerBin, device: deps.config.playerDevice, ...(deps.muted ? { muted: deps.muted } : {}) }),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
   })
 }

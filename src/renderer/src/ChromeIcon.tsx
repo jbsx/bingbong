@@ -5,6 +5,9 @@ import { CHEVRON, Glyph, type Part } from './WeatherIcon'
 // button's own colour. Path data from Lucide (https://lucide.dev), ISC
 // License, Copyright (c) 2022 Lucide Contributors.
 
+/** Lucide's speaker: the body of the Sound Mute's two glyphs. */
+const SPEAKER: Part = { d: 'M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z' }
+
 const ICONS = {
   back: [{ d: 'm12 19-7-7 7-7' }, { d: 'M19 12H5' }],
   forward: [{ d: 'M5 12h14' }, { d: 'm12 5 7 7-7 7' }],
@@ -16,6 +19,9 @@ const ICONS = {
     },
     { circle: [12, 12, 3] },
   ],
+  // Lucide's "volume-2" and "volume-x": the Sound Mute's button, sound on and muted.
+  sound: [SPEAKER, { d: 'M16 9a5 5 0 0 1 0 6' }, { d: 'M19.364 18.364a9 9 0 0 0 0-12.728' }],
+  muted: [SPEAKER, { d: 'M22 9l-6 6' }, { d: 'M16 9l6 6' }],
   dock: [{ d: 'M17 12H3' }, { d: 'm11 18 6-6-6-6' }, { d: 'M21 5v14' }],
   undock: [{ d: 'M3 19V5' }, { d: 'm13 6-6 6 6 6' }, { d: 'M7 12h14' }],
   collapse: CHEVRON,

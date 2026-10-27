@@ -69,6 +69,14 @@ export interface BingbongTimerApi {
   onChange(listener: (state: TimerState) => void): () => void
 }
 
+export interface BingbongSoundApi {
+  /** The Sound Mute: whether the pane, speech and the chime are silenced (the Timer's alarm never is). */
+  muted(): Promise<boolean>
+  /** Flip it; resolves with the new state. */
+  toggle(): Promise<boolean>
+  onChange(listener: (muted: boolean) => void): () => void
+}
+
 export interface BingbongWeatherApi {
   /** Hands main the report the Idle Screen shows (#402), null when it shows none: a spoken answer says the same. */
   report(report: WeatherReport | null): void
@@ -198,6 +206,7 @@ export interface BingbongApi {
   view: BingbongViewApi
   idle: BingbongIdleApi
   timer: BingbongTimerApi
+  sound: BingbongSoundApi
   weather: BingbongWeatherApi
   music: BingbongMusicApi
   usage: BingbongUsageApi

@@ -499,6 +499,8 @@ export function IdleScreen({
   monitorDimmed = false,
   onOpenWeight = () => undefined,
   onOpenSettings = () => undefined,
+  muted = false,
+  onToggleMute = () => undefined,
   voice,
   popup = null,
   turn = null,
@@ -535,6 +537,10 @@ export function IdleScreen({
   onOpenWeight?: (person: string) => void
   /** The settings button in the corner was tapped: show the settings page. */
   onOpenSettings?: () => void
+  /** The Sound Mute: the pane, speech and the chime are silenced. */
+  muted?: boolean
+  /** The mute button beside the settings cog was tapped. */
+  onToggleMute?: () => void
   voice: IdleVoice
   /** The Weigh-in pop-up, drawn in the AI Usage chart's place. */
   popup?: React.ReactNode
@@ -646,6 +652,23 @@ export function IdleScreen({
         }}
       >
         <ChromeIcon name="settings" size={32} />
+      </button>
+      {/* The Sound Mute, beside settings: a tap flips it and leaves the
+          screen up, as the Now Playing card's controls do. */}
+      <button
+        type="button"
+        className="idle-mute"
+        aria-label={muted ? 'Unmute the sound' : 'Mute the sound'}
+        aria-pressed={muted}
+        onPointerDown={(event) => {
+          event.stopPropagation()
+          onToggleMute()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') onToggleMute()
+        }}
+      >
+        <ChromeIcon name={muted ? 'muted' : 'sound'} size={32} />
       </button>
       {/* The version, in the bottom corner and quiet: which Release the kiosk runs. */}
       {window.bingbong.version !== '' ? <span className="app-version idle-version">v{window.bingbong.version}</span> : null}

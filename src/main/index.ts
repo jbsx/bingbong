@@ -88,6 +88,8 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
+import { createSoundMute } from '../core/sound/soundMute'
+import { registerSoundMuteIpc } from './sound/attachSoundMute'
 import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
@@ -342,8 +344,10 @@ const boot = startBootClock(
 )
 boot.mark('main-loaded')
 const chimeWav = createChimeWav()
+// The Sound Mute (the mute buttons beside the settings cogs): the pane, speech and the chime; never the alarm.
+const soundMute = createSoundMute()
 // The chime and the alarm play through the same player as speech, so a muted run is silent.
-const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice })
+const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice, muted: soundMute.muted })
 // The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
 // Screen; its alarm plays through its own aplay, so the chime and speech
 // never cut it.
@@ -599,6 +603,7 @@ async function createWindow(): Promise<BrowserWindow> {
       tracer: perfTracer,
       prefetch: true,
       ready: piperReady,
+      muted: soundMute.muted,
     }),
   )
   // Ducking (#344, #461): every media element playing in the pane — the Player's
@@ -808,6 +813,7 @@ app.whenReady().then(async () => {
   registerBrowserIpc()
   registerLastPageIpc(lastPageStore)
   registerTimerIpc(timer)
+  registerSoundMuteIpc(soundMute)
   registerNowPlayingIpc()
   // The Calendar (CONTEXT.md): no provider is wired yet, so it shows the
   // month alone; a Google or Outlook source joins this list. The e2e's

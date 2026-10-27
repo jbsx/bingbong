@@ -7,6 +7,8 @@ export interface AplayPlayerDeps {
   bin?: string
   /** ALSA device (`-D`); default aplay's own. 'null' plays nothing, for a run off screen. */
   device?: string
+  /** The Sound Mute, read at each aplay's start: while it holds, the audio goes to 'null'. */
+  muted?: () => boolean
   spawnFn?: typeof nodeSpawn
 }
 
@@ -39,11 +41,11 @@ function rawArgs(format: Format): string[] {
 export function createAplayPlayer(deps: AplayPlayerDeps = {}): AudioPlayer & AudioStreamPlayer {
   const spawnFn = deps.spawnFn ?? nodeSpawn
   const bin = deps.bin ?? 'aplay'
-  const deviceArgs = deps.device ? ['-D', deps.device] : []
+  const deviceArgs = (): string[] => (deps.muted?.() ? ['-D', 'null'] : deps.device ? ['-D', deps.device] : [])
 
   /** One aplay child: resolves on its close, rejects on a failure unless it was stopped. */
   function startChild(args: string[], isStopped: () => boolean): { child: ChildProcess; closed: Promise<void> } {
-    const child = spawnFn(bin, [...deviceArgs, ...args])
+    const child = spawnFn(bin, [...deviceArgs(), ...args])
     const closed = new Promise<void>((resolve, reject) => {
       child.on('error', (err) => {
         if (isStopped()) resolve()

@@ -70,6 +70,18 @@ describe('aplay player', () => {
     await expect(playback.done).resolves.toBeUndefined()
   })
 
+  it('plays to null while the Sound Mute holds, read at each start', () => {
+    const { calls, spawnFn } = fakeSpawn()
+    let muted = true
+    const player = createAplayPlayer({ spawnFn, device: 'hw:0', muted: () => muted })
+
+    player.play(new Uint8Array([1]))
+    muted = false
+    player.play(new Uint8Array([2]))
+
+    expect(calls.map((call) => call.args.slice(0, 2))).toEqual([['-D', 'null'], ['-D', 'hw:0']])
+  })
+
   it('rejects done when aplay exits nonzero', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const player = createAplayPlayer({ spawnFn })

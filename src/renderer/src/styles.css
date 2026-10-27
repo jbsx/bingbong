@@ -884,7 +884,8 @@ body {
   }
 }
 
-.settings-toggle[aria-pressed='true'] {
+.settings-toggle[aria-pressed='true'],
+.sound-toggle[aria-pressed='true'] {
   border-color: var(--hair);
   background: var(--raise);
   color: var(--fgh);
@@ -2206,7 +2207,8 @@ details[open] > .settings-summary::before {
 
 /* The way to settings from the Idle Screen: a quiet glyph in the top-right
    corner, out of the layout, above the drag strip. */
-.idle-settings {
+.idle-settings,
+.idle-mute {
   position: absolute;
   top: 16px;
   right: 20px;
@@ -2225,6 +2227,16 @@ details[open] > .settings-summary::before {
   transition: opacity 200ms ease;
 }
 
+/* The Sound Mute, beside settings: one glyph's width and a gap to its left. */
+.idle-mute {
+  right: 84px;
+}
+
+/* Muted is a state to see from the chair: lit, and kept in sight while the cursor rests. */
+.idle-mute[aria-pressed='true'] {
+  color: var(--fgh);
+}
+
 /* The version on the Idle Screen: the bottom-right corner, out of the layout. */
 .idle-version {
   position: absolute;
@@ -2237,12 +2249,15 @@ details[open] > .settings-summary::before {
 
 /* Out of sight while the cursor rests (useCursorRest), till it moves; still
    there to a tap, so a touch in the corner opens settings. */
-.cursor-hidden .idle-settings {
+.cursor-hidden .idle-settings,
+.cursor-hidden .idle-mute[aria-pressed='false'] {
   opacity: 0;
 }
 
 .idle-settings:hover,
-.idle-settings:focus-visible {
+.idle-settings:focus-visible,
+.idle-mute:hover,
+.idle-mute:focus-visible {
   background: var(--raise);
   color: var(--fg);
 }

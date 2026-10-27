@@ -275,6 +275,39 @@ describe('idle screen e2e: the Last Page and resume', () => {
     }
   })
 
+  it('mutes the sound from beside the settings cog on the idle screen and on the Toolbar, the one state in both', async () => {
+    const shown = (selector: string): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('${selector}')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    const pressed = (selector: string): Promise<string | null> => harness.dashboardEval<string | null>(`document.querySelector('${selector}')?.getAttribute('aria-pressed') ?? null`)
+    const muted = (): Promise<boolean> => harness.dashboardEval<boolean>(`window.bingbong.sound.muted()`)
+
+    await shown('.url-input')
+    await harness.clickDashboardElement('.idle-toggle')
+    await shown('.idle-screen')
+    expect(await muted()).toBe(false)
+
+    // The idle button sits beside the cog, clear of it, and a tap leaves the screen up.
+    const sideBySide = await harness.dashboardEval<{ beside: boolean; level: boolean }>(`(() => {
+      const mute = document.querySelector('.idle-mute').getBoundingClientRect()
+      const cog = document.querySelector('.idle-settings').getBoundingClientRect()
+      return { beside: mute.right <= cog.left && cog.left - mute.right < 16, level: mute.top === cog.top }
+    })()`)
+    expect(sideBySide).toEqual({ beside: true, level: true })
+    await harness.clickDashboardElement('.idle-mute')
+    await waitFor(async () => ((await pressed('.idle-mute')) === 'true' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    expect(await muted()).toBe(true)
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+
+    // The Toolbar's button, just before the cog, shows the same state and unmutes.
+    await harness.clickDashboardElement('.idle-screen')
+    await shown('.sound-toggle')
+    expect(await harness.dashboardEval<boolean>(`document.querySelector('.sound-toggle').nextElementSibling?.classList.contains('settings-toggle') ?? false`)).toBe(true)
+    expect(await pressed('.sound-toggle')).toBe('true')
+    await harness.clickDashboardElement('.sound-toggle')
+    await waitFor(async () => ((await pressed('.sound-toggle')) === 'false' ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    expect(await muted()).toBe(false)
+  })
+
   it('opens settings from the idle screen, and the Toolbar’s home button or the shortcut shows the idle screen from every other view', async () => {
     const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
     const shown = (selector: string): Promise<true> =>
