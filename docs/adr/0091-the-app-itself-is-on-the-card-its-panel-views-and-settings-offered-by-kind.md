@@ -2,8 +2,9 @@
 
 ## Status
 
-Amended on 2026-10-27 by ADR 0096 (#485): the app's ops are on the
-Appliance Card first; see the amendment below.
+Amended on 2026-10-26 by #458 (the Idle Screen is one of the views) and
+on 2026-10-27 by ADR 0096 (#485): the app's ops are on the Appliance Card
+first; see the amendments below.
 
 Accepted (#420 grill, 2026-10-24). Amends ADR 0021 and the Appliance Verb
 entry in CONTEXT.md.
@@ -24,8 +25,11 @@ scenario is ~3 a day, `missing`, yield 12.
   state, and every op its kind allows is offered, whatever the state:
   - the Feed panel: open, close, overlay, docked, and its width as an
     Amount Choice;
-  - the views: the dashboard, the Weight page, and Settings at any of
-    its sections;
+  - the views: the dashboard, the Weight page, Settings at any of its
+    sections, and — while it is not up — the Idle Screen (#458,
+    2026-10-26), its line just before the dashboard's as measured; its
+    pick brings the Idle Screen up by the idle shortcut's road and says
+    nothing, the screen its own receipt;
   - each setting, generated from the `AppSettings` shape, never listed
     by hand: a boolean gets on and off, an enum one op per value, a
     number an amount, text a Slot. Each op is one `settingsStore.update`;
@@ -78,3 +82,29 @@ scenario is ~3 a day, `missing`, yield 12.
 
 The app's ops, the settings line and its settings ask are on the Appliance
 Card first (ADR 0096).
+
+## Amendment 2026-10-26 — the Idle Screen is one of the views (#458)
+
+While the Idle Screen is not up, `show_idle` is offered with the views,
+on any view and any page (built a56508fe). Its pick runs `enterIdle`, the
+idle shortcut's road: the pane, the Player and the Last Page are kept,
+and the Command keeps the Idle Screen up over the turn still running.
+"Showing the Idle Screen." is shown in the Feed and never spoken. There
+is no grammar line for it.
+
+*Measured 2026-10-26 on `pnpm jev:gate`, Mammoth ∩ Elephant, 29 cases
+(the 23 app-line cards, the four kiosk lines, and two lures, "Go to the
+home page." meaning YouTube's Home and "Go back to YouTube."): the line
+placed just before `show_dashboard` passed 28 of 29 and lost nothing.
+Placed after it, or worded to name "home", Elephant lost
+`app-show-the-weather-settings-youtube`.*
+
+ADR 0096 overtook where the line is read. As built, it was on the page
+card, the one action card; since #485 the app's ops, `show_idle` among
+them, are read first on the Appliance Card, and on the page card only
+when a line goes on to it. The line's wording and its place just before
+`show_dashboard` are unchanged on both cards. Rechecked 2026-10-27 at
+main 72851667 (one pass per gate model): the three "Go to Idle Screen"
+lines are through on both cards, 6/6. "Go back to home page."
+(turn-mvp4p39a-vn) is not: it names a site's home and the app's own
+screen at once, and ADR 0096 records the pair as a pick and a guess.

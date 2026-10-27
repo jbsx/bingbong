@@ -989,8 +989,13 @@ dont want to collapse the information"). It is laid out for the appliance's 21-i
 2026-10-19: "the components are too small"): nothing is set below 16 px,
 and the figures that matter — the temperatures, the gauges, the countdown,
 today's date — are far larger. A smaller window shows the same layout
-scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
-Command, an open mic or the settings page. Once up it stays up through the
+scaled down to fit. It comes up after the idle timeout, by its shortcut, or
+by a line: while it is not up it is one of the app's views (`show_idle`,
+#458), read first on the Appliance Card (ADR 0096), and Jev's pick brings it
+up at once by the shortcut's road, over the turn still running, the pane,
+the Player and the Last Page kept, nothing said. Never shows Feed Entries
+(#70); the timeout never brings it up over a running Command, an open mic or
+the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Turn Card over it while they run (#474), so a Command that never
 needs the pane (the Timer, a Stop, `done`, a line read as no Command, and
