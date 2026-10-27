@@ -7,5 +7,7 @@
   "happened": "Kiosk, YouTube watch page: 'Failure' (a Flag, said after 'Mark as junior.') read none by Jev on the page card, Where Ask none; nothing flagged",
   "meant": "Flag the last Task as a failure",
   "log": "decision-1793017798599-1.jsonl",
-  "claimedBy": "#485"
+  "claimedBy": "#485",
+  "fixedBy": "a2297959",
+  "case": "fixtures/jev-cases/turn-mvpdtkpr-v11-appliance.json"
 }

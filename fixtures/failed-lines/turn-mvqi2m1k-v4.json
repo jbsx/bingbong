@@ -7,5 +7,7 @@
   "happened": "Kiosk 0.1.4-local.202610270920 (after #478 5ac6be8a), ElevenLabs ear, Mammoth, 2026-10-27, on the watch page of the 'Play MKBHD's latest video.' pick (ESABTN4VtrA), after 'Pause.': 'Flag it as failure.' is no Flag head (FLAG_HEADS: 'mark this as a failure', 'mark as failure', 'flag that', 'that was wrong'), so it went to Jev, which clicked 'Dislike this video' (0.80) and hopped to 'More actions'; superseded by the repeat 11 s later (turn-mvqi2ulz-v5); no Flag was kept",
   "meant": "Flag the previous Task (the MKBHD play), nothing clicked on the page",
   "log": "decision-1793094146492-1.jsonl",
-  "claimedBy": "#485"
+  "claimedBy": "#485",
+  "fixedBy": "a2297959",
+  "case": "fixtures/jev-cases/turn-mvqi2m1k-v4-appliance.json"
 }
