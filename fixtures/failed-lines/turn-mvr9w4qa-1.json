@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvr9w4qa-1",
+  "transcript": "open wikipedia",
+  "at": 1793141066097,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 12-search-while-page-changes at p1 (after changed) on baseten-elephant-9b-latest at 919f058f: \"open wikipedia\" on the DuckDuckGo home was read as a search for \"wikipedia\" typed into its box (type-5, submit); the pane went to DuckDuckGo results, not Wikipedia (Mammoth opened Wikipedia)",
+  "meant": "Wikipedia opens",
+  "log": "decision-1793141066473-1.jsonl"
+}
