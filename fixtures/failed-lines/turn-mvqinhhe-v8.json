@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvqinhhe-v8",
+  "transcript": "Lower volume.",
+  "at": 1793095313576,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610270920 (after #478 5ac6be8a), ElevenLabs ear, Mammoth, 2026-10-27, same page at volume 50%: the second 'Lower volume.' — Jev chose down-little again (0.75), 50→45; 16 s later the owner said 'Set volume to 25%.'",
+  "meant": "Lower the music by an amount that is heard (the owner went to 25% each time)",
+  "log": "decision-1793094146492-1.jsonl"
+}

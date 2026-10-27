@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvphsjyk-v2",
+  "transcript": "Lower music volume.",
+  "at": 1793033404297,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear, Mammoth, 2026-10-26, on the watch page of Tum Se Tum Tak - Niyam at volume 55%: 'Lower music volume.' — Jev chose volume-10 with the Amount down-little (0.72); LEVEL_STEPS.little is 5 points (mediaOp.ts, marked a guess), so 55→50; 7 s later the owner said 'Change the volume to 25%.'",
+  "meant": "Lower the music by an amount that is heard (the owner went to 25% each time)",
+  "log": "decision-1793033383382-1.jsonl"
+}

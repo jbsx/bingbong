@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvpji5va-v10",
+  "transcript": "Lower music volume.",
+  "at": 1793036278788,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear, Mammoth, 2026-10-26, on the watch page of Iraada - Niyam at volume 74%: 'Lower music volume.' — Jev chose down-little (0.73), 74→69; 6 s later the owner said 'Set music volume to 25%.'",
+  "meant": "Lower the music by an amount that is heard (the owner went to 25% each time)",
+  "log": "decision-1793033383382-1.jsonl"
+}
