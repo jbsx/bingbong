@@ -556,18 +556,9 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
     await shown('.idle-screen')
   }
-  // A tap on the Turn Card (#474) closes it and keeps the Idle Screen up, and the card covers the date while the walk's
-  // last line is reported: as a person would, tap it away first (its trailing events may raise it again), then the date.
   const wake = async (): Promise<void> => {
-    await waitFor(
-      async () => {
-        const face = await harness.dashboardEval<string>(`!document.querySelector('.idle-screen') ? 'awake' : document.querySelector('.turn-card') ? 'card' : 'idle'`)
-        if (face === 'awake') return true
-        await harness.clickDashboardElement(face === 'card' ? '.turn-card' : '.idle-date').catch(() => {})
-        return undefined
-      },
-      { timeoutMs: 10_000, intervalMs: 500 },
-    ).catch(async (error: unknown) => {
+    await tapIdleAwake(run)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 }).catch(async (error: unknown) => {
       await shoot(run, 'no-wake')
       throw error
     })
@@ -657,6 +648,17 @@ async function held(run: Run, state: string, during: () => Promise<void>): Promi
 }
 
 /**
+ * A tap that wakes the Idle Screen to the page under it. While a Turn Card (#474) is up it covers the date, and a tap on
+ * the card only closes it, keeping the Idle Screen up by design: the tap goes to its scrim, beside the card, instead.
+ */
+async function tapIdleAwake(run: Run): Promise<void> {
+  const { harness } = run
+  const scrim = await harness.dashboardEval<boolean>(`document.elementFromPoint(8, 8)?.classList.contains('turn-scrim') ?? false`)
+  if (scrim) await harness.clickDashboardAt(8, 8)
+  else await harness.clickDashboardElement('.idle-date')
+}
+
+/**
  * The ear's waits narrated (#442): the cold start — the scripted VAD "loading"
  * — on the Voice Prompt, the Capsule and the Idle Screen, never inviting
  * speech; a line taken while the transcriber still loads, held and said so;
@@ -710,7 +712,7 @@ async function walkTheEarWaits(run: Run): Promise<void> {
   await sleep(2_200)
   expect.soft(await words((e) => harness.dashboardEval<string>(e), '.idle-voice'), 'the Idle Voice Line carries the words being read and their seconds').toMatch(/^“zorblax the quux” · [2-9]sTranscribing…$/)
   await shoot(run, '36-transcribing-idle')
-  await harness.clickDashboardElement('.idle-date')
+  await tapIdleAwake(run)
   await shown(onDashboard, '.voice-hint--transcribing', 'transcribing-capsule')
   expect.soft(await words((e) => harness.dashboardEval<string>(e), '.voice-hint'), 'the Capsule carries them').toMatch(/^“zorblax the quux” · \d+s$/)
   await shoot(run, '37-transcribing-capsule')
