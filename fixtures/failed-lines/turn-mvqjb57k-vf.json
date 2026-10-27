@@ -6,5 +6,6 @@
   "stage": "turn",
   "happened": "Kiosk 0.1.4-local.202610270920, ElevenLabs ear, Mammoth, 2026-10-27 10:18–10:20, the pane on the paused Tum Se Tum Tak watch page, nobody speaking to the app: a loud 2 s sound (wake-1793096291832-0025.wav, mean -15.9 dB, clipping) tripped the wake word at 10:18:11.85 and the ear opened; 4.7 s of loud non-speech (utterance-1793096297045-0026.wav, -20.7 dB) and a quiet 0.7 s tick (utterance-1793096299160-0027.wav) came back as empty transcripts from ElevenLabs (Parakeet replay: empty too) and were dropped as blips, the ear reopening after each; no clock closes a wake listen that has not yet submitted a line (hot stays false, startSilenceClock returns at once), so Listening stood for 116 s until 'Hello.' at 10:20:15 (wake-to-transcript 124 464 ms, blips 2), read none; only then did the Hot Listen's 8 s silence clock run. Live session logs not yet in the Log Bucket when found; the dumps are on the kiosk under audio-dumps",
   "meant": "The ear closes a few seconds after a wake that brings no words, the same way a Hot Listen closes 8 s after its last line; a loud bang is not the wake phrase",
-  "log": "decision-1793094146492-1.jsonl"
+  "log": "decision-1793094146492-1.jsonl",
+  "claimedBy": "#483"
 }
