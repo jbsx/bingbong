@@ -443,7 +443,8 @@ Verdict: which control closes the pop-up and leaves the page as it was.
 Every control of the dialog's layer a dismissal may click is offered,
 beside `escape`, and so is every piece of the layer's own text in view that
 no control holds, as a place a click may land: a close that no cue made a
-control is still on offer. Its answer is a rung of the Dismissal Ladder,
+control is still on offer. So is the pop-up's prose made focusable for a
+screen reader, which no tag marks a control (#476). Its answer is a rung of the Dismissal Ladder,
 placed by how sure Jev was; the record keeps it.
 _Avoid_: close question, dismissal target
 
@@ -1660,8 +1661,9 @@ An element that acts on a click though neither its tag nor its role marks
 it as a control, found by the cues Vimium's link hints use and a Ref like
 any other: an `onclick` attribute, an Angular click directive, a Google
 `jsaction` click, `contenteditable`; weakly, a `button` or `btn` class and a
-`span`, and, inside an open dialog's layer, a `tabindex` of 0 or more or a
-click listener of the element's own, each dropped when a nearby descendant
+`span`, and, inside an open dialog's layer, a `tabindex` of 0 or more on an
+element with no text of its own, or a click listener of the element's own,
+each dropped when a nearby descendant
 is already a Ref. Never one marked `aria-disabled`, never a weak cue inside
 a Ref a click acts on whole (a link, a button, a click role: that is the
 Ref's own icon or text), and, outside a dialog's layer, never one found by

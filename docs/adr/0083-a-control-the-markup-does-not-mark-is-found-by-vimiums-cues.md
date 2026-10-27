@@ -5,7 +5,8 @@
 Accepted on 2026-10-21 by the owner, grilled from #381 (the companion of
 #380). Amends ADR 0007's selector-only collect. Leaves ADR 0062's
 visibility rule as it is. Amended on 2026-10-22 by the owner's rulings on
-#384 and #386, and on 2026-10-24 by the owner's rulings on #414.
+#384 and #386, on 2026-10-24 by the owner's rulings on #414, and on 2026-10-27 by the
+ruling on #476.
 
 ## Context
 
@@ -57,15 +58,23 @@ Two more cues are not Vimium's, ruled on #414. Both hold only inside the
 open dialog's layer, and both are weak: an element that carries one is
 dropped when a ref within the lookback is its descendant, or when it sits
 inside a ref that takes a click whole. The first is an element whose only
-cue is a `tabindex` of 0 or more. Vimium calls such an element a
-second-class citizen and, on its current master, never hints it. The
-second is an element the browser reports as clickable
-(`DOMSnapshot.isClickable`), which means it has a click listener of its
-own. publicholidays.co.uk's anti-adblock dialog closes on a
-`<span tabindex="0">×</span>` and on a `<p>` reading "Continue without
-supporting us" that has its own listener. Without them its only ref was
-DISABLE, which leads further into the wall. The Dismissal Ladder was left
-with Escape, which the dialog ignores. On a page a person sees such a
+cue is a `tabindex` of 0 or more and which has no text of its own: an icon
+close, such as a `<span tabindex="0" aria-label="Close">` holding only an
+`<svg>`. Vimium calls such an element a second-class citizen and, on its
+current master, never hints it. One with text of its own is prose made
+focusable for a screen reader (#476): Sourcepoint's consent frames make
+every paragraph a `<p tabindex="0">`, and listed as a button the one
+carrying the accept's words came before the button and drew the consent
+rule and Jev to a click that did nothing. It is a piece of the dialog's
+text instead (#416, ADR 0076), offered to the dismiss Choice and clicked
+at its box centre when chosen; publicholidays.co.uk's
+`<span tabindex="0">×</span>` is one such piece. The second is an element
+the browser reports as clickable (`DOMSnapshot.isClickable`), which means
+it has a click listener of its own, whatever its text.
+publicholidays.co.uk's anti-adblock dialog closes on that `×` and on a
+`<p>` reading "Continue without supporting us" that has its own listener.
+Without them its only ref was DISABLE, which leads further into the wall.
+The Dismissal Ladder was left with Escape, which the dialog ignores. On a page a person sees such a
 control and clicks it; over a dialog, leaving it off the card takes away
 the way out. The layer is small and its refs come first, ahead of the cap,
 so the card cost is bounded. Outside it, the page keeps Vimium's cues as
@@ -89,7 +98,8 @@ them, and a "scroll this region" op is a separate decision.
 - Outside a dialog's layer, a React or jQuery control with a delegated
   listener and no Vimium cue stays invisible, as it does to Vimium. Inside
   the layer, a listener of the element's own makes it a ref (#414). A
-  delegated one still does not, unless it carries a `tabindex`. Over a
+  delegated one still does not, unless it carries a `tabindex` and has no
+text of its own (#476). Over a
   pop-up, the dismiss Choice offers that control's text in its place
   (#416, ADR 0076).
 - Measured on #414: the anti-adblock dialog gives 3 refs with the two cues
@@ -97,6 +107,12 @@ them, and a "scroll this region" op is a separate decision.
   median, against a ≤15 ms budget, and with no dialog open it adds
   nothing. The gate case from `turn-mvlq72ay-4` passes on every gate
   model, and no case that passed before is lost.
+- Measured on #476 (Mammoth ∩ Elephant): with the prose kept as a flagged
+  `button`, or as `text`, the weaker model still clicked "Accept cookies
+  and read free content with personalised ads" over "Accept All &
+  Continue" (0.90 / 0.51); with the prose among the text pieces both
+  models click the button. `browser-collect` with a dialog open is
+  unchanged (1.10 / 1.10 ms top, 0.50 / 0.50 ms in the frame).
 - The collect gains a cost, budgeted at ≤15 ms added to the median
   `browser-collect` on a YouTube watch page and a news front page; the
   shadow-root walk counts against it.
