@@ -1,0 +1,15 @@
+{
+  "start": { "url": "https://duckduckgo.com/" },
+  "input": "typed",
+  "lines": [
+    { "words": "play radiohead" },
+    { "words": "open the weather", "at": { "while": "media-not-started" } }
+  ],
+  "expect": {
+    "media": { "playing": false },
+    "said": [{ "means": "the music was stopped or not played, because the person asked for something else" }],
+    "lines": ["cancelled", "done"]
+  },
+  "evidence": ["none yet"],
+  "state": { "is": "red", "on": "unmeasured", "date": "2026-10-27", "models": [] }
+}

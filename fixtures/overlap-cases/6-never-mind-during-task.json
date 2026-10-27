@@ -1,0 +1,37 @@
+{
+  "start": {
+    "url": "https://duckduckgo.com/"
+  },
+  "input": "typed",
+  "lines": [
+    {
+      "words": "find the wikipedia page for radiohead"
+    },
+    {
+      "words": "never mind",
+      "at": {
+        "while": "loading"
+      }
+    }
+  ],
+  "expect": {
+    "said": [
+      {
+        "means": "it stopped what it was doing"
+      }
+    ],
+    "lines": [
+      "cancelled",
+      "done"
+    ]
+  },
+  "evidence": [
+    "none yet"
+  ],
+  "state": {
+    "is": "red",
+    "on": "unmeasured",
+    "date": "2026-10-27",
+    "models": []
+  }
+}

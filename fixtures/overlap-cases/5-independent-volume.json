@@ -1,0 +1,35 @@
+{
+  "start": {
+    "playing": "let down by radiohead"
+  },
+  "input": "typed",
+  "lines": [
+    {
+      "words": "search for radiohead tour dates"
+    },
+    {
+      "words": "volume down",
+      "at": {
+        "while": "loading"
+      }
+    }
+  ],
+  "expect": {
+    "url": {
+      "host": "duckduckgo.com"
+    },
+    "lines": [
+      "done",
+      "done"
+    ]
+  },
+  "evidence": [
+    "none yet"
+  ],
+  "state": {
+    "is": "red",
+    "on": "unmeasured",
+    "date": "2026-10-27",
+    "models": []
+  }
+}

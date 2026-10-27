@@ -1,0 +1,31 @@
+{
+  "start": {
+    "url": "https://en.wikipedia.org/wiki/Radiohead"
+  },
+  "input": "typed",
+  "lines": [
+    {
+      "words": "search for the weather in london"
+    },
+    {
+      "words": "go back",
+      "at": {
+        "while": "loading"
+      }
+    }
+  ],
+  "expect": {
+    "url": {
+      "is": "https://en.wikipedia.org/wiki/Radiohead"
+    }
+  },
+  "evidence": [
+    "none yet"
+  ],
+  "state": {
+    "is": "red",
+    "on": "unmeasured",
+    "date": "2026-10-27",
+    "models": []
+  }
+}

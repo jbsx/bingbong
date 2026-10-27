@@ -1,0 +1,11 @@
+{
+  "about": "Synthesized stand-ins for spoken lines no utterance dump holds yet (#486): each file's words and the Piper voice that says them. The person speaks in en_US-lessac-medium; 'another voice' is en_GB-northern_english_male-medium; never alba, the app's own. pnpm overlap:audio makes the missing ones.",
+  "files": {
+    "back-to.wav": { "words": "Back to", "voice": "en_US-lessac-medium" },
+    "page.wav": { "words": "page.", "voice": "en_US-lessac-medium" },
+    "read-the-page.wav": { "words": "Read the page.", "voice": "en_US-lessac-medium" },
+    "move-on.wav": { "words": "Move on.", "voice": "en_US-lessac-medium" },
+    "find-wikipedia-radiohead.wav": { "words": "Find the Wikipedia page for Radiohead.", "voice": "en_US-lessac-medium" },
+    "remark-kettle.wav": { "words": "Oh, I think I left the kettle on.", "voice": "en_GB-northern_english_male-medium" }
+  }
+}

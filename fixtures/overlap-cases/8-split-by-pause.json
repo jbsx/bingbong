@@ -1,0 +1,38 @@
+{
+  "start": {
+    "playing": "iraada niyam"
+  },
+  "input": "spoken",
+  "listen": "wake",
+  "lines": [
+    {
+      "words": "Back to",
+      "audio": "back-to.wav"
+    },
+    {
+      "words": "page.",
+      "audio": "page.wav",
+      "at": {
+        "ms": [
+          1100,
+          1700
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "lines": [
+      "done",
+      "none"
+    ]
+  },
+  "evidence": [
+    "turn-mvphypmf-vk"
+  ],
+  "state": {
+    "is": "red",
+    "on": "unmeasured",
+    "date": "2026-10-27",
+    "models": []
+  }
+}

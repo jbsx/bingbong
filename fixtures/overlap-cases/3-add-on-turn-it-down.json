@@ -1,0 +1,36 @@
+{
+  "start": {
+    "url": "https://duckduckgo.com/"
+  },
+  "input": "typed",
+  "lines": [
+    {
+      "words": "play let down by radiohead"
+    },
+    {
+      "words": "and turn it down",
+      "at": {
+        "while": "media-not-started"
+      }
+    }
+  ],
+  "expect": {
+    "media": {
+      "playing": true,
+      "has": "let down",
+      "volume": [
+        0,
+        0.9
+      ]
+    }
+  },
+  "evidence": [
+    "none yet"
+  ],
+  "state": {
+    "is": "red",
+    "on": "unmeasured",
+    "date": "2026-10-27",
+    "models": []
+  }
+}

@@ -25,6 +25,8 @@
     "jev:replay": "node scripts/jev-replay.ts",
     "jev:gate": "node scripts/jev-gate.ts",
     "goal:gate": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node --env-file-if-exists=.env scripts/goal-gate.ts",
+    "overlap:gate": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node --env-file-if-exists=.env scripts/overlap-gate.ts",
+    "overlap:audio": "node scripts/overlap-audio.ts",
     "jev:candidates": "node scripts/jev-candidates.ts",
     "jev:case": "node scripts/jev-case.ts",
     "jev:appliance": "node scripts/jev-appliance.ts",
