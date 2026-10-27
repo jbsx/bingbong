@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, typedRepair, wordSoundKey } from './nameMatch'
+import { commandHearingTerms, HEARING_CAP, hearNames, nameMatch, soundKey, soundsAlike, typedRepair, wordSoundKey } from './nameMatch'
 
 // The Name Match (ADR 0077, #325): a Slot that sounds like a name the page
 // shows, or one the user taught the app, is carried as that name. The
@@ -101,6 +101,18 @@ describe('hearNames', () => {
   it('hears each span once, the nearest name winning it, and the Page Terms before the Learned Terms on a tie', () => {
     expect(hearNames('search linus tech dips', ['Linus Tech Tips'], ['Linus Tech Tipps'])).toEqual([{ heard: 'linus tech dips', candidate: 'Linus Tech Tips', from: 'page' }])
     expect(hearNames('search linus tech dips', ['Linus Tech Tipps'], ['Linus Tech Tips'])).toEqual([{ heard: 'linus tech dips', candidate: 'Linus Tech Tipps', from: 'page' }])
+  })
+
+  it("hears the app's own command phrases after the names (#456): \"Look this song.\" sounds like \"loop this song\"", () => {
+    const commands = commandHearingTerms(['loop', 'loop this song', 'repeat this song', 'side panel'])
+    expect(commands).toEqual(['loop this song', 'repeat this song'])
+    expect(hearNames('Look this song.', page, learned, commands)).toEqual([{ heard: 'Look this song', candidate: 'loop this song', from: 'command' }])
+    expect(hearNames('Loop this song.', page, learned, commands)).toEqual([])
+  })
+
+  it('hears a command only over a span of at least its own words: "settings" is no mishearing of "show settings" (#456)', () => {
+    expect(hearNames('show the weather settings', [], [], ['show settings'])).toEqual([])
+    expect(hearNames('so settings', [], [], ['show settings'])).toEqual([{ heard: 'so settings', candidate: 'show settings', from: 'command' }])
   })
 
   it('hears at most the cap', () => {

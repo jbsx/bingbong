@@ -1279,22 +1279,23 @@ function actionQuestion(
 }
 
 /** Where a heard name came from, as the Hearing line says it. */
-const HEARD_FROM: Readonly<Record<NameHearing['from'], string>> = { page: 'a name on this page', learned: 'a name the user taught the app' }
+const HEARD_FROM: Readonly<Record<NameHearing['from'], string>> = { page: 'a name on this page', learned: 'a name the user taught the app', command: 'a command the app answers to' }
 
 /**
  * The Hearing line (#396, ADR 0077 as amended): the words were heard by
  * ear, and these of them sound like names the page shows or the user
- * taught — said before the card, so Jev reads a misheard name as the name
- * and not as noise. No line when the transcript sounds like no name.
+ * taught, or a command the app answers to (#456) — said before the card,
+ * so Jev reads a misheard name as the name and not as noise. No line when
+ * the transcript sounds like no name.
  */
 export function heardLine(heard: readonly NameHearing[] | undefined): string[] {
   if (heard === undefined || heard.length === 0) return []
   return [`Heard by ear, so a word may be misheard: ${heard.map((hearing) => `${JSON.stringify(hearing.heard)} sounds like ${JSON.stringify(hearing.candidate)}, ${HEARD_FROM[hearing.from]}`).join('; ')}`]
 }
 
-/** A span's words as the Slot offers them: the span that was heard as a name says which (#396). */
+/** A span's words as the Slot offers them: the span that was heard as a name says which (#396); a command heard is on the Hearing line only (#456). */
 export function spanOption(words: string, heard: readonly NameHearing[] | undefined): string {
-  const hearing = heard?.find((candidate) => normalizeWords(candidate.heard) === normalizeWords(words))
+  const hearing = heard?.find((candidate) => candidate.from !== 'command' && normalizeWords(candidate.heard) === normalizeWords(words))
   return hearing === undefined ? words : `${words} (sounds like ${JSON.stringify(hearing.candidate)})`
 }
 

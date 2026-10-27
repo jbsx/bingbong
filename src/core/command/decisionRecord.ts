@@ -17,8 +17,8 @@ import type { SiteAnswer, SiteQuestion } from './siteQuestion'
 /** Where the words came from. */
 export type CommandSource = 'spoken' | 'typed'
 
-/** Whose spelling a Name Match carried: the page's, or the user's own Learned Terms. */
-export type NameSource = 'page' | 'learned'
+/** Whose spelling a Name Match carried: the page's, or the user's own Learned Terms. The Hearing also reads the app's own commands (#456), which never rewrite a Slot. */
+export type NameSource = 'page' | 'learned' | 'command'
 
 /** Who settled the reading: the Local Match, Jev's top Choices, or the best guess that fires when Jev does not answer. */
 export type CommandReading = 'local_match' | 'jev' | 'best_guess'

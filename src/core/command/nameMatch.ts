@@ -329,28 +329,44 @@ export function nameMatch(slot: string, candidates: readonly string[]): NameMatc
   return { slot: replaced, candidate, heard }
 }
 
+/** A command phrase's sound key is at least this long before the Hearing reads it: a shorter one lures (`turn`~`return`). */
+const MIN_COMMAND_KEY_LENGTH = 6
+
+/**
+ * The app's own command phrases the Hearing reads (#456): those of two
+ * words or more whose sound key is at least {@link MIN_COMMAND_KEY_LENGTH}.
+ * A single word or a short key sounds like everyday speech (`and`~`enter`).
+ */
+export function commandHearingTerms(phrases: readonly string[]): string[] {
+  return phrases.filter((phrase) => wordsOf(phrase).length >= 2 && soundKey(phrase).length >= MIN_COMMAND_KEY_LENGTH)
+}
+
 /**
  * The Hearing of a transcript (#396): the names its words sound like, the
- * Page Terms before the Learned Terms, nearest first and at most
- * {@link HEARING_CAP}, no two over the same words, in the order spoken.
- * Empty when the transcript sounds like no name, or carries every name it
- * sounds like as spelled.
+ * Page Terms before the Learned Terms, then the app's own command phrases
+ * (#456), nearest first and at most {@link HEARING_CAP}, no two over the
+ * same words, in the order spoken. Empty when the transcript sounds like no
+ * name, or carries every name it sounds like as spelled.
  */
-export function hearNames(text: string, page: readonly string[], learned: readonly string[]): NameHearing[] {
+export function hearNames(text: string, page: readonly string[], learned: readonly string[], commands: readonly string[] = []): NameHearing[] {
   const words = wordsOf(text)
   if (words.length === 0) return []
   const spoken = text.trim().split(/\s+/)
   const aligned = spoken.length === words.length
   const taken = new Set<number>()
   const hearings: (NameHearing & { readonly start: number })[] = []
-  for (const match of spanMatches(words, keyCandidates([...page, ...learned]))) {
+  const named = page.length + learned.length
+  for (const match of spanMatches(words, keyCandidates([...page, ...learned, ...commands]))) {
     if (hearings.length >= HEARING_CAP) break
+    // A command is heard only over a span of at least its own words: one word is no mishearing of a phrase
+    // ("settings" of "show settings" lost a weather-settings line on the gate, #456).
+    if (match.keyed.rank >= named && match.length < match.keyed.words.length) continue
     const positions = Array.from({ length: match.length }, (_, i) => match.start + i)
     if (positions.some((position) => taken.has(position))) continue
     for (const position of positions) taken.add(position)
     // The heard words as spoken, shorn of the punctuation at their edges: a sentence's full stop is no part of a name.
     const heard = (aligned ? spoken : words).slice(match.start, match.start + match.length).join(' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-    hearings.push({ heard, candidate: match.keyed.candidate.trim(), from: match.keyed.rank < page.length ? 'page' : 'learned', start: match.start })
+    hearings.push({ heard, candidate: match.keyed.candidate.trim(), from: match.keyed.rank < page.length ? 'page' : match.keyed.rank < named ? 'learned' : 'command', start: match.start })
   }
   return hearings.sort((a, b) => a.start - b.start).map(({ start: _start, ...hearing }) => hearing)
 }

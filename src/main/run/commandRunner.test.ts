@@ -1976,6 +1976,25 @@ describe('the Name Match (ADR 0077)', () => {
     expect(jev.requests[2]!.state.split('\n')[1]).not.toMatch(/^Heard by ear/)
   })
 
+  it("hears the app's own command phrases on the Hearing line, and a typed line hears nothing (#456)", async () => {
+    const { decision: jev, runner } = harness()
+    await runner.run('Look this song.', { source: 'spoken' })
+    await runner.run('Look this song.')
+    const spoken = jev.requests.find((request) => request.state.includes('Look this song'))!
+    expect(spoken.state.split('\n')[1]).toBe('Heard by ear, so a word may be misheard: "Look this song" sounds like "loop this song", a command the app answers to')
+    const typed = jev.requests.filter((request) => request.state.includes('Look this song')).at(-1)!
+    expect(typed.state).not.toMatch(/Heard by ear/)
+  })
+
+  it('never rewrites a Slot to a command phrase, nor offers one beside a span (#456)', async () => {
+    const { records, decision: jev, runner } = harness()
+    jev.script.push(...searched('s1-3'))
+    await runner.run('search look this song', { source: 'spoken' })
+    expect((jev.requests[0]!.questions.slot as DecisionChoiceQuestion).options['s1-3']).toBe('look this song')
+    expect(decision(records[0])).toMatchObject({ slot: 'look this song' })
+    expect(decision(records[0]).slotFrom).toBeUndefined()
+  })
+
   it('carries the rest of a Slot that already names one Learned Term as spelled: "Highs and Lows by Canywast" is by Kanye West', async () => {
     const { browser, records, runner } = harness({ learned: ['highs and lows', 'kanye west'] })
     await runner.run('type Highs and Lows by Canywast in search', { source: 'spoken' })

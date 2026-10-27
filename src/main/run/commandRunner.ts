@@ -58,7 +58,8 @@ import {
 } from '../../core/command/jevReading'
 import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutcome'
 import { navigateAddress, searchAddress } from '../../core/command/openAddress'
-import { hearNames, nameMatch, soundsAlike, typedRepair, type NameHearing } from '../../core/command/nameMatch'
+import { commandHearingTerms, hearNames, nameMatch, soundsAlike, typedRepair, type NameHearing } from '../../core/command/nameMatch'
+import { commandLexicon } from '../../core/voice/commandLexicon'
 import {
   MAX_TASK_ACTIONS,
   MISFIRE_WINDOW_MS,
@@ -414,6 +415,14 @@ const MAX_STALLED_HOPS = 2
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
 const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'menu', 'scroll_up', 'scroll_down', 'read', 'forward'])
+
+let commandPhrases: readonly string[] | undefined
+
+/** The app's own command phrases the Hearing reads (#456), off the Seed Lexicon's command half; built once, on first hearing. */
+function commandHearing(): readonly string[] {
+  commandPhrases ??= commandHearingTerms(commandLexicon())
+  return commandPhrases
+}
 
 /** A Name Match as the runner carries it: the words heard, the name they became, and whose spelling it is. */
 interface NameMatched {
@@ -1232,12 +1241,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name. */
   /**
    * The Hearing (#396, ADR 0077 as amended): the names a spoken line sounds
-   * like, read against the Page Terms and the Learned Terms before Jev is
-   * asked, so the card says them beside the words as heard. A typed line
-   * is exact and hears none.
+   * like, read against the Page Terms and the Learned Terms, then the app's
+   * own command phrases (#456), before Jev is asked, so the card says them
+   * beside the words as heard. A typed line is exact and hears none.
    */
   function hearingOf(text: string, page: CommandPage, spoken: boolean): readonly NameHearing[] {
-    return spoken ? hearNames(text, page.terms ?? [], learnedTerms()) : []
+    return spoken ? hearNames(text, page.terms ?? [], learnedTerms(), commandHearing()) : []
   }
 
   function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
