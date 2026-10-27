@@ -6,5 +6,7 @@
   "stage": "reading",
   "happened": "Kiosk 0.1.4-local.202610261642, ElevenLabs ear, Mammoth, 2026-10-27 08:55, on the watch page of Tum Se Tum Tak - Niyam with the song ended (paused 2:43/2:44, loop off): Jev read loop-7 0.97 over restart-7 0.02; loop went on, the video stayed paused at its end and nothing played. The loop option's card line is 'put [7] on loop, so it repeats', the restart line 'play [7] again from the start': the word 'repeats' sits on the loop line and nowhere on the restart line. Said again 22 s later (turn-mvqgaqvp-v1h), then 'From the start' (turn-mvqgb4ih-v1i) restarted it 0.98",
   "meant": "Play the song again from the start (restart-7); a song at its end that is told to repeat plays again",
-  "log": "decision-1793033383382-1.jsonl"
+  "log": "decision-1793033383382-1.jsonl",
+  "fixedBy": "49d3047d",
+  "case": "src/main/music/player.test.ts › `repeat` at the song's end plays it again from the start, and loops a song still playing (turn-mvqga9a7-v1g); src/core/command/heardLine.test.ts › the lure test"
 }
