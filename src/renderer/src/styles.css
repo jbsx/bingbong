@@ -539,6 +539,20 @@ body {
   color: var(--fgh);
 }
 
+/* Beside a run's wait (#480) the hint the floor lets clip — the live words,
+   or the kept result — takes only the room the run hint leaves, as the
+   run's detail does inside it (#462): so it gives way wholly before the
+   run's object loses a letter. The Capsule's gap rides inside its words as
+   an indent, which clips with them, so a hint given way wholly leaves the
+   run its 12 px too. */
+.run-hint ~ .voice-hint--listening,
+.run-hint ~ .voice-hint--result {
+  flex: 1 1 0;
+  max-width: max-content;
+  margin-left: -12px;
+  text-indent: 12px;
+}
+
 /* The listening waveform: an indicator, so it may move. */
 .voice-wave {
   display: flex;

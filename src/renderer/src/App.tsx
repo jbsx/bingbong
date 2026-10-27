@@ -161,8 +161,9 @@ export function App() {
   idleUp.current = showIdle
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
   // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.
-  // With the panel shut the capsule keeps the last spoken result (#436) once the line has ended, until the next input.
-  const hint = voiceHint(earVoice, { promptShown: panel.open && view === 'dashboard', result: status === 'idle' && assistant.progress === null ? assistant.lastResult : null })
+  // With the panel shut the capsule keeps the last spoken result (#436) once the line has ended, until the next input;
+  // while a line runs its run hint has the room, and the rest hint is not drawn beside it (#480).
+  const hint = voiceHint(earVoice, { promptShown: panel.open && view === 'dashboard', result: status === 'idle' && assistant.progress === null ? assistant.lastResult : null, running: assistant.progress !== null })
   const weather = useWeather(settings?.weather ?? null)
   const lastPage = useLastPage(showIdle)
   // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.

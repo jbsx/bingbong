@@ -6,7 +6,9 @@
 // hint and the live words, and the capsule says only the state. Otherwise
 // the last spoken result (#436) takes the instruction's place until the
 // next input: speech cannot be scrolled back by ear, and the live words
-// still win.
+// still win. While a line runs the run hint is the Capsule's words, and the
+// rest hint has no business beside it (#480); an open or cold ear still says
+// so, since speaking now must read as heard or not.
 
 import type { EarLoading } from './ipcChannels'
 import { earPhase, earWaitLine, wordlessLine } from './voicePrompt'
@@ -55,7 +57,7 @@ export interface VoiceHint {
   text: string
 }
 
-export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean; result?: string | null; now?: number } = {}): VoiceHint | null {
+export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolean; result?: string | null; running?: boolean; now?: number } = {}): VoiceHint | null {
   if (options.promptShown === true) return null
   const phase = earPhase(voice)
   const now = options.now ?? Date.now()
@@ -67,6 +69,6 @@ export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolea
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : wordlessLine(phase) }
   }
   if (options.result != null && options.result !== '') return { kind: 'result', text: options.result }
-  if (voice.monitoring) return { kind: 'monitoring', text: REST_HINT }
+  if (voice.monitoring && options.running !== true) return { kind: 'monitoring', text: REST_HINT }
   return null
 }

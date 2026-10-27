@@ -71,3 +71,16 @@ describe('voiceHint', () => {
     expect(voiceHint({ ...quiet, monitoring: true }, { promptShown: true })).toBeNull()
   })
 })
+
+describe('voiceHint beside a running Command (#480)', () => {
+  it('says no rest hint while a line runs: the run hint is the Capsule’s words, and the rest hint has no business beside it', () => {
+    expect(voiceHint({ ...quiet, monitoring: true }, { running: true })).toBeNull()
+    expect(voiceHint({ ...quiet, listening: true, monitoring: true, speaking: true }, { running: true })).toBeNull()
+  })
+
+  it('still asks for a command, and still names a cold or failed ear, while a line runs: speaking now will be heard (#472)', () => {
+    expect(voiceHint({ ...quiet, listening: true }, { running: true })).toEqual({ kind: 'listening', text: 'say a command' })
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'ear', since: 1_000 }, { running: true, now: 2_000 })).toEqual({ kind: 'starting', text: 'loading the ear · 1s' })
+    expect(voiceHint({ ...quiet, monitoring: true, loading: 'failed' }, { running: true })).toEqual({ kind: 'failed', text: 'type, or restart' })
+  })
+})

@@ -406,6 +406,12 @@ async function walkTheShell(run: Run): Promise<void> {
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   await sleep(900)
   await shoot(run, '14-collapsed-peek')
+  // A typed line still acting with the panel collapsed and the ear monitoring (#480): the run hint has the Capsule's
+  // room and the rest hint is not drawn beside it; the floor's run-hint checks hold its host whole while it fits.
+  await held(run, '14b-collapsed-peek-opening', async () => {
+    expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .voice-hint')`), `${run.theme} 14b-collapsed-peek-opening: no rest hint beside the run`).toBe(false)
+    expect.soft(await harness.dashboardEval<string>(`document.querySelector('.status-capsule .run-hint')?.textContent ?? ''`), `${run.theme} 14b-collapsed-peek-opening: the host, its stage and its seconds`).toMatch(/^127\.0\.0\.1 · (still acting · )?\d+s$/)
+  })
   await harness.ensurePanelOpen()
   await clickPanel(run, '[aria-label="Dock the feed panel"]')
   await sleep(1200)
@@ -574,6 +580,33 @@ async function walkTheVoicePrompt(run: Run): Promise<void> {
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   await sleep(900)
   await shoot(run, '31-listening-collapsed', false)
+  // A typed line run in the Hot Listen (#472's form, #480): the live words give way wholly before the run's host does.
+  await held(run, '31b-listening-collapsed-opening', async () => {
+    expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .voice-wave')`), `${run.theme} 31b-listening-collapsed-opening: the ear still open beside the run`).toBe(true)
+    expect.soft(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .voice-hint--listening')`), `${run.theme} 31b-listening-collapsed-opening: the live words beside the run`).toBe(true)
+  })
+}
+
+/**
+ * A typed line whose page is held (#480), fired from the dashboard so the panel stays as it is — `submit` settles only
+ * at the Command's end — shot past the stage's stuck bound (#442) as 16-loading is, then stopped.
+ */
+async function held(run: Run, state: string, during: () => Promise<void>): Promise<void> {
+  const { harness, fixture } = run
+  await harness.dashboardEval(`void window.bingbong.assistant.submit(${JSON.stringify(`navigate ${fixture.url('/held-response')}`)})`)
+  await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.status-capsule .run-hint')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 50 }).catch(async (error: unknown) => {
+    await shoot(run, `no-${state}`)
+    throw error
+  })
+  await sleep(3_000)
+  // Read before the shot: the floor's reads take seconds, and the held page lets go at 12 s.
+  await during()
+  await shoot(run, state, false)
+  // The live Peek Card's typed line ellipsizes; #475's Ledger Strip replaces it. Carved out of these shots alone, by that issue.
+  run.issues.set(state, (run.issues.get(state) ?? []).filter((issue) => !issue.startsWith('panel: clipped across: .peek-command ')))
+  await harness.dashboardEval(`window.bingbong.assistant.abort()`)
+  await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.status-capsule .run-hint')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 }).catch(() => {})
+  await sleep(800)
 }
 
 /**
