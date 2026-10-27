@@ -14,6 +14,7 @@ import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, is
 import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
 import { promptChars } from '../decision/cardBudget'
 import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
+import { sectionsOf } from './passageSections'
 import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureOfRef, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -1343,16 +1344,37 @@ function outcomeQuestion(): DecisionChoiceQuestion {
   }
 }
 
+/** A block of Text in view as the Answer Passage reads it (#482): its text as the card holds it, and its node where the collect kept one — its kind, and where the whole block is read. */
+export interface ViewBlock {
+  readonly text: string
+  readonly node?: TextBelow
+}
+
+/** The blocks the passage Choice offers, in the state's order, each with its node when it has one: by its text, which the collect keeps once in view (`renderPageText`). */
+function viewBlocksOf(page: CommandPage, hop: HopContext | undefined): ViewBlock[] {
+  const nodes = page.viewportBlocks ?? []
+  return inViewBlocks(page, hop).slice(0, MAX_SPANS).map((text) => {
+    const node = nodes.find((candidate) => candidate.text === text)
+    return node === undefined ? { text } : { text, node }
+  })
+}
+
+/** The sections of Text in view (#482), each the places of its blocks: by the kinds the collect tagged, the same rule on every site. */
+function viewSectionsOf(blocks: readonly ViewBlock[]): number[][] {
+  return sectionsOf(blocks.map((block) => (block.node?.kind !== undefined ? { kind: block.node.kind } : {})))
+}
+
 /**
  * The passage Choice (#401, ADR 0087): which block of Text in view states
  * what the user asked for, or `none`. Asked beside every Verdict; no line
  * is marked a question, so a line that asked nothing has no block that
  * states it. Each block is offered whole, as the state shows it, under the
  * Choice cap, its option naming it `view-N` in reading order. Null when no
- * block is in view.
+ * block is in view. The answer is read by section (#482, `readPassage`);
+ * the card stays one option a block, as measured.
  */
 function passageQuestion(page: CommandPage, hop: HopContext | undefined): DecisionChoiceQuestion | null {
-  const blocks = inViewBlocks(page, hop).slice(0, MAX_SPANS)
+  const blocks = viewBlocksOf(page, hop).map((block) => block.text)
   if (blocks.length === 0) return null
   return {
     type: 'choice',
@@ -1369,16 +1391,29 @@ function withPassage<Q extends object>(questions: Q, page: CommandPage, hop: Hop
 }
 
 /**
- * The Answer Passage (#401, ADR 0087): the block of text in view a sure
- * pick names, verbatim and whole; null when the passage was not asked, its
- * pick is `none` or its probability under the Choice bar (#403), or names
- * no block shown.
+ * The Answer Passage (#401, ADR 0087; #482): the section of Text in view
+ * the passage Choice is surest of, its blocks in reading order, each to be
+ * read whole off its node. A section's probability is its blocks' summed:
+ * an answer spread over a heading and its lines, or over a run of rows,
+ * was split across their options, and no one block reached the bar (the
+ * Playwright README's Install section, 0.98 in all, its best block 0.65).
+ * Null when the passage was not asked, or no section reaches the Choice
+ * bar (#403) — a sure `none` among them. The bar is over half, so at most
+ * one section reaches it.
+ *
+ * Measured on the gate's passage cases (#482, Mammoth ∩ Elephant): summed
+ * here, nothing lost and five model-passes more (three cases more said on both); the sections as the card's
+ * own options said one more but lost two passes, so the card stays a
+ * block an option.
  */
-export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandPage, hop?: HopContext): string | null {
+export function readPassage(answers: CommandAnswers | HopAnswers, page: CommandPage, hop?: HopContext): readonly ViewBlock[] | null {
   if (!('passage' in answers) || answers.passage === undefined) return null
-  const match = /^view-(\d+)$/.exec(answers.passage.choice)
-  if (match === null || choiceProbability(answers.passage) < DEFAULT_DECISION_THRESHOLDS.choice) return null
-  return inViewBlocks(page, hop)[Number(match[1]) - 1] ?? null
+  const { probabilities } = answers.passage
+  const blocks = viewBlocksOf(page, hop)
+  const sure = viewSectionsOf(blocks)
+    .map((places) => ({ places, mass: places.reduce((sum, at) => sum + (probabilities[`view-${at + 1}`] ?? 0), 0) }))
+    .find((section) => section.mass >= DEFAULT_DECISION_THRESHOLDS.choice)
+  return sure === undefined ? null : sure.places.map((at) => blocks[at]!)
 }
 
 /**

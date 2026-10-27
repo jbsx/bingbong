@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
+import type { TextBelow } from '../browser/pageText'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
@@ -126,9 +127,55 @@ describe('the Answer Passage (#401, ADR 0087): which block in view states what w
     expect(Object.keys(hopQuestions("what's the weather in London", { ...WEATHER, viewportText: ['Home'] }, hop))).not.toContain('passage')
   })
 
-  it('reads a sure pick as the block itself, whole and verbatim', () => {
+  it('reads a sure pick as the block itself, verbatim', () => {
     const answers = { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.98), passage: choice('view-2', 0.8) }
-    expect(readPassage(answers, WEATHER, hop)).toBe('12 PM 70% 12°')
+    expect(readPassage(answers, WEATHER, hop)).toEqual([{ text: '12 PM 70% 12°' }])
+  })
+
+  describe('by section (#482): a heading and the blocks under it, or a run of rows, items or code, is read as one passage', () => {
+    const spread = (probabilities: Record<string, number>): DecisionChoiceAnswer => {
+      const [top] = Object.entries(probabilities).sort(([, a], [, b]) => b - a)
+      return { type: 'choice', choice: top![0], confidence: top![1], probabilities }
+    }
+    const at = (text: string, node: number, kind?: TextBelow['kind']): TextBelow => ({ text, ...(kind !== undefined ? { kind } : {}), frame: null, node })
+    const README: TextBelow[] = [
+      at('Playwright Test', 1, 'heading'),
+      at('Playwright Test is a full-featured test runner.', 2),
+      at('Install', 3, 'heading'),
+      at('npm init playwright@latest', 4, 'code'),
+      at('Or add manually:', 5),
+      at('npm i -D @playwright/test', 6, 'code'),
+      at('Write a test', 7, 'heading'),
+    ]
+    const PLAYWRIGHT: CommandPage = { ...PAGE, title: 'microsoft/playwright', viewportText: README.map((block) => block.text), viewportBlocks: README }
+    const FORECAST: TextBelow[] = [at('17 : 00 , 10°', 1, 'list item'), at('18 : 00 , 10°', 2, 'list item'), at('19 : 00 , 9°', 3, 'list item')]
+    const BBC: CommandPage = { ...PAGE, title: 'London - BBC Weather', viewportText: ['Weather warnings issued', ...FORECAST.map((block) => block.text)], viewportBlocks: FORECAST }
+
+    const answered = (passage: DecisionChoiceAnswer) => ({ action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.98), passage })
+
+    it('keeps the card one option a block, as measured', () => {
+      expect(Object.keys(hopQuestions('how do i install it', PLAYWRIGHT, hop).passage?.options ?? {})).toEqual(['none', ...README.map((_, at) => `view-${at + 1}`)])
+    })
+
+    it('sums a section\'s blocks: the Install section is sure though no block of it is (the README line, 0.65 and 0.22 and 0.11)', () => {
+      const install = spread({ 'view-4': 0.65, 'view-3': 0.22, 'view-6': 0.11, none: 0.02 })
+      expect(readPassage(answered(install), PLAYWRIGHT, hop)).toEqual(README.slice(2, 6).map((node) => ({ text: node.text, node })))
+    })
+
+    it('reads a run of rows as one passage, and a sure block as its whole section', () => {
+      expect(readPassage(answered(spread({ 'view-2': 0.3, 'view-3': 0.25, 'view-4': 0.2, none: 0.25 })), BBC, hop)?.map((block) => block.text)).toEqual(FORECAST.map((block) => block.text))
+      expect(readPassage(answered(choice('view-2', 0.9)), PLAYWRIGHT, hop)?.map((block) => block.text)).toEqual(README.slice(0, 2).map((block) => block.text))
+    })
+
+    it('reads no passage when no section reaches the bar, nor over a sure none', () => {
+      expect(readPassage(answered(spread({ 'view-2': 0.3, 'view-3': 0.2, none: 0.5 })), BBC, hop)).toBeNull()
+      expect(readPassage(answered(spread({ 'view-1': 0.4, 'view-3': 0.4, none: 0.2 })), PLAYWRIGHT, hop)).toBeNull()
+    })
+
+    it('never reaches into Text Further Down: a run below the view is no part of the section in view', () => {
+      const page: CommandPage = { ...BBC, textBelow: [at('20 : 00 , 9°', 9, 'list item')] }
+      expect(readPassage(answered(choice('view-2', 0.9)), page, hop)?.map((block) => block.text)).toEqual(FORECAST.map((block) => block.text))
+    })
   })
 
   it('reads no passage from a pick under the Choice bar, from none, from a number no block carries, or where none was asked', () => {

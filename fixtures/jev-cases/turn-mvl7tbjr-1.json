@@ -10,7 +10,8 @@
     },
     {
       "question": "passage",
-      "label": "view-4|view-6"
+      "label": "view-3+view-4+view-5+view-6",
+      "atLeast": 0.7
     }
   ],
   "ask": {

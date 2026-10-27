@@ -19,7 +19,11 @@ import { choiceProbability, type DecisionChoiceAnswer, type DecisionQuestions, t
  * that must stay unsure). A label may name alternatives between bars
  * (#405), `action=show-31|show-39`: any of them passes, and `!=` refuses
  * every one — for a line more than one option answers rightly, so the case
- * never measures the arm it was written for.
+ * never measures the arm it was written for. A label may instead sum its
+ * parts (#482), `passage=view-3+view-4+view-5+view-6>=0.7`: their
+ * probabilities summed must reach the floor (half without one),
+ * whatever the top choice — the Answer Passage's section, which the
+ * runner reads so.
  */
 export type JevExpectation =
   | { readonly question: string; readonly label: string; readonly atLeast?: number }
@@ -77,6 +81,12 @@ const labelOf = (expectation: JevExpectation): string | null => ('label' in expe
 /** The alternatives a label names between its bars: one, for a plain label. */
 const alternativesOf = (label: string): string[] => label.split('|').map((each) => each.trim())
 
+/** The parts a summed label adds up (#482); null for a label that sums nothing. */
+const partsOf = (label: string): string[] | null => (label.includes('+') ? label.split('+').map((each) => each.trim()) : null)
+
+/** Every option a label names: its alternatives, or its summed parts. */
+const namedOf = (label: string): string[] => partsOf(label) ?? alternativesOf(label)
+
 /** The alternative a label names that the answer gave the most probability: the one a failing line quotes. */
 const bestOf = (label: string, probabilities: Readonly<Record<string, number>>): string => alternativesOf(label).reduce((best, each) => ((probabilities[each] ?? 0) > (probabilities[best] ?? 0) ? each : best))
 
@@ -92,7 +102,8 @@ export function expectationProblem(questions: DecisionQuestions, expectation: Je
   if (question === undefined) return `no question "${expectation.question}" (asked: ${Object.keys(questions).join(', ')})`
   if (question.type !== 'choice') return `"${expectation.question}" is not a Choice`
   const label = labelOf(expectation)
-  const unoffered = label === null ? undefined : alternativesOf(label).find((each) => !(each in question.options))
+  if (label !== null && label.includes('+') && label.includes('|')) return `"${label}" both sums and names alternatives: one or the other`
+  const unoffered = label === null ? undefined : namedOf(label).find((each) => !(each in question.options))
   return unoffered === undefined ? null : `"${expectation.question}" offers no label "${unoffered}"`
 }
 
@@ -153,6 +164,12 @@ export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionRes
     const chosenProbability = choiceProbability(answer)
     if ('below' in expectation) return { expectation, pass: chosenProbability < expectation.below, chosen: answer.choice, chosenProbability, labelProbability: chosenProbability }
     const label = labelOf(expectation)!
+    const parts = partsOf(label)
+    if (parts !== null) {
+      const summed = parts.reduce((sum, part) => sum + (answer.probabilities[part] ?? 0), 0)
+      const reached = summed >= (expectation.atLeast ?? 0.5)
+      return { expectation, pass: 'label' in expectation ? reached : !reached, chosen: answer.choice, chosenProbability, labelProbability: summed, bestLabel: label }
+    }
     const chosenIs = alternativesOf(label).includes(answer.choice)
     const sure = chosenIs && chosenProbability >= (expectation.atLeast ?? 0)
     return {

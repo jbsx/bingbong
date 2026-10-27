@@ -54,6 +54,7 @@ import {
   type HopContext,
   type SetAside,
   type StepContext,
+  type ViewBlock,
   type Verdict,
 } from '../../core/command/jevReading'
 import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutcome'
@@ -813,8 +814,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     whereAsk?: true
     /** The Verdict asked beside the Where Ask (#394), when Jev answered it. */
     verdict?: Verdict
-    /** The Answer Passage the Where Ask's sure pick names (#401, ADR 0087): spoken when its Verdict is a sure yes. */
-    passage?: string
+    /** The Answer Passage the Where Ask's sure pick names (#401, ADR 0087; #482): its section's blocks, spoken when its Verdict is a sure yes. */
+    passage?: readonly ViewBlock[]
     /** The Mark Ask's reading (#382, ADR 0084), read after a Where Ask whose top choice was `none`, over a card with a Textless Ref. */
     markAsk?: true
   }
@@ -1750,7 +1751,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     lookedAgain?: boolean
     /** Whether its end said a line of its own (#399): a Step that ends so stops its line without a second. */
     saidEnd?: boolean
-    /** The Answer Passage it ended done on (#401, ADR 0087): the block its end says, verbatim and whole. */
+    /** The Answer Passage it ended done on (#401, ADR 0087; #482): the section its end says, verbatim, each block read whole off the page. */
     passage?: string
     /** What the last landing's title or body read as (ADR 0089): said when the Verdict that reads it goes unanswered. */
     suspect?: FireResult['suspect']
@@ -1945,15 +1946,40 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /**
    * A Task that ends done on a page (#369, #394), greyed as a hop that
    * fires nothing; with an Answer Passage (#401, ADR 0087), its Card is
-   * the page's name over the block, on this turn, which the end line is
-   * then spoken on.
+   * the page's name over the section, read whole (#482), on this turn,
+   * which the end line is then spoken on.
    */
-  function endDone(turnId: string, task: Task, place: TaskHop, page: CommandPage, passage: string | null, firedAt: number): void {
+  async function endDone(turnId: string, task: Task, place: TaskHop, page: CommandPage, passage: readonly ViewBlock[] | null, firedAt: number): Promise<void> {
     if (passage === null) return dropHop(turnId, task, place, 'done', 'done', firedAt)
-    task.passage = passage
+    const said = await passageText(passage)
+    task.passage = said
     publish({ type: 'command', turnId, text: task.text, action: 'done', dropped: true, task: place, at: firedAt })
-    answer(turnId, passageCard(page, passage))
+    answer(turnId, passageCard(page, said))
     publish({ type: 'done', turnId, outcome: 'done', at: at() })
+  }
+
+  /**
+   * The Answer Passage as it is said (#482): each block of the section read
+   * whole off the page by its node, as a capture reads one (#466), never
+   * the card's 300 characters (owner, 2026-10-05: no limits in Answers); a
+   * block with no node, or one the page no longer has, as the card held it.
+   * One evaluate a block, all at once: a few ms at the end of a done Task.
+   */
+  async function passageText(passage: readonly ViewBlock[]): Promise<string> {
+    const read = browser.capture?.bind(browser)
+    const texts = await Promise.all(
+      passage.map(async (block) => {
+        if (block.node === undefined || read === undefined) return block.text
+        try {
+          const whole = await read({ of: 'text', block: block.node })
+          return whole.kind === 'text' ? whole.text : block.text
+        } catch (error) {
+          reportFault('run.commandRunner.passageText', error)
+          return block.text
+        }
+      }),
+    )
+    return texts.join('\n')
   }
 
   /**
@@ -2299,7 +2325,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         log({ ...record, ended })
         if (ended === 'unsure' && !handsOff(ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
         // A sure yes speaks the block Jev surely picked beside it (#401, ADR 0087); with no sure pick it ends as before.
-        if (ended === 'done') endDone(turnId, task, placed, page, readPassage(result.answers, page, context), firedAt)
+        if (ended === 'done') await endDone(turnId, task, placed, page, readPassage(result.answers, page, context), firedAt)
         else dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
@@ -2576,7 +2602,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // The Where Ask would act, and the Verdict beside it is sure the page already shows what the words ask for (#394):
       // the Task ends done on the page as it is, as a later hop's sure yes does, and the action is never fired — speaking its Answer Passage when the pick is sure (#401).
       log({ ...record, ended: 'done' })
-      endDone(turnId, task, hop0, heard.page, heard.passage ?? null, firedAt)
+      await endDone(turnId, task, hop0, heard.page, heard.passage ?? null, firedAt)
       return { ended: endTask(task, 'done', 1), did: '' }
     }
 

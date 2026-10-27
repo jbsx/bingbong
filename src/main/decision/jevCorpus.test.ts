@@ -144,6 +144,19 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('FAIL  unoffered  not a case: "target" offers no label "ref-99"')
   })
 
+  it('reads a summed label (#482): its parts\' probabilities added must reach the floor, whatever the top choice; every part must be on offer', async () => {
+    // probabilities: none 0.05, ref-21 0.7, ref-27 0.25
+    saveCase('section', 'state-a', [{ question: 'target', label: 'ref-21+ref-27', atLeast: 0.9 }])
+    saveCase('short', 'state-a', [{ question: 'target', label: 'none+ref-27', atLeast: 0.7 }])
+    saveCase('not-section', 'state-a', [{ question: 'target', not: 'none+ref-27', atLeast: 0.7 }])
+    saveCase('unoffered-part', 'state-a', [{ question: 'target', label: 'ref-27+ref-99' }])
+    const replay = await replayCorpus(dir, { env: {}, model: new FakeJev({ 'state-a': probabilities }) })
+    expect(replay.report).toContain('PASS  section\n  target=ref-21+ref-27>=0.90  chose ref-21 0.70 · ref-21+ref-27 0.95')
+    expect(replay.report).toContain('FAIL  short\n  target=none+ref-27>=0.70  chose ref-21 0.70 · none+ref-27 0.30')
+    expect(replay.report).toContain('PASS  not-section')
+    expect(replay.report).toContain('FAIL  unoffered-part  not a case: "target" offers no label "ref-99"')
+  })
+
   it("ends with Jev's latency over the asks it answered (#390), so a widening's cost is read off the same replay", async () => {
     for (let n = 1; n <= 10; n += 1) saveCase(`case-${String(n).padStart(2, '0')}`, `state-${n}`, [{ question: 'target', label: 'ref-27' }])
     saveCase('case-11', 'state-slow', [{ question: 'target', label: 'ref-27' }])

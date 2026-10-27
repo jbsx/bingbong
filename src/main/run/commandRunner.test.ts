@@ -11,7 +11,7 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
-import { pageReadPartLine } from '../../core/browser/pageText'
+import { pageReadPartLine, type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
@@ -3445,6 +3445,69 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         await runner.run("what's the weather like in London", { source: 'spoken' })
         expect(decision.requests).toHaveLength(3)
         expect(speech.spoken.map((said) => said.text)).toEqual(['Done.'])
+      })
+
+      describe('by section, read whole (#482)', () => {
+        const node = (text: string, at: number, kind?: TextBelow['kind']): TextBelow => ({ text, ...(kind !== undefined ? { kind } : {}), frame: null, node: at })
+        // The README's paragraph as the card holds it, cut at 300 characters, and as the page has it.
+        const WHOLE = `These instructions will help you get set up with a local development environment in order to contribute to this repository. ${'Before you start, please read our guidelines on development contributions. '.repeat(3)}Note that this project is supported on all major operating systems except FreeBSD, which is still incompatible.`
+        const HELD = WHOLE.slice(0, 300)
+        const README = [node('Server Development', 1, 'heading'), node(HELD, 2), node('Prerequisites', 3, 'heading'), node('Install the .NET 10 SDK.', 4)]
+        /** The search lands on the README, a heading and its paragraph in view, and more below; a capture reads a node's text whole. */
+        function readmeHarness(speech: FakeSpeech, below: TextBelow[] = []) {
+          const h = taskHarness('about:blank', { speech })
+          const navigate = h.browser.navigate.bind(h.browser)
+          h.browser.navigate = async (url) => {
+            const line = await navigate(url)
+            h.browser.snapshot = { ...h.browser.snapshot, viewportText: README.map((block) => block.text), viewportBlocks: README, textBelow: below }
+            return line
+          }
+          h.browser.capture = async (target) => {
+            h.browser.captures.push(target)
+            if (target.of !== 'text') throw new Error('not a block')
+            return { kind: 'text', text: target.block.text === HELD ? WHOLE : target.block.text }
+          }
+          return h
+        }
+
+        it('a sure yes with a sure section speaks the section whole, read off the page past the card\'s 300 characters, and shows it whole', async () => {
+          expect(WHOLE.length).toBeGreaterThan(300)
+          const speech = new FakeSpeech()
+          const { browser, events, decision, runner } = readmeHarness(speech)
+          decision.script.push(answer('search', 's3-6'), yesWith(choice('view-1', 0.97)))
+          await runner.run('does it run on freebsd', { source: 'spoken' })
+          expect(speech.spoken.map((said) => said.text)).toEqual([`Server Development\n${WHOLE}`])
+          expect(browser.captures).toEqual([{ of: 'text', block: README[0] }, { of: 'text', block: README[1] }])
+          expect(events.some((event) => event.type === 'display' && event.text.endsWith('except FreeBSD, which is still incompatible.'))).toBe(true)
+        })
+
+        it('a sure yes with no sure section stays silent, and reads nothing off the page', async () => {
+          const speech = new FakeSpeech()
+          const { browser, decision, runner } = readmeHarness(speech)
+          decision.script.push(answer('search', 's3-6'), yesWith(choice('view-1', 0.65)))
+          await runner.run('does it run on freebsd', { source: 'spoken' })
+          expect(speech.spoken).toEqual([])
+          expect(browser.captures).toEqual([])
+        })
+
+        it('a section never reaches into Text Further Down: the last section in view ends at the view', async () => {
+          const speech = new FakeSpeech()
+          const { decision, runner } = readmeHarness(speech, [node('Building on FreeBSD is not supported.', 9)])
+          decision.script.push(answer('search', 's3-6'), yesWith(choice('view-3', 0.9)))
+          await runner.run('what do i need to build it', { source: 'spoken' })
+          expect(speech.spoken.map((said) => said.text)).toEqual(['Prerequisites\nInstall the .NET 10 SDK.'])
+        })
+
+        it('a block the page no longer has is said as the card held it', async () => {
+          const speech = new FakeSpeech()
+          const { browser, decision, runner } = readmeHarness(speech)
+          browser.capture = async () => {
+            throw new Error('the text block is no longer on the page')
+          }
+          decision.script.push(answer('search', 's3-6'), yesWith(choice('view-1', 0.97)))
+          await runner.run('does it run on freebsd', { source: 'spoken' })
+          expect(speech.spoken.map((said) => said.text)).toEqual([`Server Development\n${HELD}`])
+        })
       })
     })
 
