@@ -73,6 +73,7 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['scroll', 'scroll_down'],
   ['scroll up', 'scroll_up'],
   ['page up', 'scroll_up'],
+  ['go back a page', 'back'],
   ['go back', 'back'],
   ['back', 'back'],
   ['previous page', 'back'],

@@ -93,6 +93,16 @@ describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
     expect(localMatch('scroll down a bit', REFS)).toBeNull()
   })
 
+  it("fires the pane's own reload and back for their daily wordings, with no ask (#487)", () => {
+    // pm-2026-10-27-1..4: "reload the page" and "refresh" read on the Appliance Card over a video or a blank pane chose
+    // media-restart or resume; said whole, they are the pane's own lines and never reach a card.
+    for (const line of ['reload the page', 'Reload the page.', 'refresh', 'Refresh.', 'refresh the page']) expect(localMatch(line, REFS)).toEqual({ verb: 'reload', target: null, slot: null })
+    for (const line of ['go back', 'Go back.', 'go back a page', 'Go back a page.']) expect(localMatch(line, REFS)).toEqual({ verb: 'back', target: null, slot: null })
+    // Whole lines only: these are the Appliance Card's, and "go back a song" the Player's.
+    for (const line of ['go back to the browser', 'Go back to home page.', 'Go back to the idle screen.', 'Go back to YouTube.']) expect(localMatch(line, REFS)).toBeNull()
+    expect(localMatch('go back a song', REFS)).toMatchObject({ verb: 'play', music: { kind: 'previous' } })
+  })
+
   it('keeps the phrases that take words taking them, settled exactly', () => {
     const save: CommandRef[] = [...REFS, { ref: 9, kind: 'button', label: 'Save', href: null, inputType: null }]
     expect(localMatch('click save', save)).toEqual({ verb: 'click', target: 9, slot: null })
