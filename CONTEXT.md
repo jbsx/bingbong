@@ -174,6 +174,20 @@ OpenAI-compatible endpoint, routed by env like the Decision Model, under
 the appliance's own rate limit. The Decision Model is never the Planner.
 _Avoid_: orchestrator, agent, reasoning model
 
+**Appliance Card**:
+The small card every line the Local Match cannot settle is read on first.
+It is built at the Endpoint from what the appliance holds, with no page
+collect:
+
+- the media playing or started and its Media Ops, by kind;
+- the Appliance Verbs, the facts and the app's ops;
+- resume, the Flag, Help, the Timer and `stop`;
+- `page` and `none`.
+
+A pick fires there. `page` or `none` sends the line on to the page card
+(ADR 0096).
+_Avoid_: small card, first card, pre-card
+
 **Appliance Verb**:
 A ref-less option on the action card that acts on the appliance itself,
 never on the page: the Player's search (`play`, `play_next`, `queue`),
@@ -193,7 +207,8 @@ the app's own panel, views and settings are offered by kind, each line
 carrying its state and every op its kind allows (ADR 0091), and
 an action on a page's element
 is the ref's own op, never an Appliance Verb (#374, retiring the
-Capability layer of ADR 0079).
+Capability layer of ADR 0079). Offered on the Appliance Card first, and on
+the page card it goes on to (ADR 0096).
 _Avoid_: capability, tool, skill, feature, affordance, intent
 
 **Appliance Fact**:
@@ -350,8 +365,9 @@ else the Task ends on the page where it stands.
 _Avoid_: step, round, turn, continuation
 
 **Where Ask**:
-The Choice asked when hop 0 reads `none`: where on this page the thing the
-words name would be. The same action card, asked again with the question
+The Choice asked when the page card's hop 0 reads `none`; the Appliance
+Card's `none` sends the line on to the page card first (ADR 0096). It asks
+where on this page the thing the words name would be. The same action card, asked again with the question
 changed, so every control is offered and nothing is listed by kind; its
 answer is hop 0's action and the Task goes on from there, a dead end
 trying the Where Ask's runner-up. Read only on the whole Utterance, after
@@ -652,7 +668,8 @@ _Avoid_: bug report, ticket, known issue
 The user's word, in normal use, that the previous Task did not do what
 was meant: "mark this as a failure", "mark as failure", "flag that" or
 "that was wrong", optionally followed by "with the hint <words>" (#421,
-#478). An exact line, never Jev's and never a Command: it touches no page
+#478). An exact line with no ask, or the Appliance Card's `flag` (ADR
+0096) — never a Command: it touches no page
 and ends or resumes no Task. Spoken, it is also a line wholly heard as a
 head ("Mark as junior.", see Name Match).
 It keeps the previous Task — every hop and Step, by its Task id — with the

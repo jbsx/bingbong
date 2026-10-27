@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended on 2026-10-27 by ADR 0096 (#485): the Where Ask follows the page
+card's first reading; see the amendment below.
+
 Accepted on 2026-10-21 by the owner, grilled from the 14:25 live run's
 "Turn on ambient mode." (ledger `turn-mvhzumpr-h`, `turn-mvi5ajrz-4`) and
 the #363 live check's "open page information" on Wikipedia (ledger
@@ -112,3 +115,8 @@ done reading on the action card, against #370).
   the expected opener is its top choice, not at the 0.7 bar.
 - A Where Ask that opens nothing is an unchanged hop and is Set Aside by
   #336's rule; two in a row end the Task, as today.
+
+## Amendment 2026-10-27 — the Where Ask follows the page card's first reading (ADR 0096, #485)
+
+The Where Ask follows the page card's first reading. The Appliance Card's
+`none` goes on to the page card; it never ends the line (ADR 0096).

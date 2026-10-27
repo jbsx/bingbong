@@ -1,5 +1,8 @@
 # A line fires without an ask only when it has one reading on every page
 
+Amended on 2026-10-27 by ADR 0096 (#485): the label test runs on the page
+in hand; see the amendment below.
+
 Code settled meaning in Jev's place on the main path in six places
 (#408): a word list read the volume's direction (and "turn it down a bit
 more" up), the Player's phrase table took "next" past a page's own Next
@@ -54,3 +57,10 @@ when Jev is unsure; the through-veto is policy.
 Each line that moves costs one Jev call (about 0.7 s) when it fires. A
 bare word the appliance has never landed on costs a call the first time
 only.
+
+## Amendment 2026-10-27 — the label test runs on the page in hand (ADR 0096, #485)
+
+The label test runs on the page in hand: the settled speech-start
+collect, else the last snapshot while the pane is on its address. With no
+page in hand the exact line fires (reliability.md rule 1). A line that
+fires past a same-label ref goes to the ledger (ADR 0096).

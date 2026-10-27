@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended on 2026-10-27 by ADR 0096 (#485): the app's ops are on the
+Appliance Card first; see the amendment below.
+
 Accepted (#420 grill, 2026-10-24). Amends ADR 0021 and the Appliance Verb
 entry in CONTEXT.md.
 
@@ -70,3 +73,8 @@ scenario is ~3 a day, `missing`, yield 12.
   app's own surfaces and settings, never per site.
 - A setting added to `AppSettings` is on the card without a line of
   card code. Excluding one is a policy entry.
+
+## Amendment 2026-10-27 — the app's ops are on the Appliance Card first (ADR 0096, #485)
+
+The app's ops, the settings line and its settings ask are on the Appliance
+Card first (ADR 0096).

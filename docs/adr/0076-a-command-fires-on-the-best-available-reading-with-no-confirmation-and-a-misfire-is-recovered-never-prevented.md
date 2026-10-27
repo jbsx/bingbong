@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended on 2026-10-27 by ADR 0096 (#485): a line is read on the Appliance
+Card before the page card; see the amendment below.
+
 Amended on 2026-10-26 by #477: Jev is never asked on a partial transcript.
 An Early Fire is a Local Match line alone, and Jev reads a line once, at
 its Endpoint. On the kiosk, the Early Fires on a Jev partial were wrong 6
@@ -1454,3 +1457,9 @@ answering 429.
   - The Mark Ask's image is scaled to the image-reading host's documented
     long edge before it is sent. The 2,560 px kiosk capture got a 400
     (turn-mvjdvzlf-3); on replay, 1568×882 answers and 1569×883 does not.
+
+## Amendment 2026-10-27 — a line is read on the Appliance Card before the page card (ADR 0096, #485)
+
+A Command's reading is two cards: the Local Match first (an exact line
+fires on the page in hand), then the Appliance Card, then the page card
+when Jev picks `page` or `none` (ADR 0096).

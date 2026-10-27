@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended on 2026-10-27 by ADR 0096 (#485): the Appliance Verbs and Media
+Ops are on the Appliance Card first; see the amendment below.
+
 Accepted on 2026-10-20 by the owner, grilled from the post mortem of the
 19:30 live run that day (logs `decision-1792521023837`,
 `asks-1792521271251`). Amends #343's ruling 1 (the Player's lines are the
@@ -250,3 +253,9 @@ and `perf:report` tallies `codecs vp09 ×n, av01 ×n`.
 Kiosk, 2026-10-26: every boot since the refusal landed prints
 `refused to pages: av1`. The probe had never been silent; `journalctl -u`
 hid it.
+
+## Amendment 2026-10-27 — the Appliance Verbs and Media Ops are on the Appliance Card first (ADR 0096, #485)
+
+The Appliance Verbs, and the playing element's Media Ops by kind, are
+offered on the Appliance Card first. The page card still offers them,
+unchanged (ADR 0096).
