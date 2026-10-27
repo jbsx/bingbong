@@ -310,6 +310,29 @@ describe('the Player\'s Now Playing (#344)', () => {
     expect(browser.navigations).toHaveLength(1)
   })
 
+  it('`repeat` at the song\'s end plays it again from the start, and loops a song still playing (turn-mvqga9a7-v1g)', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(await perform({ kind: 'loop', on: true, again: true })).toMatchObject({ answer: 'Looping “Song A”.' })
+    expect(youtube.controls.at(-1)).toEqual({ op: 'loop', on: true })
+    await perform({ kind: 'loop', on: false })
+    youtube.endVideo()
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ ended: true })
+    expect(await perform({ kind: 'loop', on: true, again: true })).toMatchObject({ answer: 'Playing “Song A” again.' })
+    expect(youtube.controls.at(-1)).toEqual({ op: 'restart' })
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: false, paused: false, loop: false })
+  })
+
+  it('`loop` at the song\'s end sets the loop and plays nothing: only the `repeat` lines play it again', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.endVideo()
+    await player.check()
+    await perform({ kind: 'loop', on: true })
+    expect(youtube.controls.at(-1)).toEqual({ op: 'loop', on: true })
+  })
+
   it('follows the element (#473): a loop set on the page alone shows Loop, and a pause from the page shows Paused', async () => {
     const { youtube, player, perform } = wired()
     await perform({ kind: 'search', place: 'now' }, 'song a')

@@ -163,7 +163,9 @@ describe('parseCliCommand', () => {
     expect(play('pause')).toEqual({ music: { kind: 'pause' } })
     for (const line of ['skip', 'next', 'next song', 'Next song.']) expect(play(line)).toEqual({ music: { kind: 'skip' } })
     for (const line of ['previous', 'last song', 'go back a song']) expect(play(line)).toEqual({ music: { kind: 'previous' } })
-    for (const line of ['loop', 'repeat', 'repeat this song', 'loop this']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true } })
+    for (const line of ['loop', 'loop this']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true } })
+    // A `repeat` at a song's end plays it again (turn-mvqga9a7-v1g).
+    for (const line of ['repeat', 'repeat this song']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true, again: true } })
     for (const line of ['loop off', 'stop looping']) expect(play(line)).toEqual({ music: { kind: 'loop', on: false } })
     for (const line of ['restart', 'play from the beginning', 'start over', 'from the top']) expect(play(line)).toEqual({ music: { kind: 'restart' } })
     expect(play('louder')).toEqual({ music: { kind: 'louder' } })

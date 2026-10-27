@@ -743,12 +743,16 @@ export function createPlayer(deps: PlayerDeps): Player {
         if (again !== null) return onElement({ op: 'restart' }, () => `Playing ${quoted(again.title)}.`, (queue) => replay(queue, again))
         return onElement({ op: 'play' }, (element) => (element.title === '' ? 'Playing.' : `Playing ${quoted(element.title)}.`), unpause)
       }
-      case 'loop':
+      case 'loop': {
+        // A `repeat` at the song's end plays it again from the start, as `play` does (turn-mvqga9a7-v1g): no loop is set.
+        const again = music.on && music.again === true && state.current === null ? ended : null
+        if (again !== null) return onElement({ op: 'restart' }, () => `Playing ${quoted(again.title)} again.`, (queue) => replay(queue, again))
         return onElement(
           { op: 'loop', on: music.on },
           (element) => (music.on ? `Looping ${quoted(element.title)}.` : 'Loop off.'),
           (queue) => setLoop(queue, music.on),
         )
+      }
       case 'restart':
         return onElement({ op: 'restart' }, () => 'Restarted.', unpause)
       case 'volume':

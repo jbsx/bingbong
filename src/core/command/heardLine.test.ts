@@ -37,6 +37,9 @@ describe('exactLineHeard (#478)', () => {
         // "loop the song", typed on the ledger (turn-mvh0wouq-6) and said on the dumps: the Player's loop.
         'loop the song → loop this song',
         'Loop the song. → loop this song',
+        // turn-mvqga9a7-v1g, turn-mvqgaqvp-v1h: said at the song's end, meant to play it again — which a `repeat` line
+        // does there; still playing, it loops.
+        'Repeat the song. → repeat this song',
       ].sort(),
     )
   })

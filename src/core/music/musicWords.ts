@@ -15,7 +15,14 @@ export type MusicAction =
   | { readonly kind: 'unpause' }
   | { readonly kind: 'skip' }
   | { readonly kind: 'previous' }
-  | { readonly kind: 'loop'; readonly on: boolean }
+  /**
+   * Loop on or off. `again`, the `repeat` lines': a song of the Player's
+   * that has ended plays again from the start instead, as a bare `play`
+   * does — the ledger's "Repeat the song." at a song's end meant play it
+   * again, not loop it (turn-mvqga9a7-v1g, turn-mvqgaqvp-v1h); a song
+   * still playing is looped.
+   */
+  | { readonly kind: 'loop'; readonly on: boolean; readonly again?: true }
   | { readonly kind: 'restart' }
   /** The element's volume, 0–100. */
   | { readonly kind: 'volume'; readonly to: number }
@@ -60,9 +67,9 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   'loop this': { kind: 'loop', on: true },
   'loop this song': { kind: 'loop', on: true },
   'loop on': { kind: 'loop', on: true },
-  repeat: { kind: 'loop', on: true },
-  'repeat this': { kind: 'loop', on: true },
-  'repeat this song': { kind: 'loop', on: true },
+  repeat: { kind: 'loop', on: true, again: true },
+  'repeat this': { kind: 'loop', on: true, again: true },
+  'repeat this song': { kind: 'loop', on: true, again: true },
   'loop off': { kind: 'loop', on: false },
   'repeat off': { kind: 'loop', on: false },
   'stop looping': { kind: 'loop', on: false },
