@@ -115,7 +115,7 @@ in two.
   by the next Command is Instant. The orchestrator ruled that the
   `show_dashboard` line on the Appliance Card name itself as the app's own
   home screen, so Jev can tell it from a site's home, and the site's home
-  stays a page ref. 128d8b58 rewords it on the Appliance Card alone: "show
+  stays a page ref. c9fa29f1 rewords it on the Appliance Card alone: "show
   the app's own home screen, the browser, leaving Settings or the Weight
   page — not a website's home page"; its narrow check (the six Appliance
   cases that reach it, Mammoth and Elephant) lost nothing and gained
