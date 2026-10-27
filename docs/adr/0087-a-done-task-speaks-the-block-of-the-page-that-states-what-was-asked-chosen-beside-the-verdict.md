@@ -9,6 +9,9 @@ by AGENTS.md's widen and ties rules, ADR 0086, CONTEXT.md and the code
 beside them; the owner ruled the other two: the whole block is spoken, as
 a guess, and #402 (the appliance's own facts) stays a separate issue.
 
+Amended by #482: the passage is a section, its blocks' picks summed to
+the Choice bar, and spoken whole off the page (Consequences).
+
 ## Context
 
 A question that ended done said nothing. The 2026-10-23 rerun on main
@@ -63,8 +66,15 @@ On `pnpm jev:gate` with Mammoth and Elephant (deterministic, one run each).
 - Numbering the in-view blocks changes the state every question on the
   call reads. It is a widening and passes the gate on its own before the
   passage counts.
-- Recorded as guesses, to be settled by the owner's ear on live runs:
-  speaking the whole block (≤300 characters) rather than its first
-  sentence; speaking a Step's passage before the next Step.
+- Settled by #482 (2026-10-27): the passage is read by section. A
+  heading and the blocks under it to the next heading, or before any
+  heading a run of table rows, list items or code, is sure when its
+  blocks' passage probabilities sum to the Choice bar. It is spoken
+  whole, each block read off its node as a capture reads one, with no
+  character limit (owner, 2026-10-05). The card stays one option a
+  block. Measured on 55 passage cases (Mammoth ∩ Elephant): summing in
+  the reader said 43 against base's 40 and lost nothing. Sections as the
+  card's options said 44 but lost turn-mvl5kpp9-1. Speaking a Step's
+  passage before the next Step stays a guess.
 - Some answer boxes read badly aloud (a run of figures). The words are not
   rewritten; that is a card or page problem for a later report.

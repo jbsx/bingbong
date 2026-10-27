@@ -367,16 +367,17 @@ The same Jev call as the Command's reading: no round trip is added.
 _Avoid_: check, verification, judge, confirmation
 
 **Answer Passage**:
-The one block of the text in view that the Decision Model chose as stating
-what the words asked. It is spoken word for word, as the Answer of a Task
-that ends `done`. It is asked beside every Verdict, as one more Choice on
-the same call, over the blocks of Text in view, numbered, with `none` among
-them. It counts only when the Verdict is a sure yes and the pick is sure,
-at the Choice bar. Nothing marks a line as a question: a line that asked
+The section of the text in view that the Decision Model chose as stating
+what the words asked: a heading and the blocks under it, or a run of rows,
+items or code. It is spoken word for word and whole, as the Answer of a
+Task that ends `done`. It is asked beside every Verdict as one more Choice
+on the same call, over the blocks of Text in view, numbered, with `none`
+among them. A section counts only when the Verdict is a sure yes and its
+blocks' picks sum to the Choice bar. Nothing marks a line as a question: a line that asked
 nothing has no block that states it. With no sure pick, the Task ends as it
 would have without one. Text Further Down is never a passage; it is brought
-into view first. Spoken whole, as the card holds it; the Card is the page
-title over the block (ADR 0087).
+into view first. Spoken whole, read off the page; the Card is the page
+title over the section (ADR 0087, #482).
 _Avoid_: Selected Passage (the orchestrator's evidence checkpoint, gone),
 snippet, quote, excerpt, extract
 
@@ -776,7 +777,7 @@ renderings are written in English, the product's one language, whatever
 language the command or the pages read were in.
 Every Command leaves exactly one Answer (#333), and no model writes it: a
 Page Read's Card is the page title over the page's own words (what `read`
-speaks); a done Task's Answer Passage, the page title over the block the
+speaks); a done Task's Answer Passage, the page title over the section the
 Decision Model chose; a failure's plain line, shown once in the failure colour; else the
 verb's fixed sentence filled from facts the Command and the page hold
 ("Opened Lighthouse page.", "Clicked “Say hello”.", "Scrolled down.").
