@@ -250,10 +250,10 @@ export interface CommandRunnerDeps {
    * read first on a card built from what the appliance holds, with no page
    * collect, and the page card is asked only when Jev picks `page` or
    * `none`; an exact line fires on its words before any collect. `asks`
-   * is T1's arm (BINGBONG_APPLIANCE_ASKS, sequential by default); `web`
-   * T2's arm B. Absent (BINGBONG_APPLIANCE_CARD=off), today's road.
+   * is T1's arm (BINGBONG_APPLIANCE_ASKS, sequential by default). Absent
+   * (BINGBONG_APPLIANCE_CARD=off), today's road.
    */
-  applianceCard?: { readonly asks: ApplianceAsks; readonly web?: boolean }
+  applianceCard?: { readonly asks: ApplianceAsks }
   browser: BrowserController & Pick<VisualGroundingController, 'showRef'>
   /** The Decision Model the role resolves to now; null when none is configured. */
   decisionModel(): DecisionModel | null
@@ -946,7 +946,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // T1 (#485): arm P asks the page card at the Endpoint beside the Appliance Card, dropping its answer when the Appliance Card's pick fires.
     const beside = card.asks === 'parallel' ? readPageCard(turnId, text, pending, spoken, options, quick, dismissed) : null
     beside?.catch(() => {})
-    const first = await readAppliance(turnId, text, pending, spoken, options, model, card.web === true)
+    const first = await readAppliance(turnId, text, pending, spoken, options, model)
     if ('reading' in first) return first.reading
     // The Appliance Card's host failed (reliability.md rule 3): an Instant line fires the Local Match's best guess; any other goes on.
     if (first.failed && quick !== null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: true, jev: first.appliance.jev, ask: first.appliance.ask, card: 'appliance' }
@@ -1018,12 +1018,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     spoken: boolean,
     options: ReadOptions,
     model: DecisionModel,
-    web: boolean,
   ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean }> {
     const view = await applianceView(turnId, pending)
     // The Hearing reads the Page Terms of the page in hand, never waiting for one.
     const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
-    const questions = applianceQuestions(text, view, { steps: options.split, heard, web })
+    const questions = applianceQuestions(text, view, { steps: options.split, heard })
     const state = applianceState(text, view, heard, options.step)
     const result = await askJev(model, 'appliance', turnId, state, questions, `${options.askId ?? turnId}-appliance`)
     if (result.status !== 'answered') return { appliance: { ask: result.askId, jev: jevUnavailableOf(result) }, failed: true }

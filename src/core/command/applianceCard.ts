@@ -5,7 +5,6 @@ import { parseDuration } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import type { Command, CommandPage } from './command'
 import type { NameHearing } from './nameMatch'
-import { isAddressShaped } from './openAddress'
 import { isMediaEngine } from './siteScope'
 import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
@@ -70,8 +69,6 @@ export interface ApplianceView {
 export interface ApplianceAskOptions {
   readonly steps?: boolean
   readonly heard?: readonly NameHearing[]
-  /** T2 arm B: the two browser verbs that need no ref, an open and a web search, on the card too. */
-  readonly web?: boolean
 }
 
 /** The Appliance Card's questions: the action card and the Slot; the Amount beside a media op or an app amount; `where` beside `play` on a site; `steps` at hop 0 on a line with a conjunction. */
@@ -83,11 +80,11 @@ export type ApplianceQuestions = {
   readonly steps?: DecisionChoiceQuestion
 }
 
-/** How the Appliance Card stands in the env (#485): null when `BINGBONG_APPLIANCE_CARD=off`; else its asks, sequential unless `BINGBONG_APPLIANCE_ASKS=parallel` (T1), and T2's arm by `BINGBONG_APPLIANCE_WEB=on`. */
-export function applianceCardOf(env: Readonly<Record<string, string | undefined>>): { readonly asks: 'sequential' | 'parallel'; readonly web?: boolean } | null {
+/** How the Appliance Card stands in the env (#485): null when `BINGBONG_APPLIANCE_CARD=off`; else its asks, sequential unless `BINGBONG_APPLIANCE_ASKS=parallel` (T1). */
+export function applianceCardOf(env: Readonly<Record<string, string | undefined>>): { readonly asks: 'sequential' | 'parallel' } | null {
   const said = (key: string): string => (env[key] ?? '').trim().toLowerCase()
   if (said('BINGBONG_APPLIANCE_CARD') === 'off') return null
-  return { asks: said('BINGBONG_APPLIANCE_ASKS') === 'parallel' ? 'parallel' : 'sequential', ...(said('BINGBONG_APPLIANCE_WEB') === 'on' ? { web: true } : {}) }
+  return { asks: said('BINGBONG_APPLIANCE_ASKS') === 'parallel' ? 'parallel' : 'sequential' }
 }
 
 /** The label of the option that sends the line on to the page card. */
@@ -99,22 +96,17 @@ const MEDIA_LABEL_RE = /^media-([a-z]+)$/
 
 /** The appliance's own verbs past the Player's, each one line (T3 wording, measured on the gate). */
 const OWN_LINES = {
-  flag: 'app: mark the previous command as a failure — kept for later, never an action on the page; the words after it are its hint',
+  flag: 'the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint',
   help: 'the app: show and say what it can be asked to do',
   timer: 'the app: set a timer for the length the words say',
   timer_off: 'the app: turn the timer off',
   stop: 'stop what the app is doing: the page loading, the voice speaking',
-  navigate: 'go to a web address the words name: a website, a host or a url',
-  search: 'search the whole web for the words',
 } as const
 
 /** The line that sends the line on to the page card (T3). */
 function pageLine(view: ApplianceView): string {
   return isRealPage(view.url) ? `something on the page open, ${JSON.stringify(view.title)}: its links, buttons, fields or text` : 'something on a web page: the screen shows none'
 }
-
-/** #478's X5 sentence: words that judge the app's last command are the Flag's. */
-const FLAG_JUDGES_THE_APP = 'When the words say the previous command failed or was wrong — "mark as failure", "that was wrong" — choose flag: they judge the app, never the page.'
 
 /** The ops whose card line says the media is the one already on (T3): a title in the words is a new song, the music's `play`. */
 const MEDIA_LINES: Partial<Record<MediaOp, (named: string) => string>> = {
@@ -178,7 +170,7 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   }
   const action: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: view.flaggable === true ? `${INSTRUCTIONS} ${FLAG_JUDGES_THE_APP}` : INSTRUCTIONS,
+    instructions: INSTRUCTIONS,
     options: {
       ...Object.fromEntries(ops.map((op) => [mediaLabel(op), `${MEDIA_LINES[op]?.(named) ?? mediaOpLineOf(op, named)}${(op === 'volume' || op === 'rate') && media !== undefined ? levelsOf(op, media.facts) : ''}`])),
       ...own,
@@ -186,7 +178,6 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
       ...(view.flaggable === true ? { flag: OWN_LINES.flag } : {}),
       help: OWN_LINES.help,
       stop: OWN_LINES.stop,
-      ...(options.web === true ? { navigate: OWN_LINES.navigate, search: OWN_LINES.search } : {}),
       [PAGE_LABEL]: pageLine(view),
       none: NONE_LINE,
     },
@@ -258,10 +249,6 @@ export function readApplianceAnswers(answers: CommandAnswers, text: string, view
     }
     case 'flag':
       return carried === '' ? { kind: 'flag' } : { kind: 'flag', hint: carried }
-    case 'navigate':
-      return carried !== '' && isAddressShaped(carried) ? command({ verb: 'navigate', target: null, slot: carried }) : ON_TO_PAGE
-    case 'search':
-      return carried === '' ? ON_TO_PAGE : command({ verb: 'search', target: null, slot: carried })
     default:
       return ON_TO_PAGE
   }

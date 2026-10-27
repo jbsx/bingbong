@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// `pnpm jev:appliance [corpus-dir] [--web] [--expect]` (#485): every hop-0 case in the
+// `pnpm jev:appliance [corpus-dir] [--expect]` (#485): every hop-0 case in the
 // Jev corpus given its Appliance companion — the Appliance Card the real
 // builder makes from the state the case recorded, with the answers the
 // line should get on it — written beside it as `<name>-appliance.json`, as
 // #370 converted the corpus. Run again after a change to the card's
 // wording: each companion's ask is rebuilt, its expectations kept unless
-// `--expect` derives them again. `--web`
-// builds T2's arm B (an open and a web search on the card). A line read
+// `--expect` derives them again. A line read
 // on both cards is through the gate only when both of its cases are.
 // Node runs this .ts directly via type stripping (#36).
 
@@ -29,7 +28,6 @@ const { JEV_CORPUS_DIR, readCorpus } = (await import('../src/main/decision/jevCo
 const { companionCase, companionName, isCompanionName } = (await import('../src/core/decision/applianceCompanion.ts')) as typeof import('../src/core/decision/applianceCompanion')
 
 const args = process.argv.slice(2)
-const web = args.includes('--web')
 // --expect derives every companion's expectations afresh from its case; otherwise a companion's own are kept.
 const rederive = args.includes('--expect')
 const dir = args.find((arg) => !arg.startsWith('--')) ?? JEV_CORPUS_DIR
@@ -42,7 +40,7 @@ for (const entry of readCorpus(dir)) {
   const path = join(dir, `${companionName(entry.name)}.json`)
   // A companion grown by hand (`pnpm jev:case … --appliance`) keeps its expectations; its ask is rebuilt.
   const before = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { expect?: unknown }) : null
-  const companion = companionCase(entry.name, entry.case, { web })
+  const companion = companionCase(entry.name, entry.case)
   if (companion === null) {
     skipped.push(entry.name)
     continue

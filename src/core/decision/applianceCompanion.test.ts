@@ -60,7 +60,6 @@ describe('the Appliance companion of a recorded page-card ask (#485)', () => {
     expect(companionExpectations([{ question: 'action', label: 'click-3' }, { question: 'amount', label: 'down-step' }], questions)).toEqual([{ question: 'action', label: 'page|none' }])
     expect(companionExpectations([{ question: 'action', not: 'say_weather' }], questions)).toEqual([{ question: 'action', not: 'say_weather' }])
     expect(companionExpectations([{ question: 'action', not: 'click-3' }], questions)).toEqual([{ question: 'action', label: 'page|none' }])
-    expect(companionExpectations([{ question: 'action', label: 'search' }], questions, true)).toEqual([{ question: 'action', label: 'page|none|search' }])
   })
 
   it('writes a companion case naming its source', () => {

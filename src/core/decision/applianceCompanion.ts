@@ -112,7 +112,7 @@ export function isHopZeroCommandAsk(ask: { readonly state: string; readonly ques
 }
 
 /** The Appliance companion's ask for a recorded hop-0 page-card ask; null for an ask that has none. */
-export function applianceAskOf(ask: { readonly state: string; readonly questions: DecisionQuestions }, options: { readonly web?: boolean } = {}): { state: string; questions: DecisionQuestions; view: ApplianceView } | null {
+export function applianceAskOf(ask: { readonly state: string; readonly questions: DecisionQuestions }): { state: string; questions: DecisionQuestions; view: ApplianceView } | null {
   if (!isHopZeroCommandAsk(ask)) return null
   const lines = ask.state.split('\n')
   const text = JSON.parse(lines[0]!.slice('The user spoke to a web browser: '.length)) as string
@@ -137,14 +137,14 @@ export function applianceAskOf(ask: { readonly state: string; readonly questions
     timer: true,
     recorded: { lines: own, amount: appAmount },
   }
-  const questions = applianceQuestions(text, view, { steps: 'steps' in ask.questions, heard, ...(options.web === true ? { web: true } : {}) })
+  const questions = applianceQuestions(text, view, { steps: 'steps' in ask.questions, heard })
   return { state: applianceState(text, view, heard, step), questions, view }
 }
 
 const ON_TO_PAGE = 'page|none'
 
 /** An action label of the page card as the companion expects it: the appliance's own op as itself, anything on the page as `page` or `none`. */
-function companionLabel(label: string, web: boolean): string {
+function companionLabel(label: string): string {
   const alternatives = label.split('|').map((each) => each.trim())
   const mapped = new Set<string>()
   for (const alternative of alternatives) {
@@ -154,8 +154,6 @@ function companionLabel(label: string, web: boolean): string {
     else {
       mapped.add('page')
       mapped.add('none')
-      // T2's arm B offers the two ref-less browser verbs on the Appliance Card: reading the line there is as good as on the page card.
-      if (web && (alternative === 'search' || alternative === 'navigate')) mapped.add(alternative)
     }
   }
   return [...mapped].join('|')
@@ -168,11 +166,11 @@ function companionLabel(label: string, web: boolean): string {
  * reads them, `steps` always; nothing left on the action expects the line
  * to go on to the page card.
  */
-export function companionExpectations(expect: readonly JevExpectation[], questions: DecisionQuestions, web = false): JevExpectation[] {
+export function companionExpectations(expect: readonly JevExpectation[], questions: DecisionQuestions): JevExpectation[] {
   const kept: JevExpectation[] = []
   let action: JevExpectation | null = null
   for (const expectation of expect.filter((each) => each.question === 'action')) {
-    if ('label' in expectation) action = { ...expectation, label: companionLabel(expectation.label, web) }
+    if ('label' in expectation) action = { ...expectation, label: companionLabel(expectation.label) }
     else if ('not' in expectation) {
       const mapped = mediaLabelOf(expectation.not) ?? (isApplianceLabel(expectation.not) ? expectation.not : null)
       if (mapped !== null) kept.push({ ...expectation, not: mapped })
@@ -198,9 +196,9 @@ export const companionName = (name: string): string => `${name}-appliance`
 export const isCompanionName = (name: string): boolean => name.endsWith('-appliance')
 
 /** A corpus case's Appliance companion; null for a case with none (a later hop, a settings ask, a kind the card never meets). */
-export function companionCase(name: string, jevCase: JevCase, options: { readonly web?: boolean } = {}): JevCase | null {
+export function companionCase(name: string, jevCase: JevCase): JevCase | null {
   if (isCompanionName(name)) return null
-  const ask = applianceAskOf(jevCase.ask, options)
+  const ask = applianceAskOf(jevCase.ask)
   if (ask === null) return null
   return {
     ...(jevCase.turnId !== undefined ? { turnId: jevCase.turnId } : {}),
@@ -208,7 +206,7 @@ export function companionCase(name: string, jevCase: JevCase, options: { readonl
     note: `The Appliance Card's ask for ${name} (#485): built by \`pnpm jev:appliance\` from the state that case recorded.`,
     ...(jevCase.model !== undefined ? { model: jevCase.model } : {}),
     ...(jevCase.recordedAt !== undefined ? { recordedAt: jevCase.recordedAt } : {}),
-    expect: companionExpectations(jevCase.expect, ask.questions, options.web === true),
+    expect: companionExpectations(jevCase.expect, ask.questions),
     ask: { state: ask.state, questions: ask.questions },
   }
 }

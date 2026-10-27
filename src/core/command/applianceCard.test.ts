@@ -51,9 +51,9 @@ describe('the Appliance Card (#485): built from what the appliance holds, no pag
     expect(state).not.toContain('Refs')
   })
 
-  it('offers navigate and search only on T2\'s arm B', () => {
+  it('offers no web verb: an open or a web search goes on to the page card (T2, measured)', () => {
     expect(Object.keys(applianceQuestions('open bbc', WATCH).action.options)).not.toContain('navigate')
-    expect(Object.keys(applianceQuestions('open bbc', WATCH, { web: true }).action.options)).toEqual(expect.arrayContaining(['navigate', 'search']))
+    expect(Object.keys(applianceQuestions('open bbc', WATCH).action.options)).not.toContain('search')
   })
 
   it('asks steps only on a whole line with a conjunction', () => {
