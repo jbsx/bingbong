@@ -18,3 +18,6 @@ e2e/live/private/
 # Logs pulled from the Log Bucket (`pnpm logs:pull`, #418).
 kiosk-logs/
 __pycache__/
+
+# runtime HOME of harness runs (pulse, bingbong config), never source
+data/

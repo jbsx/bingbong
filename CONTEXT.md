@@ -135,18 +135,27 @@ the last card. Driven by the Planner, never by the Decision Model, which
 reads one card at a time and keeps no memory past "Done so far". Bounded
 by seconds said aloud, not by a count of actions; an action whose effect
 leaves the appliance (post, send, pay, delete, submit) is said back and
-waits for yes; one question may be asked back when the Planner is unsure.
-Ended by the next Utterance, Escape or the Abort Head like a Task. A Task
-that ends not done hands its record to an Errand instead of saying it
-could not finish. Where the Planner enters is measured, never argued
-(ADR 0095, #464).
+waits for yes. The Planner names each action's class and code enforces
+it: a click, Enter or submit on a control labelled post, send, pay, buy,
+order, delete, submit, publish, reply, comment or subscribe is `leaves`
+whatever the Planner said, by kind and never by site. The confirm rides
+the Site Question road, so its exact answers (yes, ok, okay, confirm)
+fire it and any other line or no line within the Hot Listen window
+refuses it into the memory. One question may be asked back when the
+Planner is unsure; a question back pauses the Errand's clock. Ended by
+the next Utterance, Escape or the Abort Head like a Task. A Task that
+ends not done hands its record to an Errand instead of saying it could
+not finish; that is where the Planner enters (ADR 0095, measured in
+#468), and `errand <words>` starts one at once. `BINGBONG_PLANNER=off`
+turns both off.
 _Avoid_: plan, task chain, session, agent run
 
 **Goal Line**:
 An Utterance that names an outcome rather than a verb and a target
 ("comment that this is great on this video", "find me a cheaper one of
-these"). The grammar never settles one; whether it becomes an Errand or a
-Task is the routing, measured on the goal corpus (`fixtures/goal-cases/`).
+these"). The grammar never settles one; it is read as a Task first, and
+becomes an Errand when that Task ends not done (ADR 0095; the goal corpus
+is `fixtures/goal-cases/`).
 _Avoid_: intent, complex command, multi-step command
 
 **Planner**:
