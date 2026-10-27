@@ -120,6 +120,8 @@ describe.skipIf(!out)('the Appliance Card speed replay (#485)', () => {
         harness = await startHarness({
           userDataDir,
           fixture,
+          // No sound card under Xvfb: muted, the watch page's song plays.
+          launchArgs: ['--mute-audio'],
           env: {
             ...(await decisionEnv()),
             ...armEnv(),

@@ -76,6 +76,11 @@ export function createAuthPopupDirector(
         reload: () => base.reload(),
         stop: () => base.stop(),
         state: () => base.state(),
+        // The Appliance Card's media (#485) is what plays in the pane, the Player's or the page's, never a sign-in popup's.
+        ...(base.applianceMedia !== undefined ? { applianceMedia: () => base.applianceMedia!() } : {}),
+        ...(base.applianceMediaOp !== undefined ? { applianceMediaOp: (op: Parameters<NonNullable<typeof base.applianceMediaOp>>[0]) => base.applianceMediaOp!(op) } : {}),
+        // The page in hand (#485) is the page being read: a popup's while one is open.
+        snapshotInHand: () => target(base).snapshotInHand?.() ?? null,
         // The Player drives the pane's own video (#343), never a sign-in popup.
         evaluate: (expression) => base.evaluate(expression),
         ...(base.evaluateInFrames !== undefined ? { evaluateInFrames: <T,>(expression: string) => base.evaluateInFrames!<T>(expression) } : {}),
