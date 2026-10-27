@@ -1,0 +1,12 @@
+{
+  "turnId": "pm-2026-10-27-1",
+  "transcript": "reload the page",
+  "at": 1793129400001,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "'reload the page' asked of the Appliance Card over a YouTube watch page (update-reload-the-page-youtube) in #422's narrow gate (2026-10-27, Mammoth sure 0.76–0.86, Elephant 0.51–0.63): chose media-restart; the card offered no reload, so a free wording of it over a video restarts the video or reopens the last page",
+  "meant": "Reload the page open (the pane's own reload)",
+  "claimedBy": "#487",
+  "fixedBy": "7cfcf201",
+  "case": "src/core/command/localMatch.test.ts (#487)"
+}
