@@ -134,12 +134,19 @@ function youtubeResultsPage(words: string): string {
   return `<!doctype html><html><head><title>results - YouTube</title><script>var ytInitialData = ${JSON.stringify(data)}</script></head><body style="background:#222;color:#fff"><h1>results</h1></body></html>`
 }
 
-function youtubeWatchPage(id: string): string {
+/** A watch page's comments below the player (#484): `&comments=N` asks for N, each an author's link and a line, so the page is long as a real one is and a scroll moves it. */
+function youtubeComments(count: number): string {
+  if (count <= 0) return ''
+  const comments = Array.from({ length: count }, (_, n) => `<div class="comment" style="margin:12px 0"><a href="/@listener${n + 1}" style="color:#3ea6ff">@listener${n + 1}</a><p style="margin:4px 0">Comment ${n + 1}: this song has been on repeat all week.</p></div>`)
+  return `\n  <section id="comments"><h2>${count} Comments</h2>${comments.join('')}</section>`
+}
+
+function youtubeWatchPage(id: string, comments = 0): string {
   const { channel } = YOUTUBE_FIXTURE_SONG
   const title = youtubeFixtureTitle(id)
   return `<!doctype html><html><head><title>${title} - YouTube</title></head>
 <body style="background:#222;color:#fff">
-  <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video><button class="ytp-play-button" aria-label="Pause (k)" onclick="const v = this.previousElementSibling; v.paused ? v.play() : v.pause()">Pause</button></div>
+  <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video><button class="ytp-play-button" aria-label="Pause (k)" onclick="const v = this.previousElementSibling; v.paused ? v.play() : v.pause()">Pause</button></div>${youtubeComments(comments)}
   <script>
     const player = document.getElementById('movie_player')
     const video = player.querySelector('video')
@@ -1477,7 +1484,8 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url?.startsWith('/watch?v=')) {
       res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(youtubeWatchPage(new URL(req.url, 'http://fixture').searchParams.get('v') ?? ''))
+      const params = new URL(req.url, 'http://fixture').searchParams
+      res.end(youtubeWatchPage(params.get('v') ?? '', Number(params.get('comments') ?? 0)))
       return
     }
     res.writeHead(200, { 'Content-Type': 'text/html' })

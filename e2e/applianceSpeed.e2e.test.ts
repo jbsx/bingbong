@@ -39,6 +39,8 @@ const SETTLE_MS = 12_000
 const STT_MS = 250
 /** Lines per launch: a fresh profile now and then, as the kiosk's day has restarts. */
 const BATCH = 30
+/** The comments under the watch page's player (#484): enough that the page runs several screens below the fold. */
+const WATCH_COMMENTS = 60
 
 type Page = 'watch' | 'article' | 'blank'
 
@@ -137,7 +139,8 @@ describe.skipIf(!out)('the Appliance Card speed replay (#485)', () => {
           startupTimeoutMs: 60_000,
         })
         const app = harness
-        const home = page === 'watch' ? `https://www.youtube.com/watch?v=${YOUTUBE_FIXTURE_SONG.id}` : page === 'article' ? fixture.url('/story') : 'about:blank'
+        // The watch page with comments below the player (#484), long as a real one is, so a scroll moves it.
+        const home = page === 'watch' ? `https://www.youtube.com/watch?v=${YOUTUBE_FIXTURE_SONG.id}&comments=${WATCH_COMMENTS}` : page === 'article' ? fixture.url('/story') : 'about:blank'
         const reactions = async (): Promise<number> => {
           const files = (await readdir(join(userDataDir, 'logs')).catch(() => [] as string[])).filter((name) => name.startsWith('perf-'))
           const text = (await Promise.all(files.map((name) => readFile(join(userDataDir, 'logs', name), 'utf8')))).join('')
