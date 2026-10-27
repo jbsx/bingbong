@@ -620,6 +620,24 @@ by the next Command and never prevented by asking first. Counted, so
 accuracy can be worked on once Reaction is won.
 _Avoid_: error, wrong action, false positive, hallucination
 
+**Overlap**:
+A line that arrives before the Command before it has ended: still being
+read, fired and not yet landed, the page still changing, the media not yet
+started, or the app still speaking. What the later line means to the
+earlier one (a new goal, a correction, an add-on, a control on the thing
+loading, a question about the wait, a stop) is read, never assumed from
+its timing. A Sequence Case measures it; #486.
+_Avoid_: interruption, barge-in, race, double command
+
+**Sequence Case**:
+A black-box fixture: what is in front of the person, lines with their
+times (a millisecond, a window, or a point the person could see or hear),
+optional noise, and the end state a person could observe. It never names a
+reading or a mechanism. An Overlap is one kind; a split Utterance, a final
+that differs from its partial, and noise during a Task are others. Run by
+`pnpm overlap:gate`; `fixtures/overlap-cases/`.
+_Avoid_: scenario (that word is the Yield list's), script, flow
+
 **Ask**:
 What one call of the Decision Model sent: the state text and the questions
 with their options, exactly as asked, the same bytes to every host it went
