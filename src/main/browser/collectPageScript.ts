@@ -154,7 +154,21 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     parts.push(renderedText(el))
     if (el.title) parts.push(el.title)
-    return parts.join(' ').replace(/\\s+/g, ' ').trim().slice(0, 300)
+    // Each source's words once (#481): Sourcepoint sets aria-label, title and
+    // text to the same words, which joined read three times over. Compared
+    // with whitespace and case folded; the first spelling stays. A part held
+    // inside another is kept — a guess, as no gate case reaches the fork: a
+    // ledger line where the shorter part costs the match would settle it.
+    const seen = new Set()
+    const distinct = []
+    for (const part of parts) {
+      const words = part.replace(/\\s+/g, ' ').trim()
+      const key = words.toLowerCase()
+      if (words === '' || seen.has(key)) continue
+      seen.add(key)
+      distinct.push(words)
+    }
+    return distinct.join(' ').slice(0, 300)
   }
   // Risk facts the gate classifies from. All DOM heuristics (autocomplete
   // tokens, name/id matching, form association) live here; core only reads

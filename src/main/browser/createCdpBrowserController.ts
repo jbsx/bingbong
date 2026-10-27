@@ -83,7 +83,7 @@ import {
   TAG_OF_FN,
 } from './collectPageScript'
 import { readRefStates, type RefStatesTally } from './readRefStates'
-import { mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
+import { frameHostOf, mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 
@@ -106,6 +106,14 @@ export interface PageFrame {
   readonly parentKey: string | null
   /** One evaluation in the frame, a promise awaited; rejects when the frame is gone. */
   evaluate<T>(expression: string): Promise<T>
+}
+
+/** One frame's own scroll offset as its collect read it (#481), and the host its refs are named by. */
+interface FrameScroll {
+  readonly key: string
+  readonly host: string
+  readonly scrollX: number
+  readonly scrollY: number
 }
 
 /** Every frame below the top document, at any depth, from any site (#377). */
@@ -542,6 +550,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   let frameSlots = new Map<string, { parentKey: string | null; slot: number }>()
   // The frames whose registries hold shown numbers: a marking that leaves one out empties it, as the top's empties past its count.
   let markedFrames = new Set<string>()
+  // Each frame's own scroll offset, by the collect that read it (#481): a scroll that lands in a frame is that frame's to report.
+  const frameScrolls = new WeakMap<PageSnapshot, readonly FrameScroll[]>()
 
   // Verbose sub-span instrumentation (#32). Timing-only wrappers: the wait,
   // collect, or probe always runs exactly as before; a channel is present
@@ -953,6 +963,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     addresses = merged.addresses
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
     const snapshot = buildPageSnapshot(await withRefStates(await withFramedDialogText(merged, answered)))
+    frameScrolls.set(snapshot, answered.map(({ key, page: { viewport, origin, url } }) => ({
+      key,
+      host: frameHostOf(origin !== undefined && origin !== 'null' ? origin : url),
+      scrollX: viewport.scrollX ?? 0,
+      scrollY: viewport.scrollY,
+    })))
     // Every collect, timed (#377): what the frames' fan-out costs is read off these.
     if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
     visualPoints.clear()
@@ -1297,8 +1313,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** Zoomed pages (#53) scroll on fractional CSS pixels; the outcome line
    * keeps its integer-pixel contract. */
-  function scrollHeader(direction: 'up' | 'down', scrollX: number, scrollY: number): string {
-    return `scrolled ${direction}: x=${Math.round(scrollX)} y=${Math.round(scrollY)}`
+  function scrollHeader(direction: 'up' | 'down', scrollX: number, scrollY: number, host?: string): string {
+    return `scrolled ${direction}${host === undefined ? '' : ` in ${host}`}: x=${Math.round(scrollX)} y=${Math.round(scrollY)}`
+  }
+
+  /**
+   * Which document a scroll moved, between two collects (#481): the page
+   * when it moved, else the first frame that did — a wheel over a consent
+   * wall's frame scrolls the frame, and the page's offset under it says
+   * nothing moved. Named by its host, as its refs are.
+   */
+  function scrolledDocument(before: PageSnapshot, after: PageSnapshot): { scrollX: number; scrollY: number; moved: number; host?: string } {
+    const top = { scrollX: after.viewport.scrollX ?? 0, scrollY: after.viewport.scrollY, moved: after.viewport.scrollY - before.viewport.scrollY }
+    if (top.moved !== 0 || top.scrollX !== (before.viewport.scrollX ?? 0)) return top
+    const earlier = frameScrolls.get(before) ?? []
+    for (const frame of frameScrolls.get(after) ?? []) {
+      const was = earlier.find((one) => one.key === frame.key)
+      if (was !== undefined && (was.scrollY !== frame.scrollY || was.scrollX !== frame.scrollX)) {
+        return { scrollX: frame.scrollX, scrollY: frame.scrollY, moved: frame.scrollY - was.scrollY, host: frame.host }
+      }
+    }
+    return top
   }
 
   /**
@@ -1335,7 +1370,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     lastSnapshot = undefined
     try {
       const after = await recollection('scroll-delta', () => collectSnapshot())
-      const header = scrollHeader(direction, after.viewport.scrollX ?? 0, after.viewport.scrollY)
+      const scrolled = scrolledDocument(before, after)
+      const header = scrollHeader(direction, scrolled.scrollX, scrolled.scrollY, scrolled.host)
       const delta = formatNewInView(before, after)
       // Only the delta's numbers were shown; the rest keep the nodes the
       // last full read gave them, so a ref the scroll shifted is refused
@@ -2506,8 +2542,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     lastSnapshot = undefined
     try {
       const after = await recollection('scroll-delta', () => collectSnapshot())
-      const direction = after.viewport.scrollY < before.viewport.scrollY ? 'up' : 'down'
-      const header = scrollHeader(direction, after.viewport.scrollX ?? 0, after.viewport.scrollY)
+      const scrolled = scrolledDocument(before, after)
+      const header = scrollHeader(scrolled.moved < 0 ? 'up' : 'down', scrolled.scrollX, scrolled.scrollY, scrolled.host)
       const delta = formatNewInView(before, after)
       // Only the delta's numbers were shown (ADR 0033), as after a page scroll.
       if (delta) await overlayShown(delta.shownRefs)

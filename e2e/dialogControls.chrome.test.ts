@@ -82,7 +82,22 @@ const SOURCEPOINT_PROSE_FRAME = `<body style="margin:0">
   <script>document.getElementById('accept').addEventListener('click', () => { parent.document.querySelector('[role="dialog"]').remove() })</script>
 </body>`
 
+// A Sourcepoint message frame as bbcgoodfood and the Guardian serve it
+// (#481): each control's aria-label, title and text carrying the same
+// words, the frame filling its dialog and scrolling on its own while the
+// page under it stays put.
+const SOURCEPOINT_MESSAGE_FRAME = `<body style="margin:0">
+  <h2>We value your privacy</h2>
+  <a href="#partners" title="141 partners">141 partners</a>
+  <div style="height:1200px"></div>
+  <button aria-label="Reject &amp; Pay" title="Reject &amp; Pay">Reject &amp; Pay</button>
+  <button aria-label="Accept All &amp; Continue" title="Accept  all &amp; continue">Accept All &amp; Continue</button>
+  <button aria-label="Close" title="close">×</button>
+</body>`
+
 const PAGES: Record<string, string> = {
+  '/sp-message-frame': SOURCEPOINT_MESSAGE_FRAME,
+  '/sp-message': `<body>${PAGE_BODY}<div role="dialog" style="position:fixed;inset:10%;background:#fff"><iframe src="/sp-message-frame" style="display:block;width:100%;height:100%;border:0"></iframe></div></body>`,
   '/sp-prose-frame': SOURCEPOINT_PROSE_FRAME,
   '/sp-prose': `<body>${PAGE_BODY}<div role="dialog" style="position:fixed;inset:10%;background:#fff"><iframe src="/sp-prose-frame" style="width:600px;height:300px;border:0"></iframe></div></body>`,
   '/delegated': `<body>${PAGE_BODY}${DELEGATED_DIALOG}</body>`,
@@ -279,5 +294,31 @@ describe.skipIf(!canDriveChrome)("a dialog's own close controls reach the card (
     const again = await controller.collectPage()
     expect(dialogRefs(again)).toEqual(dialogRefs(first))
     expect(again.refs.map((ref) => ref.previousIndex)).toEqual(again.refs.map((_, index) => index))
+  })
+
+  it("labels a framed wall's control by each of its words' sources once (#481): aria-label, title and text carrying the same words, whatever their case or spacing, are one label; distinct ones are kept", async () => {
+    await fixtures.open('/sp-message')
+    const merged = mergeFrames(await collected(), [await inFrame()])
+    expect(buildPageSnapshot(merged.page).refs.filter((ref) => ref.layer === 'dialog').map((ref) => [ref.kind, ref.label])).toEqual([
+      ['link', '141 partners'],
+      ['button', 'Reject & Pay'],
+      ['button', 'Accept All & Continue'],
+      ['button', 'Close ×'],
+    ])
+  })
+
+  it("reports a scroll that lands in a frame as that frame's own offset, by its host, never the page's (#481)", async () => {
+    await fixtures.open('/sp-message')
+    const controller = controllerAt('/sp-message', { framed: true })
+    await controller.collectPage()
+    const offsets = () => fixtures.chrome.evaluate<[number, number]>(`[document.querySelector('iframe').contentWindow.scrollY, window.scrollY]`)
+    // The collect has brought the wall's below-fold buttons into view: the frame stands at its end, so the wheel goes up.
+    const [startY] = await offsets()
+    expect(startY).toBeGreaterThan(0)
+    const line = await controller.scroll('up')
+    const [frameY, pageY] = await offsets()
+    expect(pageY).toBe(0)
+    expect(frameY).toBeLessThan(startY)
+    expect(line.split('\n')[0]).toBe(`scrolled up in 127.0.0.1: x=0 y=${Math.round(frameY)}`)
   })
 })
