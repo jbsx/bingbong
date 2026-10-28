@@ -5743,4 +5743,58 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     await two.first
     expect(doneOf(two.events, two.turnId)).toBe('cancelled')
   })
+
+  it('a spoken outcome still sounding is the line running until its sentence ends (#490): "move on" over a Page Read ends it', async () => {
+    const speech = new FakeSpeech()
+    const { decision, asks, events, runner } = harness({ applianceCard: CARD, facts, speech })
+    const reading = runner.run('read')
+    await flushMicrotasks()
+    expect(speech.spoken).toHaveLength(1)
+    const readId = (events.find((event) => event.type === 'command') as { turnId: string }).turnId
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('ends') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    const moving = runner.run('move on', { overSpeech: true })
+    await flushMicrotasks()
+    await reading
+    await moving
+    expect(asks[0]!.state).toContain('Still running, from the user\'s line before this one')
+    expect(asks[0]!.state).toContain('"read"')
+    expect(asks[0]!.state).toContain('Its stage: Speaking')
+    expect(speech.stops).toBeGreaterThanOrEqual(1)
+    expect(doneOf(events, readId)).toBe('cancelled')
+  })
+
+  it('a Task over whose sentence still sounds stays the line running, at Speaking, until the sentence ends (#490)', async () => {
+    const speech = new FakeSpeech()
+    const { decision, asks, runner } = harness({ applianceCard: CARD, facts, speech })
+    decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run("what's the time?")
+    expect(speech.spoken).toHaveLength(1)
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('goes_on') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('lovely weather')
+    expect(asks[1]!.state).toContain('Still running, from the user\'s line before this one')
+    expect(asks[1]!.state).toContain('Its stage: Speaking')
+  })
+
+  it('an Early Fire that speaks is the line running while it sounds, and not once its sentence has ended (#490)', async () => {
+    const speech = new FakeSpeech()
+    const { decision, asks, runner } = harness({ applianceCard: CARD, facts, speech })
+    void runner.prepare()
+    const considered = runner.consider('read')
+    await flushMicrotasks()
+    expect(speech.spoken).toHaveLength(1)
+    const endpoint = runner.run('read', { source: 'spoken' })
+    await flushMicrotasks()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('goes_on') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('lovely weather', { source: 'spoken' })
+    expect(asks[0]!.state).toContain('Still running')
+    expect(asks[0]!.state).toContain('Its stage: Speaking')
+    speech.finish()
+    await considered
+    await endpoint
+    await flushMicrotasks()
+    const before = asks.length
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('lovely weather again', { source: 'spoken' })
+    expect(asks[before]!.state).not.toContain('Still running')
+  })
 })

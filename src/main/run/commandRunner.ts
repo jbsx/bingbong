@@ -603,6 +603,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task?: Task
     /** Resolves when the line ends, however it ends: what a `waits` waits on. */
     readonly over: Promise<void>
+    /** Its sentences still sounding (#490): a spoken outcome is the line running until its sentence ends. */
+    sounding: number
+    /** Its Task is over; it stays live only while a sentence of it sounds. */
+    settled: boolean
+    readonly close: () => void
   }
   /** The lines given and not yet ended, by their turn (#489): the running Command the Appliance Card carries, and what a `waits` waits on. */
   const live = new Map<string, LiveLine>()
@@ -649,6 +654,59 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     line.detail = event.status === 'thinking' && event.word === undefined ? undefined : event.detail
     // An Errand's Acting detail is the Planner's own why, no object to say: its line's words name what stopped.
     if (event.status === 'acting') line.acting = event.word === ERRAND_WORD ? `“${line.words}”` : event.detail !== undefined && event.detail !== '' ? `${line.stage} ${event.detail}` : line.stage
+  }
+
+  /**
+   * The words of a line an Early Fire took (#490), which has no live line
+   * while its Task runs: a sentence it says makes it one until the sentence
+   * ends, as any spoken outcome is. Kept for the last few submissions.
+   */
+  const earlyLines = new Map<string, { readonly words: string; readonly submission: number; readonly given: number }>()
+  function noteFired(turnId: string, words: string, submission: number, given: number): void {
+    earlyLines.set(turnId, { words, submission, given })
+    for (const [id, line] of earlyLines) if (line.submission < submission - 8) earlyLines.delete(id)
+  }
+
+  /** A line given (#489): live from its Endpoint, or its Early Fire, until it ends. */
+  function openLine(turnId: string, words: string, submission: number, given: number, settled = false): LiveLine {
+    let close: () => void = () => {}
+    const over = new Promise<void>((resolve) => (close = resolve))
+    const line: LiveLine = { turnId, words, submission, given, stage: 'Thinking', detail: undefined, over, sounding: 0, settled, close }
+    live.set(turnId, line)
+    return line
+  }
+
+  /** A line ends once its Task is over and none of its sentences sounds (#490). */
+  function retire(line: LiveLine): void {
+    if (!line.settled || line.sounding > 0 || live.get(line.turnId) !== line) return
+    live.delete(line.turnId)
+    earlyLines.delete(line.turnId)
+    line.close()
+  }
+
+  /** Its Task is over: a sentence still sounding keeps it the running line, at the Speaking stage, until it ends (#490). */
+  function settleLine(line: LiveLine): void {
+    line.settled = true
+    if (line.sounding > 0) {
+      line.stage = 'Speaking'
+      line.detail = undefined
+    }
+    retire(line)
+  }
+
+  /** The live line a sentence of `turnId` sounds for (#490), counted until it ends; none for an ended line or a turn with no line. */
+  function soundingLine(turnId: string): LiveLine | undefined {
+    const id = lineOfTurn.get(turnId) ?? turnId
+    let line = live.get(id)
+    if (line === undefined) {
+      const took = earlyLines.get(id)
+      if (took === undefined) return undefined
+      line = openLine(id, took.words, took.submission, took.given, true)
+      line.stage = 'Speaking'
+    }
+    if (isEnded(line.submission)) return undefined
+    line.sounding += 1
+    return line
   }
 
   /** The line running when one is given (#489): the latest still live before it, as the Appliance Card carries it; null with none. */
@@ -835,6 +893,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(running.acting) : undefined
+    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read.
+    if (running !== null && running.sounding > 0) silence()
     cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
     if (said !== undefined) stopSaid = { text: said, by }
     // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
@@ -868,6 +928,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (ahead !== null && ahead !== text) text = `${ahead} ${text}`
     publish({ type: 'speak', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
     sounding += 1
+    const line = soundingLine(turnId)
     return speech
       .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
       .catch((error: unknown): SpeakOutcome => {
@@ -876,6 +937,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       })
       .finally(() => {
         sounding -= 1
+        if (line !== undefined) {
+          line.sounding -= 1
+          retire(line)
+        }
         // Its end, however it came (#470): the Peek Card's linger counts from here.
         publish({ type: 'spoken', turnId, at: at() })
       })
@@ -2330,6 +2395,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   function endLineOf(task: Task, ended: TaskEnded, hops: number): { text: string; failure: boolean } | null {
     if (superseded(task)) return null
+    if (quietOver(task.id, task.actions)) return null
     // Handed to an Errand (#467): the Errand's end is what is said, never "I couldn't finish that".
     if (handsOff(ended)) return null
     if (ended === 'done' && task.passage !== undefined) return { text: task.passage, failure: false }
@@ -2745,7 +2811,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           continue
         }
         log({ ...record, ended })
-        if (ended === 'unsure' && !handsOff(ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
+        if (ended === 'unsure' && !handsOff(ended) && !quietOver(task.id, task.actions)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
         // A sure yes speaks the block Jev surely picked beside it (#401, ADR 0087); with no sure pick it ends as before.
         if (ended === 'done') await endDone(turnId, task, placed, page, readPassage(result.answers, page, context), firedAt)
         else dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
@@ -2931,6 +2997,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       settled: false,
     }
     early = fired
+    noteFired(turnId, words, submission, fired.firedMono)
     fired.outcome = fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired), hop0)
     return { action: fired.outcome.then(() => {}) }
   }
@@ -3116,7 +3183,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (end.ended === 'superseded' || isEnded(line.submission)) return
     const turnId = tracer?.mintTurnId() ?? `${lineId}-step${next}`
     publish({ type: 'command', turnId, text: line.text, action: `Step ${next} not run`, dropped: true, task: { id: lineId, hop: 0, step: next, of }, at: at() })
-    if (ENDS_UNSAID.has(end.ended) && end.said !== true && !handsOff(end.ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
+    if (ENDS_UNSAID.has(end.ended) && end.said !== true && !handsOff(end.ended) && !quietOver(lineId, end.actions)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
     publish({ type: 'done', turnId, outcome: 'done', at: at() })
   }
 
@@ -3157,6 +3224,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** Whether a Task that ends cap, unsure or unavailable hands its line to an Errand (#467): the Errand is armed and a Planner configured. */
   const handsOff = (ended: TaskEnded): boolean => HANDS_OFF.has(ended) && deps.errand?.planner() != null
+  /** The lines heard over the app's own voice (#490), by their turn. */
+  const overSpeechLines = new Set<string>()
+  /**
+   * A line heard over the app's voice that fired nothing (#490, ruling arm
+   * A): read none or unsure, it is never handed to the Errand and ends with
+   * nothing said. An echo fragment taken as the person's would otherwise
+   * start an Errand whose sentence is more echo.
+   */
+  const quietOver = (lineId: string, actions: readonly string[] | undefined): boolean => overSpeechLines.has(lineId) && (actions?.length ?? 0) === 0
 
   /** The Errand's stage word (#467): the Status Capsule's pill while a step is planned or acted. */
   const ERRAND_WORD = 'Errand'
@@ -3491,8 +3567,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       if (wasIdle) idleAt = submission
       reading = { turnId, submission }
-      let over: () => void = () => {}
-      live.set(turnId, { turnId, words: trimmed, submission, given: endpointAt, stage: 'Thinking', detail: undefined, over: new Promise<void>((resolve) => (over = resolve)) })
+      const own = openLine(turnId, trimmed, submission, endpointAt)
+      if (options?.overSpeech === true) overSpeechLines.add(turnId)
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared
       prepared = null
@@ -3522,13 +3598,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
         const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
-        if (end !== null && !isEnded(submission) && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
+        if (end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
       try {
         await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
       } finally {
-        live.delete(turnId)
-        over()
+        overSpeechLines.delete(turnId)
+        settleLine(own)
         // An ended Command's stop line its ender never said a sentence after (#489): said alone.
         if (stopSaid?.by === turnId && deps.speech !== undefined) void say(deps.speech, turnId, stopSaid.text)
       }

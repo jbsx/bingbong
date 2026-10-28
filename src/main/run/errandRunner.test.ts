@@ -242,6 +242,17 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(spoken).toEqual(['Opened the article.'])
   })
 
+  it('a line heard over the app\'s own voice that fires nothing is never handed over, and ends with nothing said (#490, arm A)', async () => {
+    const { planner, asked } = scriptedPlanner({ next: 'done', sentence: 'Opened the article.' })
+    const { jev, records, spoken, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 } })
+    jev.ask = async () => ({ status: 'unavailable', reason: 'http', httpStatus: 429, message: 'Rate limit exceeded', latencyMs: 30, model: jev.model }) as never
+    await runner.run('digital limited', { source: 'spoken', overSpeech: true })
+    expect(decisions(records).at(-1)!.ended).toBe('unavailable')
+    expect(asked).toHaveLength(0)
+    expect(errandOf(records)).toBeUndefined()
+    expect(spoken).toEqual([])
+  })
+
   it('with no Planner configured, a Task\'s end is said as ever, and `errand <words>` says the planner is not set up', async () => {
     const { jev, spoken, runner } = harness({ errand: { planner: () => null, answerWindowMs: () => 0 } })
     for (let hop = 0; hop < 6; hop += 1) jev.script.push('scroll_down')
