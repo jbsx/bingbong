@@ -42,6 +42,14 @@
 // Usage:
 //   pnpm overlap:gate [--cases substr,…] [--models id,…] [--repeat N] [--seed N] [--points N]
 //                     [--keep dir] [--calibration dir] [--planner id] [--check-state] [--with-jev]
+//                     [--audio-only-music]
+//
+// `--audio-only-music` (#502) seeds the Settings toggle into each fresh
+// profile, so a song takes the audio road (yt-dlp on PATH, or
+// BINGBONG_AUDIO_ROAD's): the end state then reads the road's hidden window
+// beside the pane, its <audio> named by the song, and the dashboard's Now
+// Playing title in view (e2e/overlap/audioRoad.ts). Without it, every read is
+// the pane's alone.
 //
 // The models are BINGBONG_GATE_MODELS (or --models), read as jev:gate reads them, each a Decision Model id
 // on the env's BINGBONG_DECISION_* host; --with-jev adds Jev, the default
@@ -65,6 +73,7 @@ import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageO
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
 import { openSlowHost, SLOW_HOST_ENV_KEY, type SlowHost } from '../e2e/overlap/slowHost.ts'
+import { AUDIO_ONLY_MUSIC_SETTINGS, isAudioSurfaceUrl, SETTINGS_FILE, withRoad, type RoadRead } from '../e2e/overlap/audioRoad.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
@@ -130,6 +139,7 @@ const calibrationDir = valueOf('--calibration')
 const plannerModel = valueOf('--planner')
 const checkState = args.includes('--check-state')
 const withJev = args.includes('--with-jev')
+const audioOnlyMusic = args.includes('--audio-only-music')
 const models = [...list(valueOf('--models') ?? process.env[GATE_MODELS_ENV_KEY]), ...(withJev ? [JEV] : [])]
 if (models.length === 0) {
   console.error('overlap:gate needs its models: set BINGBONG_GATE_MODELS or pass --models a,b')
@@ -177,18 +187,27 @@ interface TargetInfo {
   readonly url: string
 }
 
+type Kind = 'dashboard' | 'pane' | 'audio'
+
 /** One CDP session per target, kept while the target lives. */
 function targetsOf(cdp: CdpClient) {
   const sessions = new Map<string, string>()
   const list = async (): Promise<TargetInfo[]> => (await bounded(cdp.send<{ targetInfos: TargetInfo[] }>('Target.getTargets'), CDP_BOUND_MS, 'listing the targets')).targetInfos
   /** The window takes focus, as the e2e harness gives it (Target.activateTarget): a person's window has it. */
-  const activate = async (kind: 'dashboard' | 'pane'): Promise<void> => {
+  const activate = async (kind: Kind): Promise<void> => {
     const target = await find(kind)
     if (target !== undefined) await bounded(cdp.send('Target.activateTarget', { targetId: target.targetId }), CDP_BOUND_MS, 'activating')
   }
-  const find = async (kind: 'dashboard' | 'pane'): Promise<TargetInfo | undefined> =>
-    (await list()).find((target) => (kind === 'dashboard' ? target.url.includes('out/renderer/index.html') : target.type === 'page' && !target.url.includes('out/renderer') && !target.url.startsWith('devtools://')))
-  async function evaluate<T>(kind: 'dashboard' | 'pane', expression: string): Promise<T | undefined> {
+  // The audio road's hidden window (#502) is a page too, and never the pane.
+  const find = async (kind: Kind): Promise<TargetInfo | undefined> =>
+    (await list()).find((target) =>
+      kind === 'dashboard'
+        ? target.url.includes('out/renderer/index.html')
+        : kind === 'audio'
+          ? target.type === 'page' && isAudioSurfaceUrl(target.url)
+          : target.type === 'page' && !target.url.includes('out/renderer') && !target.url.startsWith('devtools://') && !isAudioSurfaceUrl(target.url),
+    )
+  async function evaluate<T>(kind: Kind, expression: string): Promise<T | undefined> {
     const target = await find(kind)
     if (target === undefined) return undefined
     let sessionId = sessions.get(target.targetId)
@@ -237,9 +256,21 @@ const paneScript = (chars: number): string => `(() => {
   return { url: location.href, title: document.title, text: out.join(' ').slice(0, ${chars}), media }
 })()`
 
+/** The road's window: the song it plays (its document's title, set at each load) and its element (#502). */
+const ROAD_SCRIPT = `(() => ({
+  title: document.title,
+  media: [...document.querySelectorAll('video, audio')].map((m) => ({ playing: !m.paused && !m.ended && m.readyState > 2, src: m.currentSrc || m.src || '', position: m.currentTime, volume: m.muted ? 0 : m.volume, loop: m.loop })),
+}))()`
+/** The song the dashboard's toolbar shows Now Playing. */
+const NOW_PLAYING_SCRIPT = `document.querySelector('.toolbar-song-title')?.textContent ?? ''`
+
 async function readPane(targets: Targets, chars: number): Promise<Omit<PaneSample, 't'>> {
-  const read = await targets.evaluate<Omit<PaneSample, 't'>>('pane', paneScript(chars)).catch(() => undefined)
-  return read ?? { url: '(no pane)', title: '', text: '', media: [] }
+  const read = (await targets.evaluate<Omit<PaneSample, 't'>>('pane', paneScript(chars)).catch(() => undefined)) ?? { url: '(no pane)', title: '', text: '', media: [] }
+  if (!audioOnlyMusic) return read
+  // On the audio road a person hears the road's window and sees the song on the dashboard: both read beside the pane.
+  const road = await targets.evaluate<RoadRead>('audio', ROAD_SCRIPT).catch(() => undefined)
+  const nowPlaying = await targets.evaluate<string>('dashboard', NOW_PLAYING_SCRIPT).catch(() => undefined)
+  return withRoad(read, road, nowPlaying)
 }
 
 /** The dashboard keeps every event of the command stream and every voice state, stamped as they arrive. */
@@ -275,6 +306,7 @@ const slowHostOn = process.env[SLOW_HOST_ENV_KEY] === '1'
 async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null, room: Room | null): Promise<Live> {
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
+  if (audioOnlyMusic) writeFileSync(join(profile, SETTINGS_FILE), AUDIO_ONLY_MUSIC_SETTINGS)
   const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
   const routing = resolveDecisionRouting({ ...process.env, ...decision })
   const slow = slowHostOn && routing.configured ? await openSlowHost(routing.endpoint.baseUrl, sequence.lines.slice(1).map((line) => line.words)) : null
@@ -430,7 +462,9 @@ async function setUp(live: Live, sequence: SequenceCase): Promise<string | null>
     // sometimes never fires on a fresh profile, 2026-10-27) is started as a person would, with the media's own play.
     if (!(await waitUntil(async () => playingNow(live), UNSTARTED_MS))) {
       console.error(`"play ${start.playing}" unstarted after ${UNSTARTED_MS / 1000} s: the start presses play`)
-      await live.targets.evaluate('pane', `(() => { for (const media of document.querySelectorAll('video, audio')) if (media.paused && media.currentTime < 0.5) media.play().catch(() => {}); return true })()`).catch(() => {})
+      const press = `(() => { for (const media of document.querySelectorAll('video, audio')) if (media.paused && media.currentTime < 0.5) media.play().catch(() => {}); return true })()`
+      await live.targets.evaluate('pane', press).catch(() => {})
+      if (audioOnlyMusic) await live.targets.evaluate('audio', press).catch(() => {})
       if (!(await waitUntil(async () => playingNow(live), SETUP_BOUND_MS))) return `"play ${start.playing}" never played`
     }
   }
@@ -779,6 +813,7 @@ if (typeof cases === 'string') {
 }
 const plannerName = `${plannerModel ?? process.env.BINGBONG_PLANNER_MODEL ?? `${PLANNER_DEFAULT_MODEL} (default)`}`
 const tables: CaseRow[][] = []
+console.error(`overlap:gate at ${commit}: audio-only music ${audioOnlyMusic ? 'on (--audio-only-music)' : 'off'}`)
 for (const model of models) {
   const decisionName = model === JEV ? `Jev (${resolveDecisionRouting(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BINGBONG_DECISION_')))).configured ? 'default endpoint' : 'not configured'})` : model
   const rows: CaseRow[] = []
@@ -803,7 +838,7 @@ for (const model of models) {
           const dir = join(keep, sequence.id, slug(model))
           mkdirSync(dir, { recursive: true })
           const name = `p${point.index}${repeat > 1 ? `-${n}` : ''}`
-          keepRun(dir, name, { case: sequence.id, model, point: { ...point, placed: point.lines.map((placed) => (placed === null ? null : describePlaced(placed))) }, seed, commit }, ran)
+          keepRun(dir, name, { case: sequence.id, model, point: { ...point, placed: point.lines.map((placed) => (placed === null ? null : describePlaced(placed))) }, seed, commit, audioOnlyMusic }, ran)
         }
         runs.push(cell)
       }
@@ -812,6 +847,7 @@ for (const model of models) {
     rows.push({ id: sequence.id, points: row })
   }
   tables.push(rows)
+  console.log(`audio-only music: ${audioOnlyMusic ? 'on (--audio-only-music)' : 'off'}`)
   console.log(formatTable(rows, { model: decisionName, planner: plannerName, seed, points: pointCount, repeat, commit, spans }))
   console.log(`runs made again: ${rerun.start} whose start was never reached, ${rerun.limited} that met a 429`)
   console.log('')

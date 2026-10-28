@@ -18,6 +18,8 @@ export interface MediaState {
   readonly position: number
   readonly volume: number
   readonly loop: boolean
+  /** The song an element outside the pane plays, on the audio road (#502): its own name, where the pane's title is not it. */
+  readonly title?: string
 }
 
 export interface PaneSample {

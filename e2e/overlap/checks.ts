@@ -57,7 +57,7 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
     const needsMedia = wanted.has !== undefined || wanted.position !== undefined || wanted.volume !== undefined || wanted.loop !== undefined
     if (needsMedia && media === undefined) return 'there is no media on the page'
     if (media !== undefined) {
-      if (wanted.has !== undefined && !`${end.title} ${media.src}`.toLowerCase().includes(wanted.has.toLowerCase())) return `the media is not "${wanted.has}" (${end.title})`
+      if (wanted.has !== undefined && !`${media.title ?? end.title} ${media.src}`.toLowerCase().includes(wanted.has.toLowerCase())) return `the media is not "${wanted.has}" (${media.title ?? end.title})`
       if (wanted.position !== undefined && (media.position < wanted.position[0] || media.position > wanted.position[1])) return `the media is at ${Math.round(media.position)} s, not ${range(wanted.position, ' s')}`
       if (wanted.volume !== undefined) {
         const [low, high] = typeof wanted.volume === 'number' ? [wanted.volume - 0.01, wanted.volume + 0.01] : wanted.volume
