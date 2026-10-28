@@ -119,8 +119,8 @@ export interface UtteranceEnd {
   totalMs: number
   /** True when the max-duration cap, not silence, ended the utterance. */
   truncated: boolean
-  /** What fired the Endpoint (#357): the turn check, the pause cap, or the hard cap. */
-  endedBy: 'turn' | 'cap' | 'max'
+  /** What fired the Endpoint (#357): the turn check, the pause cap, or the hard cap; or a person's stretch cut from a capture over the ducked voice (#490). */
+  endedBy: 'turn' | 'cap' | 'max' | 'level'
   /** Silence when the Endpoint fired (#357), before any merge hold. */
   silenceMs: number
   /** The last turn check this utterance made (#357); absent when none was asked. */

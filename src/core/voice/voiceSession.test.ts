@@ -1690,6 +1690,31 @@ describe('voice session — speech over the app’s own voice, inside a listen (
     expect([...own.harness.dumps, ...muted.harness.dumps].map((dump) => dump.path.split('/').pop()!.split('-')[0])).toEqual(['speaking', 'speaking'])
   })
 
+  it('duck: a stretch of the person’s voice well above the ducked echo is cut out of the echo’s capture and read alone', async () => {
+    const { harness } = await overRead(['move on'], 'duck')
+    const frame = (level: number): Float32Array => new Float32Array(512).fill(level)
+    // The echo at its ducked level keeps the capture open; the person speaks into it, ten times as loud, then the echo goes on.
+    const levels = [...Array.from({ length: 40 }, () => 0.02), ...Array.from({ length: 10 }, () => 0.2), ...Array.from({ length: 20 }, () => 0.02)]
+    for (const level of levels) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(frame(level))
+    }
+    expect(harness.submitted).toMatchObject([{ text: 'move on', overSpeech: true }])
+    // The stretch alone, with its lead: twenty frames, never the forty of echo before it.
+    expect(harness.transcriber.audio[0]!.length).toBe(20 * 512)
+    expect(harness.tts.stopCalls).toBe(0)
+  })
+
+  it('duck: an echo at an even level is never cut', async () => {
+    const { harness } = await overRead(['let down radiohead'], 'duck')
+    for (let i = 0; i < 80; i++) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(new Float32Array(512).fill(i < 15 ? 0.1 : 0.02))
+    }
+    expect(harness.transcriber.audio).toHaveLength(0)
+    expect(harness.submitted).toEqual([])
+  })
+
   it('records whose it was read to be', async () => {
     const { harness } = await overRead(['if playback doesnt begin shortly'], 'duck', { perf: { sttMs: 0 } })
     await harness.speakUtterance()

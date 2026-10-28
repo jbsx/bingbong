@@ -4,13 +4,14 @@ import type { TtsIdle, TtsSpeaker } from '../ports/tts'
 import type { Transcriber, TurnDetector, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
-import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
+import { createUtteranceEndpointer, VAD_FRAME_MS, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { UtteranceDumper } from './utteranceDump'
 import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
 import { isOwnVoice, ownShare, type OverSpeech } from './ownVoice'
+import { createOverLevel, type LoudStretch, type OverLevel } from './overLevel'
 
 /**
  * The complete local phrase-routing vocabulary — abort alone, the one
@@ -229,8 +230,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // playing when it started, or started under it. Dropped at its Endpoint.
   let muted = false
   // The utterance in capture started over the app's voice, or the app started under it, and is read to tell whose it is (#490):
-  // the app's sentences heard while it was captured, and whether the app's voice ducked for it.
-  let over: { said: Set<string>; ducked: boolean } | null = null
+  // the app's sentences heard while it was captured, and whether the app's voice ducked for it. Under the duck its frames are
+  // read by level too: the audio before the read began, then each frame, so a stretch of the person's can be cut out.
+  let over: { said: Set<string>; ducked: boolean; level?: { read: OverLevel; lead: Float32Array; frames: Float32Array[] } } | null = null
   // The capture has met the app's voice already: it is decided once per capture (#490).
   let metSpeech = false
   // The Utterance in capture's pauses (#443): how many decoded at a pause, and the audio length of the one standing (null when speech came back after it).
@@ -257,7 +259,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       deps.tts.stop()
       return false
     }
-    over = { said: new Set(), ducked: mode === 'duck' }
+    over = { said: new Set(), ducked: mode === 'duck', ...(mode === 'duck' ? { level: { read: createOverLevel(), lead: endpointer.preRoll(), frames: [] } } : {}) }
     hearSpeech()
     if (over.ducked) deps.tts.duck?.(true)
     return false
@@ -267,6 +269,41 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   function hearSpeech(): void {
     const said = deps.speaking?.speechText?.()
     if (over !== null && said !== undefined && said !== '') over.said.add(said)
+  }
+
+  /** One frame of a capture over the ducked voice, read by level: a stretch of the person's that has just ended, or null (#490). */
+  function hearLevel(frame: Float32Array): LoudStretch | null {
+    const level = over?.level
+    if (level === undefined) return null
+    level.frames.push(frame)
+    return level.read.push(frame)
+  }
+
+  /**
+   * A stretch of the person's voice ended inside a capture over the ducked
+   * voice (#490): the capture is cut there and the stretch alone is read,
+   * as its own Utterance. The app's voice still sounding after it starts a
+   * capture of its own.
+   */
+  async function cutStretch(stretch: LoudStretch): Promise<void> {
+    const level = over!.level!
+    const parts = stretch.from === 0 ? [level.lead, ...level.frames.slice(0, stretch.to)] : level.frames.slice(stretch.from, stretch.to)
+    const pcm = new Float32Array(parts.reduce((sum, part) => sum + part.length, 0))
+    let at = 0
+    for (const part of parts) {
+      pcm.set(part, at)
+      at += part.length
+    }
+    endpointer.reset()
+    deps.transcriber.cancel()
+    await handleUtterance({
+      pcm,
+      speechMs: (stretch.to - stretch.from) * VAD_FRAME_MS,
+      totalMs: Math.round(pcm.length / 16),
+      truncated: false,
+      endedBy: 'level',
+      silenceMs: (level.frames.length - stretch.to) * VAD_FRAME_MS,
+    })
   }
 
   /** The capture over the app's voice is over with no line: the app comes back up (#490). */
@@ -571,6 +608,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         // final-only engine ignores them and still gets the whole utterance
         // at finish().
         if (!muted) deps.transcriber.push(frame)
+        // Over the ducked voice, a stretch of the person's that has ended is cut out and read now (#490).
+        const stretch = muted ? null : hearLevel(frame)
+        if (stretch !== null) await cutStretch(stretch)
       } else if (!wasIdle) {
         // The endpointer discarded a blip — drop the in-flight capture too.
         if (!muted) letGo()
