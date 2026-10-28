@@ -274,8 +274,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     return false
   }
 
-  /** What a capture over the voice is held against when short (#490): what just sounded; what is being said, when the speaker cannot tell. */
-  const recentOf = (heard: { said: Set<string>; recent: string[] }): string | string[] => (deps.speaking?.soundedText !== undefined ? heard.recent.join(' ') : [...heard.said])
+  /** What a capture over the voice is held against when short (#490): what just sounded; undefined when the speaker cannot tell. */
+  const recentOf = (heard: { recent: string[] }): string | undefined => (deps.speaking?.soundedText !== undefined ? heard.recent.join(' ') : undefined)
 
   /** The app's sentence now, and the words its voice just sounded, kept while a capture over it runs. */
   function hearSpeech(): void {
@@ -742,7 +742,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           tracer.span(turnId, 'over-speech', 0, {
             verdict: text === '' ? 'blank' : own ? 'own' : 'person',
             share: ownShare(text, said),
-            recentShare: ownShare(text, recent),
+            ...(recent !== undefined ? { recentShare: ownShare(text, recent) } : {}),
             mode: heardOver.ducked ? 'duck' : 'filter',
           })
         } catch (error) {
@@ -781,7 +781,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     const phrase = normalizedPhrase(text)
     // A stop word over the app's voice that is what the app said (its sentence sounding or just ended) is its echo, never the person's stop (#490): it goes to the runner as any line over the voice.
-    const echoedStop = heardOver !== null && ownShare(text, recentOf(heardOver)) >= OWN_VOICE_SHARE
+    const echoedStop = heardOver !== null && ownShare(text, recentOf(heardOver) ?? [...heardOver.said]) >= OWN_VOICE_SHARE
     if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase) && !echoedStop) {
       if (heardOver?.ducked === true) deps.tts.duck?.(false)
       deps.onAbort()

@@ -1755,7 +1755,7 @@ describe('voice session — speech over the app’s own voice, inside a listen (
   it('records whose it was read to be', async () => {
     const { harness } = await overRead(['if playback doesnt begin shortly'], 'duck', { perf: { sttMs: 0 } })
     await harness.speakUtterance()
-    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toEqual({ verdict: 'own', share: 1, recentShare: 1, mode: 'duck' })
+    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toEqual({ verdict: 'own', share: 1, mode: 'duck' })
   })
 
   const CLOCKS = 'Stop the Clocks is a compilation album by Oasis. It was released in November 2006. The album was promoted with a tour. Stop the Clocks reached number one.'

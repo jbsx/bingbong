@@ -189,11 +189,13 @@ function foundWhole(transcript: string, said: string | readonly string[]): boole
 
 /**
  * Whether a transcript taken while the app spoke is the app's own voice: it
- * sounds like a stretch of what is being said, or, short, its words are
- * found whole in what has just sounded (`recent`; what is being said, when
- * the speaker cannot tell).
+ * sounds like a stretch of what is being said; or, short, like a stretch of
+ * what its voice has just sounded (`recent`: an echo window holds too few
+ * words to be near by chance, and the ear drops a letter, "Content" for
+ * "Contents", narrow22) — when the speaker cannot tell, its words found whole
+ * in what is being said.
  */
-export function isOwnVoice(transcript: string, said: string | readonly string[], recent: string | readonly string[] = said): boolean {
-  if (soundLetters(transcript).length < OWN_VOICE_LETTERS) return foundWhole(transcript, recent)
-  return ownShare(transcript, said) >= OWN_VOICE_SHARE
+export function isOwnVoice(transcript: string, said: string | readonly string[], recent?: string | readonly string[]): boolean {
+  if (soundLetters(transcript).length >= OWN_VOICE_LETTERS) return ownShare(transcript, said) >= OWN_VOICE_SHARE
+  return recent === undefined ? foundWhole(transcript, said) : ownShare(transcript, recent) >= OWN_VOICE_SHARE
 }

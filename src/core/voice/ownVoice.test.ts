@@ -68,4 +68,14 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(isOwnVoice('page.', 'There’s no page to go back to. Try “resume”.')).toBe(true)
     expect(isOwnVoice('stop', '')).toBe(false)
   })
+
+  it('held against what just sounded, a short capture is the app’s own when it is near a stretch of it: the window is too short to be near by chance (narrow22)', () => {
+    const read = 'Stop the Clocks Contents (Top) 1 Background 2 Content 3 Cover'
+    expect(isOwnVoice('Content', read, 'Clocks Contents (Top) 1')).toBe(true)
+    expect(isOwnVoice('Content', read)).toBe(true)
+    expect(isOwnVoice('Contents', 'Stop the Clocks Contents', 'released in November 2006. The album')).toBe(false)
+    expect(isOwnVoice('Stop.', read, 'released in November 2006. The album')).toBe(false)
+    expect(isOwnVoice('Stop.', read, 'Background 2 Content 3 Cover')).toBe(false)
+    expect(isOwnVoice('Stop.', read, '')).toBe(false)
+  })
 })
