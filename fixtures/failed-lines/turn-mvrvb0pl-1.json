@@ -6,5 +6,6 @@
   "stage": "player",
   "happened": "overlap:gate 1-replace-new-goal at p2 (media-not-started 66%) on baseten-mammoth-27b-latest at 6e0279eb (run of record): `play radiohead` ended done at 6.9 s saying Playing “Radiohead - No Surprises” while a YouTube pre-roll ad (Warburtons, 2:00) was what played; `open the weather` came at 10.5 s after the line had ended, was read say the weather, and the ad then the song played on: media is playing at the end",
   "meant": "A song is not Playing while an ad plays: the play is still running when line 2 comes, so the new goal ends it and nothing plays",
-  "log": "decision-1793177038462-1.jsonl"
+  "log": "decision-1793177038462-1.jsonl",
+  "claimedBy": "#497"
 }
