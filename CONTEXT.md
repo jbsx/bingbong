@@ -248,6 +248,15 @@ track is off, buffering, failed, and its Player Switches — and "Done so
 far" tells what an op changed. Several media refs each carry their own.
 _Avoid_: capability (for these), control, command (for the op itself)
 
+**Seek Mark**:
+What a seek leaves on an element that was playing as it seeked: the page's
+clock at the seek. A seek that leaves its element paused within the Settle
+(2 s, measured) is played once, by kind, on the element alone; a pause or
+play on the element takes the mark off, and a pause the person asked for
+after the seek holds. Set by every seek, a Media Op's and the Player's own;
+nothing new is said, the seek's own sentence stays true. #505.
+_Avoid_: auto-resume, unpause
+
 **Capture**:
 An op a ref, a block of text or the page carries because of its kind
 (`capture-N` on a link or an image, `capture-view-N` on a block in view,

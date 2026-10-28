@@ -12,6 +12,11 @@ Amended on 2026-10-22 by the owner's ruling on #389, and on 2026-10-23 on
 #398: a search box is a kind, and searching it is its op.
 Amended on 2026-10-28 by #497: an ad its Media Engine states is a fact of
 the media ref (below).
+Amended on 2026-10-28 by #505: a seek op (`forward-N`, `back-N`,
+`restart-N`) on a playing element leaves the Seek Mark; a page that pauses
+on the seek is played once within the 2 s Settle, the Player's poll
+reading the mark today (a media ref with no Player: #506). The op's
+before/after read is unchanged.
 
 ## Context
 
