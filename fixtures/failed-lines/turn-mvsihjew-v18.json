@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvsihjew-v18",
+  "transcript": "L-O-O-P.",
+  "at": 1793216001307,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Spelled 'L-O-O-P.' right after 'Look this up.' was misheard (dump utterance-1793215966855-0065, −11.5 dBFS): read none (first look 0.79, Where Ask 0.53), shown greyed with a muted 'No response.' and nothing said, so from the chair the line was silence",
+  "meant": "Loop the song playing; failing that, be told aloud it was not read",
+  "log": "decision-1793185309060-1.jsonl",
+  "claimedBy": "#500"
+}

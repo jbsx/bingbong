@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvsihi98-v17",
+  "transcript": "Look this up.",
+  "at": 1793215967038,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "Heard 'Look this up.' (Parakeet offline: 'Loop this on.', dump utterance-1793215965355-0064) and searched; the owner spelled 'L-O-O-P.' next",
+  "meant": "Loop the song playing",
+  "log": "decision-1793185309060-1.jsonl"
+}
