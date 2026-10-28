@@ -154,9 +154,9 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
         // The Utterance ended: the music comes back before its Command runs (#344).
         deps.ducking?.utteranceEnded()
         const { overSpeech: ducked, ...rest } = submitted
-        const task = runCommand(win, text, { ...rest, source: 'spoken' })
-        // Said over the app's voice, which ducked for it (#490, F2 arm b): a line that fires stops the voice, and its end puts back
-        // what is still playing — a line read as no Command lets the app go on.
+        const task = runCommand(win, text, { ...rest, source: 'spoken', ...(ducked === true ? { overSpeech: true as const } : {}) })
+        // Said over the app's voice, which ducked for it (#490, F2 arm b): the runner stops the voice at the read once the line is for
+        // the app, and the line's end puts back what is still playing — a line read `none` that goes on lets the app go on.
         if (ducked === true) {
           const restore = (): void => deps.tts.duck?.(false)
           if (task === undefined) restore()

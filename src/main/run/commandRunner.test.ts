@@ -5689,6 +5689,45 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(doneOf(events, turnId)).toBe('done')
   })
 
+  it('a line said over the app’s voice (#490, F2 arm b) stops it at the read when it holds back the fire: waits, joins, ends', async () => {
+    for (const fate of ['waits', 'joins', 'ends'] as const) {
+      const { decision, runner, first, land, speech } = await running()
+      decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice(fate) } }, { answers: { action: choice('say_time'), slot: choice('none') } })
+      const second = runner.run('then tell me the time', { overSpeech: true })
+      await flushMicrotasks()
+      // Stopped at the read, before the running line lands: a `waits` holds its fire, but the floor is the person's now.
+      expect(speech.stops).toBeGreaterThanOrEqual(1)
+      land()
+      await first
+      await second
+    }
+  })
+
+  it('a line said over the app’s voice and read none that goes on leaves the voice ducked, never stopped', async () => {
+    const { decision, runner, first, land, speech } = await running()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('goes_on') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('oh, I think I left the kettle on', { overSpeech: true })
+    expect(speech.stops).toBe(0)
+    land()
+    await first
+  })
+
+  it('a line said over the app’s voice with nothing running stops it once read as an action, and not when read none', async () => {
+    const quiet = new FakeSpeech()
+    const one = harness({ applianceCard: CARD, facts, speech: quiet })
+    one.decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await one.runner.run('lovely weather', { overSpeech: true })
+    expect(quiet.stops).toBe(0)
+    const speech = new FakeSpeech()
+    const two = harness({ applianceCard: CARD, facts, speech })
+    two.decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+    const done = two.runner.run("what's the time?", { overSpeech: true })
+    await flushMicrotasks()
+    expect(speech.stops).toBe(1)
+    speech.stop()
+    await done
+  })
+
   it('an Early Fire follows the same rule: a still exact line goes on beside it, a moving one ends it', async () => {
     const one = await running()
     void one.runner.prepare()

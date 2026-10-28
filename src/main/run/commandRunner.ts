@@ -181,6 +181,8 @@ export interface CommandRunOptions {
   readonly endpointAt?: number
   /** Where the words came from; typed when absent. */
   readonly source?: CommandSource
+  /** Spoken over the app's voice, which ducked for it (#490, F2 arm b): the voice stops at the read once the line is for the app. */
+  readonly overSpeech?: true
 }
 
 export interface CommandRunner {
@@ -1001,6 +1003,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (takesPane(command)) return heard.fate === 'joins' || heard.fate === 'waits' ? heard.fate : 'ends'
     if (heard.fate !== undefined) return heard.fate
     return actsOnMedia(command) && running.verb === 'play' ? 'waits' : 'goes_on'
+  }
+
+  /** A line read as for the app (#490): an action, or a Fate that ends, joins or waits on the line running. */
+  function forTheApp(heard: Reading, submission: number): boolean {
+    if (heard.command.verb !== 'none') return true
+    const running = deps.applianceCard !== undefined ? runningBefore(submission) : null
+    return running !== null && fateOf(heard, running) !== 'goes_on'
   }
 
   /**
@@ -3506,6 +3515,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const first = await read(turnId, lineRead, pending, source === 'spoken', { split: true, ...(runningNow !== null ? { running: runningOf(runningNow, turnId) } : {}) })
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
+        // Said over the app's voice (#490, F2 arm b): it stops at the read when the line is for the app — any Fate but going on
+        // with no action; a line read `none` that goes on leaves it ducked, and its end puts it back up (attachVoice).
+        if (options?.overSpeech === true && forTheApp(first, submission)) deps.speech?.stop()
         const heard = await settleFate(turnId, lineRead, submission, first, source === 'spoken')
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
         const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true })
