@@ -14,7 +14,7 @@ import { nextLine, withNextLine } from '../../core/command/tryLine'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
-import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
+import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, sameCommand, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
 import { dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -598,6 +598,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     acting?: string
     /** The verb it fired, once it has; and the words a `play` named, the media it is opening. */
     verb?: Command['verb']
+    /** The Command its hop 0 fired (#494): what a joined line reading the same stands on. */
+    fired?: Command
+    /** The hops its Task has published (#494): a joined line is its Task's next. */
+    hops: number
     opening?: string
     /** Its Task, whose actions are its done so far. */
     task?: Task
@@ -646,6 +650,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** A line's stage as the Status Capsule shows it (#428), kept on its live line for the card (#489). */
   function track(event: PipelineEvent): void {
     if (event.type === 'command' && event.task !== undefined && event.task.id !== event.turnId) lineOfTurn.set(event.turnId, event.task.id)
+    if (event.type === 'command' && event.task !== undefined) {
+      const owner = live.get(event.task.id)
+      if (owner !== undefined) owner.hops = Math.max(owner.hops, event.task.hop + 1)
+    }
     if (event.type !== 'status' || event.status === 'cancelled') return
     const line = live.get(lineOfTurn.get(event.turnId) ?? event.turnId)
     if (line === undefined) return
@@ -671,7 +679,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function openLine(turnId: string, words: string, submission: number, given: number, settled = false): LiveLine {
     let close: () => void = () => {}
     const over = new Promise<void>((resolve) => (close = resolve))
-    const line: LiveLine = { turnId, words, submission, given, stage: 'Thinking', detail: undefined, over, sounding: 0, settled, close }
+    const line: LiveLine = { turnId, words, submission, given, stage: 'Thinking', detail: undefined, hops: 0, over, sounding: 0, settled, close }
     live.set(turnId, line)
     return line
   }
@@ -877,6 +885,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return true
   }
 
+  /** The submissions a later line joined while they were still being read (#494): their readings fire and show nothing. */
+  const givenWay = new Set<number>()
+
   /** The stop line an ended Command left to be said (#489, the grill's Q11): spoken ahead of the next sentence its ender says, or alone when it says none. */
   let stopSaid: { readonly text: string; readonly by: string } | null = null
 
@@ -893,8 +904,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(running.acting) : undefined
-    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read.
-    if (running !== null && running.sounding > 0) silence()
+    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read. A join on a line whose Task is
+    // over leaves its sentence to the joined line's reading (#494): one that stands on it lets it finish, one that fires cuts it.
+    if (running !== null && running.sounding > 0 && !(how === 'joins' && running.settled)) silence()
+    // A line still being read that a later one joins gives way into it (#494): its own reading shows nothing, and its stage ends now.
+    if (how === 'joins' && running !== null && running.fired === undefined && !running.settled) {
+      givenWay.add(running.submission)
+      publish({ type: 'done', turnId: running.turnId, outcome: 'cancelled', at: at() })
+    }
     cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
     if (said !== undefined) stopSaid = { text: said, by }
     // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
@@ -1044,6 +1061,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     fate?: Fate
     /** The words read as one line when this one joined the line running (#489, T3 arm J1): the running line's, then this one's. */
     joined?: string
+    /**
+     * The line it joined (#494), whose Task the joined line is: the hop it takes there, and, when that line's Task was already
+     * over, the Command it had fired, which a joined reading of the same stands on.
+     */
+    into?: { readonly taskId: string; readonly hop: number; readonly stands?: Command }
     /** Read no further than its Fate (#489): a line that joins or waits, whose words are read again as the Fate says. */
     unread?: true
   }
@@ -1100,6 +1122,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return heard.unread === true ? read(turnId, text, null, spoken) : heard
     }
     if (fate === 'joins') {
+      // The joined line is the line it joins (#494): that line's Task, and the Command it fired once its Task was over.
+      const into = { taskId: running.turnId, hop: running.hops, ...(running.settled && running.fired !== undefined ? { stands: running.fired } : {}) }
       endRunning(submission, 'joins', turnId)
       const joined = `${running.words}, ${text}`
       publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: joined, at: at() })
@@ -1107,7 +1131,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // One line, one step: never split back into the running line and a Step on the bare correction.
       const again = await read(turnId, joined, null, spoken, { split: false })
       if (reading?.turnId === turnId) reading = null
-      return { ...again, joined }
+      return { ...again, joined, into }
     }
     // Waiting (#489, ui.md 2): the stage names what it waits for.
     publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: WAITING_WORD, detail: running.opening ?? running.words, at: at() })
@@ -1819,6 +1843,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const owner = liveOfTask(task.id)
     if (owner !== undefined && task.hop === 0) {
       owner.verb = command.verb
+      owner.fired = command
       if (command.verb === 'play' && command.slot !== null) owner.opening = command.slot
     }
 
@@ -3031,10 +3056,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * it is the first, and only the first measures the line's Reaction;
    * every Step's Task carries the line's id (`taskId`).
    */
-  async function runStep(line: Line, turnId: string, words: string, first: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string }): Promise<StepEnd> {
+  async function runStep(line: Line, turnId: string, words: string, first: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string; hop?: number }): Promise<StepEnd> {
     const { source, endpointAt, truncated, submission, givenAt } = line
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
-    const hop0 = hopOf(task, 0)
+    // A joined line is a later hop of the line it joined, when that one had fired (#494).
+    const firstHop = options.hop ?? 0
+    const hop0 = hopOf(task, firstHop)
     const owner = liveOfTask(task.id)
     if (owner !== undefined) owner.task = task
     if (first.flag !== undefined && !isEnded(submission)) {
@@ -3093,6 +3120,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A later Command (or an abort) arrived while this one was being
       // read: the later one stands. The reading is data; nothing fires.
       log({ ...record, ended: 'superseded' })
+      // A line that gave way into a later one joining it (#494) is that one's: it shows nothing of its own.
+      if (givenWay.delete(submission)) return { ended: 'superseded', did: '' }
       publish({ type: 'command', turnId, text: line.text, action: abandonedAction(submission), dropped: true, task: hop0, at: givenAt })
       publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
       return { ended: endTask(task, 'superseded', 1), did: '' }
@@ -3158,7 +3187,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A Local-Matched landing whose title or body reads as a wall or a dead end goes on to the Verdict (ADR 0089): Jev reads the landing.
     const ended = settleHop(task, record, ending === 'local_match' && result.suspect !== undefined ? null : ending, command, heard.page, result)
     const outcome = result.outcome
-    const end = ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1)
+    const end = ended !== null ? endTask(task, ended, 1) : await continueTask(task, firstHop + 1)
     return { ended: end, outcome, did: did(), actions: [...task.actions], ...(task.saidEnd === true ? { said: true as const } : {}) }
   }
 
@@ -3596,7 +3625,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.overSpeech === true && forTheApp(first, submission)) deps.speech?.stop()
         const heard = await settleFate(turnId, lineRead, submission, first, source === 'spoken')
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-        const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true })
+        const into = heard.into
+        // A joined line reading what the line it joined already fired, or nothing, stands on it (#494): nothing fires again, and that
+        // line's outcome, still sounding, is the answer.
+        if (into?.stands !== undefined && !isEnded(submission) && (heard.command.verb === 'none' || sameCommand(heard.command, into.stands))) {
+          log({ ...recordOf(turnId, at(), source, heard.joined ?? lineRead, heard, heard.command, null, truncated), task: { id: into.taskId, hop: into.hop }, ended: 'terminal', stood: true })
+          publish({ type: 'done', turnId, outcome: 'done', at: at() })
+          return
+        }
+        const joinedTask = into !== undefined ? { taskId: into.taskId, hop: into.hop } : {}
+        const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true, ...joinedTask })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
         if (end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }

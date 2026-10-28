@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"Oh I think I left the kettle on.\"\nPage open: https://en.wikipedia.org/wiki/Radiohead — \"Radiohead - Wikipedia\"\nPlaying: nothing\nStill running, from the user's line before this one, given 3.7 s before it: \"Find the Wikipedia page for Radiohead.\"\nIts stage: Thinking\nIts done so far: search for \"Wikipedia page for Radiohead\" with [5] \"Search with DuckDuckGo Search privately\"; click [21] \"Radiohead - Wikipedia\"",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"Oh I think I left the kettle on.\"\nStill running, from the user's line before this one, given 3.7 s before it: \"Find the Wikipedia page for Radiohead.\"\nIts stage: Thinking\nIts done so far: search for \"Wikipedia page for Radiohead\" with [5] \"Search with DuckDuckGo Search privately\"; click [21] \"Radiohead - Wikipedia\"\nPage open: https://en.wikipedia.org/wiki/Radiohead — \"Radiohead - Wikipedia\"\nPlaying: nothing",
     "questions": {
       "action": {
         "type": "choice",

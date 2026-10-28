@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
-import { commandKeepsIdle, commandPageOf, isMounting, type Command, type CommandPage, type CommandVerb } from './command'
+import { commandKeepsIdle, commandPageOf, isMounting, sameCommand, type Command, type CommandPage, type CommandVerb } from './command'
 
 // The page a Command is read against (#324): its address, title and refs —
 // and, with a dialog open, the dialog (#336).
@@ -94,5 +94,21 @@ describe('commandKeepsIdle on a blank pane (#361)', () => {
   it('keeps it for the app op that brings the Idle Screen back (#458), and wakes for every other view', () => {
     expect(commandKeepsIdle({ verb: 'app', target: null, slot: null, app: { kind: 'view', view: 'idle' } }, true)).toBe(true)
     expect(commandKeepsIdle({ verb: 'app', target: null, slot: null, app: { kind: 'view', view: 'dashboard' } }, true)).toBe(false)
+  })
+})
+
+describe('sameCommand (#494)', () => {
+  const back: Command = { verb: 'back', target: null, slot: null }
+  it('is the same Command whatever order its fields were read in', () => {
+    const a = { verb: 'media', target: 3, slot: null, mediaOp: { op: 'volume', level: 0.5 } } as unknown as Command
+    const b = { mediaOp: { level: 0.5, op: 'volume' }, slot: null, target: 3, verb: 'media' } as unknown as Command
+    expect(sameCommand(a, b)).toBe(true)
+    expect(sameCommand(back, { ...back })).toBe(true)
+  })
+  it('differs on any field: the verb, the target, the Slot, an op', () => {
+    expect(sameCommand(back, { verb: 'forward', target: null, slot: null })).toBe(false)
+    expect(sameCommand({ verb: 'click', target: 3, slot: null }, { verb: 'click', target: 4, slot: null })).toBe(false)
+    expect(sameCommand({ verb: 'search', target: null, slot: 'hurt' }, { verb: 'search', target: null, slot: 'hurt by johnny cash' })).toBe(false)
+    expect(sameCommand({ verb: 'timer', target: null, slot: null, durationMs: 60_000 }, { verb: 'timer', target: null, slot: null })).toBe(false)
   })
 })

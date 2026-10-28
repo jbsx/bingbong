@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"We move on.\"\nPage open: https://www.youtube.com/watch?v=ZVgHPSyEIqk — \"Let Down (Remastered) - YouTube\"\nPlaying: \"Let Down (Remastered) - YouTube\" playing 1:10/4:59 volume 53% loop off\nStill running, from the user's line before this one, given 62.5 s before it: \"Read the page.\"\nIts stage: Speaking",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"We move on.\"\nStill running, from the user's line before this one, given 62.5 s before it: \"Read the page.\"\nIts stage: Speaking\nPage open: https://www.youtube.com/watch?v=ZVgHPSyEIqk — \"Let Down (Remastered) - YouTube\"\nPlaying: \"Let Down (Remastered) - YouTube\" playing 1:10/4:59 volume 53% loop off",
     "questions": {
       "action": {
         "type": "choice",

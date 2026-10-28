@@ -63,6 +63,14 @@ describe('jevDetailOf', () => {
     expect('where' in unscoped.probabilities).toBe(false)
   })
 
+  it('carries the Fate when the card asked it, while a line ran (#494): a run says what the Fate read', () => {
+    const one = (label: string, confidence: number): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
+    const fate: DecisionChoiceAnswer = { type: 'choice', choice: 'joins', confidence: 0.46, probabilities: { ends: 0.16, joins: 0.46, waits: 0.17, goes_on: 0.2 } }
+    const read = jevDetailOf({ action: one('none', 0.45), slot: one('none', 0.9), fate } as never, 212, 'jev-1.14.0')
+    expect(read.confidence.fate).toBe(0.46)
+    expect(read.probabilities.fate).toEqual({ ends: 0.16, joins: 0.46, waits: 0.17, goes_on: 0.2 })
+  })
+
   it('carries the passage pick beside the Verdict when it was asked (#401): its confidence and its five most probable blocks', () => {
     const one = (label: string, confidence: number): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
     const reading = { action: one('none', 0.9), slot: one('none', 0.9), outcome: one('yes', 0.98) }

@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"no, by radiohead\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing\nStill running, from the user's line before this one, given 0.9 s before it: \"play let down\"\nIts stage: Playing let down\nIt is opening: \"let down\", not playing yet",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"no, by radiohead\"\nStill running, from the user's line before this one, given 0.9 s before it: \"play let down\"\nIts stage: Playing let down\nIt is opening: \"let down\", not playing yet\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing",
     "questions": {
       "action": {
         "type": "choice",

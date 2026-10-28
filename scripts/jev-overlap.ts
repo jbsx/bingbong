@@ -34,11 +34,15 @@ type DecisionQuestions = import('../src/core/ports/decisionModel').DecisionQuest
 interface Source {
   readonly name: string
   readonly turnId: string
-  readonly expect: readonly { readonly question: string; readonly label: string }[]
+  readonly expect: readonly { readonly question: string; readonly label: string; readonly atLeast?: number }[]
   /** A kept overlap:gate run: `<case>/<model dir>/p<n>`. */
   readonly run?: string
   /** A kiosk line read on the page card before the Appliance Card: its ask converted, the running line given. */
   readonly kiosk?: { readonly running: RunningCommand }
+  /** The kept dir the run is in, when it is not the one given (#494: #490's narrow runs). */
+  readonly from?: string
+  /** The running line as the runner carries it now, when the run's own events say otherwise (#494: a line whose failure still sounds is running, #490). */
+  readonly running?: RunningCommand
 }
 
 const MAMMOTH = 'decision-models_baseten-mammoth-27b-latest'
@@ -54,7 +58,35 @@ const SOURCES: readonly Source[] = [
   { name: '14-remark-during-task', turnId: 'turn-mvr8aguu-v2', run: `14-remark-during-task/${MAMMOTH}/p3`, expect: fate('goes_on') },
   // The two halves' words came 1039 ms apart (the kiosk perf log's endpoint-to-words spans, 623856 → 624895).
   { name: '8-kiosk-back-to-page', turnId: 'turn-mvphyqdu-vl', kiosk: { running: { words: 'Back to-', stage: 'Thinking', done: [], sinceMs: 1039 } }, expect: fate('joins') },
+  // #494: the gate's split (#490's narrow runs at 4ec5948b..4d59f720), the Fate at the runner's own bar. narrow1's second half was read while
+  // the first was still on the page card; narrow3's after the first had failed, its failure line still sounding, which keeps it running (#490).
+  {
+    name: '8-split-looking',
+    turnId: 'turn-mvriovnw-v2',
+    from: '/tmp/impl490/s3/narrow1',
+    run: `8-split-by-pause/${MAMMOTH}/p1`,
+    running: { words: 'Back to', stage: 'Looking', detail: 'at youtube.com', done: [], sinceMs: 1500 },
+    expect: [{ question: 'fate', label: 'joins', atLeast: 0.7 }],
+  },
+  {
+    name: '8-split-speaking',
+    turnId: 'turn-mvrkosrw-v2',
+    from: '/tmp/impl490/s3/narrow3',
+    run: `8-split-by-pause/${MAMMOTH}/p1`,
+    running: { words: 'Back to', stage: 'Speaking', done: [], sinceMs: 1730 },
+    expect: [{ question: 'fate', label: 'joins', atLeast: 0.7 }],
+  },
 ]
+
+/** A kept ask made with a line running already (#494): the card it was built from, the running lines and the Fate taken off. */
+function withoutRunning(ask: { state: string; questions: DecisionQuestions }): { state: string; questions: DecisionQuestions } {
+  const at = ask.state.indexOf("\nStill running, from the user's line before this one")
+  if (at === -1) return ask
+  const { fate: _fate, ...questions } = ask.questions as Record<string, DecisionQuestions[string]>
+  const action = questions.action
+  const options = action !== undefined && action.type === 'choice' ? Object.fromEntries(Object.entries(action.options).filter(([label]) => label !== 'say_doing')) : undefined
+  return { state: ask.state.slice(0, at), questions: { ...questions, ...(action !== undefined && options !== undefined ? { action: { ...action, options } } : {}) } as DecisionQuestions }
+}
 
 interface Ask {
   readonly turnId: string
@@ -118,15 +150,20 @@ if (mode === 'grow') {
   if (kept === undefined) throw new Error('usage: pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir]')
   for (const source of SOURCES) {
     if (source.run !== undefined) {
-      const runFile = join(kept, `${source.run}.json`)
-      const asks = asksIn(join(kept, `${source.run}-logs`))
+      const dir = source.from ?? kept
+      if (!existsSync(join(dir, `${source.run}.json`))) {
+        console.log(`${source.name}: no kept run in ${dir}, skipped`)
+        continue
+      }
+      const runFile = join(dir, `${source.run}.json`)
+      const asks = asksIn(join(dir, `${source.run}-logs`))
       const ask = asks.find((each) => each.turnId === source.turnId && each.kind === 'appliance')
       if (ask === undefined) throw new Error(`${source.name}: no Appliance ask for ${source.turnId}`)
       const events = (JSON.parse(readFileSync(runFile, 'utf8')) as { run: { records: { events: Timed[] } } }).run.records.events
-      const running = runningAt(events, ask.at, source.turnId)
+      const running = source.running ?? runningAt(events, ask.at, source.turnId)
       if (running === null) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
       const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
-      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, { state: ask.state, questions: ask.questions }, running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutRunning({ state: ask.state, questions: ask.questions }), running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
     } else if (source.kiosk !== undefined) {
       if (kiosk === undefined || !existsSync(kiosk)) {
         console.log(`${source.name}: no kiosk logs given, skipped`)

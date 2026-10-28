@@ -286,6 +286,18 @@ export function commandKeepsIdle(command: Command, paneHasPage = true): boolean 
   return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
 
+/** A value with its object keys in order, so two readings of one Command compare equal however their fields were set. */
+function ordered(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(ordered)
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).filter(([, each]) => each !== undefined).sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, each]) => [key, ordered(each)]))
+}
+
+/** Whether two Commands do the same thing (#494): every field the same, whatever order it was read in. */
+export function sameCommand(a: Command, b: Command): boolean {
+  return JSON.stringify(ordered(a)) === JSON.stringify(ordered(b))
+}
+
 /** The verbs that carry a Slot. */
 export function verbTakesSlot(verb: CommandVerb): boolean {
   return verb === 'navigate' || verb === 'search' || verb === 'type' || verb === 'press'

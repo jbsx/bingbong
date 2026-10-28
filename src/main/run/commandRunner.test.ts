@@ -5798,3 +5798,58 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(asks[before]!.state).not.toContain('Still running')
   })
 })
+
+describe('a line split by a pause (#494): the join J1 reaches a first half that already fired', () => {
+  const CARD = { asks: 'sequential' } as const
+  const facts = () => ({ now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } })
+  const said = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'speak' ? [event.text] : []))
+  const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  /** "what's the time?" fired and over, its sentence still sounding: the first half, already fired. */
+  async function firedFirst() {
+    const speech = new FakeSpeech()
+    const made = harness({ applianceCard: CARD, facts, speech })
+    made.decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+    await made.runner.run("what's the time?")
+    const turnId = commands(made.events)[0]!.turnId
+    return { ...made, speech, turnId }
+  }
+
+  it('the joined line reading what the first half fired stands on it: nothing fires again, its sentence is not cut, and the second half has no line of its own', async () => {
+    const { decision, asks, events, runner, speech, turnId } = await firedFirst()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run('please')
+    expect(asks[2]!.state).toContain(`"what's the time?, please"`)
+    expect(said(events)).toEqual(["It's 12:34 on Friday 23 October."])
+    expect(speech.stops).toBe(0)
+    expect(commands(events).map((event) => event.turnId)).toEqual([turnId])
+    const second = events.flatMap((event) => (event.type === 'status' && event.turnId !== turnId ? [event.turnId] : []))[0]!
+    expect(events).toContainEqual(expect.objectContaining({ type: 'done', turnId: second }))
+  })
+
+  it('a joined line reading another Command is added to the first half: it fires as the next hop of its Task, one line in the Feed', async () => {
+    const { decision, events, runner, turnId } = await firedFirst()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_weather'), slot: choice('none') } })
+    await runner.run('and the weather')
+    const joined = commands(events)[1]!
+    expect(joined.task).toEqual({ id: turnId, hop: 1 })
+    expect(joined.turnId).not.toBe(turnId)
+  })
+
+  it('a first half still being read gives way: its reading fires nothing and shows nothing, and the joined line is its Task', async () => {
+    const speech = new FakeSpeech()
+    const { decision, events, runner, browser } = harness({ applianceCard: CARD, facts, speech })
+    const release = decision.hold(0)
+    // Released out of order: the second half's ask and the joined line's answer first, then the first half's own.
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_time'), slot: choice('none') } }, { answers: { action: choice('click-2'), slot: choice('none') } })
+    const first = runner.run('back to')
+    await flushMicrotasks()
+    const firstId = (events.find((event) => event.type === 'status') as { turnId: string }).turnId
+    await runner.run('page')
+    release()
+    await first
+    expect(browser.clicks).toEqual([])
+    expect(commands(events)).toHaveLength(1)
+    expect(commands(events)[0]!.task).toEqual({ id: firstId, hop: 0 })
+    expect(events.filter((event) => event.type === 'done' && event.turnId === firstId)).toHaveLength(1)
+  })
+})

@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"no, the other one\"\nPage open: https://www.youtube.com/watch?v=8AHCfZTRGiI — \"Johnny Cash - Hurt - YouTube\"\nPlaying: nothing\nStill running, from the user's line before this one, given 2.6 s before it: \"play hurt\"\nIts stage: Loading youtube.com\nIt is opening: \"hurt\", not playing yet",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"no, the other one\"\nStill running, from the user's line before this one, given 2.6 s before it: \"play hurt\"\nIts stage: Loading youtube.com\nIt is opening: \"hurt\", not playing yet\nPage open: https://www.youtube.com/watch?v=8AHCfZTRGiI — \"Johnny Cash - Hurt - YouTube\"\nPlaying: nothing",
     "questions": {
       "action": {
         "type": "choice",

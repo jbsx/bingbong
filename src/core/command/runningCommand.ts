@@ -75,7 +75,7 @@ export function doingLine(running: RunningCommand): string {
   return `appliance: say what the app is doing now, for the line still running — ${doingAnswer(running)}`
 }
 
-/** The card with the running Command on it: its lines after the state's, the doing fact before `page` among the actions, and the Fate after the action (T2). */
+/** The card with the running Command on it: its lines right after the words (#494), the doing fact before `page` among the actions, and the Fate after the action (T2). */
 export function withRunning<Q extends DecisionQuestions>(state: string, questions: Q, running: RunningCommand): { state: string; questions: Q } {
   const action = questions.action
   const withDoing =
@@ -88,7 +88,8 @@ export function withRunning<Q extends DecisionQuestions>(state: string, question
         }
       : action
   const placed = Object.fromEntries(Object.entries(questions).flatMap(([key, question]) => (key === 'action' ? [[key, withDoing], ['fate', fateQuestion()]] : [[key, question]])))
-  return { state: [state, ...runningLines(running)].join('\n'), questions: placed as Q }
+  const [words, ...rest] = state.split('\n')
+  return { state: [words, ...runningLines(running), ...rest].join('\n'), questions: placed as Q }
 }
 
 /** The Fate Jev read (#489), or `goes_on` when it is unsure or gave none (the grill's Q5: a wrong goes-on costs one `stop`, a wrong end loses the first line). */

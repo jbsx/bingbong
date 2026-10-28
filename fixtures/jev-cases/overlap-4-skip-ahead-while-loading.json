@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"skip ahead a minute\"\nPage open: https://www.youtube.com/results?search_query=let+down+by+radiohead — \"let down by radiohead - YouTube\"\nPlaying: nothing\nStill running, from the user's line before this one, given 3.8 s before it: \"play let down by radiohead\"\nIts stage: Loading youtube.com\nIt is opening: \"let down by radiohead\", not playing yet",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"skip ahead a minute\"\nStill running, from the user's line before this one, given 3.8 s before it: \"play let down by radiohead\"\nIts stage: Loading youtube.com\nIt is opening: \"let down by radiohead\", not playing yet\nPage open: https://www.youtube.com/results?search_query=let+down+by+radiohead — \"let down by radiohead - YouTube\"\nPlaying: nothing",
     "questions": {
       "action": {
         "type": "choice",

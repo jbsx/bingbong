@@ -150,12 +150,13 @@ const INSTRUCTIONS =
 export function applianceState(text: string, view: ApplianceView, heard?: readonly NameHearing[], step?: StepContext): string {
   return [
     `The user spoke to the appliance, a voice-driven web browser: ${JSON.stringify(text)}`,
+    // The line still running, right after the words (#494, measured on the Overlap Jev cases): a split line's second half reads as its rest.
+    ...(view.running !== undefined ? runningLines(view.running) : []),
     ...heardLine(heard),
     ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(step !== undefined && step.done.length > 0 ? [`Done so far: ${step.done.join('; ')}`] : []),
     isRealPage(view.url) ? `Page open: ${view.url} — ${JSON.stringify(view.title)}` : 'Page open: none, the screen is blank',
     view.media !== undefined ? `Playing: ${JSON.stringify(view.media.title)} ${mediaStateOf(view.media.facts)}` : 'Playing: nothing',
-    ...(view.running !== undefined ? runningLines(view.running) : []),
   ].join('\n')
 }
 

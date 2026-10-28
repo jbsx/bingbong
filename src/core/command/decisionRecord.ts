@@ -33,7 +33,7 @@ export interface JevDetail {
   readonly inputTokens?: number
   /** Every host's try at the ask, in order, the answering one last (#477); absent in records before it, and from a model that knows one host. */
   readonly attempts?: readonly DecisionAttempt[]
-  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number; readonly passage?: number }
+  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly extent?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number; readonly passage?: number; readonly fate?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
     readonly action: Readonly<Record<string, number>>
@@ -51,6 +51,8 @@ export interface JevDetail {
     readonly steps?: Readonly<Record<string, number>>
     /** The passage Choice's (#401, ADR 0087), beside a Verdict over a page with text in view. */
     readonly passage?: Readonly<Record<string, number>>
+    /** The Fate's (#489), on an Appliance Card read while a line runs: a run says what the Fate read (#494). */
+    readonly fate?: Readonly<Record<string, number>>
   }
 }
 
@@ -147,6 +149,8 @@ export interface DecisionRecord {
   readonly whereAsk?: true
   /** The Appliance Card read the line as the Flag (#485): the Flag was kept, and this record is its ask's. */
   readonly flagged?: true
+  /** A joined line read as what the line it joined already fired (#494): that line's outcome stands, and nothing fired again. */
+  readonly stood?: true
   /** The Mark Ask's reading (#382, ADR 0084): the Where Ask read `none` over a Textless Ref, and this is the card asked again with the marked page, its own record beside the other two. */
   readonly markAsk?: true
   /**
@@ -390,6 +394,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
   const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
   const steps = 'steps' in answers ? answers.steps : undefined
   const passage = 'passage' in answers ? answers.passage : undefined
+  const fate = 'fate' in answers ? (answers as { readonly fate?: DecisionChoiceAnswer }).fate : undefined
   return {
     model,
     latencyMs,
@@ -405,6 +410,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
       ...(steps !== undefined ? { steps: steps.confidence } : {}),
       ...(passage !== undefined ? { passage: passage.confidence } : {}),
+      ...(fate !== undefined ? { fate: fate.confidence } : {}),
     },
     probabilities: {
       action: topProbabilities(answers.action.probabilities, KEPT_ACTIONS),
@@ -416,6 +422,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),
       ...(steps !== undefined ? { steps: topProbabilities(steps.probabilities, KEPT_PROBABILITIES) } : {}),
       ...(passage !== undefined ? { passage: topProbabilities(passage.probabilities, KEPT_PROBABILITIES) } : {}),
+      ...(fate !== undefined ? { fate: { ...fate.probabilities } } : {}),
     },
   }
 }
