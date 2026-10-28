@@ -14,7 +14,7 @@ import { nextLine, withNextLine } from '../../core/command/tryLine'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
-import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, sameCommand, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
+import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, sameCommand, verbNeedsPage, type Command, type CommandPage, type CommandVerb } from '../../core/command/command'
 import { dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -552,12 +552,17 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
 }
 
 /** An Errand under way (#467): its id, the submission it started at (a later one ends it), what aborts its Planner call, and the confirm or question waiting on the next line, if one is. */
+/** The verbs that open or start nothing (#504): an Errand step of these leaves the pane's media as it found it. */
+const LEAVES_MEDIA: ReadonlySet<CommandVerb> = new Set(['type', 'scroll_up', 'scroll_down', 'read', 'clear', 'stop', 'none', 'screenshot', 'help', 'timer', 'say', 'app', 'capture'])
+
 interface ErrandRun {
   readonly id: string
   readonly submission: number
   readonly source: CommandSource
   readonly controller: AbortController
   wait: ((line: string | null) => void) | null
+  /** A step of it fired that can open or start media (#504): what it opened (a play, any site) is its own, and ends with it. */
+  acted: boolean
 }
 
 /** A page collected at speech start, and when. */
@@ -1014,7 +1019,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function endRunning(submission: number, how: 'ends' | 'joins' | 'stop', by: string, paneTaken = false): void {
     const running = runningBefore(submission)
     // A line running through its Errand alone, its Planner still thinking (#504, ruling 4), is named by its words, as its acting is.
-    const acting = running?.acting ?? (running !== null && errand?.id === running.turnId ? `“${running.words}”` : undefined)
+    const heldByErrand = running !== null && errand?.id === running.turnId
+    const acting = running?.acting ?? (heldByErrand ? `“${running.words}”` : undefined)
+    // The Errand owns its media (#504, the gap ruling): a line it holds that ended takes what its steps opened, as a `play` does.
+    const errandMedia = heldByErrand && errand?.acted === true
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(acting) : undefined
@@ -1031,7 +1039,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (said !== undefined) stopSaid = { text: said, by }
     // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
     // loading under a line that keeps the pane, would land and play. The pane stops where it stands and pauses.
-    if (how !== 'joins' && running?.verb === 'play' && !paneTaken) {
+    if (how !== 'joins' && (running?.verb === 'play' || errandMedia) && !paneTaken) {
       stopLoading()
       void pauseAll()
     }
@@ -3544,6 +3552,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** One Errand step's action (#467), fired as any Command's is, its turn quiet, its Acting the Errand's on the Planner's why. */
   async function errandAct(run: ErrandRun, turnId: string, why: string, command: Command, card: ErrandCard, step: number): Promise<ActedStep> {
     quietTurns.set(turnId, null)
+    if (!LEAVES_MEDIA.has(command.verb)) run.acted = true
     try {
       const fired = await fire(turnId, why, run.source, command, card.page, 'local_match', null, at(), { react: () => {}, settled: () => summarize(turnId), stage: { word: ERRAND_WORD, object: why } }, { id: run.id, hop: step })
       const said = quietTurns.get(turnId) ?? undefined
@@ -3628,7 +3637,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'done', turnId: start.id, outcome: 'failed', at: at() })
       return
     }
-    const run: ErrandRun = { id: start.id, submission, source: start.source, controller: new AbortController(), wait: null }
+    const run: ErrandRun = { id: start.id, submission, source: start.source, controller: new AbortController(), wait: null, acted: false }
     if (errandLive()) {
       if (deps.applianceCard !== undefined) endRunning(submission, 'ends', start.id)
       else endErrand()

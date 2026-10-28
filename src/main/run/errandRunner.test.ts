@@ -47,7 +47,7 @@ function scriptedPlanner(...answers: PlannerAnswer[]) {
   return { planner, asked }
 }
 
-function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: SnapshotRef[]; card?: true } = {}) {
+function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: SnapshotRef[]; card?: true; player?: CommandRunnerDeps['player'] } = {}) {
   const browser = new FakeBrowser()
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: options.refs ?? SEARCH_REFS }
   const events: PipelineEvent[] = []
@@ -69,6 +69,7 @@ function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: Snapsho
     sleep: async () => {},
     ...(options.errand !== undefined ? { errand: options.errand } : {}),
     ...(options.card === true ? { applianceCard: { asks: 'sequential' } as const } : {}),
+    ...(options.player !== undefined ? { player: options.player } : {}),
   })
   return { browser, events, records, spoken, perf, jev, runner }
 }
@@ -315,6 +316,60 @@ describe('a timed-out reading over a running Command (#504): never a silent hand
     expect(spoken).toEqual(['Stopped “play radiohead”. Taking that as a new goal: no, the other one.', 'Here is the other one.'])
     await until(() => errands(records).length === 2)
     expect(errands(records).find((record) => record.turnId === 'line-1')?.outcome).toBe('superseded')
+  })
+
+  /** `play radiohead` handed to its Errand: its first step is `step`, its next it thinks on until it is ended. */
+  async function errandStepped(step: PlannerAnswer) {
+    const asked: string[] = []
+    const planner: PlannerModel = {
+      model: 'glm-5.3-flash',
+      thinking: false,
+      plan: (request) => {
+        asked.push(request.goalLine)
+        if (request.goalLine !== 'play radiohead') return Promise.resolve({ status: 'answered', answer: { next: 'done', sentence: 'It is 14 degrees.' }, model: 'glm-5.3-flash', thinking: false, latencyMs: 900, waitedMs: 0 })
+        if (asked.filter((goal) => goal === 'play radiohead').length === 1) return Promise.resolve({ status: 'answered', answer: step, model: 'glm-5.3-flash', thinking: false, latencyMs: 900, waitedMs: 0 })
+        return new Promise((resolve) => request.signal?.addEventListener('abort', () => resolve({ status: 'unavailable', reason: 'cancelled', message: 'aborted', model: 'glm-5.3-flash', latencyMs: 0, waitedMs: 0 } as never)))
+      },
+    }
+    const counts = { paused: 0 }
+    const player = { perform: async () => ({ ok: true }), pauseAll: async () => ((counts.paused += 1), true), queue: () => [], picked: () => null } as never
+    const made = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 }, card: true, player })
+    made.jev.ask = async () => ({ ...TIMED_OUT, model: made.jev.model }) as never
+    void made.runner.run('play radiohead', { turnId: 'line-1' })
+    await until(() => asked.length === 2)
+    return { ...made, counts }
+  }
+
+  it('a step that opens nothing leaves the pane\'s media alone when its line ends: a scroll pauses no earlier song', async () => {
+    const { runner, browser, counts } = await errandStepped({ next: 'act', action: { kind: 'scroll', direction: 'down' }, class: 'stays', why: 'look further down' })
+    const stopsBefore = browser.stops
+    await runner.run('open the weather', { turnId: 'line-2' })
+    expect(browser.stops).toBe(stopsBefore)
+    expect(counts.paused).toBe(0)
+  })
+
+  it('a line that ends the play takes what its Errand opened: the load stops and the media pauses, as a `play` line\'s does (the gap ruling)', async () => {
+    // Its first step opens a watch page (any site).
+    const { runner, browser, counts } = await errandStepped({ next: 'act', action: { kind: 'navigate', url: 'https://video.example/watch?v=1' }, class: 'stays', why: 'open the song' })
+    expect(browser.navigations).toEqual(['https://video.example/watch?v=1'])
+    const stopsBefore = browser.stops
+    await runner.run('open the weather', { turnId: 'line-2' })
+    expect(browser.stops).toBeGreaterThan(stopsBefore)
+    expect(counts.paused).toBe(1)
+  })
+
+  it('a line that ends the play before its Errand opened anything stops nothing of the pane\'s', async () => {
+    let paused = 0
+    const player = { perform: async () => ({ ok: true }), pauseAll: async () => ((paused += 1), true), queue: () => [], picked: () => null } as never
+    const { planner, asked } = plannerHolding('Done.')
+    const { runner, browser, jev } = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 }, card: true, player })
+    jev.ask = async () => ({ ...TIMED_OUT, model: jev.model }) as never
+    void runner.run('play radiohead', { turnId: 'line-1' })
+    await until(() => asked.length === 1)
+    const stopsBefore = browser.stops
+    await runner.run('open the weather', { turnId: 'line-2' })
+    expect(browser.stops).toBe(stopsBefore)
+    expect(paused).toBe(0)
   })
 
   /** `open bbc.com` held mid-navigation, a Task of its own: the line running. */
