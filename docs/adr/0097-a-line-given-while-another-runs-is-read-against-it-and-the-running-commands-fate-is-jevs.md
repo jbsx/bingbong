@@ -2,6 +2,13 @@
 
 ## Status
 
+Amended 2026-10-28 by #494: the running Command's lines sit right after
+the words, not after the state's own lines (measured on the Overlap Jev
+cases, the row-8 Fate at the runner's 0.7); and a joined line is the line
+it joins, on its Task, reaching one that already fired and ended — a joined
+reading of what that line fired, or of nothing, stands on it, any other is
+its next hop (CONTEXT.md, Fate). The numbers are on #494.
+
 Accepted 2026-10-28. Landed on the orchestrator's word for the owner,
 2026-10-28, with the run of record: full overlap:gate 17/25 through at
 4ec5948b (3/24 at 919f058f), full jev:gate Mammoth 379/430, Overlap 9/9.
