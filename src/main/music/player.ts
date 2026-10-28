@@ -508,6 +508,16 @@ export function createPlayer(deps: PlayerDeps): Player {
   let pausedAt = -Infinity
 
   /**
+   * A pause the person asked for, `pause` or `stop` alike: it ends the consent watch (#489, #496), since a wall cleared
+   * after it lets the page start the song it was told to stop. A clear already out when it came holds the page paused.
+   */
+  function pausedByPerson(): void {
+    if (consentWatch !== null) consentWatch.paused = true
+    consentWatch = null
+    pausedAt = now()
+  }
+
+  /**
    * A consent wall the page signalled as it drew (#496), cleared at once by
    * the browser's own clear, by kind: over the song the Player opened while
    * its watch runs, or over media playing on any page — never for the site,
@@ -1300,7 +1310,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         return playSong(back.song, current, `Back to ${quoted(back.song.title)}.`, () => previous(state).queue)
       }
       case 'pause':
-        pausedAt = now()
+        pausedByPerson()
         return onElement({ op: 'pause' }, () => STOPPED_ANSWERS.paused, (queue) => {
           ownPause = true
           return pause(queue)
@@ -1354,10 +1364,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async pauseAll() {
-      // A pause ends the consent watch (#489): a wall cleared after it lets the page start the song it was told to stop.
-      if (consentWatch !== null) consentWatch.paused = true
-      consentWatch = null
-      pausedAt = now()
+      pausedByPerson()
       // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
       // The stream on the audio road pauses beside the pane's media (#502): its element is the song's own.
       const streamPaused = road === 'audio' ? evaluate<PausedAll>(PAUSE_ALL_SCRIPT) : Promise.resolve(null)

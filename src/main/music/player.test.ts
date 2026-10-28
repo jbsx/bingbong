@@ -1414,6 +1414,16 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     expect(browser.evaluations.filter((expression) => expression.includes('/* WALL_HELD_PLAY */'))).toEqual([])
   })
 
+  it('a `pause` ends the watch as `stop` does: a wall the page tells after it is left to the next collect, and the song stays paused (#489, #496)', async () => {
+    const { browser, perform, told } = sheeted()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'pause' })
+    browser.drawConsent({ playing: false, showing: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([undefined])
+    expect(told).toEqual([expect.objectContaining({ road: 'nothing-playing', at: null })])
+  })
+
   it('a wall signalled over media the Player has just paused is not cleared: a clear lets a page start what its wall held', async () => {
     const { browser, player, told } = sheeted()
     await browser.navigate('https://news.example/clip')
