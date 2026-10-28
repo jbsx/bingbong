@@ -1644,12 +1644,21 @@ describe('voice session — speech over the app’s own voice, inside a listen (
     expect(harness.commands).toEqual(['move on'])
   })
 
-  it('duck: a stop word the app itself just said is its echo, not an abort; it goes to the runner and the listen stays open', async () => {
+  it('duck: a stop word the app itself just said is its echo, not an abort; it fires nothing and the listen stays open', async () => {
     const { harness, speaking } = await overRead(['Cancel'], 'duck', { runState: { value: 'running' } })
     speaking.text = 'To avoid this, cancel and sign in to YouTube on your computer.'
     await harness.speakUtterance()
     expect(harness.aborts).toEqual([])
-    expect(harness.submitted).toMatchObject([{ text: 'Cancel', overSpeech: true }])
+    expect(harness.submitted).toEqual([])
+    expect(harness.tts.ducks).toEqual([true, false])
+    expect(harness.session.getState()).toMatchObject({ listening: true })
+  })
+
+  it('duck: a short echo of a title the app is reading fires nothing (narrow20: "Nirvana" read as play)', async () => {
+    const { harness, speaking } = await overRead(['Nirvana'], 'duck')
+    speaking.text = "Classic Rock Songs 70s 80s 90s Full Album Nirvana, Guns N' Roses, AC/DC, Bon Jovi"
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual([])
     expect(harness.session.getState()).toMatchObject({ listening: true })
   })
 

@@ -32,10 +32,13 @@ export function resolveOverSpeech(env: Record<string, string | undefined>): Over
 export const OWN_VOICE_SHARE = 0.75
 
 /**
- * Fewer letters than this are never the app's own: a word or two is found
- * somewhere in any long read by chance ("stop", "back", "play" all are in a
- * YouTube page's), and a short line of the person's is the one that must
- * not be lost. A short echo goes to the runner, which reads it as no Command.
+ * Fewer letters than this are never the app's own by a near stretch: a word
+ * or two is near something in any long read by chance, and a short line of
+ * the person's is the one that must not be lost. A short capture is the
+ * app's own only when its words are found whole in what the app said (the
+ * orchestrator's ruling, #490): the runner read short echoes of titles and
+ * of "Stopped." as Commands (narrow18–20 at c7e80bf0), and a person's
+ * "stop" or "back" is still heard when the app did not just say it.
  */
 export const OWN_VOICE_LETTERS = 10
 
@@ -75,6 +78,11 @@ function sayNumber(digits: string): string {
  * are words, and words glued on the page ("VERSIONDanny", "34m") part.
  */
 export function soundLetters(text: string): string {
+  return soundWords(text).join('')
+}
+
+/** Text as it sounds, word by word: `soundLetters` with the words kept apart. */
+function soundWords(text: string): string[] {
   return text
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/([A-Za-z])(\d)|(\d)([A-Za-z])/g, (_, a, b, c, d) => (a !== undefined ? `${a} ${b}` : `${c} ${d}`))
@@ -83,9 +91,11 @@ export function soundLetters(text: string): string {
     .replace(/\+/g, ' plus ')
     .replace(/&/g, ' and ')
     .replace(/%/g, ' percent ')
+    .replace(/\//g, ' slash ')
     .replace(/\d+/g, (digits) => ` ${sayNumber(digits)} `)
     .toLowerCase()
-    .replace(/[^a-z]/g, '')
+    .split(/[^a-z]+/)
+    .filter((word) => word !== '')
 }
 
 /**
@@ -151,7 +161,21 @@ export function ownShare(transcript: string, said: string | readonly string[]): 
   return Math.max(0, 1 - fewest / heard.length)
 }
 
-/** Whether a transcript taken while the app spoke is the app's own voice: it sounds like a stretch of what is being said. */
+/** Whether the transcript's sound is a run of whole words of what was said, the sentences in the order said: "after sex" in "Cigarettes After Sex", never "rose" in "Roses". */
+function foundWhole(transcript: string, said: string | readonly string[]): boolean {
+  const heard = soundLetters(transcript)
+  if (heard === '') return false
+  const words = (typeof said === 'string' ? [said] : said).flatMap(soundWords)
+  for (let i = 0; i < words.length; i++) {
+    let run = ''
+    for (let j = i; j < words.length && run.length < heard.length; j++) run += words[j]
+    if (run === heard) return true
+  }
+  return false
+}
+
+/** Whether a transcript taken while the app spoke is the app's own voice: it sounds like a stretch of what is being said, or, short, its words are found whole in it. */
 export function isOwnVoice(transcript: string, said: string | readonly string[]): boolean {
-  return soundLetters(transcript).length >= OWN_VOICE_LETTERS && ownShare(transcript, said) >= OWN_VOICE_SHARE
+  if (soundLetters(transcript).length < OWN_VOICE_LETTERS) return foundWhole(transcript, said)
+  return ownShare(transcript, said) >= OWN_VOICE_SHARE
 }

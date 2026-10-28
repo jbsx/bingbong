@@ -16,7 +16,6 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(isOwnVoice('Move on.', READ)).toBe(false)
     expect(isOwnVoice('stop', READ)).toBe(false)
     expect(isOwnVoice('play let down', READ)).toBe(false)
-    expect(isOwnVoice('page.', 'There’s no page to go back to. Try “resume”.')).toBe(false)
     expect(isOwnVoice('click on the first video', READ)).toBe(false)
   })
 
@@ -51,4 +50,22 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(isOwnVoice('click on the first video', [read, 'Stopped.'])).toBe(false)
   })
 
+  it('a short echo is the app’s own when its words are found in what the app said; a short line found nowhere is the person’s (the orchestrator’s ruling, #490)', () => {
+    const read = "Cigarettes After Sex — late night playlist. Classic Rock Songs 70s 80s 90s Full Album Nirvana, Guns N' Roses, AC/DC, Bon Jovi"
+    // The gate's four short echoes read as Commands at c7e80bf0 (narrow18–20).
+    expect(isOwnVoice('After sex', read)).toBe(true)
+    expect(isOwnVoice('Nirvana', read)).toBe(true)
+    expect(isOwnVoice('A C Slash D C', read)).toBe(true)
+    expect(isOwnVoice('Stopped.', [read, 'Stopped.'])).toBe(true)
+    // The person's stop and back are heard: the app did not say them.
+    expect(isOwnVoice('stop', read)).toBe(false)
+    expect(isOwnVoice('back', read)).toBe(false)
+    expect(isOwnVoice('Move on.', read)).toBe(false)
+    // Found means the words themselves, whole: a word inside a word, or a near one, is not found.
+    expect(isOwnVoice('Roses', read)).toBe(true)
+    expect(isOwnVoice('Rose', read)).toBe(false)
+    expect(isOwnVoice('Nirvanas', read)).toBe(false)
+    expect(isOwnVoice('page.', 'There’s no page to go back to. Try “resume”.')).toBe(true)
+    expect(isOwnVoice('stop', '')).toBe(false)
+  })
 })
