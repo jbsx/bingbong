@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { COLLECT_PAGE_SCRIPT, CONSENT_HELD_MARK } from '../src/main/browser/collectPageScript.ts'
 import { HELD_RESUME_SCRIPT, type HeldResumed } from '../src/main/music/youtubeScripts.ts'
-import { createCdpBrowserController, TOLD_WALL_CLEAR } from '../src/main/browser/createCdpBrowserController.ts'
+import { createCdpBrowserController } from '../src/main/browser/createCdpBrowserController.ts'
 import type { ConsentCleared, ConsentDrawn } from '../src/core/ports/browser.ts'
 import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
 
 // The page's consent watch (#496): a wall drawn over media already playing,
 // on a plain page that is not YouTube, is told by the page as it draws (a
 // MutationObserver reporting through the browser's binding) and cleared by
-// the browser's own clear (ADR 0061's classifier and click), with no poll:
-// no look and no collect runs before the draw. And the look's guard holds
+// the browser's own clear on the buttons the page told (F1 arm b), with no
+// poll and no collect: no look and no collect runs before the draw, and the
+// clear asks and clicks with none. A wall told and not clicked is collected
+// as before, and the look's guard holds there
 // on the page's showing: a yes whose collect clears nothing is not collected
 // again until the page changes (the wall goes and comes, a new showing).
 //
@@ -18,9 +20,9 @@ import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './head
 
 /**
  * The most from the draw to the wall's click: the watch's quiet
- * (CONSENT_CHECK_MS, 250 ms), one collect of a small page and the click.
- * Measured here at 265–268 ms over 6 runs (headless, 2026-10-28); the bound
- * leaves room for a loaded one.
+ * (CONSENT_CHECK_MS, 250 ms) and the click on the told button. Measured
+ * here at 254–258 ms over 6 runs (headless, 2026-10-28; 265–268 ms with
+ * the collect before it, arm a); the bound leaves room for a loaded one.
  */
 const DRAW_TO_CLICK_MS = 1_500
 
@@ -119,7 +121,7 @@ describe.skipIf(!canDriveChrome)("the page tells of a consent wall as it draws o
   }
 
   it(`a pinned sheet drawn 3 s after a playing video starts is told and clicked within ${DRAW_TO_CLICK_MS} ms of the draw, with no look and no collect before it`, async () => {
-    const { heard, cleared, collects, looks, stop } = await watched('/late-wall')
+    const { heard, cleared, collects, stop } = await watched('/late-wall')
     try {
       // The video plays and no wall is up yet: nothing is looked at or collected while it plays.
       await until(() => fixtures.chrome.evaluate<boolean>(`!document.getElementById('v').paused && document.getElementById('v').currentTime > 1`), 'the video to play')
@@ -135,11 +137,10 @@ describe.skipIf(!canDriveChrome)("the page tells of a consent wall as it draws o
       // The tell carries the wall itself (F1 arm b): its kind, its text, its buttons in the viewport.
       expect(heard).toEqual([{ ageMs: expect.any(Number), playing: true, showing: 1, wall: { role: 'pinned', text: 'We use cookies to improve your experience. Reject allAccept all', buttons: ['Reject all', 'Accept all'] } }])
       await until(() => cleared.length > 0, 'the clear to return')
-      expect(cleared[0]?.line).toMatch(TOLD_WALL_CLEAR === 'told' ? /^dismissed consent dialog: clicked "Reject all"/ : /^dismissed consent dialog: clicked \[\d+\] "Reject all"/)
+      expect(cleared[0]?.line).toMatch(/^dismissed consent dialog: clicked "Reject all"/)
       expect(cleared[0]?.gone).toBe(true)
-      // Arm b clears on the told buttons with no collect; arm a with one, the clear's own. The look before the clear is never run.
-      expect(collects()).toBe(TOLD_WALL_CLEAR === 'told' ? 0 : 1)
-      expect(looks()).toBe(TOLD_WALL_CLEAR === 'told' ? looks() : 0)
+      // Cleared on the told buttons: no collect, and the look runs only after the click, to see the wall gone.
+      expect(collects()).toBe(0)
       expect(await fixtures.chrome.evaluate<boolean>(`document.getElementById('sheet') === null && !document.getElementById('v').paused`)).toBe(true)
       // The video the wall drew over playing carries the watch's mark: the media the Player plays once after the clear, and only it.
       expect(await fixtures.chrome.evaluate<number>(`document.getElementById('v')[${JSON.stringify(CONSENT_HELD_MARK)}]`)).toBe(1)
@@ -160,7 +161,7 @@ describe.skipIf(!canDriveChrome)("the page tells of a consent wall as it draws o
       expect(heard[0]?.wall).toMatchObject({ role: 'dialog', buttons: ['Reject all', 'Accept all'] })
       expect(cleared[0]?.line).toMatch(/"Reject all"/)
       expect(cleared[0]?.gone).toBe(true)
-      expect(collects()).toBe(TOLD_WALL_CLEAR === 'told' ? 0 : 1)
+      expect(collects()).toBe(0)
     } finally {
       stop()
     }

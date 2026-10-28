@@ -284,15 +284,6 @@ const STILL_POLL_MS = 100
 export const DISMISSAL_GONE_MS = 1_500
 
 /**
- * How the browser's clear meets a wall the page told with its own buttons
- * (#496, F1): `told` asks the decline on the told labels and clicks the
- * chosen button by its handle, with no collect (arm b); `collect` collects
- * the page first, as every other clear does (arm a). Under measure on the
- * overlap gate; the losing arm leaves the tree.
- */
-export const TOLD_WALL_CLEAR: 'told' | 'collect' = 'told'
-
-/**
  * The most a click on a control of the open dialog waits for its sheet to
  * leave the page or show something else (#417): the readiness wait ends on
  * the click's first mutation, and w3schools' FastCMP collapsed its sheet
@@ -1687,7 +1678,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // its first collect clearing nothing a beat after it mounted, then drawn over the song with the same showing).
       const at = url === null ? null : shown === undefined ? url : `${url}#${shown}${options?.playing === true ? ' playing' : ''}`
       if (at !== null && at === consentUnconfirmedAt) return null
-      if (TOLD_WALL_CLEAR === 'told' && shown !== undefined && options?.wall !== undefined) {
+      // A wall the page told with its buttons is cleared on them, with no collect (F1 arm b, measured on the overlap gate, #496).
+      if (shown !== undefined && options?.wall !== undefined) {
         const told = await clearToldWall(shown, options.wall)
         if (told !== null) {
           consentUnconfirmedAt = null
