@@ -71,6 +71,8 @@ export function createAuthPopupDirector(
       return {
         // Navigation verbs and observable state stay pane-owned.
         navigate: (url) => base.navigate(url),
+        // The Player's landing reads nothing (#493): offered only where the pane makes one, so a caller without it navigates in full.
+        ...(base.land !== undefined ? { land: (url: string) => base.land!(url) } : {}),
         back: () => base.back(),
         forward: () => base.forward(),
         reload: () => base.reload(),

@@ -18,6 +18,7 @@ function fakeController(name: string): DrivenController & { calls: string[]; scr
     calls,
     screenshotOptions,
     navigate: record('navigate', `navigated by ${name}`),
+    land: record('land', undefined),
     readPage: record('readPage', `page of ${name}`),
     click: record('click', `clicked by ${name}`),
     type: record('type', `typed by ${name}`),
@@ -126,6 +127,17 @@ describe('createAuthPopupDirector', () => {
     await openPopup('https://accounts.google.com/signin')
     expect(await routed.clearConsent!()).toBe('dismissed consent dialog on pane')
     expect(popup.calls).not.toContain('clearConsent')
+  })
+
+  it("keeps the Player's landing on the pane, popup or not, and offers none where the pane has none (#493)", async () => {
+    const { pane, popup, director, openPopup } = harness()
+    const routed = director.route(pane)
+    await openPopup('https://accounts.google.com/signin')
+    await routed.land!('https://www.youtube.com/watch?v=abc')
+    expect(pane.calls).toContain('land')
+    expect(popup.calls).not.toContain('land')
+    const landless = { ...pane, land: undefined }
+    expect(director.route(landless).land).toBeUndefined()
   })
 
   it('routes page actions to the popup while one is open, marking readPage', async () => {
