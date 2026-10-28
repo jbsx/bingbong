@@ -926,17 +926,20 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Peek Card**:
-The card that reports a Command while the Feed Panel is closed (ADR 0021,
-0026, 0029): the words while it runs, then its Answer, its dot in the
-failure colour when the Command failed (#329). It goes 15 s after the
-Answer's sentence is spoken, a bar draining across that time; a tap ends
-it sooner, and so do the next Command and opening the panel (owner,
-2026-10-26, #470: "i dont want the card to always be on the screen and if
-i want to see the history i will use the activity panel"). The Feed Panel
-is the history; the card is not. It sits bottom-centre over the pane.
-Over the Idle Screen the Turn Card reports the line instead (#474), on the
-same 15 s. It is never activity.
-_Avoid_: toast, notification, result pop-up
+The report of one line's whole journey while the Feed Panel is closed
+(ADR 0021, 0026, 0029), in its Ledger Strip form (#475; owner,
+2026-10-26: "i like d the most"): a band the pane's width across its
+bottom, 340 px, up from the wake word or a typed line until 15 s after
+the line's sentence is spoken (#470). It is the Turn Card's fold (#474)
+in another frame: the same rail of six stations, the stage row at status
+size with its seconds or the waveform, two reserved lines of the words it
+is on, and five rows of history beside them, nothing moving between
+states. A tap opens the panel; the next line restarts it; opening the
+panel retires an ended line, while a live one survives and the band
+comes back if the panel is closed mid-run. The Feed Panel is the
+history; the band is not. Over the Idle Screen the Turn Card reports the
+line instead. It is never activity.
+_Avoid_: toast, notification, result pop-up, ledger
 
 **Turn Card**:
 The Idle Screen's report of one line's whole journey (#474; owner,
