@@ -65,9 +65,14 @@ page collected while the owner is still speaking.
 4. **A Misfire is recovered by the next Command, and that recovery is
    Instant.** Asking first is ruled out (CONTEXT.md, Misfire); cheap
    recovery is what makes firing at once safe.
-5. **Every line is answered.** 83 of 181 spoken lines read `none`; the
-   owner cannot tell noise from a swallowed command. A `none` is shown
-   and said (ui.md, Receipt and Narrated wait).
+5. **Every line is answered.** 83 of 227 spoken lines read `none`; the
+   owner cannot tell noise from a swallowed command. A `none` is shown;
+   it is said ("I didn't catch that, say it again.") when it was a line
+   to the app: spoken at the mic (Speech Level ≥ −26 dBFS, measured on
+   the kiosk's dumps of 25–28 October) and read `none` under the choice
+   bar on the reading the line ended on. A sure `none`, far speech, a
+   line over the app's voice and a typed line are shown greyed and never
+   said (ui.md, Receipt and Narrated wait). #500.
 6. **Same words, same wait.** The spread (p99 ÷ p50 by verb) is watched
    beside p95: the Local Match ran 720 ms p50 and 14.7 s p95, and the
    spread is what feels flaky.

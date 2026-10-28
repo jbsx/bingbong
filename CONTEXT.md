@@ -61,6 +61,15 @@ finished at a short pause, the Pause Cap, the hard cap, or disarm. The seam
 where half-commands are born.
 _Avoid_: silence detection
 
+**Speech Level**:
+An Utterance's loudness, the mean RMS of its loudest fifth of 32 ms
+frames, in dBFS, carried on the `stt` span. Speech at the mic reads above
+−26; speech across the room (the TV, a remark) below. A line read `none`
+is said back ("I didn't catch that, say it again.") only when Jev was
+unsure of the `none` and the Speech Level reached the floor; otherwise it
+is a remark, shown greyed and unsaid (#500).
+_Avoid_: volume, loudness score
+
 **Turn Check**:
 At a short pause (~200 ms), a local end-of-turn model (Smart Turn) reads
 the Utterance's audio so far: finished fires the Endpoint, unfinished keeps
