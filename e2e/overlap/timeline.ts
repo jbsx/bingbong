@@ -43,21 +43,29 @@ const playingIn = (sample: PaneSample | undefined): boolean => sample?.media.som
 export const SAMPLE_MS = 400
 /** A run has ended when nothing has happened for this long and no Command is running. */
 export const QUIET_MS = 2_500
+/** A pane sample this old, or a gap this long between two, is not a read of what a person saw: two reads and a second. */
+const STALE_SAMPLE_MS = 2 * SAMPLE_MS + 1_000
 
 /**
  * What a person sees has held still at `now`: the pane read lately, the
  * same page and the same media playing for the whole of QUIET_MS. A read
  * sent at `readingSince` and not yet returned holds it (#496 F3): a page
  * that answers no evaluate as a wall draws is never read as still on the
- * sample taken before it stalled.
+ * sample taken before it stalled, and a stretch with a stall inside it is
+ * not read as held on the samples after the stall.
  */
 export function paneHeldStill(pane: readonly PaneSample[], now: number, readingSince: number | null): boolean {
   if (readingSince !== null) return false
   const latest = pane[pane.length - 1]
-  if (latest === undefined || now - latest.t >= 2 * SAMPLE_MS + 1_000) return false
+  if (latest === undefined || now - latest.t >= STALE_SAMPLE_MS) return false
   const playingSet = (sample: PaneSample) => `${sample.url} ${sample.media.map((media) => media.playing).join(',')}`
-  const stretch = pane.filter((sample) => sample.t >= now - QUIET_MS)
-  return stretch.length >= 2 && stretch.every((sample) => playingSet(sample) === playingSet(latest))
+  const first = pane.findIndex((sample) => sample.t >= now - QUIET_MS)
+  const stretch = pane.slice(first)
+  if (stretch.length < 2 || !stretch.every((sample) => playingSet(sample) === playingSet(latest))) return false
+  // A stall inside the stretch hides when its change came (#496): the 2-correct-the-other-one run at ac0483e1 answered no
+  // read for 2.35 s as YouTube's sheet drew and paused the song, and the two samples after it alone read as 2.5 s held still.
+  const covered = pane.slice(Math.max(0, first - 1))
+  return covered.every((sample, i) => i === 0 || sample.t - covered[i - 1]!.t < STALE_SAMPLE_MS)
 }
 
 export function spansOf(records: RunRecords, lineAt: number): Spans {

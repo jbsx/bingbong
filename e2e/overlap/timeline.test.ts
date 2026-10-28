@@ -139,6 +139,15 @@ describe('what a person sees has held still (#496 F3)', () => {
     expect(paneHeldStill([...playing.slice(0, 6), pane(A + 2400, watch, false)], A + 2500, null)).toBe(false)
   })
 
+  it('a stall inside the stretch is not still: the change it hides may be newer than the quiet (#496)', () => {
+    // The kept run: playing to 4,800 ms, no read for 2,350 ms as the sheet drew, then paused at 7,150 and 7,890.
+    const stalled = [...[3_200, 3_600, 4_000, 4_400, 4_800].map((ms) => pane(A + ms, watch, true)), pane(A + 7_150, watch), pane(A + 7_890, watch)]
+    expect(paneHeldStill(stalled, A + 7_900, null)).toBe(false)
+    // Held once the stretch starts past the stall, the pause seen for the whole quiet.
+    const after = [...stalled, ...[8_300, 8_700, 9_100, 9_500].map((ms) => pane(A + ms, watch))]
+    expect(paneHeldStill(after, A + 9_660, null)).toBe(true)
+  })
+
   it('a sample older than two reads and a second is stale', () => {
     expect(paneHeldStill(playing.slice(0, 4), A + 3100, null)).toBe(false)
   })
