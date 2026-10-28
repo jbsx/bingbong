@@ -35,7 +35,7 @@ The owner (2026-10-28 10:00): "the current app as is feels very unreliable… co
 
 - **#500**: a line read `none` is shown muted and never said; Reliability rule 5 says said. 83 of 181 kiosk lines read `none`, so what is said and how short is the owner's call before it is built.
 - **#490**: speech over the app's voice, off by default; next measure is the kiosk's `speaking-*.wav` dumps after a day of spoken lines (none since the 10:01 push at the time of writing).
-- **Kiosk**: runs **0.1.4-local.202610282123 = main d7dfc1ba** (pushed ~21:25 on the owner's word; the 20:43 push at 5f3a440b is superseded): #495–#501, #504, #505, the audio-only default on, #502's audio road, every drafted ADR/CONTEXT wording landed. Its `.env` has the Baseten block commented out (live model = Jev) and `BINGBONG_AUDIO_DUMP=1`; `BINGBONG_DECISION_IMAGES=false` and `BINGBONG_DECISION_TIMEOUT_MS=3000` are Mammoth-era leftovers the owner has not ruled on. 
+- **Kiosk**: runs **0.1.4-local.202610282048 = main d7dfc1ba** (pushed 20:49 on the owner's word; the 20:43 push at 5f3a440b is superseded): #495–#501, #504, #505, the audio-only default on, #502's audio road, every drafted ADR/CONTEXT wording landed. Its `.env` has the Baseten block commented out (live model = Jev) and `BINGBONG_AUDIO_DUMP=1`; `BINGBONG_DECISION_IMAGES=false` and `BINGBONG_DECISION_TIMEOUT_MS=3000` are Mammoth-era leftovers the owner has not ruled on. 
 - #469, #439, #452, #415 unchanged.
 
 ## Key decisions (each a note on its issue)
