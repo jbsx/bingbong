@@ -40,13 +40,14 @@ export const OVER_LEVEL_GAP_FRAMES = 6
 export const OVER_LEVEL_END_FRAMES = 12
 
 /**
- * Frames kept ahead of a stretch when it is cut out: one, 32 ms. A person's
- * onset is sharp over the ducked echo, and more lead hands Parakeet the
- * echo's last syllable: the gate's three live "Move on." cuts read "Move
- * on." at a lead of 0–1 frames, and "But move on.", "Wait, move on.",
- * "Point.", "Two points." and "Take a tune." at 2–10.
+ * Frames kept ahead of a stretch when it is cut out: none. A person's onset
+ * is sharp over the ducked echo, and any lead hands Parakeet the echo's last
+ * syllable: the gate's three live "Move on." cuts read "Move on." at a lead
+ * of 0–1 frames, and "But move on.", "Wait, move on.", "Point.", "Two
+ * points." and "Take a tune." at 2–10; a live run at 1 read "To move on."
+ * (Fate 0.59, under the runner's 0.7), so the lead went to 0 (#490).
  */
-export const OVER_LEVEL_LEAD_FRAMES = 1
+export const OVER_LEVEL_LEAD_FRAMES = 0
 
 /**
  * Frames kept after a stretch's last loud frame: about 260 ms, the line's
