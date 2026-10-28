@@ -289,10 +289,12 @@ describe('the pick a correction acts on (#498)', () => {
     const text = 'play yellow, no, by coldplay'
     const view: ApplianceView = { ...OPENING, joins: { words: 'play yellow', slot: 'yellow' } }
     const slot = applianceQuestions(text, view).slot.options
-    expect(slot).toMatchObject({ 's1-1+3-3': 'yellow by', 's1-1+3-4': 'yellow by coldplay', 's1-1+4-4': 'yellow coldplay' })
-    // The spans that are one contiguous run are offered once, as before.
+    expect(slot).toMatchObject({ 's1-1_3-3': 'yellow by', 's1-1_3-4': 'yellow by coldplay', 's1-1_4-4': 'yellow coldplay' })
+    // No span runs across the join (arm c): the verbatim join is offered only as the line's Slot beside the correction's words.
+    expect(Object.keys(slot).filter((label) => /^s[01]-[2-4]$/.test(label))).toEqual([])
     expect(Object.values(slot).filter((words) => words === 'yellow no by coldplay')).toHaveLength(1)
-    const read = readApplianceAnswers(answers('play', { slot: 's1-1+3-4' }), text, view)
+    expect(applianceQuestions(text, view).slot.instructions).toContain("The words are the user's line and then their correction of it")
+    const read = readApplianceAnswers(answers('play', { slot: 's1-1_3-4' }), text, view)
     expect(read).toMatchObject({ kind: 'command', command: { verb: 'play', slot: 'yellow by coldplay' } })
   })
 

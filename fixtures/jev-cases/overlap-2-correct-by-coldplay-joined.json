@@ -11,7 +11,7 @@
     },
     {
       "question": "slot",
-      "label": "s1-1+3-4"
+      "label": "s1-1_3-4"
     }
   ],
   "ask": {
@@ -79,27 +79,24 @@
       },
       "slot": {
         "type": "choice",
-        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none. The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects.",
         "options": {
           "none": "the command carries no words of its own",
           "s0-0": "play",
           "s0-1": "play yellow",
-          "s0-2": "play yellow no",
-          "s0-3": "play yellow no by",
-          "s0-4": "play yellow no by coldplay",
           "s1-1": "yellow",
-          "s1-2": "yellow no",
-          "s1-3": "yellow no by",
-          "s1-4": "yellow no by coldplay",
           "s2-2": "no",
           "s2-3": "no by",
           "s2-4": "no by coldplay",
           "s3-3": "by",
           "s3-4": "by coldplay",
           "s4-4": "coldplay",
-          "s1-1+3-3": "yellow by",
-          "s1-1+3-4": "yellow by coldplay",
-          "s1-1+4-4": "yellow coldplay"
+          "s1-1_2-2": "yellow no",
+          "s1-1_2-3": "yellow no by",
+          "s1-1_2-4": "yellow no by coldplay",
+          "s1-1_3-3": "yellow by",
+          "s1-1_3-4": "yellow by coldplay",
+          "s1-1_4-4": "yellow coldplay"
         }
       },
       "amount": {

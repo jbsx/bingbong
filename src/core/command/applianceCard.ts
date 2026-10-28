@@ -16,6 +16,7 @@ import {
   applianceVerbLine,
   heardLine,
   isApplianceVerb,
+  crossesJoin,
   joinedSlotOptions,
   mediaActionOf,
   offeredApplianceVerbs,
@@ -156,17 +157,15 @@ const NONE_LINE = 'not a command: a remark, a question to no one, noise'
 const INSTRUCTIONS =
   "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command."
 
-/** Which shape of the pick on the card is measured (#498, F1): A, a pick line and the corrections; C, A with the `correct` line naming the pick. */
-const PICK_ARM: 'A' | 'C' = 'A'
-
-/** The pick on the state while it is not playing (#498): what a correction said while it opens, or after its line was cut off, corrects. */
+/**
+ * The pick on the state while it is not the Queue's song (#498): what a
+ * correction said while it opens, or after its line was cut off, corrects.
+ * Measured (F1, Mammoth, the five joined cases and the Overlap cases): arm
+ * A, this line and the corrections offered, 18/19; arm C, A with the
+ * `correct` line naming the pick, 18/19, a tie, which goes to A.
+ */
 export function pickLines(picked: PickedSong | undefined): string[] {
   return picked === undefined || picked.playing ? [] : [`Music picked: ${JSON.stringify(picked.title)}, the result of a search for ${JSON.stringify(picked.words)}`]
-}
-
-/** The `correct` line (#498, F1 arm C): naming the pick it corrects. */
-function correctLine(picked: PickedSong | undefined): string {
-  return PICK_ARM === 'C' && picked !== undefined ? `music: the song picked, ${JSON.stringify(picked.title)}, is the wrong one: play the next result of its search instead` : applianceVerbLine('correct')
 }
 
 /** The Music verbs, in the order the card offers them: the corrections go after the last of them a card carries. */
@@ -184,13 +183,11 @@ export function withPicked<Q extends { readonly action?: unknown; readonly slot?
   const slot = questions.slot as DecisionChoiceQuestion | undefined
   const entries = Object.entries(action?.options ?? {})
   const after = entries.reduce((last, [label], index) => (MUSIC_BEFORE_CORRECTIONS.includes(label) ? index : last), -1)
-  const corrections: [string, string | null][] = [
-    ['correct', correctLine(picked)],
+  const corrections: [string, string][] = [
+    ['correct', applianceVerbLine('correct')],
     ['correct_back', applianceVerbLine('correct_back')],
   ]
-  const options = Object.hasOwn(action?.options ?? {}, 'correct')
-    ? entries.map(([label, line]): [string, string | null] => [label, label === 'correct' ? correctLine(picked) : line])
-    : [...entries.slice(0, after + 1), ...corrections, ...entries.slice(after + 1)]
+  const options = Object.hasOwn(action?.options ?? {}, 'correct') ? entries : [...entries.slice(0, after + 1), ...corrections, ...entries.slice(after + 1)]
   return {
     state: [words, ...pickLines(picked), ...rest].join('\n'),
     questions: {
@@ -201,10 +198,29 @@ export function withPicked<Q extends { readonly action?: unknown; readonly slot?
   }
 }
 
-/** The Slot with a joined line's own options after the spans (#498, F2), none of them a span already offered. */
+const JOINED_SLOT_INSTRUCTIONS = " The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects."
+
+/**
+ * The Slot of a line that joined one with a Slot (#498, F2): no span runs
+ * across the join, the line's Slot is offered beside each span of the
+ * correction's words, and the instructions say the words are a line and
+ * its correction. Measured (Mammoth, the two by-artist joined cases): arm
+ * a, the line's Slot beside the correction's spans added, 0/2, the
+ * verbatim join chosen (`yellow no by coldplay` 0.71, `let down no by
+ * radiohead` 0.86); arm b, a with the spans across the join left out, 0/2;
+ * arm c, b with the instructions, 2/2.
+ */
 function joinedSlot(slot: DecisionChoiceQuestion, text: string, joins: JoinedLine): DecisionChoiceQuestion {
-  const offered = new Set(Object.values(slot.options))
-  return { ...slot, options: { ...slot.options, ...Object.fromEntries(joinedSlotOptions(text, joins).filter(([, words]) => !offered.has(words))) } }
+  // A line that carried no Slot, or one not among its words, is a line cut off ("Back to-"): its words run on into the correction, unchanged.
+  const own = joinedSlotOptions(text, joins)
+  if (own.length === 0) return slot
+  const kept = Object.entries(slot.options).filter(([label]) => !crossesJoin(label, joins))
+  const offered = new Set(kept.map(([, words]) => words))
+  return {
+    ...slot,
+    instructions: `${slot.instructions}${JOINED_SLOT_INSTRUCTIONS}`,
+    options: { ...Object.fromEntries(kept), ...Object.fromEntries(own.filter(([, words]) => !offered.has(words))) },
+  }
 }
 
 /** The state the card is asked over: the words, the Hearing, a Step's place, the page by its address and title, and what is playing. */
@@ -247,7 +263,7 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const resume = appliance?.lastPage === undefined || isRealPage(view.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`] as const]
   const recorded = view.recorded === undefined ? undefined : Object.fromEntries(Object.entries(view.recorded.lines).map(([label, line]) => [label, appLineOf(label, line)]))
   const own: Readonly<Record<string, string>> = recorded ?? {
-    ...Object.fromEntries(verbs.map((verb) => [verb, verb === 'correct' ? correctLine(appliance?.picked) : applianceVerbLine(verb)])),
+    ...Object.fromEntries(verbs.map((verb) => [verb, applianceVerbLine(verb)])),
     ...facts,
     ...Object.fromEntries(app.map((option) => [option.label, appLineOf(option.label, option.line)])),
     ...Object.fromEntries(resume),

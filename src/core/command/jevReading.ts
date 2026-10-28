@@ -235,9 +235,8 @@ const JOINED_SPAN_WORDS = 6
  * a Slot, and a correction ("no, by coldplay") names what goes with it, so
  * that Slot beside each span of the correction's own words is offered —
  * `yellow by coldplay` — and the Slot is never only the verbatim join. Each
- * names two spans of the joined words; none where the two would be one
- * contiguous span, already offered, or where the Slot is not among the
- * first line's words.
+ * names two spans of the joined words; none where the Slot is not among
+ * the first line's words.
  */
 export function joinedSlotOptions(text: string, joins: JoinedLine): [string, string][] {
   const words = wordsOf(text)
@@ -251,10 +250,17 @@ export function joinedSlotOptions(text: string, joins: JoinedLine): [string, str
   const end = at + slot.length - 1
   const kept = words.slice(at, end + 1).join(' ')
   const options: [string, string][] = []
-  for (let start = Math.max(first, end + 2); start < words.length; start += 1) {
-    for (let last = start; last < words.length && last - start < JOINED_SPAN_WORDS; last += 1) options.push([`s${at}-${end}+${start}-${last}`, `${kept} ${words.slice(start, last + 1).join(' ')}`])
+  for (let start = first; start < words.length; start += 1) {
+    for (let last = start; last < words.length && last - start < JOINED_SPAN_WORDS; last += 1) options.push([`s${at}-${end}_${start}-${last}`, `${kept} ${words.slice(start, last + 1).join(' ')}`])
   }
   return options
+}
+
+/** Whether a Slot label's span runs from the line joined into the correction (#498, F2): the verbatim join, never offered as one span. */
+export function crossesJoin(label: string, joins: JoinedLine): boolean {
+  const match = /^s(\d+)-(\d+)$/.exec(label)
+  const first = wordsOf(joins.words).length
+  return match !== null && Number(match[1]) < first && Number(match[2]) >= first
 }
 
 /**
@@ -1954,7 +1960,7 @@ export function slotWords(answer: DecisionChoiceAnswer, text: string): string {
 
 /** The spans of the transcript's words the Slot answer names, one or, for a joined line's kept Slot beside the correction's words (#498), two; null when it names none. */
 function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number }[] | null {
-  const match = /^s(\d+)-(\d+)(?:\+(\d+)-(\d+))?$/.exec(answer.choice)
+  const match = /^s(\d+)-(\d+)(?:_(\d+)-(\d+))?$/.exec(answer.choice)
   if (match === null) return null
   const first = { start: Number(match[1]), end: Number(match[2]) }
   return match[3] === undefined ? [first] : [first, { start: Number(match[3]), end: Number(match[4]) }]

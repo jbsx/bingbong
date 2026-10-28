@@ -115,7 +115,7 @@ const SOURCES: readonly Source[] = [
     joined: { picked: { title: 'Coldplay - Yellow (Official Video)', words: 'yellow', playing: false }, joins: { words: 'play yellow', slot: 'yellow' } },
     expect: [
       { question: 'action', label: 'play' },
-      { question: 'slot', label: 's1-1+3-4' },
+      { question: 'slot', label: 's1-1_3-4' },
     ],
   },
   {
@@ -125,7 +125,7 @@ const SOURCES: readonly Source[] = [
     joined: { picked: { title: 'Let Down (Remastered)', words: 'let down', playing: false }, joins: { words: 'play let down', slot: 'let down' } },
     expect: [
       { question: 'action', label: 'play' },
-      { question: 'slot', label: 's1-2+4-5' },
+      { question: 'slot', label: 's1-2_4-5' },
     ],
   },
   {

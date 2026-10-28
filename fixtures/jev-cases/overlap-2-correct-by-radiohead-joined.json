@@ -11,7 +11,7 @@
     },
     {
       "question": "slot",
-      "label": "s1-2+4-5"
+      "label": "s1-2_4-5"
     }
   ],
   "ask": {
@@ -79,33 +79,27 @@
       },
       "slot": {
         "type": "choice",
-        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none. The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects.",
         "options": {
           "none": "the command carries no words of its own",
           "s0-0": "play",
           "s0-1": "play let",
           "s0-2": "play let down",
-          "s0-3": "play let down no",
-          "s0-4": "play let down no by",
-          "s0-5": "play let down no by radiohead",
           "s1-1": "let",
           "s1-2": "let down",
-          "s1-3": "let down no",
-          "s1-4": "let down no by",
-          "s1-5": "let down no by radiohead",
           "s2-2": "down",
-          "s2-3": "down no",
-          "s2-4": "down no by",
-          "s2-5": "down no by radiohead",
           "s3-3": "no",
           "s3-4": "no by",
           "s3-5": "no by radiohead",
           "s4-4": "by",
           "s4-5": "by radiohead",
           "s5-5": "radiohead",
-          "s1-2+4-4": "let down by",
-          "s1-2+4-5": "let down by radiohead",
-          "s1-2+5-5": "let down radiohead"
+          "s1-2_3-3": "let down no",
+          "s1-2_3-4": "let down no by",
+          "s1-2_3-5": "let down no by radiohead",
+          "s1-2_4-4": "let down by",
+          "s1-2_4-5": "let down by radiohead",
+          "s1-2_5-5": "let down radiohead"
         }
       },
       "amount": {
