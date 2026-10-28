@@ -6,5 +6,8 @@
   "stage": "player",
   "happened": "overlap:gate 2-correct-by-radiohead at p1 (media-not-started 7%) and p2 (55%) on baseten-mammoth-27b-latest at 6e0279eb (run of record): the joined `no, by radiohead` played Let Down (Remastered), then YouTube's consent sheet drew over the started song and it stopped at 0:05–0:06: nothing is playing at the end (#492's residue)",
   "meant": "The song plays on once the consent sheet is cleared",
-  "log": "decision-1793177225193-1.jsonl"
+  "log": "decision-1793177225193-1.jsonl",
+  "claimedBy": "#496",
+  "fixedBy": "48f14b2b",
+  "case": "overlap-2-correct-by-radiohead"
 }
