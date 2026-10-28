@@ -26,19 +26,24 @@ export const DEFAULT_CARD_BUDGET_TOKENS = 16_384
 export const CARD_CHARS_PER_TOKEN = 2.38
 
 /**
- * A long opaque run — a stretch of 80 characters or more with no space:
- * an ad's redirect address, a token in a query string — tokenizes far
- * worse than text (#495). Measured on the grown case (a DuckDuckGo results
- * page whose ten text ads carry 1.4–1.8k-character redirect addresses):
- * the same ask with every such run doubled added 22,464 characters and
- * 16,148 tokens on Baseten's own count (its 422 states it), 1.39 a token.
+ * A long opaque run — a stretch of more than 300 characters with no
+ * space: an ad's redirect address, a token in a query string — tokenizes
+ * far worse than text (#495). Measured on the grown case (a DuckDuckGo
+ * results page whose ten text ads carry 1.4–1.8k-character redirect
+ * addresses): the same ask with every run of 80+ characters doubled added
+ * 22,464 characters and 16,148 tokens on Baseten's own count (its 422
+ * states it), 1.39 a token — 97 % of those characters in runs past 1,000.
  * The card counts each run at 1.33 — 1.39 less the 4 % margin the text
  * ratio keeps under its 2.48 — so a run weighs 2.38 / 1.33 of its length.
+ * Shorter runs, a commit's address or a login's `return_to=`, are read at
+ * the text ratio: the link-heavy GitHub cards that ratio was measured on
+ * are full of them (#407), and 27 corpus cards the host took whole would
+ * weigh over the budget at 1.33.
  */
 export const OPAQUE_CHARS_PER_TOKEN = 1.33
 
-/** The shortest stretch with no space the card counts as an opaque run: the runs measured. */
-const OPAQUE_RUN = /\S{80,}/g
+/** An opaque run: past the bound a card shows an address to (`shownAddress`), so on a card it is a run no address cut reached. */
+const OPAQUE_RUN = /\S{301,}/g
 
 /** A text's size in the characters the budget is built in: its length, each opaque run weighed at its own ratio. */
 export function cardChars(text: string): number {
