@@ -27,7 +27,7 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
     "url": { "host": "…" } | { "is": "…" },
     "view": { "has": ["…"] },
     "media": { "playing": true, "has": "…", "position": [30, 60], "volume": 0.7, "loop": true },
-    "said": [ { "is": "…" } | { "means": "…" } ],
+    "said": [ { "is": "…" } | { "startsWith": "…", "endsWith": "…", "notFirstMedia": true } | { "means": "…" } ],
     "speech": "whole",
     "lines": [ "done", "cancelled" ],
     "nothingElse": true
@@ -113,8 +113,14 @@ last line.
   source (case ignored); `position` is a range in seconds; `volume` is a
   level (±0.01) or a range; `loop` is the media's own loop.
 - `said`: the sentences the app said. An `is` is exact, each one after the
-  one before it. A `means` goes to a judge (GLM-5.3-flash, as `goal:gate`'s)
-  that reads every sentence said. It is the one check that is not exact.
+  one before it. A shape is exact too, in the same order: one sentence that
+  starts with `startsWith` and ends with `endsWith` (either may be left out);
+  with `notFirstMedia`, what lies between them, quotes trimmed, is not the
+  title of the first page the pane held with media on it from line 1 on (a
+  correction's "Playing … instead." names another song than the one opened
+  first). A `means` goes to a judge (GLM-5.3-flash, as `goal:gate`'s) that
+  reads every sentence said. It is the one check that is not exact: a
+  sentence whose words the app writes itself is checked on its shape.
 - `speech`: `whole` says no sentence the app began was cut: none ended
   sooner than nine tenths of the time it takes said whole (the app's own
   voice, rendered once to time it). A sentence still sounding when the run

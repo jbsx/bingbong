@@ -57,7 +57,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from '../e2e/cdpClient.ts'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from '../e2e/electronApp.ts'
-import { checkEnd, lineOutcomes, saidFrom, type EndState } from '../e2e/overlap/checks.ts'
+import { checkEnd, firstMediaFrom, lineOutcomes, saidFrom, type EndState } from '../e2e/overlap/checks.ts'
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
 import { formatTable, stateDisagreements, through, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
@@ -547,6 +547,8 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
       const records = await current.records()
       const pane = await readPane(current.targets, TEXT_IN_VIEW_CHARS)
       let end: EndState = { url: pane.url, title: pane.title, text: pane.text, media: pane.media as MediaState[], said: saidFrom(records, from), lines: lineOutcomes(records, from) }
+      const firstMedia = firstMediaFrom(records.pane, from)
+      if (firstMedia !== undefined) end = { ...end, firstMedia }
       // A calibration gives line 1 alone: its end is a timeline, never held against the case's expect.
       const calibrating = plan.calibrating === true
       let verdict: Cell = cell ?? { verdict: 'green' }

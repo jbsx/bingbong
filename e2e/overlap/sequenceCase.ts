@@ -33,7 +33,14 @@ export interface CaseNoise {
 export type LineOutcome = 'done' | 'failed' | 'cancelled' | 'dropped' | 'none' | 'running'
 export const LINE_OUTCOMES: readonly LineOutcome[] = ['done', 'failed', 'cancelled', 'dropped', 'none', 'running']
 
-export type SaidExpect = { readonly is: string } | { readonly means: string }
+/** A shape: one sentence that starts and/or ends so; with `notFirstMedia`, what lies between does not name the first media the pane held from line 1 (#486, a correction's "instead."). */
+export interface SaidShape {
+  readonly startsWith?: string
+  readonly endsWith?: string
+  readonly notFirstMedia?: true
+}
+
+export type SaidExpect = { readonly is: string } | { readonly means: string } | SaidShape
 
 export interface CaseExpect {
   readonly url?: { readonly host: string } | { readonly is: string }
@@ -130,7 +137,9 @@ function readExpect(raw: unknown): CaseExpect | string {
     out.media = media as CaseExpect['media']
   }
   if (raw.said !== undefined) {
-    if (!Array.isArray(raw.said) || !raw.said.every((said) => isObject(said) && (isString(said.is) || isString(said.means)))) return 'expect.said is [{ is } | { means }, …]'
+    const shape = (said: Record<string, unknown>): boolean =>
+      (isString(said.startsWith) || isString(said.endsWith)) && (said.startsWith === undefined || isString(said.startsWith)) && (said.endsWith === undefined || isString(said.endsWith)) && (said.notFirstMedia === undefined || said.notFirstMedia === true)
+    if (!Array.isArray(raw.said) || !raw.said.every((said) => isObject(said) && (isString(said.is) || isString(said.means) || shape(said)))) return 'expect.said is [{ is } | { means } | { startsWith, endsWith, notFirstMedia }, …]'
     out.said = raw.said as SaidExpect[]
   }
   if (raw.speech !== undefined) {

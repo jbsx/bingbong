@@ -8,7 +8,7 @@
   "expect": {
     "media": { "playing": true },
     "view": { "has": ["Hurt"] },
-    "said": [{ "means": "the song now playing is another song or version called Hurt than the one picked first" }]
+    "said": [{ "startsWith": "Playing", "endsWith": "instead.", "notFirstMedia": true }]
   },
   "evidence": ["none yet"],
   "state": {"is": "red", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}

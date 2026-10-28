@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkEnd, lineOutcomes, type EndState } from './checks'
+import { checkEnd, firstMediaFrom, lineOutcomes, type EndState } from './checks'
 import type { RunRecords } from './timeline'
 
 const end: EndState = {
@@ -68,6 +68,28 @@ describe('the end state checked against a case’s expect', () => {
     const judge = async (means: string, said: readonly string[]) => (asked.push(`${means} | ${said.join(' / ')}`), false)
     expect(await checkEnd({ said: [{ means: 'it stopped the music' }] }, end, judge)).toBe('nothing said meant "it stopped the music"')
     expect(asked).toEqual(['it stopped the music | Playing Let Down. / Stopped.'])
+  })
+
+  it('a correction is checked on its shape, never judged: Playing … instead., naming other than the first media (#486)', async () => {
+    const shape = { said: [{ startsWith: 'Playing', endsWith: 'instead.', notFirstMedia: true }] } as const
+    const corrected = (sentence: string): EndState => ({ ...end, said: [sentence], firstMedia: 'Johnny Cash - Hurt - YouTube' })
+    expect(await checkEnd(shape, corrected('Playing “Christina Aguilera - Hurt (Official Video)” instead.'), neverJudged)).toBeNull()
+    expect(await checkEnd(shape, corrected('Playing “Johnny Cash - Hurt” instead.'), neverJudged)).toBe(
+      'nothing said started "Playing" and ended "instead." and named other than the first media',
+    )
+    expect(await checkEnd(shape, corrected('Playing “Christina Aguilera - Hurt”.'), neverJudged)).not.toBeNull()
+    expect(await checkEnd(shape, corrected('Playing instead.'), neverJudged)).not.toBeNull()
+    // In order like an exact sentence: the shape must come after the one before it.
+    expect(await checkEnd({ said: [{ is: 'Stopped.' }, { startsWith: 'Playing' }] }, end, neverJudged)).toBe('nothing said started "Playing" after "Stopped."')
+  })
+})
+
+describe('the first media a person saw opened', () => {
+  it('is the first page from line 1 with a media source on it', () => {
+    const sample = (t: number, title: string, src: string) => ({ t, url: '', title, text: '', media: src === '' ? [] : [{ playing: false, src, position: 0, volume: 1, loop: false }] })
+    const pane = [sample(1, 'Old - YouTube', 'blob:a'), sample(5, '', ''), sample(6, 'Johnny Cash - Hurt - YouTube', 'blob:b'), sample(9, 'Christina Aguilera - Hurt - YouTube', 'blob:c')]
+    expect(firstMediaFrom(pane, 2)).toBe('Johnny Cash - Hurt - YouTube')
+    expect(firstMediaFrom(pane, 10)).toBeUndefined()
   })
 })
 

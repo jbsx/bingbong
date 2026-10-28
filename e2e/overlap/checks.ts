@@ -1,10 +1,11 @@
 // A Sequence Case's `expect` checked against the end state a run left
 // (#486): the pane's URL, title and text in view, every <video>/<audio>,
 // every sentence said, and what the Feed shows each line came to. Every
-// check is exact but a sentence's meaning, which goes to the judge. The
-// answer is the first check that failed, in words, or null.
+// check is exact (a sentence's shape included) but a sentence's meaning,
+// which goes to the judge. The answer is the first check that failed, in
+// words, or null.
 
-import type { CaseExpect, LineOutcome } from './sequenceCase.ts'
+import type { CaseExpect, LineOutcome, SaidShape } from './sequenceCase.ts'
 import type { MediaState, RunRecords } from './timeline.ts'
 
 export interface EndState {
@@ -13,6 +14,8 @@ export interface EndState {
   readonly text: string
   readonly media: readonly MediaState[]
   readonly said: readonly string[]
+  /** The title of the first page the pane held with media on it from line 1 on, when one was held (#486). */
+  readonly firstMedia?: string
   /** Each sentence the app began: how long it sounded (its start to its end, null when it never ended) and how long it is whole (#490). */
   readonly speech?: readonly { readonly text: string; readonly ms: number | null; readonly wholeMs: number }[]
   /** One per Command the Feed shows after line 1, in order; `running` when it had not ended. */
@@ -27,6 +30,7 @@ const WHOLE_SHARE = 0.9
 
 const hostOf = (url: string): string => (URL.canParse(url) ? new URL(url).hostname : url)
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim()
+const unquote = (text: string): string => text.trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim()
 const range = (value: readonly [number, number], unit = ''): string => `${value[0]}–${value[1]}${unit}`
 
 /** The media a person would call "the" media: the one playing, else the first that has a source. */
@@ -62,16 +66,20 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
       if (wanted.loop !== undefined && media.loop !== wanted.loop) return wanted.loop ? 'the media is not on loop' : 'the media is on loop'
     }
   }
-  // Each sentence in order, an exact one after the one before it; a meaning, among all said.
+  // Each sentence in order, an exact one or a shape after the one before it; a meaning, among all said.
   let from = 0
   let last = ''
   for (const said of expected.said ?? []) {
-    if ('is' in said) {
-      const found = end.said.findIndex((sentence, index) => index >= from && sentence.trim() === said.is.trim())
-      if (found === -1) return last === '' ? `nothing said was "${said.is}"` : `nothing said was "${said.is}" after "${last}"`
-      from = found + 1
-      last = said.is
-    } else if (!(await judge(said.means, end.said))) return `nothing said meant "${said.means}"`
+    if ('means' in said) {
+      if (!(await judge(said.means, end.said))) return `nothing said meant "${said.means}"`
+      continue
+    }
+    const fits = 'is' in said ? (sentence: string) => sentence.trim() === said.is.trim() : (sentence: string) => fitsShape(said, sentence.trim(), end.firstMedia)
+    const wanted = 'is' in said ? `was "${said.is}"` : shapeWords(said)
+    const found = end.said.findIndex((sentence, index) => index >= from && fits(sentence))
+    if (found === -1) return last === '' ? `nothing said ${wanted}` : `nothing said ${wanted} after "${last}"`
+    from = found + 1
+    last = end.said[found]!.trim()
   }
   if (expected.speech === 'whole') {
     // A sentence cut is one that ended sooner than it takes whole; the slack is a duck's restart, never a lost clause.
@@ -89,6 +97,27 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
     }
   }
   return null
+}
+
+/** A sentence's shape: its start and end exact, and what lies between not the first media's title (neither holding the other, case ignored). */
+function fitsShape(shape: SaidShape, sentence: string, firstMedia: string | undefined): boolean {
+  const head = shape.startsWith?.trim() ?? ''
+  const tail = shape.endsWith?.trim() ?? ''
+  if (!sentence.startsWith(head) || !sentence.endsWith(tail) || sentence.length < head.length + tail.length) return false
+  if (shape.notFirstMedia !== true || firstMedia === undefined) return true
+  const between = unquote(sentence.slice(head.length, sentence.length - tail.length)).toLowerCase()
+  const title = firstMedia.toLowerCase()
+  return between !== '' && !title.includes(between) && !between.includes(title)
+}
+
+function shapeWords(shape: SaidShape): string {
+  const parts = [shape.startsWith !== undefined ? `started "${shape.startsWith}"` : '', shape.endsWith !== undefined ? `ended "${shape.endsWith}"` : ''].filter((part) => part !== '')
+  return `${parts.join(' and ')}${shape.notFirstMedia === true ? ' and named other than the first media' : ''}`
+}
+
+/** The title of the first page the pane held with media on it from `from` on (#486): what a person saw opened first. */
+export function firstMediaFrom(pane: RunRecords['pane'], from: number): string | undefined {
+  return pane.find((sample) => sample.t >= from && sample.title !== '' && sample.media.some((media) => media.src !== ''))?.title
 }
 
 /** What the Feed shows each Command begun at or after `from` came to: one per Task, in order, its last ending. */
