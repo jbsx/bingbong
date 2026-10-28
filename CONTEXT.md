@@ -631,9 +631,20 @@ A line that arrives before the Command before it has ended: still being
 read, fired and not yet landed, the page still changing, the media not yet
 started, or the app still speaking. What the later line means to the
 earlier one (a new goal, a correction, an add-on, a control on the thing
-loading, a question about the wait, a stop) is read, never assumed from
-its timing. A Sequence Case measures it; #486.
+loading, a question about the wait, a stop) is read as its **Fate**, never
+assumed from its timing. A Sequence Case measures it; #486.
 _Avoid_: interruption, barge-in, race, double command
+
+**Fate**:
+What a line given during an Overlap means for the Command still running:
+it **ends** it (a new request, a stop), **joins** it (finishes or corrects
+it, read again with it as one line), **waits** for it (acts on what it is
+bringing, once that is there), or lets it **go on** (something else, a
+question about the wait, a remark or noise). Read by Jev on the Appliance
+Card, which carries the running Command; unsure, it goes on. An exact
+line's Fate is by kind: one that takes the pane ends it, a control on media
+still opening waits, any other goes on. #489, ADR 0097.
+_Avoid_: relation, interruption type, supersede
 
 **Sequence Case**:
 A black-box fixture: what is in front of the person, lines with their

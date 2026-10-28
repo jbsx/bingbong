@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended on 2026-10-28 by ADR 0097 (#489): while a line runs, its Appliance
+Card carries the running Command and asks its Fate.
+
 Accepted 2026-10-27 by the owner ("land the ADR drafts"), on the
 orchestrator's rulings and close of #485 (built a2297959..ec8e7823).
 Proposed 2026-10-27, from the orchestrator's rulings on the issue. It

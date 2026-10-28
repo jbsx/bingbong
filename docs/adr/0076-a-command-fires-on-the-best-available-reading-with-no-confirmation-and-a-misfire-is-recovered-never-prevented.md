@@ -2,6 +2,12 @@
 
 ## Status
 
+Amended on 2026-10-28 by ADR 0097 (#489): a line given while another runs
+ends nothing on its arrival. A Fate that ends or joins, a `stop`, Escape,
+the Abort Head or an exact line that takes the pane end a Task as they end
+a Command, and an ended Task says it stopped, naming what it was doing,
+where a superseded Task said nothing.
+
 Amended on 2026-10-27 by ADR 0096 (#485): a line is read on the Appliance
 Card before the page card; see the amendment below.
 
