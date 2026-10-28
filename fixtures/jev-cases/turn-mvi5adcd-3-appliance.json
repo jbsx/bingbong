@@ -28,12 +28,15 @@
           "media-loop": "put the media playing, \"Let Down (Remastered) - YouTube\" on loop, so it plays again each time it ends",
           "media-unloop": "stop looping the media playing, \"Let Down (Remastered) - YouTube\"",
           "media-rate": "change the playback speed of the media playing, \"Let Down (Remastered) - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far (down a little → 0.75×, down a step → 0.5×, down a lot → 0.25×; up a little → 1.25×, up a step → 1.5×, up a lot → 2×)",
-          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
           "skip": "music: skip to the next song",
           "previous": "music: go back to the song before",
           "show": "music: show the video playing on the screen",
+          "correct": "music: the song playing is the wrong one: play the next result of its search instead",
+          "correct_back": "music: play the result of the search before the song playing instead",
+          "forget": "music: forget the song playing, so its words search again next time",
           "timer": "the app: set a timer for the length the words say",
           "timer_off": "the app: turn the timer off",
           "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
@@ -89,6 +92,14 @@
           "page": "on this page: one of the numbered refs",
           "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
           "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "kind": {
+        "type": "choice",
+        "instructions": "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+        "options": {
+          "music": "music: play its sound alone",
+          "video": "a video: show it playing on the screen"
         }
       }
     }

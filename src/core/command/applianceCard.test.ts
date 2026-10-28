@@ -23,8 +23,14 @@ const WATCH: ApplianceView = {
   timer: true,
 }
 
-const answers = (action: string, rest: Partial<Record<'slot' | 'amount' | 'where', string>> = {}): CommandAnswers =>
-  ({ action: choice(action), slot: choice(rest.slot ?? 'none'), ...(rest.amount !== undefined ? { amount: choice(rest.amount) } : {}), ...(rest.where !== undefined ? { where: choice(rest.where) } : {}) }) as CommandAnswers
+const answers = (action: string, rest: Partial<Record<'slot' | 'amount' | 'where' | 'kind', string>> = {}, kindConfidence = 0.9): CommandAnswers =>
+  ({
+    action: choice(action),
+    slot: choice(rest.slot ?? 'none'),
+    ...(rest.amount !== undefined ? { amount: choice(rest.amount) } : {}),
+    ...(rest.where !== undefined ? { where: choice(rest.where) } : {}),
+    ...(rest.kind !== undefined ? { kind: choice(rest.kind, kindConfidence) } : {}),
+  }) as CommandAnswers
 
 describe('the Appliance Card (#485): built from what the appliance holds, no page ref on it', () => {
   it('offers the playing element\'s every Media Op by kind, the Player, the facts, the app, the Flag, Help, the Timer, stop, page and none', () => {
@@ -87,6 +93,22 @@ describe('reading the Appliance Card', () => {
     const wiki = { ...WATCH, url: 'https://en.wikipedia.org/wiki/Song', title: 'Song' }
     expect(readApplianceAnswers(answers('play', { slot: 's1-2', where: 'page' }), 'play the clip', wiki)).toEqual({ kind: 'page', chose: 'page' })
     expect(readApplianceAnswers(answers('play', { slot: 's1-2', where: 'site' }), 'play the clip', wiki)).toMatchObject({ kind: 'command', command: { verb: 'search', site: 'en.wikipedia.org' } })
+  })
+
+  it('asks music or video beside play only while the audio road is wired (#502): with it off the card is as it was', () => {
+    const road = { ...WATCH, appliance: { ...WATCH.appliance, audioRoad: true } }
+    expect(applianceQuestions('play mkbhd', road).kind).toBeDefined()
+    expect(applianceQuestions('play mkbhd', WATCH)).not.toHaveProperty('kind')
+    expect(applianceQuestions('play mkbhd', { url: 'about:blank', title: '', appliance: { audioRoad: true } })).not.toHaveProperty('kind')
+  })
+
+  it('reads a sure video as a video on every Player search, and music or an unsure reading as music (#502)', () => {
+    const road = { ...WATCH, appliance: { ...WATCH.appliance, audioRoad: true } }
+    expect(readApplianceAnswers(answers('play', { slot: 's1-1', kind: 'video' }), 'play mkbhd', road)).toMatchObject({ command: { music: { kind: 'search', place: 'now', video: true } } })
+    expect(readApplianceAnswers(answers('queue', { slot: 's1-1', kind: 'video' }), 'queue mkbhd', road)).toMatchObject({ command: { music: { kind: 'search', place: 'end', video: true } } })
+    expect(readApplianceAnswers(answers('play', { slot: 's1-2', kind: 'music' }), 'play kanye west', road)).toMatchObject({ command: { music: { kind: 'search', place: 'now' } } })
+    expect(readApplianceAnswers(answers('play', { slot: 's1-2', kind: 'music' }), 'play kanye west', road)).not.toHaveProperty('command.music.video')
+    expect(readApplianceAnswers(answers('play', { slot: 's1-1', kind: 'video' }, 0.55), 'play mkbhd', road)).not.toHaveProperty('command.music.video')
   })
 
   it('reads the Flag with its hint, Help, the Timer, a fact and an app op', () => {

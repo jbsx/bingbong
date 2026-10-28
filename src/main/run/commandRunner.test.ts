@@ -1006,14 +1006,33 @@ describe('the Player (#343)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
+  it('on the audio road Jev is asked music or video beside play (#502); a video opens its watch page and wakes the dashboard, one Command', async () => {
+    const { browser, audio, events, decision, runner } = music({ audio: true })
+    decision.script.push({ answers: { action: choice('play'), slot: choice('s1-2'), kind: choice('video') } })
+    await runner.run('play bohemian rhapsody')
+    expect(decision.requests.at(-1)?.questions).toHaveProperty('kind')
+    expect(audio!.loaded).toEqual([])
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+    const commands = events.filter((event) => event.type === 'command')
+    expect(commands).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody' })])
+    expect(commands[0]).not.toHaveProperty('keepsIdle')
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('with no audio road wired Jev is never asked music or video: the ask is as before (#502)', async () => {
+    const { decision, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    expect(decision.requests.at(-1)?.questions).not.toHaveProperty('kind')
+  })
+
   it('a lookup the audio road fails opens the watch page and shows it (#502, owner\'s ruling 3): the line is still done', async () => {
     const { browser, audio, events, runner } = music({ audio: true })
     audio!.fails.add('fJ9rUzIMcZQ')
     await runner.run('play bohemian rhapsody')
     expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
-    const commands = events.filter((event) => event.type === 'command')
-    expect(commands.at(-1)).toMatchObject({ action: 'show the video' })
-    expect(commands.at(-1)).not.toHaveProperty('keepsIdle')
+    // One Command, one Feed entry: the watch page shown over the Idle Screen is a `shown` of it, never a second Command.
+    expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody', keepsIdle: true })])
+    expect(events.filter((event) => event.type === 'shown')).toEqual([expect.objectContaining({ turnId: expect.any(String) })])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 

@@ -1411,6 +1411,26 @@ describe('the audio road', () => {
     expect(player.road()).toBe('page')
   })
 
+  it('a video queued with nothing playing plays at once on the watch page, shown', async () => {
+    const { browser, audio, perform } = withAudio()
+    const played = await perform({ kind: 'search', place: 'end', video: true }, 'song a')
+    expect(audio.resolved).toEqual([])
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', shown: true })
+  })
+
+  it('a video queued next opens on the watch page when its turn comes; the song before it stays on the road', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(await perform({ kind: 'search', place: 'front', video: true }, 'song b')).toMatchObject({ answer: 'Queued “Song B” (1st).' })
+    expect(browser.landings).toEqual([])
+    const skipped = await perform({ kind: 'skip' })
+    expect(audio.resolved).toEqual(['aaaaaaaaaaa'])
+    expect(browser.landings).toEqual([`${WATCH}bbbbbbbbbbb`])
+    expect(skipped).toMatchObject({ answer: 'Skipped to “Song B”.', shown: true })
+    expect(player.road()).toBe('page')
+  })
+
   it('a lookup that fails falls back to the watch page, shown: the line is still done', async () => {
     const { browser, audio, player, perform } = withAudio()
     audio.fails.add('aaaaaaaaaaa')
@@ -1448,6 +1468,30 @@ describe('the audio road', () => {
     await player.settled()
     expect(audio.loaded.map((load) => load.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb'])
     expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+  })
+
+  it('a queued video reached when the song before it ends opens on the watch page and is shown; a queued song stays on the road, unshown', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    let shown = 0
+    player.onShown(() => {
+      shown += 1
+    })
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await perform({ kind: 'search', place: 'end', video: true }, 'song c')
+    audio.youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+    expect(browser.landings).toEqual([])
+    expect(shown).toBe(0)
+    audio.youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(player.queue().current?.id).toBe('ccccccccccc')
+    expect(browser.landings).toEqual([`${WATCH}ccccccccccc`])
+    expect(player.road()).toBe('page')
+    expect(shown).toBe(1)
   })
 
   it('a queued song the road cannot play is passed over in the background: the pane, perhaps on a page of its own, is never taken', async () => {

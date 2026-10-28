@@ -1,7 +1,7 @@
 import type { DecisionChoiceQuestion, DecisionQuestions } from '../ports/decisionModel.ts'
 import type { MediaFacts } from '../browser/snapshot.ts'
 import { applianceQuestions, applianceState, type ApplianceMedia, type ApplianceView } from '../command/applianceCard.ts'
-import { isApplianceVerb, type StepContext } from '../command/jevReading.ts'
+import { applianceVerbLine, isApplianceVerb, offeredApplianceVerbs, type ApplianceVerb, type StepContext } from '../command/jevReading.ts'
 import { factOfLabel } from '../command/applianceFacts.ts'
 import { appCardLabels, SETTINGS_LABEL, UPDATE_LABEL, updateOption } from '../command/appOp.ts'
 import { isMediaOp } from '../command/mediaOp.ts'
@@ -132,9 +132,19 @@ export function applianceAskOf(ask: { readonly state: string; readonly questions
   const media = applianceMediaOf(lines, offered, playingTitle !== undefined ? (JSON.parse(playingTitle) as string) : pageTitle)
   // The update (#422) is on the Appliance Card alone: beside the settings line, wherever the page card carried the app's lines.
   const update = updateOption({ version: CORPUS_VERSION })
+  // The Appliance Verbs are the card's own words, never the page's (#502): each recorded one carries today's line, and a verb
+  // today's card offers by the same ability — a Queue when `skip` was offered, a song on when `show` was — follows the one before it.
+  const verbs = offered.has('play') ? offeredApplianceVerbs({ queued: offered.has('skip') }, offered.has('show')) : []
+  // The verbs today's card offers after a recorded one, up to the next recorded one.
+  const newVerbsAfter = (verb: ApplianceVerb): ApplianceVerb[] => {
+    const rest = verbs.slice(verbs.indexOf(verb) + 1)
+    const next = rest.findIndex((each) => offered.has(each))
+    return next === -1 ? rest : rest.slice(0, next)
+  }
   const own = Object.fromEntries(
     Object.entries(action.options).flatMap(([label, line]) => {
       if (!isApplianceLabel(label) || line === null) return []
+      if (isApplianceVerb(label)) return [label, ...newVerbsAfter(label)].map((verb) => [verb, applianceVerbLine(verb)] as const)
       return label === SETTINGS_LABEL ? [[label, line] as const, [update.label, update.line] as const] : [[label, line] as const]
     }),
   )
@@ -145,6 +155,8 @@ export function applianceAskOf(ask: { readonly state: string; readonly questions
     ...(media !== undefined ? { media } : {}),
     flaggable: true,
     timer: true,
+    // The corpus reads a `play` as the kiosk does, with its audio road on (#502).
+    appliance: { audioRoad: true },
     recorded: { lines: own, amount: appAmount },
   }
   const questions = applianceQuestions(text, view, { steps: 'steps' in ask.questions, heard })

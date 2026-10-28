@@ -60,6 +60,14 @@
           "s4-4": "pomme"
         }
       },
+      "kind": {
+        "type": "choice",
+        "instructions": "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+        "options": {
+          "music": "music: play its sound alone",
+          "video": "a video: show it playing on the screen"
+        }
+      },
       "steps": {
         "type": "choice",
         "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",

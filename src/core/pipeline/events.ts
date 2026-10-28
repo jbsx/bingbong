@@ -46,6 +46,13 @@ export type PipelineEvent =
     }
   /** `failure`: the line tells what went wrong (#329) — a thrown action, a wall — and takes the failure colour. */
   | { type: 'speak'; turnId?: string; text: string; failure?: boolean; at: number }
+  /**
+   * The watch page is shown for a Command already published as keeping the
+   * Idle Screen up (#502): a song the audio road could not play opened there
+   * instead (owner's ruling 3). It wakes the dashboard; the Command stays one.
+   * With no `turnId`, a queued video the Player opened in the background.
+   */
+  | { type: 'shown'; turnId?: string; at: number }
   /** A `speak`'s sentence has ended — spoken to its end, cut, or failed to sound (#470): the Peek Card's linger counts from it. */
   | { type: 'spoken'; turnId?: string; at: number }
   /**

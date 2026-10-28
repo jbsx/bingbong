@@ -23,6 +23,8 @@ import {
   slotWords,
   stepsQuestion,
   whereQuestion,
+  kindQuestion,
+  asksKind,
   type Appliance,
   type CommandAnswers,
   type StepContext,
@@ -76,12 +78,13 @@ export interface ApplianceAskOptions {
   readonly heard?: readonly NameHearing[]
 }
 
-/** The Appliance Card's questions: the action card and the Slot; the Amount beside a media op or an app amount; `where` beside `play` on a site; `steps` at hop 0 on a line with a conjunction. */
+/** The Appliance Card's questions: the action card and the Slot; the Amount beside a media op or an app amount; `where` beside `play` on a site; `kind` beside `play` while the audio road is wired (#502); `steps` at hop 0 on a line with a conjunction. */
 export type ApplianceQuestions = {
   readonly action: DecisionChoiceQuestion
   readonly slot: DecisionChoiceQuestion
   readonly amount?: DecisionChoiceQuestion
   readonly where?: DecisionChoiceQuestion
+  readonly kind?: DecisionChoiceQuestion
   readonly steps?: DecisionChoiceQuestion
   /** The running Command's Fate (#489), only while one runs. */
   readonly fate?: DecisionChoiceQuestion
@@ -214,6 +217,7 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
     slot: slotQuestion(text, options.heard),
     ...(amounts ? { amount: amountQuestion() } : {}),
     ...(site !== null ? { where: whereQuestion(site) } : {}),
+    ...(asksKind(view.appliance, Object.hasOwn(own, 'play')) ? { kind: kindQuestion() } : {}),
     ...(steps !== null ? { steps } : {}),
   }
   if (view.running !== undefined) return withRunning('', questions, view.running).questions

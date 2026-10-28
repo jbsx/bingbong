@@ -11,6 +11,10 @@ describe('wakesIdleScreen', () => {
     expect(wakesIdleScreen({ type: 'command', turnId: 't1', text: 'hmm', dropped: true, at: 1 })).toBe(false)
   })
 
+  it('the watch page shown for a Command that kept it up — a song the audio road could not play (#502) — wakes it', () => {
+    expect(wakesIdleScreen({ type: 'shown', turnId: 't1', at: 1 })).toBe(true)
+  })
+
   it('the rest of the stream — a reading, its Answer, its end — leaves it up', () => {
     expect(wakesIdleScreen({ type: 'status', turnId: 't1', status: 'thinking', at: 1 })).toBe(false)
     expect(wakesIdleScreen({ type: 'display', turnId: 't1', text: 'Timer set for 5 minutes.', at: 1 })).toBe(false)

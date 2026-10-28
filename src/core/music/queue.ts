@@ -10,6 +10,8 @@ export interface Song {
   readonly title: string
   /** The channel that posted it, when the results named one (#456): a name a pick that stays proposes. */
   readonly channel?: string
+  /** Jev read the words that queued it as a video (#502): when its turn comes it opens on the watch page, shown. */
+  readonly video?: true
 }
 
 export interface Queue {

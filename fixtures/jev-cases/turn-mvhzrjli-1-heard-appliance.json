@@ -21,7 +21,7 @@
         "type": "choice",
         "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
         "options": {
-          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
           "say_time": "appliance: say the time and date — 11:50, Wednesday 21 October",
@@ -64,6 +64,14 @@
           "s4-4": "by",
           "s4-5": "by Canywast",
           "s5-5": "Canywast (sounds like \"kanye west\")"
+        }
+      },
+      "kind": {
+        "type": "choice",
+        "instructions": "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+        "options": {
+          "music": "music: play its sound alone",
+          "video": "a video: show it playing on the screen"
         }
       },
       "steps": {

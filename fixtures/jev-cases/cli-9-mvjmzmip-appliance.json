@@ -84,6 +84,14 @@
           "site": "on gov.uk but not on this page: a page, a person, a post, a section of it",
           "web": "elsewhere: another website, or a search of the whole web"
         }
+      },
+      "kind": {
+        "type": "choice",
+        "instructions": "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+        "options": {
+          "music": "music: play its sound alone",
+          "video": "a video: show it playing on the screen"
+        }
       }
     }
   }

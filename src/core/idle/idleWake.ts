@@ -6,7 +6,8 @@
 
 import type { PipelineEvent } from '../pipeline/events'
 
-/** Whether this event, arriving while the Idle Screen is up, wakes it: a Command that acts on the pane. */
+/** Whether this event, arriving while the Idle Screen is up, wakes it: a Command that acts on the pane, or the watch page shown for one (#502). */
 export function wakesIdleScreen(event: PipelineEvent): boolean {
+  if (event.type === 'shown') return true
   return event.type === 'command' && event.dropped !== true && event.keepsIdle !== true
 }

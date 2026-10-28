@@ -794,7 +794,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null) return undefined
     return {
       ...(deps.app !== undefined ? { app: deps.app.state() } : {}),
-      ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null } : {}),
+      ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null, ...(deps.player.audioRoad === true ? { audioRoad: true } : {}) } : {}),
       ...(deps.facts !== undefined ? { facts: deps.facts() } : {}),
       // `resume` is Jev's to offer on a blank pane (#408): the Last Page by its title, else its address.
       ...(last !== null ? { lastPage: last.title || last.url } : {}),
@@ -2058,7 +2058,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           outcome = 'wall'
         } else {
           // A song the audio road could not play opened on the watch page instead (#502, owner's ruling 3): shown, as a video is.
-          if (outcomeOfPlay.shown === true && commandKeepsIdle(command)) publish({ type: 'command', turnId, text, action: 'show the video', task, at: at() })
+          if (outcomeOfPlay.shown === true && commandKeepsIdle(command)) publish({ type: 'shown', turnId, at: at() })
           answer(turnId, outcomeOfPlay.answer)
           if (reacting.says === true && deps.speech !== undefined) void say(deps.speech, turnId, outcomeOfPlay.answer)
         }

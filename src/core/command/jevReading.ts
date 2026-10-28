@@ -114,9 +114,11 @@ const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click 
 const QUESTION_TAKES_ITS_SHOW = 'When the words ask something a block of text further down answers, choose the show of that block.'
 const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block further down holds what the words ask for'
 
-/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired; what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); and the app itself — its panel, view and settings, each op an option (#420). */
+/** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired, and whether its audio road is (#502); what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); and the app itself — its panel, view and settings, each op an option (#420). */
 export interface Appliance {
   readonly queued?: boolean
+  /** The audio road is wired (#502): a `play` is read as music or a video, music playing its sound alone. Off, every play opens the watch page and the card asks nothing of it. */
+  readonly audioRoad?: boolean
   readonly facts?: ApplianceFacts
   readonly lastPage?: string
   readonly app?: AppState
@@ -979,7 +981,7 @@ type Asked<Q, K extends string> = Q | (Q & { readonly [key in K]: DecisionChoice
  * Extent (#383); the Amount beside them on an ask that offers a media ref (#372); `where` on
  * a site; and at hop 0, on a line with a conjunction, `steps` (#364).
  */
-type ReadingQuestions = Asked<Asked<ActionQuestions & { readonly extent: DecisionChoiceQuestion }, 'amount'>, 'where'>
+type ReadingQuestions = Asked<Asked<Asked<ActionQuestions & { readonly extent: DecisionChoiceQuestion }, 'amount'>, 'where'>, 'kind'>
 export type CommandQuestions = Asked<ReadingQuestions, 'steps'>
 
 /** Where a line splits into two Steps (#364): the word the second starts at, and each Step's words. */
@@ -1038,6 +1040,39 @@ export function readSteps(answers: CommandAnswers, text: string): StepBoundary |
   return match === null ? null : (stepBoundaries(text).find((boundary) => boundary.at === Number(match[1])) ?? null)
 }
 
+/**
+ * The `kind` Choice (#502, owner's ruling 1): whether what a `play` plays is
+ * music to hear or a video to watch, asked beside the card while the audio
+ * road is wired. Measured on the gate against two Appliance Verbs (arm a)
+ * on 2026-10-28: both read the 11 music and video cases right and lost
+ * none of 186; this arm changes no label and so is the cheaper to reverse.
+ */
+export function kindQuestion(): DecisionChoiceQuestion {
+  return {
+    type: 'choice',
+    instructions: "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+    options: {
+      music: 'music: play its sound alone',
+      video: 'a video: show it playing on the screen',
+    },
+  }
+}
+
+/** Whether a card asks `kind` (#502): beside an offered `play`, while the audio road is wired; off, every play is the watch page and nothing is asked. */
+export function asksKind(appliance: Appliance | undefined, playOffered: boolean): boolean {
+  return playOffered && appliance?.audioRoad === true
+}
+
+/**
+ * Whether the answers read the play as a video (#502): a sure `video`. Music,
+ * an unsure reading or none is music — the owner's ruling 1, "an unsure
+ * reading leans music", the kiosk being mostly for listening — so `kind`,
+ * unlike `where`, is read against the choice bar.
+ */
+function readsVideo(answers: CommandAnswers | HopAnswers): boolean {
+  return 'kind' in answers && answers.kind.choice === 'video' && choiceProbability(answers.kind) >= DEFAULT_DECISION_THRESHOLDS.choice
+}
+
 /** The `where` Choice (#340): on this page, on this site, or elsewhere on the web. */
 export function whereQuestion(site: string): DecisionChoiceQuestion {
   return {
@@ -1076,7 +1111,8 @@ export function commandQuestions(
   const extended = { ...action, extent: extentQuestion() }
   const reading: Asked<typeof extended, 'amount'> = card.amounts ? { ...extended, amount: amountQuestion() } : extended
   const site = scopableSite(pageRead.url, hop)
-  const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
+  const placed = site === null ? reading : { ...reading, where: whereQuestion(site) }
+  const asked = asksKind(options.appliance, Object.hasOwn(card.question.options, 'play')) ? { ...placed, kind: kindQuestion() } : placed
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
   return steps === null ? asked : { ...asked, steps }
 }
@@ -1617,8 +1653,8 @@ type ActionAnswers = {
 /** Answers with one more Choice's answer beside them, or not. */
 type Answered<A, K extends string> = A | (A & { readonly [key in K]: DecisionChoiceAnswer })
 
-/** The answers to {@link CommandQuestions}: the action card's and the Slot's; the Amount's (#372), `where` and `steps` (#364) when they were asked. */
-type ReadingAnswers = Answered<Answered<Answered<ActionAnswers, 'amount'>, 'extent'>, 'where'>
+/** The answers to {@link CommandQuestions}: the action card's and the Slot's; the Amount's (#372), `where`, `kind` (#502) and `steps` (#364) when they were asked. */
+type ReadingAnswers = Answered<Answered<Answered<Answered<ActionAnswers, 'amount'>, 'extent'>, 'where'>, 'kind'>
 export type CommandAnswers = Answered<ReadingAnswers, 'steps'>
 
 /** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3, `forward-7` a Media Op on ref 7 (#372). */
@@ -1786,7 +1822,8 @@ function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number 
 
 /**
  * An Appliance Verb reading (#374): the `play` Command the grammar's exact
- * lines make, carrying the Player's action — a search's words off the Slot.
+ * lines make, carrying the Player's action — a search's words off the Slot,
+ * and a video where `kind` read one (#502).
  */
 export function applianceCommand(verb: ApplianceVerb, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command {
   const { music } = APPLIANCE_VERBS[verb]
@@ -1802,7 +1839,7 @@ export function applianceCommand(verb: ApplianceVerb, slot: DecisionChoiceAnswer
     const site = scopableSite(url, hop)
     if (site !== null) return { verb: 'search', target: null, slot: words, site }
   }
-  return { verb: 'play', target: null, slot: words, music }
+  return { verb: 'play', target: null, slot: words, music: music.kind === 'search' && readsVideo(answers) ? { ...music, video: true } : music }
 }
 
 /** The Command a card label naming a ref or a link makes (#370); null when the hop does not offer what it names. */

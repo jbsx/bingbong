@@ -601,6 +601,8 @@ async function createWindow(): Promise<BrowserWindow> {
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))
   // Now Playing (#344): the Idle Screen's card follows the Player.
   onWindowClosed(win, attachNowPlayingToWindow(win, music.player))
+  // A queued video the Player opened in the background (#502) wakes the dashboard, as a `play` of one does: no Command shows it.
+  onWindowClosed(win, music.player.onShown(() => eventPublisher.publish({ source: 'run', event: { type: 'shown', at: Date.now() } })))
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download

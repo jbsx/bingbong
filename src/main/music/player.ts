@@ -187,6 +187,8 @@ export interface Player {
   nowPlaying(): NowPlaying | null
   /** Hears every change to {@link nowPlaying}; the returned function stops it. */
   onChange(listener: (nowPlaying: NowPlaying | null) => void): () => void
+  /** Hears a queued video opening on the watch page in the background (#502), with no Command to show it: the dashboard is to wake over it. The returned function stops it. */
+  onShown(listener: () => void): () => void
   /** Ducks the music (on) or puts its volume back (off) (#344). Resolves when the element has it. */
   duck(on: boolean): Promise<void>
   /** Where the song plays, or last played (#502): what the Appliance Card's media reads and its ops reach. */
@@ -338,6 +340,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   // Every wall the page signals as it draws (#496), heard for the Player's life: the browser's own clear is on the Player's road.
   browser.onConsentDrawn?.((drawn) => consentDrawn(drawn))
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
+  const shownListeners = new Set<() => void>()
   let published = 'null'
 
   function nowPlaying(): NowPlaying | null {
@@ -842,8 +845,10 @@ export function createPlayer(deps: PlayerDeps): Player {
         }
         publish()
         if (next === null || !current()) return
-        const opened = await open(next, current, was, false, true)
+        const opened = await open(next, current, was, next.video === true, true)
         if (opened === 'opened') {
+          // A video queued by Jev's reading (#502) opens on the watch page, and is shown as a `play` of one is.
+          if (deps.audio !== undefined && next.video === true) for (const listener of shownListeners) listener()
           const start = await playOn(next, current, true)
           if (start !== 'superseded' && !start.started) holdUnstarted()
           return
@@ -867,7 +872,7 @@ export function createPlayer(deps: PlayerDeps): Player {
    * otherwise (`skip`, `previous`). The Queue moves to `then` once the page
    * opened or failed; one a later Command overtook leaves it as it was.
    */
-  async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song), video = false): Promise<PlayerOutcome> {
+  async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song), video = song.video === true): Promise<PlayerOutcome> {
     const outcome = await playSongOn(song, current, answer, then, video)
     // With the audio road wired, a song on the watch page is one to show (#502): a video, or the road's fallback.
     return deps.audio !== undefined && road === 'page' && outcome.superseded !== true && outcome.failure !== true ? { ...outcome, shown: true } : outcome
@@ -1046,11 +1051,11 @@ export function createPlayer(deps: PlayerDeps): Player {
   const noResults = (words: string): PlayerOutcome => ({ result: `no results data: ${words}`, answer: "YouTube didn't show its results.", failure: true })
 
   /** `queue <words>` and `play <words> next`: the results fetched, never shown — the song playing plays on. */
-  async function searchQueued(words: string, place: 'front' | 'end', current: () => boolean): Promise<PlayerOutcome> {
+  async function searchQueued(words: string, place: 'front' | 'end', current: () => boolean, video: boolean): Promise<PlayerOutcome> {
     const known = deps.songs?.recall(words) ?? null
     const found = known ?? (await fetchPick(words, current))
     if (!('id' in found)) return found
-    const outcome = await queueSong(found, place, current)
+    const outcome = await queueSong(video ? { ...found, video: true } : found, place, current)
     return outcome.superseded === true ? outcome : { ...outcome, pick: known !== null ? 'remembered' : 'searched' }
   }
 
@@ -1218,7 +1223,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function performNow(music: MusicAction, words: string | null, current: () => boolean): Promise<PlayerOutcome> {
     switch (music.kind) {
       case 'search':
-        return music.place === 'now' ? searchNow(words ?? '', current, music.video === true) : searchQueued(words ?? '', music.place, current)
+        return music.place === 'now' ? searchNow(words ?? '', current, music.video === true) : searchQueued(words ?? '', music.place, current, music.video === true)
       case 'correct':
         return correct(music.step, current)
       case 'forget':
@@ -1337,6 +1342,10 @@ export function createPlayer(deps: PlayerDeps): Player {
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    onShown(listener) {
+      shownListeners.add(listener)
+      return () => shownListeners.delete(listener)
     },
     duck(on) {
       ducking = ducking.then(() => setDuck(on)).catch((error: unknown) => reportFault('music.player.duck', error))

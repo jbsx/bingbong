@@ -92,6 +92,14 @@
           "down-lot": "the volume, speed or app number down a lot",
           "down-all": "the volume, speed or app number down as far as it goes"
         }
+      },
+      "kind": {
+        "type": "choice",
+        "instructions": "When the action plays something by the words: is it music to listen to, or a video to watch? Music is a song, an artist or an album; a video is a creator's or a channel's video, one the words name, or music the words ask to see.",
+        "options": {
+          "music": "music: play its sound alone",
+          "video": "a video: show it playing on the screen"
+        }
       }
     }
   }
