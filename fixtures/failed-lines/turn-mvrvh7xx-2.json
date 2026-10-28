@@ -9,5 +9,6 @@
   "log": "decision-1793177320821-1.jsonl",
   "claimedBy": "#498",
   "case": "overlap-2-correct-the-other-one-joined-p2",
-  "ruled": "The reading half (the joined line read as one verbatim string, no pick, no correct) is #498's; the consent-sheet half (p1, p3 stopped under YouTube's consent sheet) is #496's: fixedBy waits on both"
+  "ruled": "The reading half (the joined line read as one verbatim string, no pick, no correct) is #498's; the consent-sheet half (p1, p3 stopped under YouTube's consent sheet) is #496's. Both landed: overlap:gate 2-correct-the-other-one green at media-not-started 70% on Mammoth at c022abda (#496's consent watch on main), \"no, the other one\" read as correct and \"Playing “Christina Aguilera - Hurt (Official Video)” instead.\" said",
+  "fixedBy": "9d78bc0a"
 }
