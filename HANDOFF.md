@@ -25,15 +25,17 @@ The owner (2026-10-28 10:00): "the current app as is feels very unreliable… co
 
 ## In-progress work (live when this was written)
 
-- **#505** (a seek while the song starts leaves it paused): implementer in worktree impl-505. Rulings on the issue: the Player arm first (same shape as #496's resume), one poll interval, `back`/`restart` share the rule.
-- **#504** (a timed-out reading over a running play goes to the Planner silently): implementer in worktree impl-504. Rulings: default Fate `replace` for a grammar verb head else `add-on`, fired on the Local Match's best guess and said; Planner handoff aloud; a harness switch forces the timeout; the 3 s in `.env` stays.
+- **#505 CLOSED** (da72a1b5): a seek that leaves the playing song paused is played once, by kind; the settle is a measured 2,000 ms window; #506 filed for media on sites with no Player.
+- **#504 CLOSED** (3c269fe8): a timed-out reading over a running Command takes the default Fate, fires on the Local Match's best guess and is said; the Planner handoff is aloud; an Errand-held play is ended with its line; `BINGBONG_OVERLAP_SLOW_HOST=1` forces the timeout in the harness.
+- **#500** (the spoken `none`): second pass live in impl-500 (built: a real line says "I didn't catch that, say it again.", noise stays silent, decided by Jev's sureness + a −26 loudness floor measured on the day's 83 kiosk dumps; typed lines unsaid).
+- **ADR/CONTEXT landing**: agent in worktree adrs-1028 lands every drafted wording (#504's landed 5b940c94; the rest follow), on the owner's authorization.
 - **#502/#503** (the audio road, yt-dlp) are the OWNER'S OWN session (worktrees impl-502-*): do not touch.
 
 ## Open for the owner
 
 - **#500**: a line read `none` is shown muted and never said; Reliability rule 5 says said. 83 of 181 kiosk lines read `none`, so what is said and how short is the owner's call before it is built.
 - **#490**: speech over the app's voice, off by default; next measure is the kiosk's `speaking-*.wav` dumps after a day of spoken lines (none since the 10:01 push at the time of writing).
-- **Kiosk**: runs 0.1.4-local.202610281000 (= 94a8fb6d, the morning). Everything above is NOT on the kiosk; `pnpm kiosk:push` from main on the owner's word when the kiosk is idle.
+- **Kiosk**: runs **0.1.4-local.202610282041 = main 5f3a440b** (pushed 20:43 on the owner's word: #495–#499, #501, #504, #505, the audio-only default on, #502's audio road). Its `.env` has the Baseten block commented out (live model = Jev) and `BINGBONG_AUDIO_DUMP=1`; `BINGBONG_DECISION_IMAGES=false` and `BINGBONG_DECISION_TIMEOUT_MS=3000` are Mammoth-era leftovers the owner has not ruled on. A second push follows #500 (the spoken none) if it lands.
 - #469, #439, #452, #415 unchanged.
 
 ## Key decisions (each a note on its issue)
