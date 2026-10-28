@@ -131,6 +131,12 @@ last line.
   a case where the only other sound is the app's own voice, any further
   line was taken from it.
 
+The pane is one. A search or an open from a playing song leaves the song,
+so a case whose line 1 does that checks the URL and the lines, never the
+song: `5-independent-volume`'s "volume down" is through on "Nothing is
+playing.", which is true (#489, F1 arm a). Music that goes on through a
+search is a Yield entry, `missing`, not a case.
+
 A **wall** (a page the browser classes a Blocker: a challenge, a network
 block, a sign-in wall, or a page asking a person to prove they are no bot)
 seen before line 2 arrives makes that point `wall`, neither red nor green:
