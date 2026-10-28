@@ -7,5 +7,7 @@
   "happened": "overlap:gate 4-pause-while-loading at p1 (media-not-started 15%) on baseten-mammoth-27b-latest at 919f058f: `pause` given while `play let down by radiohead` was opening: said 'Nothing is playing.' and the play never landed; the pane stayed on DuckDuckGo with no media (both models)",
   "meant": "Let Down opens and is paused once it is there",
   "log": "decision-1793135882497-1.jsonl",
-  "claimedBy": "#489"
+  "claimedBy": "#489",
+  "fixedBy": "136cb98b",
+  "case": "4-pause-while-loading"
 }

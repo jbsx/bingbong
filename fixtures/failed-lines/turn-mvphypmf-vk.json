@@ -8,6 +8,7 @@
   "meant": "Back to the Idle Screen, the music playing on (a guess from the lines after it)",
   "log": "decision-1793033383382-1.jsonl",
   "claimedBy": "#489",
-  "fixedBy": "6a6f35a1",
+  "fixedBy": "db5b9b5e",
+  "case": "overlap-8-kiosk-back-to-page",
   "ruled": "Orchestrator on the owner's behalf, 2026-10-26 (#471 close): the halves of a split 'idle page'; no whole dump exists to guard it, and the mid-phrase turn cut is out of #471's scope. The keyterm budget's measured 15/95 on the STT gate stands as the bar."
 }

@@ -7,5 +7,7 @@
   "happened": "overlap:gate 2-correct-by-coldplay at p1 (media-not-started 0%) on baseten-mammoth-27b-latest at 919f058f: `no, by coldplay` given while `play yellow` was opening: it played Meghan Trainor - No, not Yellow by Coldplay",
   "meant": "One song plays, Yellow by Coldplay",
   "log": "decision-1793135278812-1.jsonl",
-  "claimedBy": "#489"
+  "claimedBy": "#489",
+  "fixedBy": "136cb98b",
+  "case": "2-correct-by-coldplay"
 }

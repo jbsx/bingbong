@@ -7,5 +7,7 @@
   "happened": "overlap:gate 12-scroll-while-sheet-closes at p1 (loading 8%) on baseten-mammoth-27b-latest at 919f058f: `scroll down` given while `decline the cookies` was still acting on w3schools: the decline ended cancelled and was then given again (all 3 points, both models)",
   "meant": "Both done on the page as it ends up: the cookies declined, the page scrolled",
   "log": "decision-1793138113263-1.jsonl",
-  "claimedBy": "#489"
+  "claimedBy": "#489",
+  "fixedBy": "136cb98b",
+  "case": "12-scroll-while-sheet-closes"
 }
