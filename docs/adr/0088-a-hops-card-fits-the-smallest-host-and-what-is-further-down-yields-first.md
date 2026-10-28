@@ -16,6 +16,9 @@ Amended 2026-10-28 by #495: an address past 300 characters yields first,
 the fit has a floor, opaque runs weigh at their own ratio, and a size
 refusal is asked once more (below).
 
+Amended 2026-10-28 by #501: every ask is built to the budget, by kind
+(below).
+
 ## Context
 
 A hop past the first offers every unvisited link on the page. Each link
@@ -192,3 +195,14 @@ still over is never sent and reads unavailable; a size 422 does not walk
 the Fallback Hosts and is asked once more on the same host at the host's
 stated max. The ask record names each cut, the budget, `unsent` and
 `retryOf`. Baseline and final on Mammoth: 386/438, no case differing.
+
+## Amendment 2026-10-28: every ask, by kind (#501)
+
+The hop's fit is one road for every ask (`askFitted`): a kind supplies its
+own fit — the page card's `fitCard`; the Appliance Card and the Site
+Question with nothing to yield but addresses shown cut; the settings ask
+losing the page's state last; the Shelf its oldest files — and the road
+names the cuts, refuses to send an ask over the budget, and asks a size
+refusal once more at the host's own count. An Errand step's card is built
+the same way, its cuts on the planner-step span, its one retry rebuilt to
+what the whole Planner ask must lose.

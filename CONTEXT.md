@@ -315,6 +315,11 @@ competes under by rule. One number for every model, the smallest host's,
 so the card the Decision Model gets is the card the gate measured. What
 makes the hop is never cut; of what is further down, the right-clicks
 yield first, then the links, then the blocks, the farthest first.
+Every ask is built to it, whatever its kind — the Action Card, the
+Appliance Card, the Site Question, the settings ask, the Shelf ask and an
+Errand step's card: each yields what its kind holds in #495's order of
+loss, the cut named in the ask's record, and an ask still over it is never
+sent (#501).
 _Avoid_: cap, limit, max_len, context window, truncation
 
 **Text Further Up**:
