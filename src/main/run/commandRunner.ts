@@ -645,7 +645,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     line.stage = event.word ?? `${event.status.charAt(0).toUpperCase()}${event.status.slice(1)}`
     // A Thinking stage's detail is the words themselves, already on their own line.
     line.detail = event.status === 'thinking' && event.word === undefined ? undefined : event.detail
-    if (event.status === 'acting') line.acting = event.detail !== undefined && event.detail !== '' ? `${line.stage} ${event.detail}` : line.stage
+    // An Errand's Acting detail is the Planner's own why, no object to say: its line's words name what stopped.
+    if (event.status === 'acting') line.acting = event.word === ERRAND_WORD ? `“${line.words}”` : event.detail !== undefined && event.detail !== '' ? `${line.stage} ${event.detail}` : line.stage
   }
 
   /** The line running when one is given (#489): the latest still live before it, as the Appliance Card carries it; null with none. */

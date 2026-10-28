@@ -98,5 +98,6 @@ export function readFate(answer: DecisionChoiceAnswer | undefined): Fate {
 
 /** What an ended Command says (the grill's Q11), its object the Acting stage it reached (`Playing let down by radiohead`): `Stopped playing let down by radiohead.` */
 export function stoppedLine(acting: string | undefined): string {
-  return acting === undefined || acting === '' ? 'Stopped.' : `Stopped ${acting.charAt(0).toLowerCase()}${acting.slice(1)}.`
+  const object = acting?.trim().replace(/[.!?…]+$/, '') ?? ''
+  return object === '' ? 'Stopped.' : `Stopped ${object.charAt(0).toLowerCase()}${object.slice(1)}.`
 }

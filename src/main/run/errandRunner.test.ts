@@ -47,7 +47,7 @@ function scriptedPlanner(...answers: PlannerAnswer[]) {
   return { planner, asked }
 }
 
-function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: SnapshotRef[] } = {}) {
+function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: SnapshotRef[]; card?: true } = {}) {
   const browser = new FakeBrowser()
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: options.refs ?? SEARCH_REFS }
   const events: PipelineEvent[] = []
@@ -68,6 +68,7 @@ function harness(options: { errand?: CommandRunnerDeps['errand']; refs?: Snapsho
     saveScreenshot: async () => {},
     sleep: async () => {},
     ...(options.errand !== undefined ? { errand: options.errand } : {}),
+    ...(options.card === true ? { applianceCard: { asks: 'sequential' } as const } : {}),
   })
   return { browser, events, records, spoken, perf, jev, runner }
 }
@@ -197,6 +198,24 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     await errand
     expect(spoken).toEqual(['Which shoes?', 'Stopped.'])
     expect(errandOf(records)).toMatchObject({ outcome: 'superseded' })
+  })
+
+  it('a line that takes the pane ends an Errand mid-step, which says its own words stopped, never the Planner\'s why (#489)', async () => {
+    let calls = 0
+    const planner: PlannerModel = {
+      model: 'glm-5.3-flash',
+      thinking: false,
+      plan: async () => {
+        calls += 1
+        if (calls > 1) return new Promise(() => {})
+        return { status: 'answered', answer: { next: 'act', action: { kind: 'type', ref: 3, text: 'running shoes' }, class: 'stays', why: 'type the search.' }, model: 'glm-5.3-flash', thinking: false, latencyMs: 900, waitedMs: 0 }
+      },
+    }
+    const { spoken, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 }, card: true })
+    void runner.run('errand find running shoes')
+    await until(() => calls > 1)
+    await runner.run('navigate example.org')
+    expect(spoken).toEqual(['Stopped “errand find running shoes”.'])
   })
 
   it('a Task that hits the cap hands its line to an Errand, its steps the first memory, and never says it could not finish', async () => {

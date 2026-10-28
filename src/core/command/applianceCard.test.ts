@@ -157,6 +157,9 @@ describe('the running Command on the Appliance Card (#489)', () => {
   it('says an ended line in one sentence, naming what it was doing', () => {
     expect(stoppedLine('Playing let down by radiohead')).toBe('Stopped playing let down by radiohead.')
     expect(stoppedLine(undefined)).toBe('Stopped.')
+    // An Errand's object is its line's words; an object's own end stop is never doubled (ui.md 10).
+    expect(stoppedLine('“play let down”')).toBe('Stopped “play let down”.')
+    expect(stoppedLine('Searching for tour dates.')).toBe('Stopped searching for tour dates.')
     expect(doingAnswer(null)).toBe('Nothing is running.')
   })
 })
