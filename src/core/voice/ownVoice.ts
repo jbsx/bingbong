@@ -8,8 +8,13 @@ export type OverSpeech = 'off' | 'stop' | 'filter' | 'duck'
 
 export const OVER_SPEECH_MODES: readonly OverSpeech[] = ['off', 'stop', 'filter', 'duck']
 
-/** The arm measured on #490's cases. */
-export const OVER_SPEECH_DEFAULT: OverSpeech = 'duck'
+/**
+ * Off: speech over the app's voice is its own and dropped (#326). The duck
+ * is the arm measured on #490's cases, named by BINGBONG_OVER_SPEECH=duck;
+ * the default went back to off by the orchestrator's ruled reversal (#490,
+ * eighth pass), since its echo negative did not hold green twice in a row.
+ */
+export const OVER_SPEECH_DEFAULT: OverSpeech = 'off'
 
 /** `BINGBONG_OVER_SPEECH` names the arm; anything else is the default. */
 export function resolveOverSpeech(env: Record<string, string | undefined>): OverSpeech {

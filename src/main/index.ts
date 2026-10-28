@@ -792,7 +792,7 @@ async function createWindow(): Promise<BrowserWindow> {
     // and the speaking gate — the mic takes no Utterance while a line plays.
     getHotListenSilenceMs: () => settingsStore.get().hotListenSilenceMs,
     speaking: speakingGate,
-    // Speech over the app's voice inside a listen (#490): BINGBONG_OVER_SPEECH names the arm, the duck by default.
+    // Speech over the app's voice inside a listen (#490): BINGBONG_OVER_SPEECH names the arm, off by default (the ruled reversal).
     overSpeech: resolveOverSpeech(process.env),
     ducking,
     // From the ear's opening the pane out of sight is parked: the page fills in before the line has been said (ADR 0079, 2026-10-25).

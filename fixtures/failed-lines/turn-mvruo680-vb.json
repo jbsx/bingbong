@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvruo680-vb",
+  "transcript": "And Spark for autumn tribute stopped.",
+  "at": 1793175966772,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 on baseten-mammoth-27b-latest at b528610c (narrow23, duck): `Move on.` was cut by level and fired (the read `cancelled`, the line `done`); 2.6 s later a capture of the read's last words and the app's `Stopped.` was read `And Spark for autumn tribute stopped.` (share 0.68 against what was said, so `person`), and Mammoth read it a media op (0.42), done: `cancelled, done, done`, not `cancelled, done`. The class: a long echo the ear garbles under the 0.75 share",
+  "meant": "The app's own voice in the mic is never taken as a line: an echo of what the app just said fires nothing",
+  "log": "/tmp/impl490/s8/narrow23/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs",
+  "claimedBy": "#490"
+}

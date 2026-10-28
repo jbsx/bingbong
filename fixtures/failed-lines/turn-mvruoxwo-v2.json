@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvruoxwo-v2",
+  "transcript": "Utah",
+  "at": 1793176002402,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-own-voice-not-taken at p1 on baseten-mammoth-27b-latest at b528610c (narrow23, duck): 1 s into the Page Read of the Let Down watch page, whose text began with an ad's file name (`UK_ASOS_AUTUMN_C3_PAID_LOFI_MW_EMMA-MS_16x9_SHOP-NOW.mp4`), the echo of `UK…` was read `Utah` (4 letters, near nothing in the echo window, so `person`); Mammoth read it `search Utah`, which cut the read at 7.2 s of 294.1 s and opened DuckDuckGo. The class: a short echo the ear garbles past any text match",
+  "meant": "The app's own voice in the mic is never taken as a line: a short echo of what the app just said fires nothing",
+  "log": "/tmp/impl490/s8/narrow23/10-own-voice-not-taken/decision-models_baseten-mammoth-27b-latest/p1-logs",
+  "claimedBy": "#490"
+}

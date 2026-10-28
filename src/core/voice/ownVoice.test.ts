@@ -34,11 +34,12 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(ownShare('', READ)).toBe(0)
   })
 
-  it('takes its arm from BINGBONG_OVER_SPEECH, else the duck', () => {
-    expect(resolveOverSpeech({})).toBe('duck')
+  it('takes its arm from BINGBONG_OVER_SPEECH, else off (the ruled reversal, #490)', () => {
+    expect(resolveOverSpeech({})).toBe('off')
+    expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'duck' })).toBe('duck')
     expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: ' Stop ' })).toBe('stop')
     expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'off' })).toBe('off')
-    expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'loud' })).toBe('duck')
+    expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'loud' })).toBe('off')
   })
 
   it('a stretch may run from anywhere in one sentence into the head of the next: a stopped read, then "Stopped." (#490)', () => {

@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvruftg8-v2",
+  "transcript": "Content",
+  "at": 1793175577559,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-stop-while-speaking at p1 on baseten-mammoth-27b-latest at d4417ca7 (narrow22, BINGBONG_OVER_SPEECH duck): 3 s into the Page Read of Wikipedia's Stop the Clocks (`Stop the Clocks Contents (Top) 1 Background 2 Content…`), the echo of `Contents` was read `Content` (7 letters, not found whole in the echo window, so `person`); Mammoth read it `scroll_down` (0.93), which cut the read and started a new one at the Content section, so the person's `Stop.` at 8.3 s fell on the new read's own `Stop the Clocks` and was taken into one 4.6 s capture with it (`done, done`, not `cancelled`). b528610c holds a short capture against the echo window by a near stretch (share >= 0.75), which takes `Content`; not yet seen in a run",
+  "meant": "The app's own voice in the mic is never taken as a line: a short echo of what the app just said fires nothing",
+  "log": "/tmp/impl490/s8/narrow22/10-stop-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs",
+  "claimedBy": "#490"
+}
