@@ -8,7 +8,7 @@ Accepted 2026-10-28. Landed on the orchestrator's word for the owner,
 
 Proposed 2026-10-28, from #489's grill (note 4103422937, Q15) and the
 orchestrator's rulings (note 4103441871); drafted on the issue in note
-4103742129. Built 136cb98b..d0c3d1ac on main. It amends ADR 0076 (the next
+4103742129. Built 136cb98b..66a29c97 on main. It amends ADR 0076 (the next
 Utterance ends a Task; a superseded Task says nothing) and ADR 0096 (one
 more question on the Appliance Card while a line runs).
 
@@ -52,8 +52,10 @@ read each line alone: `no, by coldplay` played Meghan Trainor's "No".
 - **The runner acts on the Fate, never on timing.**
   - `ends`: the running line ends, its action in flight cancelled, its
     Errand ended; an ended `play` stops the pane's load and pauses it,
-    and its song's start is never pressed after, unless the line that
-    ended it takes the pane. Then the new line fires.
+    and its song's start is never pressed after nor its consent wall
+    cleared (a clear already out holds the page paused for a self-start's
+    bound), unless the line that ended it takes the pane. Then the new
+    line fires.
   - `joins`: the running line gives way, and the two lines' words, in
     order ("play yellow, no, by coldplay"), are read again as one line on
     one more ask (T3, arm J1). That ask never offers Steps: the joined

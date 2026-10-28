@@ -7,5 +7,7 @@
   "happened": "overlap:gate 2-correct-the-other-one at p1 (media-not-started 23%) on baseten-mammoth-27b-latest at 919f058f: `no, the other one` given while `play hurt` was opening: it played Christina Aguilera - Hurt, nothing said; the view did not hold Hurt as the chosen other version",
   "meant": "One song plays, another song or version called Hurt than the one picked first",
   "log": "decision-1793135522797-1.jsonl",
-  "claimedBy": "#489"
+  "claimedBy": "#489",
+  "fixedBy": "b1ff40b2",
+  "case": "2-correct-the-other-one"
 }
