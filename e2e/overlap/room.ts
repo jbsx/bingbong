@@ -3,10 +3,12 @@
 // it does in a living room, live, and nothing reaches a speaker. The app plays
 // its speech into the sink (aplay through the pulse plugin), the person's
 // lines are played into the same sink, and the app's microphone is the sink's
-// monitor: the mix of both, the app's voice ducking and stopping as it does.
+// monitor, remapped as a source of its own (Chromium takes no sink's monitor
+// as its default microphone): the mix of both, the app's voice ducking and
+// stopping as it does.
 //
 // It is fail-closed: the server loads no device module, only the null sink
-// and its own socket, and is checked for exactly that before a run uses it;
+// its own socket and the source over its monitor, and is checked for exactly that before a run uses it;
 // a player that cannot reach it plays nowhere, never on the default device.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -26,8 +28,10 @@ export interface Room {
 }
 
 const SINK = 'room'
-/** The only modules a room may hold: its socket and its null sink. */
-const ALLOWED_MODULES = new Set(['module-native-protocol-unix', 'module-null-sink'])
+/** The microphone: the sink's monitor as a source that is not a monitor. */
+const MIC = 'mic'
+/** The only modules a room may hold: its socket, its null sink and the microphone over its monitor. */
+const ALLOWED_MODULES = new Set(['module-native-protocol-unix', 'module-null-sink', 'module-remap-source'])
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -51,7 +55,7 @@ export async function openRoom(dir: string): Promise<Room> {
   const server = `unix:${socket}`
   const daemon = spawn(
     'pulseaudio',
-    ['-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=no', '--system=no', '--disable-shm=yes', '--log-target=stderr', '-L', `module-native-protocol-unix socket=${socket} auth-anonymous=1`, '-L', `module-null-sink sink_name=${SINK} rate=16000 channels=1`],
+    ['-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=no', '--system=no', '--disable-shm=yes', '--log-target=stderr', '-L', `module-native-protocol-unix socket=${socket} auth-anonymous=1`, '-L', `module-null-sink sink_name=${SINK} rate=16000 channels=1`, '-L', `module-remap-source master=${SINK}.monitor source_name=${MIC} rate=16000 channels=1`],
     { env: { ...process.env, PULSE_RUNTIME_PATH: join(dir, 'run'), PULSE_STATE_PATH: join(dir, 'state') }, stdio: 'ignore' },
   )
   const children: ChildProcess[] = []
@@ -69,7 +73,7 @@ export async function openRoom(dir: string): Promise<Room> {
     await sleep(100)
   }
   pactl('set-default-sink', SINK)
-  pactl('set-default-source', `${SINK}.monitor`)
+  pactl('set-default-source', MIC)
   const leak = roomLeaks(pactl('list', 'short', 'modules').stdout, pactl('list', 'short', 'sinks').stdout)
   if (leak !== null) {
     await close()

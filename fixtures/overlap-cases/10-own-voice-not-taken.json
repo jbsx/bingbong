@@ -14,7 +14,7 @@
   "expect": {
     "speech": "whole",
     "lines": [
-      "done"
+      "running"
     ],
     "nothingElse": true
   },

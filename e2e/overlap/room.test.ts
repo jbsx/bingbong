@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { roomLeaks } from './room'
 
 describe('roomLeaks (#490)', () => {
-  const modules = '0\tmodule-native-protocol-unix\tsocket=/tmp/r/native auth-anonymous=1\t\n1\tmodule-null-sink\tsink_name=room rate=16000 channels=1\t\n'
+  const modules = '0\tmodule-native-protocol-unix\tsocket=/tmp/r/native auth-anonymous=1\t\n1\tmodule-null-sink\tsink_name=room rate=16000 channels=1\t\n2\tmodule-remap-source\tmaster=room.monitor source_name=mic\t\n'
   const sinks = '0\troom\tmodule-null-sink.c\ts16le 1ch 16000Hz\tIDLE\n'
 
-  it('passes a room of its socket and one null sink', () => {
+  it('passes a room of its socket, one null sink and the microphone over its monitor', () => {
     expect(roomLeaks(modules, sinks)).toBeNull()
   })
 

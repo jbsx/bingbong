@@ -16,7 +16,7 @@ export interface EndState {
   /** Each sentence the app began: how long it sounded (its start to its end, null when it never ended) and how long it is whole (#490). */
   readonly speech?: readonly { readonly text: string; readonly ms: number | null; readonly wholeMs: number }[]
   /** One per Command the Feed shows after line 1, in order; `running` when it had not ended. */
-  readonly lines: readonly (LineOutcome | 'running')[]
+  readonly lines: readonly LineOutcome[]
 }
 
 /** Whether any of the sentences said means `means`. */
@@ -74,9 +74,10 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
     } else if (!(await judge(said.means, end.said))) return `nothing said meant "${said.means}"`
   }
   if (expected.speech === 'whole') {
-    // A sentence cut is one that sounded for less than it takes whole; the slack is a duck's restart, never a lost clause.
-    const cut = (end.speech ?? []).find((sentence) => sentence.ms === null || sentence.ms < WHOLE_SHARE * sentence.wholeMs)
-    if (cut !== undefined) return `"${cut.text.slice(0, 60)}" was cut (${cut.ms === null ? 'it never ended' : `${Math.round(cut.ms / 100) / 10} s of ${Math.round(cut.wholeMs / 100) / 10} s`})`
+    // A sentence cut is one that ended sooner than it takes whole; the slack is a duck's restart, never a lost clause.
+    // `spoken` marks every end, a stop's too, so one with no end is still sounding when the run ended: never cut.
+    const cut = (end.speech ?? []).find((sentence) => sentence.ms !== null && sentence.ms < WHOLE_SHARE * sentence.wholeMs)
+    if (cut !== undefined) return `"${cut.text.slice(0, 60)}" was cut (${Math.round(cut.ms! / 100) / 10} s of ${Math.round(cut.wholeMs / 100) / 10} s)`
   }
   if (expected.lines !== undefined) {
     const wanted = expected.lines.filter((outcome) => outcome !== 'none')
@@ -91,7 +92,7 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
 }
 
 /** What the Feed shows each Command begun at or after `from` came to: one per Task, in order, its last ending. */
-export function lineOutcomes(records: RunRecords, from: number): (LineOutcome | 'running')[] {
+export function lineOutcomes(records: RunRecords, from: number): LineOutcome[] {
   const tasks: { id: string; dropped: boolean; turns: Set<string> }[] = []
   const later = records.events.filter((record) => record.t >= from)
   for (const { event } of later) {

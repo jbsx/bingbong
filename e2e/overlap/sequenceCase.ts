@@ -24,9 +24,9 @@ export interface CaseNoise {
   readonly at: LineTime
 }
 
-/** What the Feed shows a line came to; `none` is a line that is no Command of its own (taken into another, or unheard). */
-export type LineOutcome = 'done' | 'failed' | 'cancelled' | 'dropped' | 'none'
-export const LINE_OUTCOMES: readonly LineOutcome[] = ['done', 'failed', 'cancelled', 'dropped', 'none']
+/** What the Feed shows a line came to; `none` is a line that is no Command of its own (taken into another, or unheard); `running`, one still under way when the run's bound came (a read longer than the run, #490). */
+export type LineOutcome = 'done' | 'failed' | 'cancelled' | 'dropped' | 'none' | 'running'
+export const LINE_OUTCOMES: readonly LineOutcome[] = ['done', 'failed', 'cancelled', 'dropped', 'none', 'running']
 
 export type SaidExpect = { readonly is: string } | { readonly means: string }
 
@@ -42,7 +42,7 @@ export interface CaseExpect {
     readonly loop?: boolean
   }
   readonly said?: readonly SaidExpect[]
-  /** `whole`: every sentence the app began was heard to its end, never cut (#490). */
+  /** `whole`: every sentence the app began was never cut: heard to its end, or still sounding when the run ended (#490). */
   readonly speech?: 'whole'
   readonly lines?: readonly LineOutcome[]
   /** The Feed shows `lines` and nothing else, a line heard and read as no Command included (#490). */

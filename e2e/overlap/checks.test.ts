@@ -43,7 +43,8 @@ describe('the end state checked against a case’s expect', () => {
     const read = (ms: number | null): EndState => ({ ...end, speech: [{ text: 'Let Down, Radiohead, six years ago.', ms, wholeMs: 4_000 }] })
     expect(await checkEnd({ speech: 'whole' }, read(4_200), neverJudged)).toBeNull()
     expect(await checkEnd({ speech: 'whole' }, read(1_500), neverJudged)).toBe('"Let Down, Radiohead, six years ago." was cut (1.5 s of 4 s)')
-    expect(await checkEnd({ speech: 'whole' }, read(null), neverJudged)).toBe('"Let Down, Radiohead, six years ago." was cut (it never ended)')
+    // Still sounding when the run ended: `spoken` marks a stop's end too, so it was never cut.
+    expect(await checkEnd({ speech: 'whole' }, read(null), neverJudged)).toBeNull()
   })
 
   it('nothing else in the Feed counts a line read as no Command (#490)', async () => {

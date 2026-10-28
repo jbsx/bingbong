@@ -113,13 +113,16 @@ last line.
 - `said`: the sentences the app said. An `is` is exact, each one after the
   one before it. A `means` goes to a judge (GLM-5.3-flash, as `goal:gate`'s)
   that reads every sentence said. It is the one check that is not exact.
-- `speech`: `whole` says every sentence the app began was heard to its end:
-  none sounded for less than nine tenths of the time it takes said whole
-  (the app's own voice, rendered once to time it). A dip in its level is
-  not a cut.
+- `speech`: `whole` says no sentence the app began was cut: none ended
+  sooner than nine tenths of the time it takes said whole (the app's own
+  voice, rendered once to time it). A sentence still sounding when the run
+  ended was not cut, since every end, a stop's too, is marked. A dip in its
+  level is not a cut.
 - `lines`: what the Feed shows each line came to, in order: `done`,
-  `failed`, `cancelled`, `dropped` (heard, read as no Command), or `none`
-  (no Command of its own: taken into another line, or not heard). A line
+  `failed`, `cancelled`, `dropped` (heard, read as no Command), `none`
+  (no Command of its own: taken into another line, or not heard), or
+  `running` (still under way when the run's bound came: a read longer than
+  the run). A line
   is a Command whose first hop came at or after line 1, and later hops of
   the same Task are its own. A `dropped` entry counts only in a case that
   expects a line `dropped`, since by order alone a remark or noise that was
