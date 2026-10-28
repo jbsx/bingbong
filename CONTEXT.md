@@ -1886,9 +1886,13 @@ _Avoid_: proxy, cache, clone
 **Consent Dialog**:
 A consent wall: an element rendered over page content whose controls offer
 a cookie or consent choice, whether or not it declares a dialog role.
-Auto-dismissed wherever it is met — at navigation, at read, and when it
-blocks an action — privacy-preferring control first. A consent strip that
-covers nothing is not a Consent Dialog and is left to the model.
+Auto-dismissed wherever it is met — at navigation, at read, when it
+blocks an action, and as it draws over media playing, told by the page
+itself with its text and buttons and cleared on them with no page
+collect (#496) — privacy-preferring control first. Media it paused as it
+drew plays again once it is cleared, unless the person paused it. A
+consent strip that covers nothing is not a Consent Dialog and is left to
+the model.
 _Avoid_: cookie banner, consent banner, GDPR popup, cookie wall
 
 **Cover Rule**:
