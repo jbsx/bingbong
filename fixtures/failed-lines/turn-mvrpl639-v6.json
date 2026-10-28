@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvrpl639-v6",
+  "transcript": "Cancel",
+  "at": 1793167427375,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 73%) on baseten-mammoth-27b-latest at 33ae8614 (narrow11): a 0.7 s capture of the Page Read's own `…cancel and sign in to YouTube…` was read `Cancel` (own share 1, but under the 10-letter floor, so `person`); as an abort phrase it stopped the read before the runner saw it, `Stopped.` was said and the listen closed, so the person's `Move on.` 30 s later was never heard",
+  "meant": "A short echo of the app's own sentence is not the person's abort: the read goes on, the listen stays open and `Move on.` stops it",
+  "log": "/tmp/impl490/s5/narrow11/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs (dump p1-dumps/speaking-1793167427348-0007.wav)",
+  "claimedBy": "#490"
+}

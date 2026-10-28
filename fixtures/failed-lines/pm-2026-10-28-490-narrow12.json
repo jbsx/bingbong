@@ -1,0 +1,11 @@
+{
+  "turnId": "pm-2026-10-28-490-narrow12",
+  "transcript": "48 15 Radiohead OK Computer Full Album … Radiohead Let Download",
+  "at": 1793167916734,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 73%) on baseten-mammoth-27b-latest at 33ae8614 (narrow12): `Move on.` was said 28 s into a capture over the ducked Page Read that ran to the 30 s max; the level read cut no stretch (offline replay of the dump: no stretch at ratio 3, 2.5 or 2, only an echo one at 1.5), so Parakeet read the echo alone (own share 0.71, `person`), Jev read none and it ended quietly; the read went on to done",
+  "meant": "The person's line over the ducked voice is cut out and read alone, and `Move on.` stops the read",
+  "log": "/tmp/impl490/s5/narrow12/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs (dump p1-dumps/speaking-1793167912706-0011.wav)",
+  "claimedBy": "#490"
+}
