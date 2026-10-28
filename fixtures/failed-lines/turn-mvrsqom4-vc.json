@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvrsqom4-vc",
+  "transcript": "After sex",
+  "at": 1793172724532,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 on baseten-mammoth-27b-latest at c7e80bf0 (narrow18): after `Move on.` cut the Page Read, a 1.15 s capture made under the read (dump speaking-1793172723484-0013.wav) of its `…Cigarettes After Sex — late night playlist…` was read `After sex`: own share 1, but 8 letters, under the 10-letter floor (OWN_VOICE_LETTERS), so `person`; Mammoth read it `play After sex` (action 0.42) and played it: `cancelled, done, done`, not `cancelled, done`. The class: a short echo of the app's own words goes to the runner by design (\"a short echo goes to the runner, which reads it as no Command\", ownVoice.ts), and the runner reads a title or a stop word as a Command",
+  "meant": "The app's own voice in the mic is never taken as a line: a short echo of what the app just said fires nothing",
+  "log": "/tmp/impl490/s7/narrow18/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs",
+  "claimedBy": "#490"
+}

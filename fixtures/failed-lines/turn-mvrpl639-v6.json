@@ -4,8 +4,10 @@
   "at": 1793167427375,
   "source": "spoken",
   "stage": "stt",
-  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 73%) on baseten-mammoth-27b-latest at 33ae8614 (narrow11): a 0.7 s capture of the Page Read's own `…cancel and sign in to YouTube…` was read `Cancel` (own share 1, but under the 10-letter floor, so `person`); as an abort phrase it stopped the read before the runner saw it, `Stopped.` was said and the listen closed, so the person's `Move on.` 30 s later was never heard",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 73%) on baseten-mammoth-27b-latest at 33ae8614 (narrow11): a 0.7 s capture of the Page Read's own `…cancel and sign in to YouTube…` was read `Cancel` (own share 1, but under the 10-letter floor, so `person`); as an abort phrase it stopped the read before the runner saw it, `Stopped.` was said and the listen closed, so the person's `Move on.` 30 s later was never heard. Arm (a) (a461c40a) sends an echoed stop word to the runner; held with Row 10 green on narrow19 and narrow20 at c7e80bf0, consecutive (narrow17 green, narrow18 red on a short echo read as play, not this line)",
   "meant": "A short echo of the app's own sentence is not the person's abort: the read goes on, the listen stays open and `Move on.` stops it",
   "log": "/tmp/impl490/s5/narrow11/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs (dump p1-dumps/speaking-1793167427348-0007.wav)",
-  "claimedBy": "#490"
+  "claimedBy": "#490",
+  "fixedBy": "a461c40a",
+  "case": "10-move-on-while-speaking"
 }
