@@ -15,6 +15,7 @@ import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts 
 import { ADDRESS_BOUND, promptChars, type CardCut } from '../decision/cardBudget'
 import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
 import { sectionsOf } from './passageSections'
+import { reportFault } from '../trace/fault'
 import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureOfRef, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -862,7 +863,8 @@ export function shownAddress(href: string): string {
   let url: URL
   try {
     url = new URL(href)
-  } catch {
+  } catch (error) {
+    reportFault('command.jevReading.shownAddress', error)
     return `${href.slice(0, ADDRESS_BOUND)}…`
   }
   const hosts = new Set<string>()
@@ -883,7 +885,8 @@ function hostNamed(value: string): string | null {
   if (!/^https?:\/\//i.test(value)) return null
   try {
     return new URL(value).hostname
-  } catch {
+  } catch (error) {
+    reportFault('command.jevReading.hostNamed', error)
     return null
   }
 }

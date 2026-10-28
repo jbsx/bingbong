@@ -1748,7 +1748,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     let told: { at?: unknown; playing?: unknown; showing?: unknown; wall?: unknown }
     try {
       told = JSON.parse(payload) as typeof told
-    } catch {
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.consentTold', error)
       return
     }
     if (typeof told.at !== 'number' || typeof told.showing !== 'number') return

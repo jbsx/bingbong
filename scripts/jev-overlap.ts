@@ -145,7 +145,7 @@ function withoutRunning(ask: { state: string; questions: DecisionQuestions }): {
   if (at === -1) return ask
   const ofRunning = (line: string) => /^(Its stage|Its done so far|It is opening): /.test(line)
   const state = [...lines.slice(0, at), ...lines.slice(at + 1).filter((line, index) => !(ofRunning(line) && lines.slice(at + 1, at + 1 + index).every(ofRunning)))].join('\n')
-  const { fate: _fate, ...questions } = ask.questions as Record<string, DecisionQuestions[string]>
+  const questions: Record<string, DecisionQuestions[string]> = Object.fromEntries(Object.entries(ask.questions).filter(([key]) => key !== 'fate'))
   const action = questions.action
   const options = action !== undefined && action.type === 'choice' ? Object.fromEntries(Object.entries(action.options).filter(([label]) => label !== 'say_doing')) : undefined
   return { state, questions: { ...questions, ...(action !== undefined && options !== undefined ? { action: { ...action, options } } : {}) } as DecisionQuestions }
