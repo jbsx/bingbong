@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvrq48iv-v2",
+  "transcript": "Page",
+  "at": 1793168317161,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 8-split-by-pause at p1 (1674 ms) on baseten-mammoth-27b-latest at 98ffae32 (#494's narrow run 1, on the old start with no page to go back to): `Back to` was read `back` and failed at 887 ms, its failure sentence sounding until 4.2 s; `page.` came at 1674 ms over that sentence, and the ear merged it into one 3.3 s capture under the duck (speechMs 2656) whose over-speech verdict was `own` at share 0.84, so the person's second half was dropped as the app's own voice and never reached the runner",
+  "meant": "The person's `page.` over the app's ducked sentence is heard as theirs and reaches the runner, where it joins `Back to`",
+  "log": "/tmp/impl494/n1/8-split-by-pause/decision-models_baseten-mammoth-27b-latest/p1-logs (dump p1-dumps/speaking-1793168316966-0003.wav)",
+  "claimedBy": "#490"
+}
