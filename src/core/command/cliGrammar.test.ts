@@ -162,6 +162,8 @@ describe('parseCliCommand', () => {
     expect(play('play')).toEqual({ music: { kind: 'unpause' } })
     expect(play('pause')).toEqual({ music: { kind: 'pause' } })
     for (const line of ['skip', 'next', 'next song', 'Next song.']) expect(play(line)).toEqual({ music: { kind: 'skip' } })
+    // The ad over the song, by the engine's own Skip button (#497): the Queue is left alone.
+    for (const line of ['skip the ad', 'Skip the ad.', 'skip ad', 'skip the ads', 'skip this ad']) expect(play(line)).toEqual({ music: { kind: 'skip', ad: true } })
     for (const line of ['previous', 'last song', 'go back a song']) expect(play(line)).toEqual({ music: { kind: 'previous' } })
     for (const line of ['loop', 'loop this']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true } })
     // A `repeat` at a song's end plays it again (turn-mvqga9a7-v1g).

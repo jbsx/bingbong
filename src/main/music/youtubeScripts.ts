@@ -43,6 +43,8 @@ export interface WatchStatus {
   readonly error: boolean
   /** An ad plays in the element now. */
   readonly ad: boolean
+  /** The engine offers to skip that ad now (#497): its own Skip button is up. */
+  readonly skippable: boolean
   /** An end heard since the last read: whose, and whether it was an ad's. */
   readonly ended: { readonly id: string | null; readonly ad: boolean } | null
   /** The channel, as the player names it; '' when it does not (#344). */
@@ -102,6 +104,13 @@ export const LEVEL_SCRIPT = `(() => {
 /** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
 const PROMPT_FINDER = `const continuePrompt = () => Array.from(document.querySelectorAll('yt-confirm-dialog-renderer')).find((dialog) => dialog.getClientRects().length > 0 && /continue watching/i.test(dialog.textContent || '')) || null`
 
+/**
+ * Finds the engine's own Skip button over an ad (#497): `skipButton(player)`,
+ * null while the ad cannot be skipped — YouTube draws the button only once
+ * it may be, and keeps it hidden through the countdown before.
+ */
+const SKIP_FINDER = `const skipButton = (owner) => owner ? Array.from(owner.querySelectorAll('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern')).find((button) => button.getClientRects().length > 0 && getComputedStyle(button).visibility !== 'hidden') || null : null`
+
 /** How long before a song's end it is paused (s): `timeupdate` comes about every quarter second. */
 /** How far before its end a song is paused and its end heard (s): a playing element this close to the end is one the end rule is about to pause. */
 export const END_LEAD_S = 1
@@ -157,6 +166,7 @@ export const WATCH_SCRIPT = `(() => {
   const errorNode = player ? player.querySelector('.ytp-error') : null
   ${PROMPT_FINDER}
   ${LOUDNESS_READER}
+  ${SKIP_FINDER}
   return {
     watch: Boolean(window.__bingbongAudio) || location.pathname === '/watch',
     id: videoId(),
@@ -164,6 +174,7 @@ export const WATCH_SCRIPT = `(() => {
     hasVideo: video !== null,
     error: errorNode !== null && errorNode.getClientRects().length > 0,
     ad: player ? player.classList.contains('ad-showing') : false,
+    skippable: player !== null && player.classList.contains('ad-showing') && skipButton(player) !== null,
     ended,
     channel: (data && data.author) || '',
     elapsed: video ? video.currentTime : 0,
@@ -216,6 +227,8 @@ export interface StartRead {
   readonly refused: string | null
   /** The engine says an ad plays in the element now (#497): its time is the ad's, not the song's. */
   readonly ad: boolean
+  /** The engine offers to skip that ad now (#497): its own Skip button is up. */
+  readonly skippable: boolean
 }
 
 /**
@@ -231,7 +244,9 @@ export const START_SCRIPT = `(() => {
   const player = document.querySelector('#movie_player')
   const video = player ? player.querySelector(${SONG_ELEMENT}) : null
   if (!video) return null
-  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad: player.classList.contains('ad-showing') }
+  ${SKIP_FINDER}
+  const ad = player.classList.contains('ad-showing')
+  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad, skippable: ad && skipButton(player) !== null }
 })()`
 
 /** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */
@@ -267,6 +282,10 @@ export type ElementOp =
   | { readonly op: 'mute'; readonly on: boolean }
   /** The element as it is, nothing changed (#362): what `show` names when the Player holds no song. */
   | { readonly op: 'read' }
+  /** The position moved by this many seconds (#497), held within the element's length: a seek held over an ad, put on the song. */
+  | { readonly op: 'seek'; readonly by: number }
+  /** The engine's own Skip button over an ad, pressed (#497); `changed` false when none is up. */
+  | { readonly op: 'skip-ad' }
 
 /** The element after a control, or `found` false when the page has no player video. */
 export interface ElementState {
@@ -302,6 +321,7 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   const video = (player ? player.querySelector(${SONG_ELEMENT}) : null) || ${reach === 'page' ? PAGE_MEDIA_JS : 'null'}
   if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false, ducked: false }
   let changed = op.op !== 'read'
+  ${SKIP_FINDER}
   const heard = ${HEARD_VOLUME_FN}
   const setHeard = ${SET_HEARD_VOLUME_FN}
   // YouTube's player is told first, as it sets the element itself; then the element, at its floor under a duck (#459).
@@ -321,6 +341,17 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
     case 'pause': video.pause(); break
     case 'loop': video.loop = op.on; break
     case 'restart': video.currentTime = 0; video.play().catch(() => {}); break
+    case 'seek': {
+      const end = isFinite(video.duration) ? Math.max(0, video.duration - ${END_LEAD_S}) : Infinity
+      video.currentTime = Math.max(0, Math.min(end, video.currentTime + op.by))
+      break
+    }
+    case 'skip-ad': {
+      const skip = player && player.classList.contains('ad-showing') ? skipButton(player) : null
+      if (skip) skip.click()
+      changed = skip !== null
+      break
+    }
     case 'volume': setVolume(op.to); break
     case 'level': setHeard(video, Math.max(0, Math.min(100, op.to)) / 100); break
     case 'duck': {

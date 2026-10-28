@@ -293,6 +293,14 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     for (const op of ['play', 'pause', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate']) expect(stream).toHaveProperty(`${op}-7`)
   })
 
+  it('offers `skip` only over an ad its engine says may be skipped now (#497), and reads it as that op', () => {
+    expect(commandQuestions('skip', WATCH).action.options).not.toHaveProperty('skip-7')
+    expect(commandQuestions('skip', withFacts({ ad: { skippable: false } })).action.options).not.toHaveProperty('skip-7')
+    const skippable = withFacts({ ad: { skippable: true } })
+    expect(commandQuestions('skip', skippable).action.options['skip-7']).toBe('skip the ad playing in [7] "YE - HIGHS AND LOWS" now, with the player\'s own Skip button')
+    expect(readCommandAnswers({ action: choice('skip-7'), slot: choice('none') }, 'skip this ad', skippable)).toMatchObject({ verb: 'media', target: 7, mediaOp: { op: 'skip' } })
+  })
+
   it('offers no op, and asks no amount, on a page with no media ref — nor on a media ref read without its facts', () => {
     const none = commandQuestions('skip 10 seconds ahead', PAGE)
     expect(Object.keys(none.action.options).some((label) => /^(play|pause|forward)-\d+$/.test(label))).toBe(false)

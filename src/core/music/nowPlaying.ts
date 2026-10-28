@@ -36,6 +36,8 @@ export interface NowPlaying {
 export interface AdShowing {
   readonly elapsedS: number
   readonly durationS: number | null
+  /** The engine offers to skip it now: its own Skip button is up. */
+  readonly skippable: boolean
 }
 
 /** What Now Playing calls the wait (#497), on the Idle Screen's card and the toolbar alike: one word for it everywhere (ui.md 9). */

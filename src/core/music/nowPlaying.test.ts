@@ -73,7 +73,7 @@ describe('nowPlayingView', () => {
 
 describe('nowPlayingView over an ad (#497)', () => {
   it('an ad before the song: STARTING, "An ad first" in the title’s place, the bar and times the ad’s, the song’s title kept off the card', () => {
-    const view = nowPlayingView({ ...SONG, elapsedS: 0, durationS: null, ad: { elapsedS: 5, durationS: 120 } })
+    const view = nowPlayingView({ ...SONG, elapsedS: 0, durationS: null, ad: { elapsedS: 5, durationS: 120, skippable: false } })
     expect(view).toMatchObject({
       kicker: 'Starting',
       title: 'An ad first',
@@ -88,7 +88,7 @@ describe('nowPlayingView over an ad (#497)', () => {
   })
 
   it('an ad whose length is not known yet: a dash for it', () => {
-    expect(nowPlayingView({ ...SONG, ad: { elapsedS: 3, durationS: null } })).toMatchObject({ fraction: 0, elapsed: '0:03', length: '–:––', label: 'An ad first, 0:03' })
+    expect(nowPlayingView({ ...SONG, ad: { elapsedS: 3, durationS: null, skippable: false } })).toMatchObject({ fraction: 0, elapsed: '0:03', length: '–:––', label: 'An ad first, 0:03' })
   })
 
   it('no ad: the song’s own title', () => {

@@ -6,7 +6,9 @@ import type { MusicAction } from '../../core/music/musicWords'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
-import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerStart, type SongMemory } from './player'
+import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerOutcome, type PlayerStart, type SongMemory } from './player'
+import type { ElementOp } from './youtubeScripts'
+import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { SHEET_DISMISSAL, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
@@ -1185,20 +1187,22 @@ describe("a song's start (#488): Playing only when the element plays", () => {
   })
 })
 
+/** Song A on the scripted engine (#497); the start's waits are `sleep`'s. */
+function prerolled(sleep: () => Promise<void> = async () => {}) {
+  const browser = new FakeBrowser()
+  const youtube = new ScriptedYouTube(browser)
+  youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+  youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+  const starts: PlayerStart[] = []
+  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep, onStart: (start) => starts.push(start) })
+  const shown: (NowPlaying | null)[] = []
+  player.onChange((nowPlaying) => shown.push(nowPlaying))
+  return { youtube, player, starts, shown }
+}
+
 describe('a pre-roll ad before the song (#497): the start counts only the song’s own time', () => {
-  /** A 2:00 pre-roll, then the song: the Player never presses anything over it (the page's Skip is Jev's, a click of its ref). */
+  /** A 2:00 pre-roll, then the song: the Player never presses anything over it — a skip is the person's or Jev's to ask. */
   const PRE_ROLL_S = 120
-  function prerolled() {
-    const browser = new FakeBrowser()
-    const youtube = new ScriptedYouTube(browser)
-    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
-    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
-    const starts: PlayerStart[] = []
-    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, onStart: (start) => starts.push(start) })
-    const shown: (NowPlaying | null)[] = []
-    player.onChange((nowPlaying) => shown.push(nowPlaying))
-    return { youtube, player, starts, shown }
-  }
 
   it('the ad plays out unpressed and unreopened, and the start is decided on the song: Playing once the song plays, the ad’s hold recorded', async () => {
     const { youtube, player, starts } = prerolled()
@@ -1219,7 +1223,7 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
     youtube.preRollS = PRE_ROLL_S
     await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
     const ads = shown.flatMap((nowPlaying) => (nowPlaying?.ad ? [nowPlaying.ad] : []))
-    expect(ads).toContainEqual({ elapsedS: 5, durationS: PRE_ROLL_S })
+    expect(ads).toContainEqual({ elapsedS: 5, durationS: PRE_ROLL_S, skippable: false })
     // Counted from the element, each second once.
     expect(ads.map((ad) => ad.elapsedS)).toEqual([...new Set(ads.map((ad) => ad.elapsedS))].sort((a, b) => a - b))
     expect(player.nowPlaying()?.ad ?? null).toBeNull()
@@ -1253,7 +1257,7 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
     youtube.adShowing = true
     youtube.element = { ...youtube.element, currentTime: 9, duration: 30 }
     await player.check()
-    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 9, durationS: 30 })
+    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 9, durationS: 30, skippable: false })
     // The element is gone (no player video): the count does not stand frozen.
     youtube.watches.delete('aaaaaaaaaaa')
     await player.check()
@@ -1272,11 +1276,135 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
     youtube.adShowing = true
     youtube.element = { ...youtube.element, currentTime: 7.4, duration: 15 }
     await player.check()
-    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 7, durationS: 15 })
+    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 7, durationS: 15, skippable: false })
     youtube.adShowing = false
     youtube.element = { ...youtube.element, currentTime: 2, duration: 180 }
     await player.check()
     expect(player.nowPlaying()?.ad ?? null).toBeNull()
+  })
+})
+
+describe('a seek that lands inside an ad (#497, turn-mvrzkyzj-2): held, and put on the song once the ad ends', () => {
+  const seeks = (youtube: ScriptedYouTube): ElementOp[] => youtube.controls.filter((op) => op.op === 'seek')
+
+  /** A 15 s pre-roll; `ask` is asked once, from the start's own wait, once the ad has played 5 s. */
+  async function seekInPreRoll(action: MediaOpAction) {
+    let held = null as Promise<PlayerOutcome | null> | null
+    const built = prerolled(async () => {
+      if (held === null && built.youtube.adShowing && built.youtube.element.currentTime >= 5) held = built.player.seekOverAd(action)
+      await held
+    })
+    built.youtube.preRollS = 15
+    const played = await built.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    return { ...built, played, held: await held }
+  }
+
+  it('"skip ahead a minute" over the pre-roll: the outcome names the ad, the play runs on to the song, and the song — not the ad — moves a minute, in one op', async () => {
+    const { youtube, played, held } = await seekInPreRoll({ op: 'forward', rung: 'words', seconds: 60 })
+    expect(held).toMatchObject({ answer: 'An ad first, 0:05 of 0:15: the song will skip forward 60 s once it plays.', video: 'aaaaaaaaaaa' })
+    expect(held?.failure).toBeUndefined()
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(youtube.adShowing).toBe(false)
+    expect(seeks(youtube)).toEqual([{ op: 'seek', by: 60 }])
+    // The song's own time, a minute in: never the ad's, clamped at its end.
+    expect(youtube.element.currentTime).toBeGreaterThanOrEqual(60)
+    expect(youtube.element.duration).toBe(180)
+    expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+  })
+
+  it('a share of the length is the song’s, not the ad’s it was first read against: a tenth of 3:00 is 18 s', async () => {
+    const { youtube } = await seekInPreRoll({ op: 'forward', rung: 'chunk', seconds: 1.5 })
+    expect(seeks(youtube)).toEqual([{ op: 'seek', by: 18 }])
+  })
+
+  it('mid-song, an ad in the element: a seek back is held, and the poll puts it on the song once the ad ends', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: 7, duration: 15 }
+    expect(await player.seekOverAd({ op: 'back', rung: 'words', seconds: 10 })).toMatchObject({ answer: expect.stringMatching(/^An ad first, 0:07 of 0:15: the song will skip back 10 s once it plays\.$/) })
+    await player.check()
+    expect(seeks(youtube)).toEqual([])
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 40, duration: 180 }
+    await player.check()
+    expect(seeks(youtube)).toEqual([{ op: 'seek', by: -10 }])
+    expect(youtube.element.currentTime).toBe(30)
+    // Put on the song once: the next poll has nothing held.
+    await player.check()
+    expect(seeks(youtube)).toHaveLength(1)
+  })
+
+  it('no ad in the element: the seek is not the Player’s — null, nothing held, nothing controlled', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(await player.seekOverAd({ op: 'forward', rung: 'words', seconds: 60 })).toBeNull()
+    expect(await player.seekOverAd({ op: 'pause' })).toBeNull()
+    await player.check()
+    expect(seeks(youtube)).toEqual([])
+  })
+
+  it('no song held: null', async () => {
+    const { player } = prerolled()
+    expect(await player.seekOverAd({ op: 'forward', rung: 'words', seconds: 60 })).toBeNull()
+  })
+})
+
+describe('skipping an ad (#497): the engine’s own Skip button, when it offers one', () => {
+  /** Song A playing, Song B queued after it; an ad in A's element, `skippable` from its 5th second. */
+  async function overAd(atS: number) {
+    const built = prerolled()
+    const { youtube, player } = built
+    youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
+    youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    await player.perform({ kind: 'search', place: 'end' }, 'song b', () => true)
+    youtube.skippableAtS = 5
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: atS, duration: 15 }
+    await player.check()
+    return built
+  }
+
+  it('Now Playing carries whether the ad may be skipped, off the engine', async () => {
+    expect((await overAd(3)).player.nowPlaying()?.ad).toEqual({ elapsedS: 3, durationS: 15, skippable: false })
+    expect((await overAd(6)).player.nowPlaying()?.ad).toEqual({ elapsedS: 6, durationS: 15, skippable: true })
+  })
+
+  it('"skip the ad" while it may be: the Skip button pressed, the ad gone, the Queue as it was', async () => {
+    const { youtube, player } = await overAd(6)
+    expect(await player.perform({ kind: 'skip', ad: true }, null, () => true)).toMatchObject({ answer: 'Skipped the ad.' })
+    expect(youtube.adsSkipped).toBe(1)
+    expect(youtube.adShowing).toBe(false)
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+    expect(player.queue().upNext.map((song) => song.id)).toEqual(['bbbbbbbbbbb'])
+  })
+
+  it('a bare `skip` while the Skip button is up skips the ad, not the song', async () => {
+    const { youtube, player } = await overAd(6)
+    expect(await player.perform({ kind: 'skip' }, null, () => true)).toMatchObject({ answer: 'Skipped the ad.' })
+    expect(youtube.adsSkipped).toBe(1)
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+  })
+
+  it('a bare `skip` over an ad not skippable yet is the Queue’s, as before', async () => {
+    const { youtube, player } = await overAd(3)
+    expect(await player.perform({ kind: 'skip' }, null, () => true)).toMatchObject({ answer: 'Skipped to “Song B”.' })
+    expect(youtube.adsSkipped).toBe(0)
+  })
+
+  it('"skip the ad" before it may be skipped: said, with the ad’s count, and nothing pressed', async () => {
+    const { youtube, player } = await overAd(3)
+    expect(await player.perform({ kind: 'skip', ad: true }, null, () => true)).toMatchObject({ answer: "An ad first, 0:03 of 0:15: it can't be skipped yet.", failure: true })
+    expect(youtube.controls.filter((op) => op.op === 'skip-ad')).toEqual([])
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+  })
+
+  it('"skip the ad" with no ad playing: said, the Queue untouched', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(await player.perform({ kind: 'skip', ad: true }, null, () => true)).toMatchObject({ answer: 'No ad is playing.', failure: true })
+    expect(youtube.controls.filter((op) => op.op === 'skip-ad')).toEqual([])
   })
 })
 

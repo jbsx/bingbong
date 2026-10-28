@@ -18,7 +18,12 @@ export type MusicAction =
   | { readonly kind: 'search'; readonly place: 'now' | 'front' | 'end'; readonly video?: true }
   | { readonly kind: 'pause' }
   | { readonly kind: 'unpause' }
-  | { readonly kind: 'skip' }
+  /**
+   * The next queued song. `ad` (#497), "skip the ad": the ad playing over
+   * the song is skipped by the engine's own Skip button instead, the Queue
+   * left as it is; a bare `skip` does the same while that button is up.
+   */
+  | { readonly kind: 'skip'; readonly ad?: true }
   | { readonly kind: 'previous' }
   /**
    * Loop on or off. `again`, the `repeat` lines': a song of the Player's
@@ -64,6 +69,11 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   'next song': { kind: 'skip' },
   'play next': { kind: 'skip' },
   'play the next song': { kind: 'skip' },
+  'skip the ad': { kind: 'skip', ad: true },
+  'skip ad': { kind: 'skip', ad: true },
+  'skip the ads': { kind: 'skip', ad: true },
+  'skip ads': { kind: 'skip', ad: true },
+  'skip this ad': { kind: 'skip', ad: true },
   previous: { kind: 'previous' },
   'previous song': { kind: 'previous' },
   'last song': { kind: 'previous' },

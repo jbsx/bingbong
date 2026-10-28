@@ -2,7 +2,9 @@ import type { BrowserController, ConsentCleared, ConsentDrawn } from '../../core
 import type { MusicAction } from '../../core/music/musicWords'
 import type { PickSource } from '../../core/command/decisionRecord'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
-import { QUEUED_SHOWN, type AdShowing, type NowPlaying } from '../../core/music/nowPlaying'
+import { QUEUED_SHOWN, adWait, type AdShowing, type NowPlaying } from '../../core/music/nowPlaying'
+import { isSeek, type MediaOpAction } from '../../core/browser/mediaOp'
+import { describeMediaOp, seekAmount } from '../../core/command/mediaOp'
 import { initialDataOf, plainVideos, resultsUrl, videoIdOf, watchUrl } from '../../core/music/youtubeSearch'
 import { heldThroughChain, songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
@@ -197,6 +199,13 @@ export interface Player {
   onShown(listener: () => void): () => void
   /** Ducks the music (on) or puts its volume back (off) (#344). Resolves when the element has it. */
   duck(on: boolean): Promise<void>
+  /**
+   * A seek while an ad plays in the song's element (#497), by the engine's
+   * own fact: held, and put on the song once the ad ends — one op, never
+   * pressed again — its outcome naming the ad. Null when no ad holds the
+   * song's element: the seek is the browser's, on the element as it is.
+   */
+  seekOverAd(action: MediaOpAction): Promise<PlayerOutcome | null>
   /** Where the song plays, or last played (#502): what the Appliance Card's media reads and its ops reach. */
   road(): Road
   /** The audio road is wired (#502): a song not read as a video opens there, and leaves the pane alone. */
@@ -377,9 +386,41 @@ export function createPlayer(deps: PlayerDeps): Player {
    * An ad in the song's element, read off it (#497) — its seconds and
    * length, whole — or none: Now Playing says it, and the card hears it.
    */
-  function showAd(song: Song, read: Pick<StartRead, 'time' | 'duration'> | null): void {
-    adOver = read === null ? null : { id: song.id, ad: { elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration) } }
+  function showAd(song: Song, read: Pick<StartRead, 'time' | 'duration' | 'skippable'> | null): void {
+    adOver = read === null ? null : { id: song.id, ad: { elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration), skippable: read.skippable } }
     publish()
+  }
+
+  /** A seek asked while an ad held the song's element (#497): put on that song once the ad ends. */
+  let heldSeek: { readonly id: string; readonly action: MediaOpAction } | null = null
+
+  /**
+   * The ad over the song playing now, read off its element (#497), Now
+   * Playing told; null when none plays, or the song is on the audio road,
+   * which has no ads.
+   */
+  async function adOverNow(): Promise<{ song: Song; ad: AdShowing } | null> {
+    const song = state.current
+    if (song === null || road !== 'page') return null
+    const read = await evaluate<StartRead>(START_SCRIPT)
+    if (read === null || !read.ad) return null
+    showAd(song, read)
+    return adOver === null ? null : { song, ad: adOver.ad }
+  }
+
+  /**
+   * The held seek put on the song (#497), once its element plays the song
+   * itself: as far as the words said, or the rung's share of the song's own
+   * length — never the ad's, which the rung was first read against.
+   */
+  async function applyHeldSeek(song: Song, at: { elapsed: number; duration: number | null }): Promise<void> {
+    if (heldSeek === null || heldSeek.id !== song.id || at.duration === null) return
+    const { action } = heldSeek
+    heldSeek = null
+    if (!isSeek(action.op)) return
+    const rung = action.rung ?? 'words'
+    const seconds = rung === 'words' ? (action.seconds ?? 0) : seekAmount(rung, action.op, { currentTime: at.elapsed, duration: at.duration, seekable: null }, '').seconds
+    await control({ op: 'seek', by: action.op === 'forward' ? seconds : -seconds })
   }
 
   /** Tells the card what changed, if anything did. */
@@ -806,6 +847,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         continue
       }
       if (started || (due && pressed)) {
+        // A seek asked over the ad (#497) lands as the song starts, not a poll later.
+        if (started && last !== null) await applyHeldSeek(song, { elapsed: last.time, duration: last.duration })
         const element = last === null ? null : { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }
         return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background, ad: adMs(read) })
       }
@@ -1207,8 +1250,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     const song = state.current
     // An ad in the song's element (#497), mid-song too: Now Playing says it until the song itself plays again.
     // Off the song's page, or its element gone, no ad is counted: a count that stands still would read as frozen (ui.md 2).
-    if (song !== null) showAd(song, status.id === song.id && status.hasVideo && status.ad ? { time: status.elapsed, duration: status.duration } : null)
+    if (song !== null) showAd(song, status.id === song.id && status.hasVideo && status.ad ? { time: status.elapsed, duration: status.duration, skippable: status.skippable } : null)
     if (song === null || !showsSong(status, song)) return
+    await applyHeldSeek(song, status)
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
@@ -1296,6 +1340,16 @@ export function createPlayer(deps: PlayerDeps): Player {
       case 'forget':
         return forget()
       case 'skip': {
+        // Over an ad (#497): "skip the ad", or a bare `skip` while the engine's own Skip button is up, skips the ad, the Queue left as it is.
+        const over = music.ad === true || adOver?.ad.skippable === true ? await adOverNow() : null
+        if (over !== null && over.ad.skippable) {
+          const element = await control({ op: 'skip-ad' })
+          if (element !== null && element.changed) return { result: 'skip-ad: skipped', answer: 'Skipped the ad.', video: over.song.id }
+        }
+        if (music.ad === true) {
+          if (over === null) return { result: 'skip-ad: no ad', answer: 'No ad is playing.', failure: true }
+          return { result: 'skip-ad: not skippable', answer: `${adWait(over.ad)}: it can't be skipped yet.`, failure: true, video: over.song.id }
+        }
         const { next } = advance(state)
         // Nothing queued: a line with nothing to do does nothing (2026-10-21 audit). The song plays on, and
         // the Queue owns skip (#374), so it never falls to YouTube's Autoplay or ends the song.
@@ -1414,6 +1468,15 @@ export function createPlayer(deps: PlayerDeps): Player {
     duck(on) {
       ducking = ducking.then(() => setDuck(on)).catch((error: unknown) => reportFault('music.player.duck', error))
       return ducking
+    },
+    async seekOverAd(action) {
+      if (!isSeek(action.op)) return null
+      const over = await adOverNow()
+      if (over === null) return null
+      // The latest seek asked over the ad is the one put on the song: one op, as asked last.
+      heldSeek = { id: over.song.id, action }
+      const seek = describeMediaOp(action)
+      return { result: `${action.op} held over an ad: ${seek} once the song plays`, answer: `${adWait(over.ad)}: the song will ${seek} once it plays.`, video: over.song.id }
     },
     road: () => road,
     audioRoad: deps.audio !== undefined,

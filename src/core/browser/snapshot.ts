@@ -140,6 +140,12 @@ export interface MediaFacts {
   readonly buffering: boolean
   /** The element's load or decode failed. */
   readonly failed: boolean
+  /**
+   * An ad plays in the element (#497), by its Media Engine's own fact —
+   * its time and length are then the ad's — and whether the engine offers
+   * to skip it now. Absent where no engine states one: no ad.
+   */
+  readonly ad?: { readonly skippable: boolean }
 }
 
 /** A Player Switch as the collect sends it (#389): its element's index in the collect, and whether it is on. */

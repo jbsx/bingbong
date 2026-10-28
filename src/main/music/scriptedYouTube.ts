@@ -81,6 +81,10 @@ export class ScriptedYouTube {
    * its end the song plays from 0 by itself.
    */
   preRollS: number | readonly number[] | null = null
+  /** The second of an ad from which the engine offers to skip it (#497), its Skip button up; null for an ad never skippable. */
+  skippableAtS: number | null = null
+  /** How often the engine's Skip button was pressed over an ad (#497). */
+  adsSkipped = 0
   /** The pre-roll playing now, the pod's ads after it, the song's length the element reports once they end, and whether the marker is off between two. */
   private ad: { lengthS: number; next: number[]; song: number | null; between: boolean } | null = null
   /** How the next watch page's element starts (#488). */
@@ -191,10 +195,9 @@ export class ScriptedYouTube {
       const pod = this.preRollS === null ? [] : typeof this.preRollS === 'number' ? [this.preRollS] : [...this.preRollS]
       this.ad = pod.length === 0 ? null : { lengthS: pod[0]!, next: pod.slice(1), song: this.ad?.song ?? this.element.duration, between: false }
       this.preRollS = null
-      if (this.ad !== null) {
-        this.adShowing = true
-        this.element = { ...this.element, paused: false, duration: this.ad.lengthS }
-      }
+      // A new page's element holds no ad but its own pre-roll: the last page's marker is gone with it.
+      this.adShowing = this.ad !== null
+      if (this.ad !== null) this.element = { ...this.element, paused: false, duration: this.ad.lengthS }
       // The pane's duck holds (#461): a new page's element is marked at the level it opened at before the Player reads it.
       if (this.paneDuck !== null) {
         this.duckMark = { restore: this.element.volume, share: this.paneDuck }
@@ -246,22 +249,32 @@ export class ScriptedYouTube {
       const time = this.element.currentTime + START_STEP_S
       const stalls = this.starts === 'stalls' && !this.pressed && time >= STALLS_AT_S
       this.element = { ...this.element, currentTime: stalls ? STALLS_AT_S : time, paused: stalls }
-      // An ad of a pod ran out with another after it: the marker is off for this one read.
-      if (this.ad !== null && time >= this.ad.lengthS && this.ad.next.length > 0) {
-        const [lengthS, ...next] = this.ad.next
-        this.ad = { ...this.ad, lengthS: lengthS!, next, between: true }
-        this.adShowing = false
-        this.element = { ...this.element, currentTime: 0 }
-      }
-      // The ad ran out: the song plays in the same element from 0 by itself, the marker off.
-      else if (this.ad !== null && !this.ad.between && time >= this.ad.lengthS) {
-        this.element = { ...this.element, currentTime: 0, duration: this.ad.song, paused: false }
-        this.ad = null
-        this.adShowing = false
-      }
+      // An ad ran out: the pod's next is up, its marker off for this one read, or the song plays (`adEnds`).
+      if (this.ad !== null && !this.ad.between && time >= this.ad.lengthS) this.adEnds()
     }
     const { paused, currentTime, duration } = this.element
-    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing }
+    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing, skippable: this.skippable() }
+  }
+
+  /** The ad ends — run out, or skipped: the pod's next one is up for its first read, else the song plays in the same element from 0 by itself, the marker off. */
+  private adEnds(): void {
+    this.adShowing = false
+    if (this.ad === null) return
+    if (this.ad.next.length > 0) {
+      const [lengthS, ...next] = this.ad.next
+      this.ad = { ...this.ad, lengthS: lengthS!, next, between: true }
+      this.adShowing = false
+      this.element = { ...this.element, currentTime: 0 }
+      return
+    }
+    this.element = { ...this.element, currentTime: 0, duration: this.ad.song, paused: false }
+    this.ad = null
+    this.adShowing = false
+  }
+
+  /** The engine offers to skip the ad playing (#497): its Skip button is up from {@link skippableAtS}. */
+  private skippable(): boolean {
+    return this.adShowing && this.skippableAtS !== null && this.element.currentTime >= this.skippableAtS
   }
 
   private watchStatus(): WatchStatus {
@@ -271,8 +284,8 @@ export class ScriptedYouTube {
     this.ended = null
     const element = this.element
     const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
-    if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
-    return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
+    if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, skippable: false, ended: null, channel: '', ...playing }
+    return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, skippable: this.skippable(), ended, channel: watch?.channel ?? '', ...playing }
   }
 
   private answerPrompt(): boolean {
@@ -343,6 +356,18 @@ export class ScriptedYouTube {
         break
       case 'read':
         changed = false
+        break
+      case 'seek': {
+        const end = element.duration === null ? Infinity : Math.max(0, element.duration - 1)
+        this.element = { ...element, currentTime: Math.max(0, Math.min(end, element.currentTime + op.by)) }
+        break
+      }
+      case 'skip-ad':
+        changed = this.skippable()
+        if (changed) {
+          this.adsSkipped += 1
+          this.adEnds()
+        }
         break
     }
     const { paused, loop, muted } = this.element

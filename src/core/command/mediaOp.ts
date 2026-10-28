@@ -13,7 +13,9 @@ export { AMOUNT_RUNGS, LEVEL_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRun
 // captions on one with no text track. Each op is one evaluate on that
 // element through the browser controller, on any site; the Player is
 // untouched. No grammar line: "skip ahead" is Jev's to read, and how far
-// is the Amount Choice's.
+// is the Amount Choice's. `skip` (#497) is the one op an engine's fact
+// offers: an ad its Media Engine says may be skipped now, skipped by the
+// engine's own button — the Player's, as "skip the ad" is its exact line.
 
 /** The ops that need a seekable range: withheld, by ability alone, on an element with none. */
 const NEEDS_SEEKABLE: ReadonlySet<MediaOp> = new Set<MediaOp>(['forward', 'back', 'restart'])
@@ -40,10 +42,11 @@ const RATE_RANGE = { min: 0.25, max: 4 } as const
 /**
  * The ops an element can take, by ability alone (ADR 0080): the seeks
  * only with a seekable range, the captions pair only with text tracks,
- * the rest always — never gated by state.
+ * `skip` only over an ad its engine says may be skipped now (#497), the
+ * rest always — never gated by state.
  */
 export function mediaOpsOf(facts: MediaFacts): MediaOp[] {
-  return MEDIA_OPS.filter((op) => (NEEDS_SEEKABLE.has(op) ? facts.seekable !== null : NEEDS_TRACKS.has(op) ? facts.tracks > 0 : true))
+  return MEDIA_OPS.filter((op) => (op === 'skip' ? facts.ad?.skippable === true : NEEDS_SEEKABLE.has(op) ? facts.seekable !== null : NEEDS_TRACKS.has(op) ? facts.tracks > 0 : true))
 }
 
 /**
@@ -72,6 +75,7 @@ const OP_WORDS: Readonly<Record<MediaOp, OpWords>> = {
   rate: { card: (named) => `change the playback speed of ${named}: faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far`, done: 'set the speed to', answer: 'Speed' },
   captions: { card: (named) => `turn captions (subtitles) on for ${named}`, done: 'turn captions on', answer: 'Captions on.' },
   uncaptions: { card: (named) => `turn captions off for ${named}`, done: 'turn captions off', answer: 'Captions off.' },
+  skip: { card: (named) => `skip the ad playing in ${named} now, with the player's own Skip button`, done: 'skip the ad', answer: 'Skipped the ad.' },
 }
 
 /** Each op's line on the action card: a whole action naming the ref by number and what plays in it. */
@@ -209,7 +213,7 @@ export function mediaChangesOf(before: MediaFacts, after: MediaFacts): string[] 
 }
 
 /** The length a fraction rung is a share of: the duration, or a live stream's seekable window. */
-function lengthOf(facts: MediaFacts): number {
+function lengthOf(facts: Pick<MediaFacts, 'duration' | 'seekable'>): number {
   if (Number.isFinite(facts.duration)) return facts.duration
   return facts.seekable === null ? 0 : facts.seekable.end - facts.seekable.start
 }
@@ -257,7 +261,7 @@ export function secondsInWords(words: string): number | null {
  * action, so a `words` rung with no number in the words is told as the
  * `little` it fell back to.
  */
-export function seekAmount(rung: AmountRung, op: 'forward' | 'back', facts: MediaFacts, words: string): { rung: AmountRung; seconds: number } {
+export function seekAmount(rung: AmountRung, op: 'forward' | 'back', facts: Pick<MediaFacts, 'currentTime' | 'duration' | 'seekable'>, words: string): { rung: AmountRung; seconds: number } {
   if (rung === 'words') {
     const seconds = secondsInWords(words)
     if (seconds !== null) return { rung, seconds }

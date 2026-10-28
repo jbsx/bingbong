@@ -4,7 +4,7 @@
 // the part the browser side depends on, so no port points inward.
 
 /** The ops a media ref can carry, in the order the card offers them. */
-export const MEDIA_OPS = ['play', 'pause', 'forward', 'back', 'restart', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate', 'captions', 'uncaptions'] as const
+export const MEDIA_OPS = ['play', 'pause', 'forward', 'back', 'restart', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate', 'captions', 'uncaptions', 'skip'] as const
 export type MediaOp = (typeof MEDIA_OPS)[number]
 
 /** The Amount's rungs (ADR 0080): how far a seek moves, Jev's to choose; `end` is the start when going back. */
