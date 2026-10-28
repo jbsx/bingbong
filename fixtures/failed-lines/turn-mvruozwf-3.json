@@ -7,5 +7,7 @@
   "happened": "overlap:gate 10-own-voice-not-taken at p1 on baseten-mammoth-27b-latest at b528610c (narrow23): the second `Utah` (an echo, on the DuckDuckGo results the first one opened) went to Mammoth as a OneJev prompt of 25562 tokens and the host refused it (422, `exceeding max_len 16384`): the Errand ended unsure (`I've searched for Utah — what would you like to know…`)",
   "meant": "A hop's ask always fits the model",
   "log": "/tmp/impl490/s8/narrow23/10-own-voice-not-taken/decision-models_baseten-mammoth-27b-latest/p1-logs",
-  "claimedBy": "#495"
+  "claimedBy": "#495",
+  "fixedBy": "f7da68d6",
+  "case": "turn-mvruozwf-3"
 }
