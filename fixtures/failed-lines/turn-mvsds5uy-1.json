@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvsds5uy-1",
+  "transcript": "play radiohead",
+  "at": 1793208064425,
+  "source": "typed",
+  "stage": "player",
+  "happened": "overlap:gate 1-replace-new-goal at media-not-started 31% (narrow, no slow host) on baseten-mammoth-27b-latest at 23aca15b (#504's worktree; kept at /tmp/impl504/runs/gap-live): `open the weather` was read by Jev in 1.4 s while the play's search page loaded; the play ended (`Stopped playing radiohead.` said, its load stopped and its media paused by endRunning), but the Player's own search → watch flow went on, landed Radiohead - No Surprises and it played (2.5 s in at the run's end). The road is the `play` verb's, untouched by #504",
+  "meant": "a play whose line was ended never lands its pick afterwards: the Player's search → watch flow ends with its line",
+  "log": "decision-1793208075554-1.jsonl"
+}
