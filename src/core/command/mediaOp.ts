@@ -174,13 +174,17 @@ const captionsOf = (facts: MediaFacts): string[] => (facts.captions !== null ? [
  * or ended; elapsed/duration, or live; the volume as a percentage, or
  * muted; loop; the speed when not normal; captions off or the language
  * showing, on an element with text tracks, none for a hidden track;
- * buffering; failed.
+ * buffering; failed. Over an ad its engine states (#497), `an ad first`
+ * before them — the time is the ad's, the song not playing yet — and
+ * `skippable` after the time while the engine offers to skip it.
  */
 export function mediaStateOf(facts: MediaFacts): string {
   const live = !Number.isFinite(facts.duration)
   return [
+    ...(facts.ad !== undefined ? ['an ad first'] : []),
     playingOf(facts),
     live ? `live ${clockOf(facts.currentTime)}` : `${clockOf(facts.currentTime)}/${clockOf(facts.duration)}`,
+    ...(facts.ad?.skippable === true ? ['skippable'] : []),
     facts.muted ? 'muted' : `volume ${percentOf(facts)}%`,
     loopOf(facts),
     ...(facts.rate !== 1 ? [`speed ${facts.rate}×`] : []),

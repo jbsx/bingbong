@@ -56,6 +56,15 @@ describe('the facts the appliance holds (#402)', () => {
     expect(factAnswer('weather', { ...FACTS, weather: null })).toBe("There's no forecast yet.")
   })
 
+  it('over an ad before the song (#497): says the ad and its count, then the song to come, never that the song plays', () => {
+    const playing = FACTS.nowPlaying!
+    const ad = { ...FACTS, nowPlaying: { ...playing, ad: { elapsedS: 5, durationS: 120, skippable: false } } }
+    expect(sayOptions(ad).say_playing).toBe('appliance: say the song playing — an ad first, 0:05 of 2:00, then "Highs and Lows" by Ye')
+    expect(factAnswer('playing', ad)).toBe('An ad first, 0:05 of 2:00, then “Highs and Lows” by Ye.')
+    const skippable = { ...FACTS, nowPlaying: { ...playing, ad: { elapsedS: 6, durationS: 15, skippable: true } } }
+    expect(factValue('playing', skippable)).toBe('an ad first, 0:06 of 0:15, skippable, then "Highs and Lows" by Ye')
+  })
+
   it("takes the page's own song when the Player holds none, and never over the Player's", () => {
     const media = { title: 'YE - HIGHS AND LOWS', paused: false, currentTime: 7, duration: 111, loop: false, muted: false }
     const none = { ...FACTS, nowPlaying: null }

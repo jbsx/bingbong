@@ -1,5 +1,5 @@
 import type { PageMedia } from '../browser/snapshot'
-import type { NowPlaying } from '../music/nowPlaying'
+import { adWait, type NowPlaying } from '../music/nowPlaying'
 import type { TimerState } from '../timer/timer'
 import type { WeatherReport } from '../weather/weather'
 import { doingAnswer, type RunningCommand } from './runningCommand'
@@ -83,6 +83,9 @@ function weatherValue(report: WeatherReport | null): string {
 function playingValue(playing: NowPlaying | null | undefined): string {
   if (playing === null || playing === undefined) return 'nothing playing'
   const by = playing.channel !== '' ? ` by ${playing.channel}` : ''
+  // An ad before the song (#497): the song is not playing yet, and the card never says it is.
+  const ad = playing.ended ? null : (playing.ad ?? null)
+  if (ad !== null) return `${adWait(ad).toLowerCase()}${ad.skippable ? ', skippable' : ''}, then ${JSON.stringify(playing.title)}${by}`
   const at = playing.durationS !== null ? `, ${clock(playing.elapsedS)} of ${clock(playing.durationS)}` : ''
   const state = playing.ended ? ', ended' : playing.paused ? ', paused' : ''
   return `${JSON.stringify(playing.title)}${by}${at}${state}`
@@ -152,6 +155,8 @@ export function factAnswer(fact: ApplianceFact, facts: ApplianceFacts): string {
       const playing = facts.nowPlaying
       if (playing === null || playing === undefined) return 'Nothing is playing.'
       const by = playing.channel !== '' ? ` by ${playing.channel}` : ''
+      const ad = playing.ended ? null : (playing.ad ?? null)
+      if (ad !== null) return `${adWait(ad)}, then “${playing.title}”${by}.`
       const at = playing.durationS !== null ? `, ${clock(playing.elapsedS)} of ${clock(playing.durationS)}` : ''
       return `${playing.ended ? 'Last played' : playing.paused ? 'Paused on' : 'Playing'} “${playing.title}”${by}${at}.`
     }

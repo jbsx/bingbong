@@ -3,7 +3,7 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { TextBelow } from '../browser/pageText'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
-import { mediaChangesOf } from './mediaOp'
+import { mediaChangesOf, mediaStateOf } from './mediaOp'
 import { promptChars } from '../decision/cardBudget'
 import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, shownAddress, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
@@ -299,6 +299,12 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     const skippable = withFacts({ ad: { skippable: true } })
     expect(commandQuestions('skip', skippable).action.options['skip-7']).toBe('skip the ad playing in [7] "YE - HIGHS AND LOWS" now, with the player\'s own Skip button')
     expect(readCommandAnswers({ action: choice('skip-7'), slot: choice('none') }, 'skip this ad', skippable)).toMatchObject({ verb: 'media', target: 7, mediaOp: { op: 'skip' } })
+  })
+
+  it('carries an ad its engine states on the ref’s state line (#497): the time the ad’s, the song not playing yet', () => {
+    expect(mediaStateOf({ ...FACTS, currentTime: 5, duration: 15, loop: false, ad: { skippable: false } })).toBe('an ad first playing 0:05/0:15 volume 100% loop off')
+    expect(mediaStateOf({ ...FACTS, currentTime: 6, duration: 15, loop: false, ad: { skippable: true } })).toBe('an ad first playing 0:06/0:15 skippable volume 100% loop off')
+    expect(mediaStateOf({ ...FACTS, loop: false })).toBe('playing 0:16/1:51 volume 100% loop off')
   })
 
   it('offers no op, and asks no amount, on a page with no media ref — nor on a media ref read without its facts', () => {
