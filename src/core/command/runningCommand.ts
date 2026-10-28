@@ -63,10 +63,10 @@ export function endedWithin(line: EndedLine | null, now: number): EndedCommand |
 
 const ENDED_WORDS: Readonly<Record<EndedCommand['outcome'], string>> = { done: 'Done', failed: "Didn't work", cancelled: 'Stopped' }
 
-/** An Answer's first sentence, on one line: what the doing fact quotes of it (ui.md 10: one sentence). */
+/** An Answer's first sentence, on one line: what the doing fact quotes of it (ui.md 10: one sentence). A stop inside quotes ends none: “Mr. Brightside”. */
 function firstSentence(answer: string | undefined): string {
   const line = (answer ?? '').trim().split('\n')[0]!.trim()
-  return /^.*?[.!?…](?=\s|$)/.exec(line)?.[0] ?? line
+  return /^(?:“[^”]*”|[^“])*?[.!?…](?=\s|$)/.exec(line)?.[0] ?? line
 }
 
 /** The ended line's doing sentence: `Done, 3 seconds ago: Playing “Let Down (Remastered)”.` */

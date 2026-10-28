@@ -5881,6 +5881,12 @@ describe('a line split by a pause (#494): the join J1 reaches a first half that 
     expect(commands(events).map((event) => event.turnId)).toEqual([turnId])
     const second = events.flatMap((event) => (event.type === 'status' && event.turnId !== turnId ? [event.turnId] : []))[0]!
     expect(events).toContainEqual(expect.objectContaining({ type: 'done', turnId: second }))
+    // A line standing on the one it joined is not the line just ended (#499): the line it stood on, with its Answer, is.
+    speech.finish()
+    await flushMicrotasks()
+    decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none') } })
+    await runner.run('is it working')
+    expect(said(events).at(-1)).toMatch(/^Done, \d+ seconds? ago: It's 12:34 on Friday 23 October\.$/)
   })
 
   it('a joined line reading another Command is added to the first half: it fires as the next hop of its Task, one line in the Feed', async () => {
@@ -5908,5 +5914,11 @@ describe('a line split by a pause (#494): the join J1 reaches a first half that 
     expect(commands(events)).toHaveLength(1)
     expect(commands(events)[0]!.task).toEqual({ id: firstId, hop: 0 })
     expect(events.filter((event) => event.type === 'done' && event.turnId === firstId)).toHaveLength(1)
+    // A line that gave way is never the line just ended (#499): the joined line's end is.
+    speech.finish()
+    await flushMicrotasks()
+    decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none') } })
+    await runner.run('is it working')
+    expect(said(events).at(-1)).toMatch(/^Done, \d+ seconds? ago: It's 12:34 on Friday 23 October\.$/)
   })
 })

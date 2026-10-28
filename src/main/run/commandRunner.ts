@@ -591,6 +591,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     none?: boolean
     /** It asked what the line before did (the doing fact): it leaves that line the last ended, never itself. */
     asked?: boolean
+    /** It gave way into a later line joining it, or stood on the line it joined (#494): the other line's end is the one kept. */
+    gaveWay?: boolean
   }
   /** A line given and not yet ended (#489). */
   interface LiveLine {
@@ -698,7 +700,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A line has ended (#499): kept as the last, unless it was read as no Command. */
   function noteEnded(words: string, submission: number, end: LineEnd): void {
-    if (end.none === true || end.asked === true || givenWay.has(submission)) return
+    if (end.none === true || end.asked === true || end.gaveWay === true) return
     lastEnded = { words, outcome: end.outcome ?? 'done', ...(end.answer !== undefined ? { answer: end.answer } : {}), at: monotonic(), submission }
   }
 
@@ -956,6 +958,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A line still being read that a later one joins gives way into it (#494): its own reading shows nothing, and its stage ends now.
     if (how === 'joins' && running !== null && running.fired === undefined && !running.settled) {
       givenWay.add(running.submission)
+      running.end.gaveWay = true
       publish({ type: 'done', turnId: running.turnId, outcome: 'cancelled', at: at() })
     }
     cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
@@ -3697,6 +3700,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // line's outcome, still sounding, is the answer.
         if (into?.stands !== undefined && !isEnded(submission) && (heard.command.verb === 'none' || sameCommand(heard.command, into.stands))) {
           log({ ...recordOf(turnId, at(), source, heard.joined ?? lineRead, heard, heard.command, null, truncated), task: { id: into.taskId, hop: into.hop }, ended: 'terminal', stood: true })
+          own.end.gaveWay = true
           publish({ type: 'done', turnId, outcome: 'done', at: at() })
           return
         }

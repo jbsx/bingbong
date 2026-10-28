@@ -188,6 +188,8 @@ describe('the line just ended on the Appliance Card (#499)', () => {
     expect(doingAnswer(null, { ...ENDED, agoMs: 900 })).toBe('Done, 1 second ago: Playing “Let Down (Remastered)”.')
     expect(doingAnswer(null, { words: 'open bbc.com', outcome: 'failed', answer: "Couldn't open bbc.com.\n\nTry “search bbc”.", agoMs: 5000 })).toBe("Didn't work, 5 seconds ago: Couldn't open bbc.com.")
     expect(doingAnswer(null, { words: 'play hurt', outcome: 'cancelled', agoMs: 2000 })).toBe('Stopped, 2 seconds ago: “play hurt”.')
+    // A stop inside a quoted title ends no sentence: "Mr. Brightside" is quoted whole.
+    expect(doingAnswer(null, { words: 'play mr brightside', outcome: 'done', answer: 'Playing “Mr. Brightside”. Next: “Somebody Told Me”.', agoMs: 2000 })).toBe('Done, 2 seconds ago: Playing “Mr. Brightside”.')
     expect(doingAnswer(null, { words: 'Play the song from the beginning.', outcome: 'done', agoMs: 2000 })).toBe('Done, 2 seconds ago: “Play the song from the beginning”.')
     // A line running is what the doing fact says, whatever ended before it.
     expect(doingAnswer({ words: 'open bbc.com', stage: 'Loading', detail: 'bbc.com', done: [] }, ENDED)).toBe('Still on “open bbc.com”: loading bbc.com.')
