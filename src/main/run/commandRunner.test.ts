@@ -14,6 +14,7 @@ import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../
 import { pageReadPartLine, type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
+import { NONE_SAID } from '../../core/command/answer'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import type { AppChange, AppState } from '../../core/command/appOp'
@@ -1813,6 +1814,48 @@ describe('an Utterance read as no Command answers "No response." and why (owner 
     decision.script.push({ unavailable: 'timeout' })
     await runner.run('zorblax the quux thing')
     expect(answers(events)).toEqual(['No response.\n\nReading the words took too long.\n\nTry “help”.'])
+  })
+})
+
+describe('a spoken line read `none` is answered aloud when it was a line to the app (#500, reliability.md rule 5)', () => {
+  const unsure = { answers: { action: choice('none', 0.53, { none: 0.53, play: 0.4 }), slot: choice('none') } }
+  const sure = { answers: { action: choice('none', 0.99), slot: choice('none') } }
+  const firstLook = { answers: { action: choice('none', 0.79, { none: 0.79, scroll_down: 0.1 }), slot: choice('none') } }
+
+  it('a `none` Jev was unsure of, said at the mic, is said and shown in one sentence: "L-O-O-P." (turn-mvsihjew-v18)', async () => {
+    const speech = new FakeSpeech()
+    const { decision, events, perf, runner } = harness({ speech })
+    // As on the kiosk: the first look read none at 0.79, the Where Ask's second look, the reading the line ended on, at 0.53.
+    decision.script.push(firstLook, unsure)
+    await runner.run('L-O-O-P.', { source: 'spoken', speechLevelDb: -11.5 })
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ text: 'L-O-O-P.', dropped: true })
+    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: NONE_SAID, failure: true })])
+    expect(events.filter((event) => event.type === 'display')[0]).not.toHaveProperty('muted')
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([NONE_SAID])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    // Its Reaction closes on the sentence's first sound, so the Felt Reaction of a `none` is measured.
+    expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
+    speech.sound()
+    expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([expect.objectContaining({ detail: expect.objectContaining({ verb: 'none', effect: 'spoken' }) })])
+  })
+
+  it('a `none` Jev was sure of, or speech from across the room, is shown greyed and never said', async () => {
+    for (const [reading, level] of [[sure, -14.3], [unsure, -37.2]] as const) {
+      const speech = new FakeSpeech()
+      const { decision, events, runner } = harness({ speech })
+      decision.script.push(firstLook, reading)
+      await runner.run('mm-hmm', { source: 'spoken', speechLevelDb: level })
+      expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ muted: true })])
+      expect(speech.spoken).toEqual([])
+    }
+  })
+
+  it('a line said over the app\'s voice that reads `none` ends with nothing said (CONTEXT, Barge-in)', async () => {
+    const speech = new FakeSpeech()
+    const { decision, runner } = harness({ speech })
+    decision.script.push(firstLook, unsure)
+    await runner.run('L-O-O-P.', { source: 'spoken', speechLevelDb: -11.5, overSpeech: true })
+    expect(speech.spoken).toEqual([])
   })
 })
 

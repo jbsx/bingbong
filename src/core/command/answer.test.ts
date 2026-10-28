@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyPageReadLine, pageReadPartLine, pageReadText } from '../browser/pageText'
-import { commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from './answer'
+import { NONE_SAID, commandAnswer, controlsOnlyLine, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from './answer'
 import type { Command } from './command'
 
 describe('commandAnswer (#333)', () => {
@@ -171,5 +171,38 @@ describe('noResponseAnswer', () => {
 
   it("puts the grammar's error first", () => {
     expect(noResponseAnswer({ grammarError: 'I can scroll up or down.', jevAsked: false })).toBe('No response.\n\nI can scroll up or down.\n\nTry “help”.')
+  })
+})
+
+describe('noneIsALine: a line read `none` that is said back (#500)', () => {
+  const jev = (none: number) => ({ model: 'jev', latencyMs: 1, confidence: { action: none, slot: 0.9 }, probabilities: { action: { none, play: 1 - none }, slot: {} } })
+  const spoken = { source: 'spoken' as const, overSpeech: false }
+
+  it('a spoken line Jev read `none` unsure, at a speaking level, is a real line (the kiosk, 25–28 Oct)', () => {
+    // "L-O-O-P." (turn-mvsihjew-v18): none 0.53 at −11.5 dBFS; "Look this song." (turn-mvp2q7gx-v2): 0.68 at −12.4.
+    expect(noneIsALine({ ...spoken, jev: jev(0.53), speechLevelDb: -11.5 })).toBe(true)
+    expect(noneIsALine({ ...spoken, jev: jev(0.68), speechLevelDb: -12.4 })).toBe(true)
+  })
+
+  it('a `none` Jev is sure of is not a line to the app: a remark, a filler, the TV', () => {
+    // "I am away witness you." (turn-mvnsrnxo-a): 0.70 at −14.3; "Hey." (turn-mvplp2z0-v13): 0.99 at −21.5.
+    expect(noneIsALine({ ...spoken, jev: jev(0.703), speechLevelDb: -14.3 })).toBe(false)
+    expect(noneIsALine({ ...spoken, jev: jev(0.99), speechLevelDb: -21.5 })).toBe(false)
+  })
+
+  it('speech under the floor is far from the mic, however unsure the reading: "Cyton piece container." at −37 dBFS', () => {
+    expect(noneIsALine({ ...spoken, jev: jev(0.49), speechLevelDb: -37.2 })).toBe(false)
+  })
+
+  it("a line over the app's voice, one no host read, one with no level and a typed line stay as they were", () => {
+    expect(noneIsALine({ source: 'spoken', overSpeech: true, jev: jev(0.5), speechLevelDb: -12 })).toBe(false)
+    expect(noneIsALine({ ...spoken, jev: { model: 'jev', latencyMs: 800, reason: 'timeout' }, speechLevelDb: -12 })).toBe(false)
+    expect(noneIsALine({ ...spoken, speechLevelDb: -12 })).toBe(false)
+    expect(noneIsALine({ ...spoken, jev: jev(0.5) })).toBe(false)
+    expect(noneIsALine({ source: 'typed', overSpeech: false, jev: jev(0.5) })).toBe(false)
+  })
+
+  it('says one sentence: what happened and the line to say next', () => {
+    expect(NONE_SAID).toBe("I didn't catch that, say it again.")
   })
 })

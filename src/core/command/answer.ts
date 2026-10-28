@@ -2,13 +2,13 @@ import { isRealPage, lastPageLabel } from '../browser/lastPage'
 import { pageReadPart, pageReadText } from '../browser/pageText'
 import { pageControls } from '../browser/emptyLanding'
 import type { Command } from './command'
-import type { JevDetail, JevUnavailable } from './decisionRecord'
+import type { CommandSource, JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
 import { NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
 import { mediaOpAnswer } from './mediaOp'
 import { captureAnswer } from './captureOp'
 import { scrollOpOfVerb } from './scrollOp'
-import type { DecisionUnavailableReason } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
 import { TRY_LINES, withNextLine } from './tryLine'
 
@@ -102,6 +102,44 @@ function topAction(jev: JevDetail | undefined): string {
 export function noResponseAnswer(facts: NoResponseFacts): string {
   const { why, next } = noResponseReason(facts)
   return withNextLine(`No response.\n\n${why}`, next).shown
+}
+
+/** What is said, and shown, for a line read `none` that was a line to the app (#500, ui.md 9 and 10): what happened, then the line to say next. */
+export const NONE_SAID = "I didn't catch that, say it again."
+
+/**
+ * Speech this loud or louder was said at the mic, not across the room (#500): the Speech Level, the loudest
+ * fifth of the Utterance's frames in dBFS. Measured (#500) on the kiosk's dumped `none` lines of 25–28 October
+ * (`~/bingbong-runs/kiosk-dumps-2026-10-28/`, the 83 hop-0 `none` lines labelled real or not): the far TV sat
+ * at −31 and −37, the quietest real line said at −22, and any floor from −22 to −30 split them the same, real
+ * lines said 12, noise lines said 0; the kiosk's `stt` span (`levelDb`) keeps the number checkable.
+ */
+export const NONE_SAID_LEVEL_DB = -26
+
+/** What the ear and the reading know of a line read `none` (#500). */
+export interface NoneHeard {
+  readonly source: CommandSource
+  /** Spoken over the app's voice (#490): a line there that fires nothing ends with nothing said (CONTEXT, Barge-in). */
+  readonly overSpeech: boolean
+  /** The reading the line ended on: the Where Ask's or the Mark Ask's when one was asked, else the line's own. */
+  readonly jev?: JevDetail | JevUnavailable
+  /** The Utterance's Speech Level in dBFS, from the ear; absent off the ear. */
+  readonly speechLevelDb?: number
+}
+
+/**
+ * Whether a line read `none` was a real line the app could not read, and is said back (#500, reliability.md rule 5),
+ * or not speech to the app (a remark, a filler, the TV), left to the greyed Receipt. Jev keeps the judgement: a
+ * `none` under the choice bar is one Jev was unsure of (the ledger reads it so, #371); the ear adds the level,
+ * since an unsure reading of far speech is still far. Measured on the kiosk's 83 `none` lines of 25–28 October:
+ * 12 of the 23 real lines Jev read are said, none of the 31 that were not speech to the app. A typed line is read
+ * on the screen it was typed at, and a line no host read carries no judgement either way: both stay as they were.
+ */
+export function noneIsALine(heard: NoneHeard): boolean {
+  if (heard.source !== 'spoken' || heard.overSpeech) return false
+  const jev = heard.jev
+  if (jev === undefined || 'reason' in jev || heard.speechLevelDb === undefined) return false
+  return (jev.probabilities.action.none ?? 0) < DEFAULT_DECISION_THRESHOLDS.choice && heard.speechLevelDb >= NONE_SAID_LEVEL_DB
 }
 
 /** What a page is called in an Answer: its title whole (no host stands beside it here), or its site's name when it has none. */

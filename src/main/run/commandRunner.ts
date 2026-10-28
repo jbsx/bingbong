@@ -93,7 +93,7 @@ import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
-import { FLAG_ANSWERS, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard, passageCard } from '../../core/command/answer'
+import { FLAG_ANSWERS, NONE_SAID, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { updateAnswer, type UpdateCheck } from '../../core/update/updateCheck'
@@ -191,6 +191,8 @@ export interface CommandRunOptions {
   readonly source?: CommandSource
   /** Spoken over the app's voice, which ducked for it (#490, F2 arm b): the voice stops at the read once the line is for the app. */
   readonly overSpeech?: true
+  /** The spoken Utterance's Speech Level in dBFS (#500): a line read `none` said at the mic is answered aloud. */
+  readonly speechLevelDb?: number
 }
 
 export interface CommandRunner {
@@ -3298,6 +3300,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly submission: number
     /** When it was given (#330). */
     readonly givenAt: number
+    /** The spoken Utterance's Speech Level in dBFS (#500). */
+    readonly speechLevelDb?: number
   }
 
   /** How a Step's Task came out (#364): how it ended, how its hop 0's action came out when one fired, and what it did, for the next Step's "Done so far". */
@@ -3400,7 +3404,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
       // After a Where Ask, both readings are the reason; a Mark Ask's none adds nothing to them.
       const where = whereRead !== null ? { where: whereRead.jev } : heard.markAsk === true ? { marked: heard.jev } : {}
-      answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
+      // A real line the app could not read is answered aloud, one sentence said and shown (#500, reliability.md rule 5); one that was not
+      // speech to the app (a remark, the TV) keeps the greyed words and the muted reason, unsaid. Judged on the reading the line ended on: the
+      // Where Ask's or the Mark Ask's when one was asked (measured: the first look alone said one remark and one real line fewer). A Step is part of a line, never answered alone.
+      const endedOn = whereRead !== null ? whereRead.jev : heard.markAsk === true ? heard.jev : first.jev
+      const aLine = options.step === undefined && noneIsALine({ source, overSpeech: overSpeechLines.has(turnId), ...(endedOn !== undefined ? { jev: endedOn } : {}), ...(line.speechLevelDb !== undefined ? { speechLevelDb: line.speechLevelDb } : {}) })
+      if (aLine && deps.speech !== undefined) {
+        answer(turnId, NONE_SAID, 'failure')
+        const reaction = options.measured ? { onFirstSound: () => span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'none', effect: 'spoken', reading: heard.reading, source, firedMs }) } : {}
+        void say(deps.speech, turnId, NONE_SAID, { failure: true, ...reaction })
+      } else answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }
     }
@@ -3914,7 +3927,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // with no action; a line read `none` that goes on leaves it ducked, and its end puts it back up (attachVoice).
         if (options?.overSpeech === true && forTheApp(first, submission)) deps.speech?.stop()
         const heard = await settleFate(turnId, lineRead, submission, first, source === 'spoken')
-        const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
+        const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt, ...(options?.speechLevelDb !== undefined ? { speechLevelDb: options.speechLevelDb } : {}) }
         const into = heard.into
         // A joined line reading what the line it joined already fired, or nothing, stands on it (#494): nothing fires again, and that
         // line's outcome, still sounding, is the answer.
