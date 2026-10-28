@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvrd0g50-2",
+  "transcript": "search for radiohead",
+  "at": 1793146306218,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 12-search-while-page-changes at p1 (after changed) on baseten-elephant-9b-latest at 9356c9b4: \"search for radiohead\" given as \"go to wikipedia.org\" landed on the www.wikipedia.org portal was read as type \"radiohead\" into [11] with no submit; the next hop clicked [11] \"Search\", covered by the suggestions (\"Something on the page is in the way\"); the page stayed the portal (Mammoth: one search op, the Radiohead article)",
+  "meant": "Searched on the page it ended up on: the Radiohead article on Wikipedia",
+  "log": "decision-1793146305198-1.jsonl"
+}

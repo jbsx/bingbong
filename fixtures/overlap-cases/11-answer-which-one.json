@@ -7,5 +7,5 @@
     "lines": ["done"]
   },
   "evidence": ["none yet"],
-  "state": {"is": "red", "on": "919f058f", "date": "2026-10-27", "models": ["decision-models/baseten-mammoth-27b-latest", "decision-models/baseten-elephant-9b-latest"]}
+  "state": {"is": "green", "on": "15a2d82c", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest", "decision-models/baseten-elephant-9b-latest"]}
 }
