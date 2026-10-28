@@ -4,6 +4,7 @@
   },
   "input": "spoken",
   "listen": "wake",
+  "echo": true,
   "lines": [
     {
       "words": "Back to",

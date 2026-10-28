@@ -42,7 +42,11 @@ export interface CaseExpect {
     readonly loop?: boolean
   }
   readonly said?: readonly SaidExpect[]
+  /** `whole`: every sentence the app began was heard to its end, never cut (#490). */
+  readonly speech?: 'whole'
   readonly lines?: readonly LineOutcome[]
+  /** The Feed shows `lines` and nothing else, a line heard and read as no Command included (#490). */
+  readonly nothingElse?: boolean
 }
 
 export interface CaseState {
@@ -61,6 +65,8 @@ export interface SequenceCase {
   readonly listen: 'wake' | 'hotkey'
   readonly lines: readonly CaseLine[]
   readonly noise: readonly CaseNoise[]
+  /** The app's own voice is heard by the microphone, as in a room (#490): spoken only. */
+  readonly echo: boolean
   readonly expect: CaseExpect
   readonly evidence: readonly string[]
   readonly state: CaseState
@@ -121,6 +127,14 @@ function readExpect(raw: unknown): CaseExpect | string {
     if (!Array.isArray(raw.said) || !raw.said.every((said) => isObject(said) && (isString(said.is) || isString(said.means)))) return 'expect.said is [{ is } | { means }, …]'
     out.said = raw.said as SaidExpect[]
   }
+  if (raw.speech !== undefined) {
+    if (raw.speech !== 'whole') return 'expect.speech is "whole"'
+    out.speech = 'whole'
+  }
+  if (raw.nothingElse !== undefined) {
+    if (raw.nothingElse !== true || raw.lines === undefined) return 'expect.nothingElse is true, beside expect.lines'
+    out.nothingElse = true
+  }
   if (raw.lines !== undefined) {
     if (!Array.isArray(raw.lines) || !raw.lines.every((outcome) => LINE_OUTCOMES.includes(outcome as LineOutcome))) return `expect.lines: each outcome is one of ${LINE_OUTCOMES.join(', ')}`
     out.lines = raw.lines as LineOutcome[]
@@ -166,6 +180,8 @@ export function readSequenceCase(raw: unknown, file: string): SequenceCase | str
       noise.push({ audio: item.audio, at })
     }
   }
+  if (raw.echo !== undefined && typeof raw.echo !== 'boolean') return fail('echo is true or false')
+  if (raw.echo === true && input !== 'spoken') return fail('echo is heard: only a spoken case has it')
   const expected = readExpect(raw.expect)
   if (typeof expected === 'string') return fail(expected)
   if (!Array.isArray(raw.evidence) || !raw.evidence.every(isString)) return fail('evidence is a list of ledger turns, or ["none yet"]')
@@ -181,6 +197,7 @@ export function readSequenceCase(raw: unknown, file: string): SequenceCase | str
     listen,
     lines,
     noise,
+    echo: raw.echo === true,
     expect: expected,
     evidence: raw.evidence as string[],
     state: { is: state.is, on: state.on, date: state.date, models: state.models as string[] },

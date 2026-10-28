@@ -13,12 +13,17 @@ export interface EndState {
   readonly text: string
   readonly media: readonly MediaState[]
   readonly said: readonly string[]
+  /** Each sentence the app began: how long it sounded (its start to its end, null when it never ended) and how long it is whole (#490). */
+  readonly speech?: readonly { readonly text: string; readonly ms: number | null; readonly wholeMs: number }[]
   /** One per Command the Feed shows after line 1, in order; `running` when it had not ended. */
   readonly lines: readonly (LineOutcome | 'running')[]
 }
 
 /** Whether any of the sentences said means `means`. */
 export type MeaningJudge = (means: string, said: readonly string[]) => Promise<boolean>
+
+/** A sentence heard for this share of its whole length was heard to its end. */
+const WHOLE_SHARE = 0.9
 
 const hostOf = (url: string): string => (URL.canParse(url) ? new URL(url).hostname : url)
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim()
@@ -68,11 +73,16 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
       last = said.is
     } else if (!(await judge(said.means, end.said))) return `nothing said meant "${said.means}"`
   }
+  if (expected.speech === 'whole') {
+    // A sentence cut is one that sounded for less than it takes whole; the slack is a duck's restart, never a lost clause.
+    const cut = (end.speech ?? []).find((sentence) => sentence.ms === null || sentence.ms < WHOLE_SHARE * sentence.wholeMs)
+    if (cut !== undefined) return `"${cut.text.slice(0, 60)}" was cut (${cut.ms === null ? 'it never ended' : `${Math.round(cut.ms / 100) / 10} s of ${Math.round(cut.wholeMs / 100) / 10} s`})`
+  }
   if (expected.lines !== undefined) {
     const wanted = expected.lines.filter((outcome) => outcome !== 'none')
     // Talk heard and read as no Command (a remark, noise) shows dropped and did nothing: by order it cannot be told from a line,
-    // so it counts only in a case that expects a line dropped.
-    const shown = wanted.includes('dropped') ? end.lines : end.lines.filter((outcome) => outcome !== 'dropped')
+    // so it counts only in a case that expects a line dropped, or one that says nothing else shows.
+    const shown = wanted.includes('dropped') || expected.nothingElse === true ? end.lines : end.lines.filter((outcome) => outcome !== 'dropped')
     if (wanted.length !== shown.length || wanted.some((outcome, index) => outcome !== shown[index])) {
       return `the lines came to ${end.lines.length === 0 ? 'no Command' : end.lines.join(', ')}, not ${wanted.join(', ')}`
     }

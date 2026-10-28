@@ -22,6 +22,12 @@ describe('a Sequence Case read from its file', () => {
     expect(readSequenceCase({ ...spoken, listen: 'hotkey' }, '8-x.json')).toMatchObject({ listen: 'hotkey' })
   })
 
+  it('a spoken case may hear the app\'s own voice, and expect its speech whole (#490)', () => {
+    const spoken = { ...typed, input: 'spoken', echo: true, lines: [{ words: 'a', audio: 'a.wav' }], expect: { speech: 'whole', lines: ['done'] } }
+    expect(readSequenceCase(spoken, '10-x.json')).toMatchObject({ echo: true, expect: { speech: 'whole' } })
+    expect(readSequenceCase(typed, '1-x.json')).toMatchObject({ echo: false })
+  })
+
   it.each([
     ['a file name with no row', typed, 'replace.json', /row/],
     ['a start of no known kind', { ...typed, start: { song: 'x' } }, '1-a.json', /start/],
@@ -29,6 +35,8 @@ describe('a Sequence Case read from its file', () => {
     ['a window the wrong way round', { ...typed, lines: [{ words: 'a' }, { words: 'b', at: { ms: [900, 300] } }] }, '1-a.json', /window/],
     ['a named point no person could see', { ...typed, lines: [{ words: 'a' }, { words: 'b', at: { while: 'thinking' } }] }, '1-a.json', /while/],
     ['a spoken line with no audio', { ...typed, input: 'spoken' }, '1-a.json', /audio/],
+    ['an echo in a typed case', { ...typed, echo: true }, '1-a.json', /echo/],
+    ['a speech expect other than whole', { ...typed, expect: { speech: 'cut' } }, '1-a.json', /speech/],
     ['noise in a typed case', { ...typed, noise: [{ audio: 'n.wav', at: { ms: 100 } }] }, '1-a.json', /noise/],
     ['an outcome the Feed never shows', { ...typed, expect: { lines: ['superseded'] } }, '1-a.json', /outcome/],
     ['an empty expect', { ...typed, expect: {} }, '1-a.json', /expect/],

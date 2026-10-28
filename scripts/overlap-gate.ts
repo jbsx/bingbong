@@ -17,7 +17,12 @@
 //   from fixtures/wake-audio, the real wake and VAD models, one Hot Listen —
 //   or, with `"listen": "hotkey"`, a hotkey listen armed for each line. The
 //   mic is muted while the start is set up and unmuted to begin: Chromium
-//   plays the file from its start on every capture it opens.
+//   plays the file from its start on every capture it opens;
+// - a case with `"echo": true` runs in a room instead (e2e/overlap/room.ts,
+//   #490): a private PulseAudio whose one device is a null sink. The app's
+//   speech plays into it, the wav is played into it at the unmute, and the
+//   mic is its monitor, so the app's own voice is heard live, ducking and
+//   stopping as it does. Nothing reaches a speaker: the room holds no device.
 //
 // A time is a fixed ms, a window run at seeded points, or a point a person
 // could see or hear (e2e/overlap/points.ts). A typed line at a moment
@@ -58,6 +63,9 @@ import { formatTable, stateDisagreements, through, type CaseRow, type Cell } fro
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
 import { placeMs, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
+import { openRoom, type Room } from '../e2e/overlap/room.ts'
+import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
+import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
 import { createPlannerLimiter } from '../src/core/planner/limiter.ts'
 import { PLANNER_DEFAULT_MODEL, PLANNER_GATE_MODEL, resolvePlannerRouting } from '../src/core/planner/plannerRouting.ts'
@@ -259,7 +267,7 @@ interface Live {
   stop(): void
 }
 
-async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null): Promise<Live> {
+async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null, room: Room | null): Promise<Live> {
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
   const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
@@ -270,7 +278,8 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
     cwd: REPO,
     debugPort: await pickFreeDebugPort(),
     userDataDir: profile,
-    args: wav === null ? [] : ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`],
+    // In a room the mic is the room's monitor, and the pane's own sound stays muted: only the app's voice is in the room.
+    args: room !== null ? ['--use-fake-ui-for-media-stream', '--mute-audio'] : wav === null ? [] : ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`],
     startupTimeoutMs: SETUP_BOUND_MS,
     // Piped so a kept run has the app's stdout beside its stderr.
     pipeStdio: true,
@@ -289,6 +298,8 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
       BINGBONG_PIPER_VOICE_DIR: join(CONFIG_DIR, 'voices'),
       ...decision,
       ...(plannerModel !== undefined ? { BINGBONG_PLANNER_MODEL: plannerModel } : {}),
+      // The app's speech plays into the room through a player held to it; the room has no device to sound on.
+      ...(room !== null ? { PULSE_SERVER: room.server, BINGBONG_MUTE_AUDIO: '0', BINGBONG_APLAY_BIN: room.aplay } : {}),
       ...(spoken
         ? {
             BINGBONG_WAKE_ENGINE: 'node',
@@ -334,6 +345,12 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
       sampling = false
     },
   }
+}
+
+/** The ear's dumps (BINGBONG_AUDIO_DUMP=1), by file name: what it captured, the app's own voice included (#490). */
+function dumpFiles(dumpsDir: string): Record<string, Buffer> {
+  if (!existsSync(dumpsDir)) return {}
+  return Object.fromEntries(readdirSync(dumpsDir).filter((name) => name.endsWith('.wav')).map((name) => [name, readFileSync(join(dumpsDir, name))]))
 }
 
 function logFiles(logsDir: string): Record<string, string> {
@@ -431,6 +448,36 @@ function spokenWav(sequence: SequenceCase, lineMs: readonly number[], noiseMs: r
   return { path, lastEndMs }
 }
 
+/** The app's own voice, rendered whole, in ms: how long a sentence sounds when nothing cuts it (#490). */
+const wholeMsCache = new Map<string, number>()
+function wholeMs(text: string): number {
+  const said = stripMarkdownForSpeech(text)
+  const cached = wholeMsCache.get(said)
+  if (cached !== undefined) return cached
+  const out = join(mkdtempSync(join(tmpdir(), 'bingbong-overlap-whole-')), 'whole.wav')
+  const voice = join(process.env.BINGBONG_PIPER_VOICE_DIR ?? join(CONFIG_DIR, 'voices'), `${DEFAULT_PIPER_VOICE}-medium.onnx`)
+  const spoke = spawnSync(process.env.BINGBONG_PIPER_BIN ?? join(CONFIG_DIR, 'piper', 'piper', 'piper'), ['--model', voice, '--output_file', out], { input: said, encoding: 'utf8' })
+  if (spoke.status !== 0) throw new Error(`piper could not render the app's sentence: ${spoke.stderr.slice(-300)}`)
+  const wav = readFileSync(out)
+  rmSync(out, { force: true })
+  // A RIFF header of 44 bytes, then s16 at the rate in bytes 24–27.
+  const ms = ((wav.length - 44) / 2 / wav.readUInt32LE(24)) * 1000
+  wholeMsCache.set(said, ms)
+  return ms
+}
+
+/** Each sentence the app began since `from`: how long it sounded, to its own `spoken`, and how long it is whole. */
+function speechOf(records: RunRecords, from: number): NonNullable<EndState['speech']> {
+  const later = records.events.filter((record) => record.t >= from)
+  const used = new Set<number>()
+  return later.flatMap((record, index) => {
+    if (record.event.type !== 'speak') return []
+    const ended = later.findIndex((other, at) => at > index && !used.has(at) && other.event.type === 'spoken')
+    if (ended !== -1) used.add(ended)
+    return [{ text: record.event.text, ms: ended === -1 ? null : later[ended]!.t - record.t, wholeMs: wholeMs(record.event.text) }]
+  })
+}
+
 interface RunOutcome {
   readonly cell: Cell
   readonly lineAt: number | null
@@ -442,6 +489,10 @@ interface RunOutcome {
   readonly stdout?: string
   /** The run's perf, decision and ask logs, by file name: `pnpm perf:report` reads them once written out. */
   readonly logs?: Readonly<Record<string, string>>
+  /** What the mic heard, in a room (#490). */
+  readonly roomWav?: Buffer
+  /** The ear's dumps, by file name, when the run dumped (#490). */
+  readonly dumps?: Readonly<Record<string, Buffer>>
 }
 
 /**
@@ -473,8 +524,13 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     }
   }
   let live: Live | null = null
+  let room: Room | null = null
   try {
-    live = await launch(sequence, model, profile, wav?.path ?? null)
+    if (spoken && sequence.echo) {
+      room = await openRoom(join(profile, 'room'))
+      room.record(join(profile, 'room.wav'))
+    }
+    live = await launch(sequence, model, profile, wav?.path ?? null, room)
     liveApp = live.app
     const current = live
     if (spoken) {
@@ -489,15 +545,18 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
       if (cell === null) await quiet(current, from, notBefore, RUN_BOUND_MS)
       const records = await current.records()
       const pane = await readPane(current.targets, TEXT_IN_VIEW_CHARS)
-      const end: EndState = { url: pane.url, title: pane.title, text: pane.text, media: pane.media as MediaState[], said: saidFrom(records, from), lines: lineOutcomes(records, from) }
+      let end: EndState = { url: pane.url, title: pane.title, text: pane.text, media: pane.media as MediaState[], said: saidFrom(records, from), lines: lineOutcomes(records, from) }
       // A calibration gives line 1 alone: its end is a timeline, never held against the case's expect.
       const calibrating = plan.calibrating === true
       let verdict: Cell = cell ?? { verdict: 'green' }
+      if (sequence.expect.speech === 'whole') end = { ...end, speech: speechOf(records, from) }
       if (cell === null && !calibrating) {
         const why = await checkEnd(sequence.expect, end, judge)
         if (why !== null) verdict = { verdict: 'red', why }
       }
-      return { cell: verdict, lineAt, sentMs, end, records, stderr: current.app.stderrTail(), stdout: current.app.stdoutRaw(), logs: logFiles(join(profile, 'logs')) }
+      // What the mic heard in the room, kept beside the run (#490).
+      const roomWav = room !== null && existsSync(join(profile, 'room.wav')) ? join(profile, 'room.wav') : undefined
+      return { cell: verdict, lineAt, sentMs, end, records, stderr: current.app.stderrTail(), stdout: current.app.stdoutRaw(), logs: logFiles(join(profile, 'logs')), ...(roomWav !== undefined ? { roomWav: readFileSync(roomWav) } : {}), dumps: dumpFiles(join(profile, 'audio-dumps')) }
     }
     if (unset !== null) {
       const wall = wallBefore(current.pane, Date.now())
@@ -506,6 +565,8 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     if (spoken) {
       await current.targets.evaluate('dashboard', 'window.bingbong.voice.toggleMic()')
       const t0 = Date.now()
+      // In a room the wav is heard from the unmute, as the fake mic plays its file from the capture's start.
+      room?.play(wav!.path)
       const lineAt = t0 + Math.round(spokenStart(sequence))
       const lineMs = plan.placed.slice(0, plan.lines).map((placed) => placedMs(placed) as number)
       if (sequence.listen === 'hotkey') {
@@ -557,6 +618,7 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     if (liveApp === live?.app) liveApp = null
     live?.stop()
     await live?.app.quit().catch(() => live?.app.quit({ signal: 'SIGKILL' }).catch(() => {}))
+    await room?.close()
     // The app may still be letting go of its profile as it exits.
     rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
   }
@@ -625,8 +687,13 @@ interface Calibration {
 
 /** One kept run: `<name>.json` (what the gate saw) and `<name>-logs/` (the app's own perf, decision and ask logs, for `pnpm perf:report` and `pnpm bugs:add --logs`). */
 function keepRun(dir: string, name: string, head: object, ran: RunOutcome): void {
-  const { logs, ...rest } = ran
+  const { logs, roomWav, dumps, ...rest } = ran
   writeFileSync(join(dir, `${name}.json`), `${JSON.stringify({ ...head, run: rest }, null, 2)}\n`)
+  if (roomWav !== undefined) writeFileSync(join(dir, `${name}-room.wav`), roomWav)
+  if (dumps !== undefined && Object.keys(dumps).length > 0) {
+    mkdirSync(join(dir, `${name}-dumps`), { recursive: true })
+    for (const [file, wav] of Object.entries(dumps)) writeFileSync(join(dir, `${name}-dumps`, file), wav)
+  }
   if (logs === undefined) return
   mkdirSync(join(dir, `${name}-logs`), { recursive: true })
   for (const [file, text] of Object.entries(logs)) writeFileSync(join(dir, `${name}-logs`, file), text)

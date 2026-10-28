@@ -17,6 +17,7 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
   "start": { "url": "…" } | { "playing": "…" } | { "asked": { "url": "…", "line": "…" } },
   "input": "typed" | "spoken",
   "listen": "wake" | "hotkey",
+  "echo": true,
   "lines": [
     { "words": "…", "audio": "….wav" },
     { "words": "…", "at": { "ms": 2200 } | { "ms": [300, 4000] } | { "while": "loading" | "speaking" | "media-not-started" } | { "after": "shown" | "changed" | "asked" } }
@@ -27,7 +28,9 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
     "view": { "has": ["…"] },
     "media": { "playing": true, "has": "…", "position": [30, 60], "volume": 0.7, "loop": true },
     "said": [ { "is": "…" } | { "means": "…" } ],
-    "lines": [ "done", "cancelled" ]
+    "speech": "whole",
+    "lines": [ "done", "cancelled" ],
+    "nothingElse": true
   },
   "evidence": ["turn-…"],
   "state": { "is": "red", "on": "<commit>", "date": "2026-10-27", "models": ["…"] }
@@ -50,6 +53,9 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
 - **listen** (spoken only): `wake` (the default) says the wake word once and
   speaks every line into that one Hot Listen; `hotkey` presses the hotkey
   before each line.
+- **echo** (spoken only): the app's own voice is heard by the microphone, as
+  it is in a room. Without it a spoken case is heard muted: the microphone
+  hears the person and the noise and never the app.
 - **lines**: the words, and for a spoken line its audio. The first line has
   no time: it is the clock's zero.
 - **noise** (spoken only): what else is heard (another voice, a remark),
@@ -107,13 +113,20 @@ last line.
 - `said`: the sentences the app said. An `is` is exact, each one after the
   one before it. A `means` goes to a judge (GLM-5.3-flash, as `goal:gate`'s)
   that reads every sentence said. It is the one check that is not exact.
+- `speech`: `whole` says every sentence the app began was heard to its end:
+  none sounded for less than nine tenths of the time it takes said whole
+  (the app's own voice, rendered once to time it). A dip in its level is
+  not a cut.
 - `lines`: what the Feed shows each line came to, in order: `done`,
   `failed`, `cancelled`, `dropped` (heard, read as no Command), or `none`
   (no Command of its own: taken into another line, or not heard). A line
   is a Command whose first hop came at or after line 1, and later hops of
   the same Task are its own. A `dropped` entry counts only in a case that
   expects a line `dropped`, since by order alone a remark or noise that was
-  heard and did nothing cannot be told from a line.
+  heard and did nothing cannot be told from a line. `nothingElse: true` says
+  the Feed shows those lines and nothing more, a `dropped` one included: in
+  a case where the only other sound is the app's own voice, any further
+  line was taken from it.
 
 A **wall** (a page the browser classes a Blocker: a challenge, a network
 block, a sign-in wall, or a page asking a person to prove they are no bot)
@@ -133,6 +146,20 @@ exists**; when one does, point the case at the dump. To add a stand-in, add
 its words and voice to `stand-ins.json` and run `pnpm overlap:audio` (Piper
 and the voices in `~/.config/bingbong/`, and ffmpeg). The wavs are 16 kHz
 mono, like every dump, and are committed.
+
+## The app's own voice
+
+A case with `echo` runs in a room: a private PulseAudio server for the run
+alone, whose one device is a null sink. The app's speech plays into it, the
+wav of the lines and the noise is played into it from the moment the
+microphone opens, and the microphone is the sink's monitor, so the person
+and the app are heard mixed, and the app's voice is heard to dip or stop
+when it does. The room loads no device and is checked for that before the
+run; the app's player is held to the room and plays nowhere if the room is
+gone. The pane's own sound stays muted. Both voices go in at the level they
+were made at, a guess until a kiosk dump of the app speaking says how loud
+its voice is at the microphone. `--keep` keeps what the microphone heard as
+`<point>-room.wav` beside the run.
 
 ## Adding a case
 

@@ -1,0 +1,25 @@
+{
+  "start": {
+    "playing": "let down by radiohead"
+  },
+  "input": "spoken",
+  "listen": "wake",
+  "echo": true,
+  "lines": [
+    {
+      "words": "Read the page.",
+      "audio": "read-the-page.wav"
+    }
+  ],
+  "expect": {
+    "speech": "whole",
+    "lines": [
+      "done"
+    ],
+    "nothingElse": true
+  },
+  "evidence": [
+    "none yet"
+  ],
+  "state": {"is": "red", "on": "unmeasured", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest", "decision-models/baseten-elephant-9b-latest"]}
+}
