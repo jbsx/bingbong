@@ -5536,6 +5536,41 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(said(events)).toEqual(["Stopped opening bbc.com. It's 12:34 on Friday 23 October."])
   })
 
+  it('an ended `play` takes its media with it: the pane stops loading and pauses, unless the line that ended it takes the pane', async () => {
+    const SONG = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
+    const playOpening = () => {
+      let youtube!: ScriptedYouTube
+      const made = harness({
+        applianceCard: CARD,
+        facts,
+        player: (browser) => {
+          youtube = new ScriptedYouTube(browser)
+          return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+        },
+      })
+      youtube.search('bohemian rhapsody', videoItem('fJ9rUzIMcZQ', SONG))
+      youtube.watches.set('fJ9rUzIMcZQ', { title: SONG })
+      const navigate = made.browser.navigate.bind(made.browser)
+      made.browser.navigate = (url) => new Promise((resolve) => setTimeout(() => void navigate(url).then(resolve), 0))
+      made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-2') } })
+      const first = made.runner.run('play bohemian rhapsody')
+      return { ...made, youtube: () => youtube, first }
+    }
+    const kept = playOpening()
+    await flushMicrotasks()
+    kept.decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('ends') } })
+    await kept.runner.run("what's the time?")
+    await kept.first
+    expect(kept.browser.stops).toBe(1)
+    expect(kept.youtube().pauseAlls).toBe(1)
+    const taken = playOpening()
+    await flushMicrotasks()
+    await taken.runner.run('navigate example.org')
+    await taken.first
+    expect(taken.browser.stops).toBe(0)
+    expect(taken.youtube().pauseAlls).toBe(0)
+  })
+
   it('joins: the running line gives way unsaid, and the two lines are read as one', async () => {
     const { decision, asks, events, runner, first, turnId, land } = await running()
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_time'), slot: choice('none') } })

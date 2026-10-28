@@ -828,13 +828,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * was doing (the grill's Q11), a joined one gives way unsaid. Nothing ends
    * on a line's arrival alone.
    */
-  function endRunning(submission: number, how: 'ends' | 'joins' | 'stop', by: string): void {
+  function endRunning(submission: number, how: 'ends' | 'joins' | 'stop', by: string, paneTaken = false): void {
     const running = runningBefore(submission)
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(running.acting) : undefined
     cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
     if (said !== undefined) stopSaid = { text: said, by }
+    // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
+    // loading under a line that keeps the pane, would land and play. The pane stops where it stands and pauses.
+    if (how !== 'joins' && running?.verb === 'play' && !paneTaken) {
+      stopLoading()
+      void pauseAll()
+    }
   }
 
   /** Stop ends the page's load too (#330), not only the Command's wait on it: the pane stops where it stands. */
@@ -1016,7 +1022,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reportFault('run.commandRunner.fateSpan', error, { turnId })
     }
     if (fate === 'goes_on' || fate === 'ends') {
-      if (fate === 'ends') endRunning(submission, heard.command.verb === 'stop' ? 'stop' : 'ends', turnId)
+      if (fate === 'ends') endRunning(submission, heard.command.verb === 'stop' ? 'stop' : 'ends', turnId, takesPane(heard.command))
       return heard.unread === true ? read(turnId, text, null, spoken) : heard
     }
     if (fate === 'joins') {
@@ -2894,7 +2900,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     submitted += 1
     const submission = submitted
     if (deps.applianceCard === undefined) floor = submission
-    else if (fate === 'ends') endRunning(submission, command.verb === 'stop' ? 'stop' : 'ends', turnId)
+    else if (fate === 'ends') endRunning(submission, command.verb === 'stop' ? 'stop' : 'ends', turnId, takesPane(command))
     const firedAt = at()
     const hop0: TaskHop = { id: turnId, hop: 0 }
     const fired: EarlyFired = {
@@ -3484,7 +3490,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           reading = null
           if (source === 'spoken') observeTerms(trimmed)
           // An Errand takes the pane: by kind, it ends the line running (the grill's Q8).
-          if (deps.applianceCard !== undefined && runningBefore(submission) !== null) endRunning(submission, 'ends', turnId)
+          if (deps.applianceCard !== undefined && runningBefore(submission) !== null) endRunning(submission, 'ends', turnId, true)
           publish({ type: 'command', turnId, text: lineRead, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
           span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'errand', effect: 'settled', reading: 'local_match', source })
           await startErrand({ id: turnId, goalLine: goal, source }, submission)
