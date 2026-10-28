@@ -653,7 +653,8 @@ it, read again with it as one line), **waits** for it (acts on what it is
 bringing, once that is there), or lets it **go on** (something else, a
 question about the wait, a remark or noise). Read by Jev on the Appliance
 Card, which carries the running Command right after the words; unsure, it
-goes on. An exact line's Fate is by kind: one that takes the pane ends it, a
+goes on; when no host answers, a line that opens with a grammar verb head
+ends it and any other goes on, said (#504). An exact line's Fate is by kind: one that takes the pane ends it, a
 control on media still opening waits, any other goes on. A joined line is
 the line it joins, one line on its Task: a first half still being read gives
 way into it; one that fired and ended stands when the two read as one fire

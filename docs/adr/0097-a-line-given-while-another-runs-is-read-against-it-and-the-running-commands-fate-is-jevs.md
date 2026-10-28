@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended 2026-10-28 by #504: a failed host over a running line is the
+grammar's read — a verb head ends it, any other line goes on, said.
+
 Amended 2026-10-28 by #499: `say_doing` is offered for the line just
 ended, within 15 s of its sentence's end, as well as while a line runs.
 
@@ -69,9 +72,17 @@ read each line alone: `no, by coldplay` played Meghan Trainor's "No".
   (measured: the ended line on the state lured the next line's own
   action). A line read `none`, one that gave way into or stood on a join,
   and a doing question never become the line just ended.
-- **Unsure is `goes_on`.** A Fate under the Appliance Card's bar (0.7), a
-  missing one, or a failed host: a wrong goes-on costs one `stop`, a
-  wrong end loses the person's first line (ui.md 3).
+- **Unsure is `goes_on`.** A Fate under the Appliance Card's bar (0.7),
+  or a missing one: a wrong goes-on costs one `stop`, a wrong end loses
+  the person's first line (ui.md 3). **A failed host is the grammar's
+  read** (#504): when every host fails on a line read over a running one,
+  that failed ask is the reading and no other card is asked; a line that
+  opens with one of the grammar's verb heads is a new goal and `ends` the
+  running line, any other `goes_on`, and what came of the running line is
+  said. With no action of its own the line is an Errand's Goal Line,
+  handed over aloud ("Taking that as a new goal: …"); a later Errand ends
+  an earlier one, and an ended Errand's line takes the media its steps
+  opened with it.
 - **The runner acts on the Fate, never on timing.**
   - `ends`: the running line ends, its action in flight cancelled, its
     Errand ended; an ended `play` stops the pane's load and pauses it,
