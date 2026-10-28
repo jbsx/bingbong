@@ -64,6 +64,7 @@ import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase
 import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
+import { openSlowHost, SLOW_HOST_ENV_KEY, type SlowHost } from '../e2e/overlap/slowHost.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
@@ -263,13 +264,22 @@ interface Live {
   /** When the sampler's read in flight was sent, or null between reads. */
   readingSince(): number | null
   records(): Promise<RunRecords & { voice: VoiceRecord[] }>
+  /** The slow host the app asks through (#504), while the switch is on. */
+  readonly slow: SlowHost | null
   stop(): void
 }
+
+/** The harness-only switch (#504, README): every ask for a line after line 1 times out at the app's own timeout. */
+const slowHostOn = process.env[SLOW_HOST_ENV_KEY] === '1'
 
 async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null, room: Room | null): Promise<Live> {
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
   const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
+  const routing = resolveDecisionRouting({ ...process.env, ...decision })
+  const slow = slowHostOn && routing.configured ? await openSlowHost(routing.endpoint.baseUrl, sequence.lines.slice(1).map((line) => line.words)) : null
+  // The stand-in is the only host: no fallback reads the held line instead.
+  const slowEnv = slow !== null ? { BINGBONG_DECISION_BASE_URL: slow.url, BINGBONG_DECISION_FALLBACKS: '' } : {}
   const app = await launchApp({
     // The binary itself, not the node_modules/.bin shim (the e2e harness's reason).
     electronBinary: createRequire(import.meta.url)('electron') as string,
@@ -296,6 +306,7 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
       BINGBONG_PIPER_BIN: join(CONFIG_DIR, 'piper', 'piper', 'piper'),
       BINGBONG_PIPER_VOICE_DIR: join(CONFIG_DIR, 'voices'),
       ...decision,
+      ...slowEnv,
       ...(plannerModel !== undefined ? { BINGBONG_PLANNER_MODEL: plannerModel } : {}),
       // The app's speech plays into the room through a player held to it; the room has no device to sound on.
       ...(room !== null ? { PULSE_SERVER: room.server, BINGBONG_MUTE_AUDIO: '0', BINGBONG_APLAY_BIN: room.aplay } : {}),
@@ -311,6 +322,9 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
           }
         : { BINGBONG_WAKE_ENGINE: 'off' }),
     },
+  }).catch(async (error: unknown) => {
+    await slow?.close()
+    throw error
   })
   const targets = targetsOf(app.cdp)
   // The app boots to the Idle Screen: a keydown wakes the dashboard, as any real input does; then the recorder goes in.
@@ -340,6 +354,7 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
     targets,
     pane,
     readingSince: () => reading,
+    slow,
     async records() {
       const kept = await targets.evaluate<{ events: RunRecords['events']; voice: VoiceRecord[] }>('dashboard', 'window.__overlap').catch(() => undefined)
       return { events: kept?.events ?? [], voice: kept?.voice ?? [], pane }
@@ -622,6 +637,8 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     live?.stop()
     await live?.app.quit().catch(() => live?.app.quit({ signal: 'SIGKILL' }).catch(() => {}))
     await room?.close()
+    if (live?.slow != null) console.log(`  slow host: ${live.slow.held()} asks held, ${live.slow.passed()} passed`)
+    await live?.slow?.close()
     // The app may still be letting go of its profile as it exits.
     rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
   }

@@ -207,3 +207,16 @@ failed check. `--keep dir` writes each run as
 `<dir>/<case>/<model>/p<point>.json`: the end state, the records, the
 app's logs and its stderr. The gate is not part of `pnpm test`: it needs
 real models and real pages.
+
+### A slow host
+
+`BINGBONG_OVERLAP_SLOW_HOST=1` (off by default; harness-only, #504) puts
+a stand-in in front of the Decision Model's host (`e2e/overlap/slowHost.ts`)
+and points the app at it, with no Fallback Hosts. Every ask whose body
+carries the words of a line after line 1 is held unanswered until the app
+gives it up at its own `BINGBONG_DECISION_TIMEOUT_MS`, which the switch
+never changes; every other ask reaches the host as it came. So line 1 is
+read as ever and every later line's reading times out: the road a slow host
+takes under a line that arrives over a running one (#504, the run of record's
+`1-replace-new-goal` p3). Each run prints how many asks were held and passed.
+A run with the switch on measures that road and is never a run of record.
