@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOverLevel, frameLevel, OVER_LEVEL_END_FRAMES, OVER_LEVEL_SETTLE_FRAMES } from './overLevel'
+import { createOverLevel, frameLevel, OVER_LEVEL_END_FRAMES, OVER_LEVEL_LEAD_FRAMES, OVER_LEVEL_SETTLE_FRAMES, OVER_LEVEL_TAIL_FRAMES } from './overLevel'
 
 const frame = (level: number): Float32Array => new Float32Array(512).fill(level)
 
@@ -21,10 +21,10 @@ describe('the person’s voice over the ducked echo, by level (#490)', () => {
     expect(frameLevel(new Float32Array([0.5, -0.5]))).toBeCloseTo(0.5)
   })
 
-  it('finds a loud stretch once it has ended, with the frames ahead of it and the quiet that ended it', () => {
+  it('finds a loud stretch once it has ended, with a frame ahead of it and a little of the quiet after', () => {
     const found = readAll([...echo(40), ...loud(10), ...echo(30)])
     expect(found!.at).toBe(49 + OVER_LEVEL_END_FRAMES)
-    expect(found).toMatchObject({ from: 30, to: found!.at + 1 })
+    expect(found).toMatchObject({ from: 40 - OVER_LEVEL_LEAD_FRAMES, to: 50 + OVER_LEVEL_TAIL_FRAMES })
   })
 
   it('never takes the app’s voice before the duck lands', () => {

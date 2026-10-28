@@ -9,7 +9,7 @@ import type { TurnDetector } from '../ports/stt'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
 import type { OverSpeech } from './ownVoice'
-import { OVER_LEVEL_END_FRAMES } from './overLevel'
+import { OVER_LEVEL_LEAD_FRAMES, OVER_LEVEL_TAIL_FRAMES } from './overLevel'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command runner as
@@ -1701,9 +1701,8 @@ describe('voice session — speech over the app’s own voice, inside a listen (
       await harness.session.pushAudio(frame(level))
     }
     expect(harness.submitted).toMatchObject([{ text: 'move on', overSpeech: true }])
-    // The stretch alone, with its lead and the quiet that ended it, never the forty frames of echo before it.
-    expect(harness.transcriber.audio[0]!.length).toBeGreaterThanOrEqual((10 + OVER_LEVEL_END_FRAMES) * 512)
-    expect(harness.transcriber.audio[0]!.length).toBeLessThan(40 * 512)
+    // The stretch alone, with a frame ahead of it and a little quiet after: never the forty frames of echo before it.
+    expect(harness.transcriber.audio[0]!.length).toBe((OVER_LEVEL_LEAD_FRAMES + 10 + OVER_LEVEL_TAIL_FRAMES) * 512)
     expect(harness.tts.stopCalls).toBe(0)
   })
 

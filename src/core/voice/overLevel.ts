@@ -39,13 +39,26 @@ export const OVER_LEVEL_GAP_FRAMES = 6
 /** Quiet frames after a stretch that end it: about 380 ms. A guess. */
 export const OVER_LEVEL_END_FRAMES = 12
 
-/** Frames kept ahead of a stretch when it is cut out: about 320 ms, the onset the threshold missed. */
-export const OVER_LEVEL_LEAD_FRAMES = 10
+/**
+ * Frames kept ahead of a stretch when it is cut out: one, 32 ms. A person's
+ * onset is sharp over the ducked echo, and more lead hands Parakeet the
+ * echo's last syllable: the gate's three live "Move on." cuts read "Move
+ * on." at a lead of 0–1 frames, and "But move on.", "Wait, move on.",
+ * "Point.", "Two points." and "Take a tune." at 2–10.
+ */
+export const OVER_LEVEL_LEAD_FRAMES = 1
+
+/**
+ * Frames kept after a stretch's last loud frame: about 260 ms, the line's
+ * softer last syllable ("on" under "Move"). The same three cuts read "Move
+ * on." at 0–8 frames; at 12 the echo after it rode in ("Move all").
+ */
+export const OVER_LEVEL_TAIL_FRAMES = 8
 
 export interface LoudStretch {
   /** The first frame of the cut, counted from the capture's first frame. */
   readonly from: number
-  /** One past its last frame: the quiet after the loud frames rides with it, up to one end's worth. */
+  /** One past its last frame: a little of the quiet after the loud frames rides with it. */
   readonly to: number
 }
 
@@ -59,6 +72,7 @@ export interface OverLevelTuning {
   readonly gapFrames: number
   readonly endFrames: number
   readonly leadFrames: number
+  readonly tailFrames: number
 }
 
 export const OVER_LEVEL_TUNING: OverLevelTuning = {
@@ -70,6 +84,7 @@ export const OVER_LEVEL_TUNING: OverLevelTuning = {
   gapFrames: OVER_LEVEL_GAP_FRAMES,
   endFrames: OVER_LEVEL_END_FRAMES,
   leadFrames: OVER_LEVEL_LEAD_FRAMES,
+  tailFrames: OVER_LEVEL_TAIL_FRAMES,
 }
 
 export interface OverLevel {
@@ -90,7 +105,7 @@ export function frameLevel(frame: Float32Array): number {
  * found loud once the echo has been heard after them.
  */
 export function createOverLevel(tuning: OverLevelTuning = OVER_LEVEL_TUNING): OverLevel {
-  const { settle, floorFrames, percentile, ratio, minFrames, gapFrames, endFrames, leadFrames } = tuning
+  const { settle, floorFrames, percentile, ratio, minFrames, gapFrames, endFrames, leadFrames, tailFrames } = tuning
   const levels: number[] = []
   let reported = false
   return {
@@ -121,12 +136,12 @@ export function createOverLevel(tuning: OverLevelTuning = OVER_LEVEL_TUNING): Ov
         } else if (++gap > gapFrames) break
       }
       if (count < minFrames) return null
+      // A stretch reaching back to the settle is a person who spoke first: its onset is found among the loud frames before it.
+      if (start === settle) while (start > 0 && levels[start - 1]! >= echo * ratio) start--
       reported = true
-      // A stretch reaching back into the settle is a person who spoke first: it is cut from the capture's start.
-      // It runs one quiet stretch past its last loud frame: that quiet may still hold the line's softer last syllable ("Move" loud,
-      // "on" under it), and no further, since a stretch found late (a person who spoke first, before the echo's level was known) is
-      // followed by echo.
-      return { from: start <= settle ? 0 : Math.max(0, start - leadFrames), to: Math.min(levels.length, end + 1 + endFrames) }
+      // It keeps a little quiet after its last loud frame, where a softer last syllable may be, and no more: a stretch found late (a
+      // person who spoke first, before the echo's level was known) is followed by echo.
+      return { from: Math.max(0, start - leadFrames), to: Math.min(levels.length, end + 1 + tailFrames) }
     },
   }
 }
