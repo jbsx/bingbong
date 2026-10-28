@@ -4,7 +4,7 @@ import type { KeepCapture } from '../shelf/keepCapture'
 import { captureFileName } from '../../core/command/captureOp'
 import { fitShelfAsk, readShelfAnswer } from '../../core/command/shelfAsk'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
-import { askImageFile, type AskKind } from '../../core/decision/askRecord'
+import { askImageFile, type AskKind, type AskRecord } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { loadingDetail } from '../../core/pipeline/runProgress'
@@ -100,7 +100,7 @@ import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
-import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars } from '../../core/decision/cardBudget'
+import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars, sizeRefusalOf, tighterBudget } from '../../core/decision/cardBudget'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
@@ -845,6 +845,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     ownId?: string,
     /** The images the state names (#382: the Mark Ask's), by reference. */
     images?: Readonly<Record<string, Uint8Array>>,
+    /** What the record names beside the ask (#495): the card's cuts and budget, the refused ask it retries. */
+    fit: Pick<AskRecord, 'cuts' | 'budget' | 'retryOf'> = {},
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
     const askedAt = at()
     const askId = ownId ?? turnId
@@ -857,16 +859,53 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     try {
       const saved = images === undefined ? null : savedImages(askId, images)
       const answeredBy = result.status === 'answered' && result.attempts !== undefined && result.attempts.length > 1 ? { answeredBy: result.model } : {}
-      deps.askLog?.write({ type: 'ask', id: askId, turnId, at: askedAt, kind, model: model.model, ...answeredBy, ...(result.attempts !== undefined ? { attempts: result.attempts } : {}), state, questions, ...(saved !== null ? { images: saved } : {}) })
+      deps.askLog?.write({ type: 'ask', id: askId, turnId, at: askedAt, kind, model: model.model, ...answeredBy, ...(result.attempts !== undefined ? { attempts: result.attempts } : {}), state, questions, ...(saved !== null ? { images: saved } : {}), ...fit })
     } catch (error) {
       reportFault('run.commandRunner.askLog', error, { turnId })
     }
     return { ...result, askId }
   }
 
-  /** An ask built to the model's Card Budget (#406, ADR 0088): what is further down yields until it fits. */
-  function budgeted<Q extends CommandQuestions>(model: DecisionModel, build: (further: number) => Q, stateOf: (questions: Q) => string): { questions: Q; state: string } {
-    return fitCard(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS), build, stateOf)
+  /**
+   * An ask built to the model's Card Budget (#406, ADR 0088, #495) and
+   * asked: what is further down yields until it fits, then the refs from
+   * the page's end; the record names each cut. A card over the budget
+   * after every cut is never sent, and reads as unavailable. A host that
+   * refuses the ask for its size is asked once more, on the card built to
+   * the budget its own count gives, the retry named in the record; never a
+   * third time — the line then ends as any unavailable ask does.
+   */
+  async function askBudgeted<Q extends CommandQuestions>(
+    model: DecisionModel,
+    kind: AskKind,
+    turnId: string,
+    page: CommandPage,
+    build: (page: CommandPage, further: number) => Q,
+    stateOf: (page: CommandPage, questions: Q) => string,
+    options: { readonly ownId?: string; readonly images?: Readonly<Record<string, Uint8Array>>; readonly links?: readonly { readonly href: string }[] } = {},
+  ): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string }> {
+    const ask = async (budget: number, retryOf?: AskRecord['retryOf']): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string; readonly size: number }> => {
+      const fitted = fitCard(budget, page, build, stateOf, options.links)
+      const askId = retryOf !== undefined ? `${retryOf.id}-retry` : (options.ownId ?? turnId)
+      const fit = { ...(fitted.cuts.length > 0 ? { cuts: fitted.cuts, budget } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
+      const size = promptChars(fitted.state, fitted.questions)
+      if (fitted.over === true) {
+        const message = `the card is ${size} characters after every cut, over the Card Budget's ${budget}: not sent`
+        reportFault('run.commandRunner.jevUnavailable', message, { turnId })
+        try {
+          deps.askLog?.write({ type: 'ask', id: askId, turnId, at: at(), kind, model: model.model, state: fitted.state, questions: fitted.questions, ...fit, unsent: true })
+        } catch (error) {
+          reportFault('run.commandRunner.askLog', error, { turnId })
+        }
+        return { status: 'unavailable', reason: 'failed', message, latencyMs: 0, model: model.model, askId, state: fitted.state, size }
+      }
+      const result = await askJev(model, kind, turnId, fitted.state, fitted.questions, askId, options.images, fit)
+      return { ...result, state: fitted.state, size }
+    }
+    const first = await ask(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS))
+    const refusal = first.status === 'unavailable' ? sizeRefusalOf(first.httpStatus, first.message) : null
+    if (refusal === null) return first
+    return ask(tighterBudget(first.size, refusal), { id: first.askId, ...refusal })
   }
 
   /** An ask's images saved beside it (#382), each by the file the sink named; null when none was saved. */
@@ -1240,8 +1279,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     // Jev is asked over every pop-up, a consent wall's too: its sure pick ranks above the consent policy's reject (ADR 0089).
     const model = deps.decisionModel()
-    const ask = model === null || dismissPhraseQuestions(text, page) === null ? null : budgeted(model, (further) => dismissPhraseQuestions(text, page, { appliance: appliance(), further })!, (questions) => commandState(text, page, undefined, undefined, undefined, questions))
-    const result = model === null || ask === null ? null : await askJev(model, 'command', turnId, ask.state, ask.questions)
+    const result =
+      model === null || dismissPhraseQuestions(text, page) === null
+        ? null
+        : await askBudgeted(model, 'command', turnId, page, (shown, further) => dismissPhraseQuestions(text, shown, { appliance: appliance(), further })!, (shown, questions) => commandState(text, shown, undefined, undefined, undefined, questions))
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
     const [first, ...rest] = ladder
@@ -1410,12 +1451,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
     const heard = hearingOf(text, page, spoken)
-    const ask = budgeted(model, (further) => commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance(), heard, further }), (questions) => commandState(text, page, undefined, options.step, undefined, questions, heard))
-    const result = await askJev(model, 'command', turnId, ask.state, ask.questions, options.askId)
+    const result = await askBudgeted(
+      model,
+      'command',
+      turnId,
+      page,
+      (shown, further) => commandQuestions(text, shown, undefined, { steps: options.split, appliance: appliance(), heard, further }),
+      (shown, questions) => commandState(text, shown, undefined, options.step, undefined, questions, heard),
+      options.askId !== undefined ? { ownId: options.askId } : {},
+    )
     // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
     const split = result.status === 'answered' ? readSteps(result.answers, text) : null
     const reading: Reading = { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}), ...(deps.applianceCard !== undefined ? { card: 'page' as const } : {}) }
-    return split === null && isSettingsLine(reading.command) ? readSetting(turnId, text, ask.state, reading, heard) : reading
+    return split === null && isSettingsLine(reading.command) ? readSetting(turnId, text, result.state, reading, heard) : reading
   }
 
   /**
@@ -1465,8 +1513,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { page } = first
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
-    const ask = budgeted(model, (further) => whereQuestions(text, page, { appliance: appliance(), heard, further }), (questions) => commandState(text, page, undefined, step, undefined, questions, heard))
-    const result = await askJev(model, 'where', turnId, ask.state, ask.questions, `${first.ask ?? turnId}-where`)
+    const result = await askBudgeted(
+      model,
+      'where',
+      turnId,
+      page,
+      (shown, further) => whereQuestions(text, shown, { appliance: appliance(), heard, further }),
+      (shown, questions) => commandState(text, shown, undefined, step, undefined, questions, heard),
+      { ownId: `${first.ask ?? turnId}-where` },
+    )
     const verdict = result.status === 'answered' ? readVerdict(result.answers) : null
     const passage = result.status === 'answered' ? readPassage(result.answers, page) : null
     return { ...readingOf(result, text, page), whereAsk: true, ...(verdict !== null ? { verdict } : {}), ...(passage !== null ? { passage } : {}) }
@@ -1492,15 +1547,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const shot = await capture(textless)
     if (shot === null || shot.marks.length === 0) return null
     const marked = new Set(shot.marks.map((mark) => mark.ref))
-    const ask = budgeted(model, (further) => markQuestions(text, page, { appliance: appliance(), marked, heard, further }), (questions) => commandState(text, page, undefined, step, marked, questions, heard))
-    const result = await askJev(
+    const result = await askBudgeted(
       model,
       'mark',
       turnId,
-      ask.state,
-      ask.questions,
-      `${first.ask ?? turnId}-mark`,
-      { [MARKS_IMAGE]: shot.jpeg },
+      page,
+      (shown, further) => markQuestions(text, shown, { appliance: appliance(), marked, heard, further }),
+      (shown, questions) => commandState(text, shown, undefined, step, marked, questions, heard),
+      { ownId: `${first.ask ?? turnId}-mark`, images: { [MARKS_IMAGE]: shot.jpeg } },
     )
     const read = readingOf(result, text, page)
     // The command it reads knows it was found on the image, which its "Done so far" line says.
@@ -2776,8 +2830,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
       const heard = hearingOf(task.text, page, spoken)
-      const ask = superseded(task) || model === null ? null : budgeted(model, (further) => hopQuestions(task.text, page, context, { appliance: appliance(), heard, further }), (questions) => commandState(task.text, page, context, task.step, undefined, questions, heard))
-      const result = model === null || ask === null ? null : await askJev(model, 'hop', turnId, ask.state, ask.questions)
+      const result =
+        superseded(task) || model === null
+          ? null
+          : await askBudgeted(
+              model,
+              'hop',
+              turnId,
+              page,
+              (shown, further) => hopQuestions(task.text, shown, context, { appliance: appliance(), heard, further }),
+              (shown, questions) => commandState(task.text, shown, context, task.step, undefined, questions, heard),
+              { links },
+            )
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }

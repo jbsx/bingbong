@@ -1,3 +1,4 @@
+import type { CardCut } from './cardBudget'
 import type { DecisionAttempt, DecisionQuestions } from '../ports/decisionModel'
 
 // What Jev was asked (#338): every Decision Model call's full ask — the
@@ -34,4 +35,12 @@ export interface AskRecord {
   readonly questions: DecisionQuestions
   /** The images the state names (#382: the Mark Ask's), by reference: each the file saved beside the sidecar, relative to the logs dir; absent on a text ask. */
   readonly images?: Readonly<Record<string, string>>
+  /** What the card gave up to fit the Card Budget (#495), each kind and how many; absent when nothing was cut. */
+  readonly cuts?: readonly CardCut[]
+  /** The Card Budget it was built to, in characters (#495), on an ask that cut anything. */
+  readonly budget?: number
+  /** Over the budget after every cut (#495): the ask was not sent. */
+  readonly unsent?: true
+  /** The ask the host refused for its size that this one retries at a tighter budget (#495): its count and limit. */
+  readonly retryOf?: { readonly id: string; readonly tokens: number; readonly maxLen: number }
 }

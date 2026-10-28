@@ -5,7 +5,7 @@ import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { mediaChangesOf } from './mediaOp'
 import { promptChars } from '../decision/cardBudget'
-import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, fitCard, shownAddress, doneAction, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readPassage, readProgress,readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, whereQuestions, type HopContext } from './jevReading'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
 const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
@@ -1860,21 +1860,21 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     textBelow: Array.from({ length: 12 }, (_, index) => ({ text: `Block ${index + 1} `.padEnd(120, 'b'), frame: null, node: index })),
   }
   const hop: HopContext = { hop: 1, visited: [PAGE.url], actions: ['scroll down a screen (the page changed)'], links }
-  const build = (further: number) => hopQuestions('how do i install it', page, hop, { further })
-  const stateOf = (questions: ReturnType<typeof build>) => commandState('how do i install it', page, hop, undefined, undefined, questions)
+  const build = (shown: CommandPage, further: number) => hopQuestions('how do i install it', shown, hop, { further })
+  const stateOf = (shown: CommandPage, questions: ReturnType<typeof build>) => commandState('how do i install it', shown, hop, undefined, undefined, questions)
   const sizeOf = ({ state, questions }: { state: string; questions: ReturnType<typeof build> }): number => promptChars(state, questions)
   const labels = (questions: ReturnType<typeof build>, act: string): string[] => Object.keys(questions.action.options).filter((label) => label.startsWith(`${act}-`))
 
   it('leaves a card that fits as it is', () => {
-    const whole = fitCard(undefined, build, stateOf)
-    expect(fitCard(sizeOf(whole), build, stateOf)).toEqual(whole)
+    const whole = fitCard(undefined, page, build, stateOf)
+    expect(fitCard(sizeOf(whole), page, build, stateOf)).toEqual(whole)
     expect(labels(whole.questions, 'open')).toHaveLength(100)
   })
 
   it('cuts what is further down to fit, the right-clicks and the farthest opens before any show, and never what makes the hop (#407)', () => {
-    const whole = fitCard(undefined, build, stateOf)
+    const whole = fitCard(undefined, page, build, stateOf)
     const budget = sizeOf(whole) - 6000
-    const fitted = fitCard(budget, build, stateOf)
+    const fitted = fitCard(budget, page, build, stateOf)
 
     expect(sizeOf(fitted)).toBeLessThanOrEqual(budget)
     // Every block below stays: a block holds what a link only leads to.
@@ -1896,14 +1896,71 @@ describe('the Card Budget (#406, ADR 0088)', () => {
   })
 
   it('keeps the nearest shows when even they must go, after every open and right-click', () => {
-    const bare = { questions: build(0), state: stateOf(build(0)) }
-    const fitted = fitCard(sizeOf(bare) + 1000, build, stateOf)
+    const bare = { questions: build(page, 0), state: stateOf(page, build(page, 0)) }
+    const fitted = fitCard(sizeOf(bare) + 1000, page, build, stateOf)
     const shows = labels(fitted.questions, 'show')
     expect(shows.length).toBeGreaterThan(0)
     expect(shows.length).toBeLessThan(12)
     expect(shows).toEqual(shows.map((_, index) => `show-${index + 1}`))
     expect(labels(fitted.questions, 'open')).toEqual([])
     expect(fitted.state).not.toContain('Links further down')
+  })
+
+  it('builds a card whose refs carry kilobyte addresses under the budget: each address cut to where it lands, every label and number whole, the cut named (#495)', () => {
+    // A results page whose ten text ads each link a 1.5k-character redirect, as a search engine's do.
+    const ad = (n: number): string => `https://search.example/y.js?ad_domain=hotels${n}.example&ad_type=txad&click_metadata=${'Kq3xZ9-'.repeat(210)}${n}`
+    const ads: CommandPage = {
+      ...PAGE,
+      refs: [...PAGE.refs, ...Array.from({ length: 10 }, (_, index) => ({ ref: 20 + index, kind: 'link' as const, label: `Top 10 Hotels number ${index + 1} - Book today`, href: ad(index), inputType: null }))],
+    }
+    const adBuild = (shown: CommandPage, further: number) => hopQuestions('utah', shown, { ...hop, links: [] }, { further })
+    const adState = (shown: CommandPage, questions: ReturnType<typeof build>) => commandState('utah', shown, { ...hop, links: [] }, undefined, undefined, questions)
+    const budget = 9000
+    const fitted = fitCard(budget, ads, adBuild, adState)
+
+    expect(sizeOf(fitted)).toBeLessThanOrEqual(budget)
+    expect(fitted.over).toBeUndefined()
+    for (const ref of ads.refs.slice(PAGE.refs.length)) {
+      expect(fitted.state).toContain(`[${ref.ref}] link ${JSON.stringify(ref.label)}`)
+      expect(fitted.questions.action.options).toHaveProperty(`click-${ref.ref}`)
+    }
+    expect(fitted.state).toContain('[20] link "Top 10 Hotels number 1 - Book today" https://search.example/y.js?ad_domain=hotels0.example…')
+    expect(fitted.state).not.toContain('click_metadata')
+    expect(fitted.cuts).toEqual([{ kind: 'address', count: 10, chars: expect.any(Number) }])
+    expect(fitted.cuts[0]!.chars).toBeGreaterThan(10 * 1400)
+  })
+
+  it('shows an address past the bound as its origin and path and the hosts its query names, an address within it whole (#495)', () => {
+    expect(shownAddress('https://example.com/a?b=c')).toBe('https://example.com/a?b=c')
+    const redirect = `https://www.video.example/redirect?event=video_description&redir_token=${'Q'.repeat(300)}&q=https%3A%2F%2Fshop.example%2Fitem`
+    expect(shownAddress(redirect)).toBe('https://www.video.example/redirect?q=shop.example…')
+    expect(shownAddress(`https://cdn.example/img.png?jwt=${'e'.repeat(400)}`)).toBe('https://cdn.example/img.png…')
+  })
+
+  it('has a floor: with nothing further down to cut, the refs yield from the page\'s end, a dialog\'s never, until the card fits; one that cannot is marked over (#495)', () => {
+    const many: CommandPage = {
+      ...PAGE,
+      refs: [...PAGE.refs, ...Array.from({ length: 60 }, (_, index) => ({ ref: 10 + index, kind: 'button' as const, label: `A control with a long and wordy name, number ${index + 1}`, href: null, inputType: null }))],
+      dialog: { text: 'Sign in to continue', refs: [69] },
+    }
+    const bare: HopContext = { ...hop, links: [] }
+    const manyBuild = (shown: CommandPage, further: number) => hopQuestions('how do i install it', shown, bare, { further })
+    const manyState = (shown: CommandPage, questions: ReturnType<typeof build>) => commandState('how do i install it', shown, bare, undefined, undefined, questions)
+    const whole = fitCard(undefined, many, manyBuild, manyState)
+    const budget = sizeOf(whole) - 3000
+    const fitted = fitCard(budget, many, manyBuild, manyState)
+
+    expect(sizeOf(fitted)).toBeLessThanOrEqual(budget)
+    const clicks = labels(fitted.questions, 'click')
+    // The first refs stay, the dialog's last one with them; the cut ran from the end.
+    expect(clicks.slice(0, 3)).toEqual(['click-1', 'click-2', 'click-3'])
+    expect(clicks).toContain('click-69')
+    expect(clicks).not.toContain('click-68')
+    const dropped = fitted.cuts.find((cut) => cut.kind === 'ref')!
+    expect(dropped.count).toBe(many.refs.length - clicks.length)
+    expect(fitted.over).toBeUndefined()
+
+    expect(fitCard(500, many, manyBuild, manyState).over).toBe(true)
   })
 
   it("keeps the most of the pop-up's text its own prompt fits, in document order, its controls whole (#416)", () => {
@@ -1914,11 +1971,11 @@ describe('the Card Budget (#406, ADR 0088)', () => {
       dialog: { text: 'Looks like your ad blocker is on.', refs: [40], texts: Array.from({ length: 30 }, (_, index) => ({ text: `Piece ${index + 1} `.padEnd(150, 'p'), frame: null, node: index })) },
     }
     const bareHop: HopContext = { ...hop, links: [] }
-    const coveredBuild = (further: number) => hopQuestions('how do i install it', covered, bareHop, { further })
-    const coveredState = (questions: ReturnType<typeof build>) => commandState('how do i install it', covered, bareHop, undefined, undefined, questions)
-    const whole = fitCard(undefined, coveredBuild, coveredState)
+    const coveredBuild = (shown: CommandPage, further: number) => hopQuestions('how do i install it', shown, bareHop, { further })
+    const coveredState = (shown: CommandPage, questions: ReturnType<typeof build>) => commandState('how do i install it', shown, bareHop, undefined, undefined, questions)
+    const whole = fitCard(undefined, covered, coveredBuild, coveredState)
     const budget = sizeOf(whole) - 1000
-    const cut = fitCard(budget, coveredBuild, coveredState)
+    const cut = fitCard(budget, covered, coveredBuild, coveredState)
     expect(sizeOf(cut)).toBeLessThanOrEqual(budget)
     const options = Object.keys(cut.questions.dismiss!.options)
     expect(options.slice(0, 2)).toEqual(['escape', 'ref-40'])
@@ -1929,16 +1986,16 @@ describe('the Card Budget (#406, ADR 0088)', () => {
     expect(cut.questions.dismiss!.instructions).toContain("Some of the pop-up's text")
     // What is further down is not cut for the dismiss Choice's prompt: with a hundred links, every open stays and only the text yields.
     const long: CommandPage = { ...covered, dialog: { ...covered.dialog!, texts: covered.dialog!.texts!.map((piece) => ({ ...piece, text: piece.text.padEnd(400, 'p') })) } }
-    const linkedBuild = (further: number) => hopQuestions('how do i install it', long, hop, { further })
-    const linkedState = (questions: ReturnType<typeof build>) => commandState('how do i install it', long, hop, undefined, undefined, questions)
-    const linked = fitCard(undefined, linkedBuild, linkedState)
+    const linkedBuild = (shown: CommandPage, further: number) => hopQuestions('how do i install it', shown, hop, { further })
+    const linkedState = (shown: CommandPage, questions: ReturnType<typeof build>) => commandState('how do i install it', shown, hop, undefined, undefined, questions)
+    const linked = fitCard(undefined, long, linkedBuild, linkedState)
     const rest = { ...linked.questions }
     delete rest.dismiss
-    const linkedCut = fitCard(promptChars(linked.state, rest), linkedBuild, linkedState)
+    const linkedCut = fitCard(promptChars(linked.state, rest), long, linkedBuild, linkedState)
     expect(labels(linkedCut.questions, 'open')).toHaveLength(100)
     expect(Object.keys(linkedCut.questions.dismiss?.options ?? {}).filter((label) => label.startsWith('popup-')).length).toBeLessThan(30)
     // With no room for any, the instructions no longer say it is offered.
-    const none = fitCard(promptChars(cut.state, { dismiss: { ...cut.questions.dismiss!, options: { escape: '', 'ref-40': 'button "DISABLE"' } } }) - 100, coveredBuild, coveredState)
+    const none = fitCard(promptChars(cut.state, { dismiss: { ...cut.questions.dismiss!, options: { escape: '', 'ref-40': 'button "DISABLE"' } } }) - 100, covered, coveredBuild, coveredState)
     expect(none.questions.dismiss?.instructions ?? '').not.toContain("Some of the pop-up's text")
   })
 })

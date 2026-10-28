@@ -25,6 +25,28 @@ export const DEFAULT_CARD_BUDGET_TOKENS = 16_384
  */
 export const CARD_CHARS_PER_TOKEN = 2.38
 
+/**
+ * A long opaque run — a stretch of 80 characters or more with no space:
+ * an ad's redirect address, a token in a query string — tokenizes far
+ * worse than text (#495). Measured on the grown case (a DuckDuckGo results
+ * page whose ten text ads carry 1.4–1.8k-character redirect addresses):
+ * the same ask with every such run doubled added 22,464 characters and
+ * 16,148 tokens on Baseten's own count (its 422 states it), 1.39 a token.
+ * The card counts each run at 1.33 — 1.39 less the 4 % margin the text
+ * ratio keeps under its 2.48 — so a run weighs 2.38 / 1.33 of its length.
+ */
+export const OPAQUE_CHARS_PER_TOKEN = 1.33
+
+/** The shortest stretch with no space the card counts as an opaque run: the runs measured. */
+const OPAQUE_RUN = /\S{80,}/g
+
+/** A text's size in the characters the budget is built in: its length, each opaque run weighed at its own ratio. */
+export function cardChars(text: string): number {
+  let opaque = 0
+  for (const run of text.match(OPAQUE_RUN) ?? []) opaque += run.length
+  return text.length + Math.ceil(opaque * (CARD_CHARS_PER_TOKEN / OPAQUE_CHARS_PER_TOKEN - 1))
+}
+
 /** The Card Budget the env sets, in tokens: the default when unset or not a whole number above 0. */
 export function cardBudgetTokens(env: Record<string, string | undefined>): number {
   const raw = Number(env[CARD_BUDGET_ENV_KEY]?.trim())
@@ -36,10 +58,10 @@ export function cardBudgetChars(tokens: number): number {
   return Math.floor(tokens * CARD_CHARS_PER_TOKEN)
 }
 
-/** A question's size: its name, instructions and options, label and line — what the host reads, less the JSON around it. */
-function questionChars(name: string, question: DecisionQuestions[string]): number {
-  let chars = name.length + question.instructions.length
-  if (question.type === 'choice') for (const [label, line] of Object.entries(question.options)) chars += label.length + (line?.length ?? 0)
+/** A question's size: its name, instructions and options, label and line — what the host reads, less the JSON around it; `size` reads each piece. */
+function questionChars(name: string, question: DecisionQuestions[string], size: (text: string) => number = (text) => text.length): number {
+  let chars = name.length + size(question.instructions)
+  if (question.type === 'choice') for (const [label, line] of Object.entries(question.options)) chars += label.length + size(line ?? '')
   return chars
 }
 
@@ -48,7 +70,39 @@ export function askChars(state: string, questions: DecisionQuestions): number {
   return Object.entries(questions).reduce((chars, [name, question]) => chars + questionChars(name, question), state.length)
 }
 
-/** An ask's size as the Card Budget reads it: the largest prompt the host builds of it, the state with one question. */
+/** An ask's size as the Card Budget reads it: the largest prompt the host builds of it, the state with one question, each opaque run weighed at its own ratio (#495). */
 export function promptChars(state: string, questions: DecisionQuestions): number {
-  return state.length + Math.max(0, ...Object.entries(questions).map(([name, question]) => questionChars(name, question)))
+  return cardChars(state) + Math.max(0, ...Object.entries(questions).map(([name, question]) => questionChars(name, question, cardChars)))
+}
+
+/** What a card gave up to fit the Card Budget (#495): its kind and how many, and for addresses the characters cut. Named in the ask's record. */
+export interface CardCut {
+  /** `address`: addresses past the bound shown cut; `further`: options further down left off; `ref`: refs left off from the page's end; `popup-text`: the pop-up's own text left off. */
+  readonly kind: 'address' | 'further' | 'ref' | 'popup-text'
+  readonly count: number
+  readonly chars?: number
+}
+
+/** A host's refusal of an ask for its size (#495): the tokens it counted and its limit. */
+export interface SizeRefusal {
+  readonly tokens: number
+  readonly maxLen: number
+}
+
+/** The size refusal a host's 422 states in its own words — Baseten's reads "prompt has 21990 tokens, exceeding max_len 16384" — or null for any other refusal. */
+export function sizeRefusalOf(httpStatus: number | undefined, message: string): SizeRefusal | null {
+  if (httpStatus !== 422) return null
+  const match = /has (\d+) tokens, exceeding max_len (\d+)/.exec(message)
+  return match === null ? null : { tokens: Number(match[1]), maxLen: Number(match[2]) }
+}
+
+/**
+ * The budget a refused ask is built to once more (#495): the host's own
+ * limit, in the characters its own count gave this card — the refused
+ * prompt's size over the tokens it counted — less a tenth, a margin
+ * guessed (the count is not linear in what is cut), so the one retry
+ * lands under the limit.
+ */
+export function tighterBudget(refusedChars: number, refusal: SizeRefusal): number {
+  return Math.floor(((refusal.maxLen * refusedChars) / refusal.tokens) * 0.9)
 }

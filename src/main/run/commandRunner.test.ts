@@ -1520,17 +1520,65 @@ describe('a Command the Local Match cannot settle', () => {
     try {
       const { decision, runner, records } = harness()
       const refusal = 'OneJev prompt has 16645 tokens, exceeding max_len 16384; prompts are never truncated'
-      decision.script.push({ unavailable: 'http', httpStatus: 422, message: refusal }, { answers: { action: choice('click-2'), slot: choice('none') }, inputTokens: 1234 })
+      // A refusal for its size is asked once more (#495): both refused, the line ends unavailable.
+      decision.script.push({ unavailable: 'http', httpStatus: 422, message: refusal }, { unavailable: 'http', httpStatus: 422, message: refusal }, { answers: { action: choice('click-2'), slot: choice('none') }, inputTokens: 1234 })
 
       await runner.run('tap on the sign thing', { source: 'spoken' })
       await runner.run('sign in please', { source: 'spoken' })
 
       expect(records[0]).toMatchObject({ ended: 'unavailable', jev: { reason: 'http', httpStatus: 422, message: refusal } })
-      expect(faults).toEqual([expect.objectContaining({ site: 'run.commandRunner.jevUnavailable', message: expect.stringContaining('422') })])
+      expect(faults).toEqual([
+        expect.objectContaining({ site: 'run.commandRunner.jevUnavailable', message: expect.stringContaining('422') }),
+        expect.objectContaining({ site: 'run.commandRunner.jevUnavailable', message: expect.stringContaining('422') }),
+      ])
       expect(records[1]).toMatchObject({ reading: 'jev', jev: { inputTokens: 1234 } })
     } finally {
       setFaultSink(null)
     }
+  })
+
+  it('asks a card the host refused for its size once more, at the budget its own count gives, the retry named in the record; never a third time (#495)', async () => {
+    setFaultSink(() => {})
+    try {
+      const { decision, runner, records, asks } = harness()
+      const refusal = 'OneJev prompt has 16500 tokens, exceeding max_len 16384; prompts are never truncated'
+      decision.script.push({ unavailable: 'http', httpStatus: 422, message: refusal }, { answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+
+      await runner.run('sign in please', { source: 'spoken' })
+
+      expect(decision.requests).toHaveLength(3)
+      expect(asks.slice(0, 2).map((ask) => ask.id)).toEqual([records[0]!.turnId, `${records[0]!.turnId}-retry`])
+      expect(asks[1]).toMatchObject({ retryOf: { id: records[0]!.turnId, tokens: 16500, maxLen: 16384 } })
+      expect(records[0]).toMatchObject({ reading: 'jev', verb: 'click', target: 2, ask: `${records[0]!.turnId}-retry` })
+
+      // Another refusal is no size of the card's: nothing is asked again.
+      decision.script.push({ unavailable: 'http', httpStatus: 401, message: 'bad key' })
+      await runner.run('sign in please', { source: 'spoken' })
+      expect(decision.requests).toHaveLength(4)
+
+      // A retry refused too is never asked a third time: the line ends unavailable.
+      decision.script.push({ unavailable: 'http', httpStatus: 422, message: refusal }, { unavailable: 'http', httpStatus: 422, message: refusal })
+      await runner.run('sign in please', { source: 'spoken' })
+      expect(decision.requests).toHaveLength(6)
+      expect(records.at(-1)).toMatchObject({ ended: 'unavailable', jev: { httpStatus: 422 } })
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('names the addresses a card shows cut in its ask record, how many and how much (#495)', async () => {
+    const { browser, decision, runner, asks } = harness()
+    const redirect = `https://search.example/y.js?ad_domain=hotels.example&click_metadata=${'Zq9'.repeat(500)}`
+    browser.pageLinks = async () => Array.from({ length: 3 }, (_, index) => ({ label: `Hotel deal ${index + 1}`, href: `${redirect}${index}` }))
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+
+    await runner.run('sign in please', { source: 'spoken' })
+
+    const hop = asks.find((ask) => ask.kind === 'hop')!
+    expect(hop.cuts).toEqual([{ kind: 'address', count: 3, chars: expect.any(Number) }])
+    expect(hop.cuts![0]!.chars).toBeGreaterThan(4000)
+    expect(hop.state).toContain('https://search.example/y.js?ad_domain=hotels.example…')
+    expect(hop.state).not.toContain('click_metadata')
   })
 
   it('builds a hop over a link-heavy page to the model\'s Card Budget: the farthest links yield, what makes the hop stays (#406, ADR 0088)', async () => {

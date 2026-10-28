@@ -12,7 +12,7 @@ import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateLevel, seekAmount, volumeLevel, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from './mediaOp'
 import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
-import { promptChars } from '../decision/cardBudget'
+import { promptChars, type CardCut } from '../decision/cardBudget'
 import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
 import { sectionsOf } from './passageSections'
 import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureOfRef, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
@@ -237,7 +237,7 @@ function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<n
   const words = ref.searchBox !== undefined && ref.searchBox.holds !== '' ? ` holds ${JSON.stringify(ref.searchBox.holds)}` : ''
   // A file field's accept and multiple ride its line (#424): facts of the field, as a media ref's state is (ADR 0080).
   const file = ref.fileField !== undefined ? fileFieldClause(ref.fileField) : ''
-  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${words}${file}${states}${holds}${media}${switches}${region}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${shownAddress(ref.href)}` : ''}${words}${file}${states}${holds}${media}${switches}${region}`
 }
 
 /**
@@ -795,7 +795,53 @@ function offered(page: CommandPage, hop: HopContext | undefined): { page: Comman
 }
 
 function describeLink(link: PageLink): string {
-  return `link ${JSON.stringify(link.label)} ${link.href}`
+  return `link ${JSON.stringify(link.label)} ${shownAddress(link.href)}`
+}
+
+/** The length past which a card shows an address cut (#495): past the corpus's 99th percentile, 289 of 12,568 addresses on 2026-10-28. */
+const ADDRESS_BOUND = 300
+
+/**
+ * An address as the card shows it (#495): whole up to the bound; past it,
+ * its origin and path, with each query parameter that names a destination
+ * — a host, or an address whose host is taken — and the rest cut, marked
+ * `…`. A redirect's kilobyte of opaque query is noise to Jev and costs the
+ * host a token for every 1.39 characters; where it lands is the meaning.
+ */
+export function shownAddress(href: string): string {
+  if (href.length <= ADDRESS_BOUND) return href
+  let url: URL
+  try {
+    url = new URL(href)
+  } catch {
+    return `${href.slice(0, ADDRESS_BOUND)}…`
+  }
+  const hosts = new Set<string>()
+  const destinations = [...url.searchParams].flatMap(([key, value]) => {
+    const host = hostNamed(value)
+    if (host === null || hosts.has(host)) return []
+    hosts.add(host)
+    return [`${key}=${host}`]
+  })
+  const path = url.pathname.length <= ADDRESS_BOUND / 2 ? url.pathname : ''
+  return `${url.origin}${path}${destinations.length > 0 ? `?${destinations.join('&')}` : ''}…`
+}
+
+/** The host a query value names: the value itself when it is a host name, the host of an address; null for anything else. */
+function hostNamed(value: string): string | null {
+  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(value)) return value.toLowerCase()
+  if (!/^https?:\/\//i.test(value)) return null
+  try {
+    return new URL(value).hostname
+  } catch {
+    return null
+  }
+}
+
+/** The addresses a card shows cut (#495): how many of the page's own, its refs' and its links', and the characters cut from them; null when none is past the bound. */
+function addressCut(page: CommandPage, links: readonly { readonly href: string }[]): CardCut | null {
+  const cut = [page.url, ...page.refs.flatMap((ref) => (ref.href === null ? [] : [ref.href])), ...links.map((link) => link.href)].filter((href) => href.length > ADDRESS_BOUND)
+  return cut.length === 0 ? null : { kind: 'address', count: cut.length, chars: cut.reduce((chars, href) => chars + href.length - shownAddress(href).length, 0) }
 }
 
 /** A block of Text Further Down — or Further Up (#466) — as the card numbers it: its `[text-N]` entry, its `show-N` and its `capture-text-N`. */
@@ -950,11 +996,11 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     ...heardLine(heard),
     ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(hop !== undefined
-      ? [`This is step ${hop.hop + 1} of the task. Done so far: ${done.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
+      ? [`This is step ${hop.hop + 1} of the task. Done so far: ${done.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.map(shownAddress).join(' ') || 'none'}`]
       : step !== undefined && done.length > 0
         ? [`Done so far: ${done.join('; ')}`]
         : []),
-    `Page: ${page.url} — ${JSON.stringify(page.title)}`,
+    `Page: ${shownAddress(page.url)} — ${JSON.stringify(page.title)}`,
     ...textInViewLine(page, hop),
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.fullScreen !== undefined ? [`Full screen: ${page.fullScreen ? 'on' : 'off'}`] : []),
@@ -1582,36 +1628,83 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
 /** Whether a card label offers something further down (#406, ADR 0088): an open, a right-click or a show, what yields to the Card Budget. */
 const isFurther = (label: string): boolean => /^(open|menu|show)-\d+$/.test(label) || /^capture-(?:text-|view-)?\d+$/.test(label)
 
+/** An ask built to the Card Budget: its questions and state, what it cut, and whether it is over the budget still — an ask that is, is never sent. */
+export interface FittedCard<Q> {
+  readonly questions: Q
+  readonly state: string
+  readonly cuts: readonly CardCut[]
+  readonly over?: true
+}
+
 /**
  * An ask built to the Card Budget (#406, ADR 0088): the card `build`
- * makes, with the state `stateOf` reads over it, keeping the most of what
- * is further down that fits `budget` characters — none of what makes the
- * hop is ever cut, so a card whose rest is over the budget goes with
- * nothing further down. No budget, the whole card.
+ * makes of `page`, with the state `stateOf` reads over it, keeping the most
+ * of what is further down that fits `budget` characters. A card whose rest
+ * is over the budget with nothing further down has a floor (#495): its
+ * refs yield from the page's end, a dialog's and a media ref never, until
+ * it fits; one that still does not is marked over and never sent. Each
+ * cut is named, with an address past its bound (`links` are the page's
+ * further down). No budget, the whole card.
  */
-export function fitCard<Q extends CommandQuestions>(budget: number | undefined, build: (further: number) => Q, stateOf: (questions: Q) => string): { questions: Q; state: string } {
-  const ask = (further: number): { questions: Q; state: string } => {
-    const questions = build(further)
-    return { questions, state: stateOf(questions) }
+export function fitCard<Q extends CommandQuestions>(
+  budget: number | undefined,
+  page: CommandPage,
+  build: (page: CommandPage, further: number) => Q,
+  stateOf: (page: CommandPage, questions: Q) => string,
+  links: readonly { readonly href: string }[] = [],
+): FittedCard<Q> {
+  const ask = (shown: CommandPage, further: number): { questions: Q; state: string } => {
+    const questions = build(shown, further)
+    return { questions, state: stateOf(shown, questions) }
   }
-  const whole = ask(Infinity)
+  const addresses = addressCut(page, links)
+  const named = (fitted: { questions: Q; state: string }, cuts: readonly CardCut[]): FittedCard<Q> => ({ ...fitted, cuts: [...(addresses !== null ? [addresses] : []), ...cuts] })
+  const whole = ask(page, Infinity)
   const fits = ({ questions, state }: { questions: Q; state: string }): boolean => budget === undefined || promptChars(state, questions) <= budget
-  if (fits(whole)) return whole
+  if (fits(whole)) return named(whole, [])
   // The dismiss Choice is its own prompt, and what is further down never shrinks it (#416): only the others decide how much of that is kept.
   const fitsRest = ({ questions, state }: { questions: Q; state: string }): boolean => fits({ questions: withoutDismiss(questions), state })
-  if (fitsRest(whole)) return fitDialogText(budget, whole, stateOf)
-  // The size grows with each item kept: the most that fits is found by halving.
-  let [low, high] = [0, Object.keys(whole.questions.action.options).filter(isFurther).length - 1]
-  let best = ask(0)
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2)
-    const tried = ask(middle)
-    if (fitsRest(tried)) {
-      best = tried
-      low = middle + 1
-    } else high = middle - 1
+  const finish = (shown: CommandPage, fitted: { questions: Q; state: string }, cuts: readonly CardCut[]): FittedCard<Q> => {
+    const kept = fitDialogText(budget, fitted, (questions) => stateOf(shown, questions))
+    const texts = popupTexts(fitted.questions) - popupTexts(kept.questions)
+    const card = named(kept, [...cuts, ...(texts > 0 ? [{ kind: 'popup-text' as const, count: texts }] : [])])
+    return fits(kept) ? card : { ...card, over: true }
   }
-  return fitDialogText(budget, best, stateOf)
+  if (fitsRest(whole)) return finish(page, whole, [])
+  // The size grows with each item kept: the most that fits is found by halving.
+  const most = <T>(count: number, tried: (kept: number) => T, fitted: (each: T) => boolean): { kept: number; best: T } => {
+    let [low, high] = [1, count]
+    let best = { kept: 0, best: tried(0) }
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2)
+      const each = tried(middle)
+      if (fitted(each)) {
+        best = { kept: middle, best: each }
+        low = middle + 1
+      } else high = middle - 1
+    }
+    return best
+  }
+  const further = Object.keys(whole.questions.action.options).filter(isFurther).length
+  const down = most(further - 1, (kept) => ask(page, kept), fitsRest)
+  const furtherCut: CardCut[] = further > down.kept ? [{ kind: 'further', count: further - down.kept }] : []
+  if (fitsRest(down.best)) return finish(page, down.best, furtherCut)
+  // The floor: the refs yield from the page's end, nothing further down kept; a dialog's refs and a media ref never do.
+  const held = new Set([...(page.dialog?.refs ?? []), ...page.refs.filter((ref) => ref.kind === 'media').map((ref) => ref.ref)])
+  const yielding = page.refs.filter((ref) => !held.has(ref.ref)).map((ref) => ref.ref)
+  const keeping = (kept: number): CommandPage => {
+    const gone = new Set(yielding.slice(kept))
+    return { ...page, refs: page.refs.filter((ref) => !gone.has(ref.ref)) }
+  }
+  const floor = most(yielding.length - 1, (kept) => ({ shown: keeping(kept), card: ask(keeping(kept), 0) }), (each) => fitsRest(each.card))
+  const refCut: CardCut[] = yielding.length > floor.kept ? [{ kind: 'ref', count: yielding.length - floor.kept }] : []
+  return finish(floor.best.shown, floor.best.card, [...furtherCut, ...refCut])
+}
+
+/** How many of the pop-up's own texts the dismiss Choice offers. */
+function popupTexts(questions: CommandQuestions): number {
+  const dismiss = (questions as { readonly dismiss?: DecisionChoiceQuestion }).dismiss
+  return dismiss === undefined ? 0 : Object.keys(dismiss.options).filter((label) => /^popup-\d+$/.test(label)).length
 }
 
 /**

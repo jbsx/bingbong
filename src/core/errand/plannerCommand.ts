@@ -37,8 +37,10 @@ const isBrowserLine = (id: string): boolean => (JEV_VERBS as readonly string[]).
 export function errandCard(goalLine: string, page: CommandPage, context: HopContext, options: { readonly appliance?: Appliance; readonly budgetChars?: number } = {}): ErrandCard {
   const { questions, state } = fitCard(
     options.budgetChars,
-    (further) => commandQuestions(goalLine, page, context, { ...(options.appliance !== undefined ? { appliance: options.appliance } : {}), further }),
-    (asked) => commandState(goalLine, page, context, undefined, undefined, asked),
+    page,
+    (shown, further) => commandQuestions(goalLine, shown, context, { ...(options.appliance !== undefined ? { appliance: options.appliance } : {}), further }),
+    (shown, asked) => commandState(goalLine, shown, context, undefined, undefined, asked),
+    context.links,
   )
   // The browser's ref-less verbs are the Planner's own action kinds, said in its instructions; their lines here are Jev's words for them. The web's search has no kind of its own.
   const offers = Object.entries(questions.action.options).filter(([id]) => isBrowserLine(id) && !(JEV_VERBS as readonly string[]).includes(id))
