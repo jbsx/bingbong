@@ -1064,6 +1064,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async pauseAll() {
+      // A pause ends the consent watch (#489): a wall cleared after it lets the page start the song it was told to stop.
+      consentWatch = null
       // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
       const [stopped, framed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT), pauseFrames()])
       if ((stopped?.paused ?? 0) + framed === 0) return false

@@ -1244,6 +1244,25 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     expect(youtube.sheetsCleared).toBe(1)
   })
 
+  it('a pause ends the watch: a sheet cleared after it would start the song an ended Command opened (#489, the overlap gate\'s 1-replace)', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.starts = 'sheet'
+    // Each wait a timer turn: the watch looks once per turn, as it looks once a second on the clock.
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: () => new Promise((resolve) => setTimeout(resolve, 0)) })
+    let live = true
+    const played = player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)
+    // The Command ends while its watch page is under the sheet: the runner pauses the pane.
+    while (browser.consentLooks === 0) await new Promise((resolve) => setTimeout(resolve, 0))
+    live = false
+    await player.pauseAll()
+    await played
+    for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(youtube.sheetsCleared).toBe(0)
+  })
+
   it('a song the page pauses after its start is not pressed again: a pause is never overridden', async () => {
     const { youtube, player, perform, presses } = sheeted()
     await perform({ kind: 'search', place: 'now' }, 'song a')
