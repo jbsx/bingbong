@@ -54,8 +54,16 @@ const FEATURE_BUFFER_MAX = 120 // ~10 s of embeddings (reference)
  * and one more before them lends its lookback tail.
  */
 const MEL_BACKFILL_CHUNKS = 25
-/** The first 5 chunks after a reset never fire (reference prediction_buffer warm-up). */
-const WARMUP_CHUNKS = 5
+/**
+ * The first 12 chunks (960 ms) after a reset never fire (#490). The
+ * reference's prediction_buffer warm-up is 5, but the classifiers read 16
+ * zero-seeded embeddings, and over the app's own voice a score on a window
+ * still mostly zeros fires: on the gate's 84 echo captures of 3.2 s or more,
+ * each scored from a fresh reset, 5 chunks let the Abort Head fire on 12 and
+ * the wake head on 14, 8 on 9 and 4, 12 on none. The cost is that the heads
+ * are deaf for 960 ms after every reset (each line, each listen).
+ */
+export const WARMUP_CHUNKS = 12
 /** The melspec model was trained on int16-valued floats, not [-1, 1]. */
 const INT16_SCALE = 32767
 

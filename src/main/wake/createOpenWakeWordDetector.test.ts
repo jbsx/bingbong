@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { WAKE_CHUNK_SAMPLES, type WakeScores } from '../../core/ports/wake'
-import { createOpenWakeWordDetector } from './createOpenWakeWordDetector'
+import { WARMUP_CHUNKS, createOpenWakeWordDetector } from './createOpenWakeWordDetector'
 
 // The openWakeWord ONNX port: melspectrogram → speech embedding → one
 // classifier per head ("bing bong" / "abort" / "hold on"), reimplementing
@@ -8,7 +8,8 @@ import { createOpenWakeWordDetector } from './createOpenWakeWordDetector'
 // + model.py Model.predict) in Node. The fake runtime below pins the
 // reference's wire protocol — input names, shapes, the 480-sample melspec
 // lookback, int16-valued floats, the x/10+2 mel transform, ones-initialized
-// mel buffer, and the 5-chunk warmup suppression — so the adapter is tested
+// mel buffer, and the warm-up suppression (5 chunks in the reference, 12
+// here, #490) — so the adapter is tested
 // against the Python contract, not against itself.
 
 interface FakeTensor {
@@ -176,47 +177,39 @@ describe('openWakeWord detector', () => {
     expect(scores?.holdOn).toBeCloseTo(0.77, 5)
   })
 
-  it('suppresses every head for the first 5 chunks after a reset (warmup)', async () => {
+  it('suppresses every head for the first 12 chunks after a reset (warmup, #490)', async () => {
+    expect(WARMUP_CHUNKS).toBe(12)
+    const n = WARMUP_CHUNKS + 1
     const runtime = createFakeRuntime({
-      headScores: {
-        wake: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9],
-        abort: [0.8, 0.8, 0.8, 0.8, 0.8, 0.8],
-        holdOn: [0.7, 0.7, 0.7, 0.7, 0.7, 0.7],
-      },
+      headScores: { wake: Array(n).fill(0.9), abort: Array(n).fill(0.8), holdOn: Array(n).fill(0.7) },
     })
     const detector = createDetector(runtime)
 
     const scores: WakeScores[] = []
-    for (let i = 0; i < 6; i++) scores.push(await detector.score(new Float32Array(CHUNK)))
+    for (let i = 0; i < n; i++) scores.push(await detector.score(new Float32Array(CHUNK)))
 
-    expect(scores.slice(0, 5)).toEqual([
-      { wake: 0, abort: 0, holdOn: 0 },
-      { wake: 0, abort: 0, holdOn: 0 },
-      { wake: 0, abort: 0, holdOn: 0 },
-      { wake: 0, abort: 0, holdOn: 0 },
-      { wake: 0, abort: 0, holdOn: 0 },
-    ])
-    expect(scores[5].wake).toBeCloseTo(0.9, 5)
-    expect(scores[5].abort).toBeCloseTo(0.8, 5)
-    expect(scores[5].holdOn).toBeCloseTo(0.7, 5)
+    expect(scores.slice(0, WARMUP_CHUNKS)).toEqual(Array(WARMUP_CHUNKS).fill({ wake: 0, abort: 0, holdOn: 0 }))
+    expect(scores[WARMUP_CHUNKS].wake).toBeCloseTo(0.9, 5)
+    expect(scores[WARMUP_CHUNKS].abort).toBeCloseTo(0.8, 5)
+    expect(scores[WARMUP_CHUNKS].holdOn).toBeCloseTo(0.7, 5)
   })
 
   it('returns the per-head max when a call carries several chunks', async () => {
     const runtime = createFakeRuntime({
       headScores: {
-        wake: [0, 0, 0, 0, 0.1, 0.8, 0.3],
-        abort: [0, 0, 0, 0, 0, 0.6, 0],
-        holdOn: [0, 0, 0, 0, 0, 0, 0.4],
+        wake: [...Array(WARMUP_CHUNKS - 1).fill(0), 0.1, 0.8, 0.3],
+        abort: [...Array(WARMUP_CHUNKS - 1).fill(0), 0, 0.6, 0],
+        holdOn: [...Array(WARMUP_CHUNKS - 1).fill(0), 0, 0, 0.4],
       },
     })
     const detector = createDetector(runtime)
 
-    const scores = await detector.score(new Float32Array(CHUNK * 7))
+    const scores = await detector.score(new Float32Array(CHUNK * (WARMUP_CHUNKS + 2)))
 
     expect(scores.wake).toBeCloseTo(0.8, 5)
     expect(scores.abort).toBeCloseTo(0.6, 5)
     expect(scores.holdOn).toBeCloseTo(0.4, 5)
-    expect(runtime.melspec.feeds).toHaveLength(7)
+    expect(runtime.melspec.feeds).toHaveLength(WARMUP_CHUNKS + 2)
   })
 
   it('rejects audio that is not a whole number of 80 ms chunks', async () => {
@@ -234,12 +227,12 @@ describe('openWakeWord detector', () => {
     detector.reset()
 
     const scores: WakeScores[] = []
-    for (let i = 0; i < 6; i++) scores.push(await detector.score(new Float32Array(CHUNK)))
+    for (let i = 0; i <= WARMUP_CHUNKS; i++) scores.push(await detector.score(new Float32Array(CHUNK)))
 
     // First chunk after reset: no lookback again, warmup score suppressed.
     expect(runtime.melspec.feeds[6].input.dims).toEqual([1, CHUNK])
-    expect(scores.slice(0, 5).map((s) => s.wake)).toEqual([0, 0, 0, 0, 0])
-    expect(scores[5].wake).toBeCloseTo(0.7, 5)
+    expect(scores.slice(0, WARMUP_CHUNKS).map((s) => s.wake)).toEqual(Array(WARMUP_CHUNKS).fill(0))
+    expect(scores[WARMUP_CHUNKS].wake).toBeCloseTo(0.7, 5)
   })
 
   describe('chunks heard unscored (#435)', () => {
@@ -286,8 +279,8 @@ describe('openWakeWord detector', () => {
       const runtime = createFakeRuntime({ headScores: { wake: [0.7, 0.7] } })
       const detector = createDetector(runtime)
 
-      for (let i = 0; i < 4; i++) detector.skip!(new Float32Array(CHUNK))
-      // The fifth chunk heard is still warm-up; the sixth reads.
+      for (let i = 0; i < WARMUP_CHUNKS - 1; i++) detector.skip!(new Float32Array(CHUNK))
+      // The last warm-up chunk heard is still warm-up; the next reads.
       expect((await detector.score(new Float32Array(CHUNK))).wake).toBe(0)
       expect((await detector.score(new Float32Array(CHUNK))).wake).toBeCloseTo(0.7, 5)
     })
@@ -305,16 +298,16 @@ describe('openWakeWord detector', () => {
   })
 
   it('runs only the heads asked for; the rest read 0 (#435)', async () => {
-    const runtime = createFakeRuntime({ headScores: { wake: Array(6).fill(0.9), abort: Array(6).fill(0.8), holdOn: Array(6).fill(0.7) } })
+    const runtime = createFakeRuntime({ headScores: { wake: Array(WARMUP_CHUNKS + 1).fill(0.9), abort: Array(WARMUP_CHUNKS + 1).fill(0.8), holdOn: Array(WARMUP_CHUNKS + 1).fill(0.7) } })
     const detector = createDetector(runtime)
 
     let scores: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
-    for (let i = 0; i < 6; i++) scores = await detector.score(new Float32Array(CHUNK), (head) => head === 'wake')
+    for (let i = 0; i <= WARMUP_CHUNKS; i++) scores = await detector.score(new Float32Array(CHUNK), (head) => head === 'wake')
 
     expect(scores.wake).toBeCloseTo(0.9, 5)
     expect(scores.abort).toBe(0)
     expect(scores.holdOn).toBe(0)
-    expect(runtime.heads.wake.feeds).toHaveLength(6)
+    expect(runtime.heads.wake.feeds).toHaveLength(WARMUP_CHUNKS + 1)
     expect(runtime.heads.abort.feeds).toHaveLength(0)
     expect(runtime.heads.holdOn.feeds).toHaveLength(0)
   })
