@@ -1,0 +1,10 @@
+{
+  "turnId": "pm-2026-10-28-504-consent",
+  "transcript": "play radiohead",
+  "at": 1793201550213,
+  "source": "typed",
+  "stage": "player",
+  "happened": "overlap:gate 1-replace-new-goal at p3 (media-not-started 98%) on baseten-mammoth-27b-latest at 6588a8b1 (run of record 2026-10-28 afternoon, kept at logs/overlap/record-6588a8b1): play radiohead's Errand (turn-mvs9weqt-1, its own reading timed out) landed No Surprises; YouTube's consent sheet drew after the song started and the told road clicked Reject (draw→click 3197 ms), but the sheet stayed (media-consent gone false, consent-gone 1507 ms), holding the song at 0:05 to the end of the run. A consent residue past #496 under a frozen page; split from turn-mvs9weqt-1 by the orchestrator's ruling 5 on #504 (note 4109776169)",
+  "meant": "the consent sheet over a song that has started closes on its Reject, and the song plays on",
+  "log": "decision-1793201550214-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvsgyfi5-4",
+  "transcript": "go back",
+  "at": 1793213395711,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "overlap:gate 6-go-back-during-task at p3 (loading 96%) on baseten-mammoth-27b-latest at 37d86704 (gitlab main, base of #504; kept at /tmp/impl504/runs/base-6goback-2): `go back` arrived 440 ms after the Task's hop 2 clicked “2025 Radiohead tour - Wikipedia” and its page had landed; back went one page, to the DuckDuckGo results, not to Radiohead - Wikipedia where the Task began. An edge on the line's timing against the click: base 4/6 green, #504's head 1/6 (2026-10-28, same calibration), red whenever the click's navigation has begun before the line, green whenever not",
+  "meant": "a `go back` said during a Task returns to the page the Task started from, whichever of its hops has landed",
+  "log": "decision-1793213394346-1.jsonl"
+}
