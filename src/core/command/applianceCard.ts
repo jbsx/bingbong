@@ -198,6 +198,9 @@ export function withPicked<Q extends { readonly action?: unknown; readonly slot?
   }
 }
 
+/** The most options a Choice carries (DecisionChoiceQuestion: at most 255). */
+const SLOT_OPTIONS_CAP = 255
+
 const JOINED_SLOT_INSTRUCTIONS = " The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects."
 
 /**
@@ -219,7 +222,8 @@ function joinedSlot(slot: DecisionChoiceQuestion, text: string, joins: JoinedLin
   return {
     ...slot,
     instructions: `${slot.instructions}${JOINED_SLOT_INSTRUCTIONS}`,
-    options: { ...Object.fromEntries(kept), ...Object.fromEntries(own.filter(([, words]) => !offered.has(words))) },
+    // Under the Choice cap, as the spans are (a long correction keeps its shorter pairs first).
+    options: { ...Object.fromEntries(kept), ...Object.fromEntries(own.filter(([, words]) => !offered.has(words)).slice(0, Math.max(0, SLOT_OPTIONS_CAP - kept.length))) },
   }
 }
 

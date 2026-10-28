@@ -790,10 +790,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * card offers each verb by ability, the song's own ops being its media
    * ref's (ADR 0080).
    */
-  const appliance = (): Appliance | undefined => {
+  const appliance = (withPick = false): Appliance | undefined => {
     const last = deps.lastPage?.() ?? null
     if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null) return undefined
-    const picked = deps.player?.picked?.()
+    const picked = withPick ? deps.player?.picked?.() : undefined
     return {
       ...(deps.app !== undefined ? { app: deps.app.state() } : {}),
       ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null, ...(deps.player.audioRoad === true ? { audioRoad: true } : {}) } : {}),
@@ -1397,7 +1397,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand, ended?: EndedCommand, joins?: JoinedLine): Promise<ApplianceView> {
     const state = browser.state()
     const media = await mediaNow(turnId, pending)
-    const own = appliance()
+    // The pick is a running choice (#498): carried while a running play opens it, or on the line that joined it; a pick whose line a stop ended is no one's.
+    const own = appliance(joins !== undefined || running?.opening !== undefined)
     return {
       url: state.url ?? '',
       title: state.title ?? '',

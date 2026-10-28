@@ -1,5 +1,6 @@
 import type { BrowserController, ConsentCleared, ConsentDrawn } from '../../core/ports/browser'
 import type { MusicAction } from '../../core/music/musicWords'
+import type { PickedSong } from '../../core/command/jevReading'
 import type { PickSource } from '../../core/command/decisionRecord'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
 import { QUEUED_SHOWN, adWait, type AdShowing, type NowPlaying } from '../../core/music/nowPlaying'
@@ -197,7 +198,7 @@ export interface Player {
    * opening it was cut off, and while it plays. Null with none, or once
    * another song took its place.
    */
-  picked?(): PickHeld | null
+  picked?(): PickedSong | null
   /** What the Idle Screen's card shows (#344); null when the Player holds no song. */
   nowPlaying(): NowPlaying | null
   /** Hears every change to {@link nowPlaying}; the returned function stops it. */
@@ -217,13 +218,6 @@ export interface Player {
   road(): Road
   /** The audio road is wired (#502): a song not read as a video opens there, and leaves the pane alone. */
   readonly audioRoad: boolean
-}
-
-/** The pick a correction acts on (#498), as the card names it. */
-export interface PickHeld {
-  readonly title: string
-  readonly words: string
-  readonly playing: boolean
 }
 
 export interface PlayerDeps {
