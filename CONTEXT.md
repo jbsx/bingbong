@@ -87,7 +87,11 @@ _Avoid_: cloud STT tier, hybrid ear, router
 
 **Barge-in**:
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
-speech. The Abort Head is the one bare-speech exception.
+speech. The Abort Head is the one bare-speech exception outside a listen.
+Inside an open listen, the person's speech over the app's voice cuts it too
+(#490): the voice ducks at speech start, the line is read, and the voice
+stops when the line is read as for the app, or comes back up when it was the
+app's own words or a line read as no Command.
 
 **Ducking**:
 The music dropping under the voice (#344): while the ear is open — from a
