@@ -8,6 +8,8 @@ import type {
   BrowserState,
   CaptureRead,
   CaptureTarget,
+  ConsentCleared,
+  ConsentDrawn,
   FileChooser,
   KeyPress,
   MediaState,
@@ -195,9 +197,22 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   consentLooks = 0
   /** The landing's consent clear: the dismissal line it reports, null for no wall. */
   consentClear: () => string | null | Promise<string | null> = () => null
-  async clearConsent(): Promise<string | null> {
+  /** The `shown` each clear was given, in order (#496): undefined for a clear that looked first. */
+  readonly consentClears: (number | undefined)[] = []
+  async clearConsent(options?: { readonly shown?: number; readonly playing?: boolean }): Promise<ConsentCleared | null> {
     this.consentLooks += 1
-    return this.consentClear()
+    this.consentClears.push(options?.shown)
+    const line = await this.consentClear()
+    return line === null ? null : { line, collectMs: 0, askMs: 0, clickMs: 0, goneMs: 0, gone: true }
+  }
+  private readonly consentHearers = new Set<(drawn: ConsentDrawn) => void>()
+  onConsentDrawn(listener: (drawn: ConsentDrawn) => void): () => void {
+    this.consentHearers.add(listener)
+    return () => this.consentHearers.delete(listener)
+  }
+  /** The page's watch tells of a wall drawn (#496). */
+  drawConsent(drawn: Partial<ConsentDrawn> = {}): void {
+    for (const hear of [...this.consentHearers]) hear({ ageMs: 0, playing: false, showing: 1, ...drawn })
   }
   /** The part of every Page Read, in order (ADR 0047). */
   readonly pageReads: number[] = []

@@ -16,7 +16,7 @@ const CHECK_MS = 1_000
 
 /** The pane's Player, its end-of-song poll running; the audio road (#502) where its switch is on; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488) and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
 export function attachPlayer(
-  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'clearConsent' | 'state'>,
+  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'clearConsent' | 'onConsentDrawn' | 'state'>,
   session: Session,
   memory: { songs: SongMemory; learn(term: string): void; propose(term: string): void },
   custody: Pick<BrowserCustody<BrowserController>, 'settled'>,
@@ -37,11 +37,21 @@ export function attachPlayer(
         reportFault('music.attachPlayer.mediaStart', error)
       }
     },
-    onConsent: ({ ms, ...consent }) => {
+    onConsent: ({ ms, drawToClickMs, goneMs, gone, ...consent }) => {
       try {
-        tracer.span(APP_TURN_ID, 'media-consent', ms, { ...consent })
+        if (ms !== null) tracer.span(APP_TURN_ID, 'media-consent', ms, { ...consent, drawToClickMs, goneMs, gone })
+        // Where a clear's time went (#496): from the draw the page signalled to the click, and from the click to the sheet gone.
+        tracer.span(APP_TURN_ID, 'consent-draw-click', drawToClickMs, { video: consent.video, afterStart: consent.afterStart })
+        tracer.span(APP_TURN_ID, 'consent-gone', goneMs, { video: consent.video, gone })
       } catch (error) {
         reportFault('music.attachPlayer.mediaConsent', error)
+      }
+    },
+    onConsentTold: ({ ageMs, ...told }) => {
+      try {
+        tracer.span(APP_TURN_ID, 'consent-told', ageMs, { ...told })
+      } catch (error) {
+        reportFault('music.attachPlayer.consentTold', error)
       }
     },
     fetchResults: async (url) => {

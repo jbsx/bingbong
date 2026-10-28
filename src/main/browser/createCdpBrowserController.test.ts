@@ -14,8 +14,9 @@ import { fakePerfHarness } from '../../core/testing/doubles'
 import type { Clock } from '../../core/ports/clock'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival, PageFrame, PageFrames } from './createCdpBrowserController'
-import { createCdpBrowserController, READINESS_CAP_MS, REF_STATES_GRACE_MS, SUBMIT_START_MS } from './createCdpBrowserController'
-import type { ClickPrep } from './collectPageScript'
+import { createCdpBrowserController, DISMISSAL_GONE_MS, READINESS_CAP_MS, REF_STATES_GRACE_MS, SUBMIT_START_MS } from './createCdpBrowserController'
+import { CONSENT_DRAWN_BINDING, CONSENT_WATCH_SCRIPT, type ClickPrep } from './collectPageScript'
+import type { ConsentDrawn } from '../../core/ports/browser'
 import type { AxNode } from '../../core/browser/refStates'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
@@ -124,6 +125,8 @@ class FakeCdp implements CdpDebugger {
   collectValues: unknown[] = []
   /** What the in-place dialog-open probe answers, in turn; empty answers false (no dialog). */
   dialogOpenValues: boolean[] = []
+  /** The page holds its in-place dialog read unanswered (#496 F4). */
+  dialogOpenHangs = false
   /** What the landing's in-place consent look answers (#492). */
   consentShown = false
   /**
@@ -246,6 +249,7 @@ class FakeCdp implements CdpDebugger {
       if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
       if (expression.includes('/* FRAME_BOX */')) return { result: { value: this.frameBox } } as T
       if (expression.includes('/* CONSENT_SHOWN */')) return { result: { value: this.consentShown } } as T
+      if (expression.includes('__bingbongDialogOpen') && this.dialogOpenHangs) return new Promise<T>(() => {})
       if (expression.includes('__bingbongDialogOpen')) return { result: { value: this.dialogOpenValues.length > 0 ? this.dialogOpenValues.shift() : false } } as T
       if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
       if (expression.includes('/* SELECT_FIELD */')) return { result: { value: true } } as T
@@ -418,6 +422,8 @@ class FakeCdp implements CdpDebugger {
     if (method === 'Page.captureScreenshot') return { data: Buffer.from('fake-jpeg-bytes').toString('base64') } as T
     if (method === 'Page.getLayoutMetrics') return { visualViewport: { ...this.layoutMetrics, scale: 1, zoom: 1 } } as T
     if (method.startsWith('Input.')) return {} as T
+    // The page's consent watch and its binding (#496).
+    if (method === 'Runtime.addBinding' || method === 'Page.addScriptToEvaluateOnNewDocument') return {} as T
     throw new Error(`unexpected CDP method: ${method}`)
   }
 
@@ -2096,11 +2102,32 @@ describe('createCdpBrowserController dialog tiers', () => {
     cdp.consentShown = true
     const { controller } = makeController({ cdp })
 
-    expect(await controller.clearConsent!()).toBe('dismissed consent dialog: clicked [2] "Reject all"')
+    expect(await controller.clearConsent!()).toMatchObject({ line: 'dismissed consent dialog: clicked [2] "Reject all"', gone: true })
 
     expect(cdp.collectCalls()).toHaveLength(1)
     const domClick = cdp.calls.find((call) => typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))
     expect(domClick?.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
+  })
+
+  it('the wait after a consent click ends at its bound on the clock when the page holds its read unanswered (#496 F4)', async () => {
+    const clock = new FakeClock()
+    const cdp = new FakeCdp(consentWallPage())
+    cdp.dialogOpenHangs = true
+    const { controller } = makeController({ cdp, clock })
+
+    let cleared: unknown = undefined
+    const clearing = controller.clearConsent!({ shown: 1 }).then((outcome) => (cleared = outcome))
+    let advanced = 0
+    while (cleared === undefined && advanced < 10_000) {
+      for (let i = 0; i < 60; i += 1) await Promise.resolve()
+      if (cleared !== undefined) break
+      clock.advance(50)
+      advanced += 50
+    }
+    await clearing
+    expect(cleared).toMatchObject({ line: 'dismissed consent dialog: clicked [2] "Reject all"', gone: false })
+    // The readiness cap, then the bound: never a read's own hold.
+    expect(advanced).toBeLessThanOrEqual(READINESS_CAP_MS + DISMISSAL_GONE_MS + 100)
   })
 
   it("the landing's consent clear leaves a Tier-2 dialog the look let through open (#492)", async () => {
@@ -2126,6 +2153,59 @@ describe('createCdpBrowserController dialog tiers', () => {
     cdp.consentShown = true
     expect(await controller.clearConsent!()).toBeNull()
     expect(cdp.collectCalls()).toHaveLength(2)
+  })
+
+  it("a clear given the page's showing skips the look, and the showing keys the one confirming collect (#496)", async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    const { controller } = makeController({ cdp })
+    const looks = () => cdp.calls.filter((call) => typeof call.params?.expression === 'string' && call.params.expression.includes('/* CONSENT_SHOWN */')).length
+
+    for (let told = 0; told < 3; told += 1) expect(await controller.clearConsent!({ shown: 1 })).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(1)
+    // The page said no and then yes again: a new showing, collected once.
+    expect(await controller.clearConsent!({ shown: 2 })).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(2)
+    expect(looks()).toBe(0)
+  })
+
+  it("a wall told with nothing playing and told again once media plays under it is collected once more: the page changed (#496)", async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.clearConsent!({ shown: 1, playing: false })).toBeNull()
+    expect(await controller.clearConsent!({ shown: 1, playing: false })).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(1)
+    expect(await controller.clearConsent!({ shown: 1, playing: true })).toBeNull()
+    expect(await controller.clearConsent!({ shown: 1, playing: true })).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(2)
+  })
+
+  it('the page tells of a wall as it draws through its binding, and every listener hears it; any other binding is not a wall (#496)', () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+    const heard: ConsentDrawn[] = []
+    const stop = controller.onConsentDrawn!((drawn) => heard.push(drawn))
+
+    cdp.emit('Runtime.bindingCalled', { name: CONSENT_DRAWN_BINDING, payload: JSON.stringify({ at: Date.now() - 40, playing: true, showing: 2 }) })
+    cdp.emit('Runtime.bindingCalled', { name: 'somethingElse', payload: JSON.stringify({ at: Date.now(), playing: true, showing: 1 }) })
+    cdp.emit('Runtime.bindingCalled', { name: CONSENT_DRAWN_BINDING, payload: 'not json' })
+    stop()
+    cdp.emit('Runtime.bindingCalled', { name: CONSENT_DRAWN_BINDING, payload: JSON.stringify({ at: Date.now(), playing: false, showing: 3 }) })
+
+    expect(heard).toEqual([{ ageMs: expect.any(Number), playing: true, showing: 2 }])
+    expect(heard[0]!.ageMs).toBeGreaterThanOrEqual(40)
+  })
+
+  it("the page's watch runs in every new document, and its binding is added again at each commit of the top frame, not a child's (#496)", () => {
+    const cdp = new FakeCdp()
+    makeController({ cdp })
+    const added = () => cdp.calls.filter((call) => call.method === 'Runtime.addBinding' && call.params?.name === CONSENT_DRAWN_BINDING).length
+
+    expect(cdp.calls.some((call) => call.method === 'Page.addScriptToEvaluateOnNewDocument' && call.params?.source === CONSENT_WATCH_SCRIPT)).toBe(true)
+    expect(added()).toBe(1)
+    cdp.emit('Page.frameNavigated', { frame: { id: 'top' } })
+    cdp.emit('Page.frameNavigated', { frame: { id: 'ad', parentId: 'top' } })
+    expect(added()).toBe(2)
   })
 
   it('leaves a Tier-2 dialog met on navigate open and listed', async () => {
@@ -3208,13 +3288,14 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     const { records, subspans } = subspanHarness(true)
     const wall = consentWallPage()
     const cdp = new FakeCdp(wall)
-    cdp.dialogOpenValues = Array.from({ length: 40 }, () => true)
+    cdp.dialogOpenValues = Array.from({ length: 80 }, () => true)
     const { controller } = makeController({ cdp, subspans })
 
     await subspans.runInTurn('turn-1', () => controller.readPage())
 
-    expect(records.filter((record) => record.stage === 'browser-settle')).toHaveLength(10)
-    expect(cdp.dialogOpenValues).toHaveLength(30)
+    // On a clock that does not move, the bound is counted in settles.
+    expect(records.filter((record) => record.stage === 'browser-settle')).toHaveLength(DISMISSAL_GONE_MS / 100)
+    expect(cdp.dialogOpenValues).toHaveLength(80 - DISMISSAL_GONE_MS / 100)
   })
 
   it('emits nothing when the flag is off — the default log stays byte-identical', async () => {

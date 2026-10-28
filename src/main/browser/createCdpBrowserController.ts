@@ -3,6 +3,8 @@ import type {
   BrowserState,
   CaptureRead,
   CaptureTarget,
+  ConsentCleared,
+  ConsentDrawn,
   FileChooser,
   KeyPress,
   MarkedScreenshot,
@@ -85,11 +87,21 @@ import {
   OWN_SLOT_SCRIPT,
   TAG_OF_FN,
   CONSENT_SHOWN_SCRIPT,
+  CONSENT_DRAWN_BINDING,
+  CONSENT_WATCH_SCRIPT,
 } from './collectPageScript'
 import { readRefStates, type RefStatesTally } from './readRefStates'
 import { frameHostOfPage, mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 import type { SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
+
+/** Where a consent dismissal's time went (#496): the decline ask, the click on the controller's clock, and the wait after it. */
+interface DismissalTimes {
+  askMs: number
+  clickAt: number
+  goneMs: number
+  gone: boolean
+}
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
 // and the Electron glue (webContents.debugger) stays a thin adapter.
@@ -256,9 +268,18 @@ const STILL_POLL_MS = 100
  * leave the page (post mortem 2026-10-19): Truth Social's TCF sheet closed
  * with an animation that outlasted the readiness wait's first mutation, so
  * the recollection still carried it and a Task was read over a wall that
- * was already going. Polled in place at {@link STILL_POLL_MS}.
+ * was already going. Polled in place at {@link STILL_POLL_MS}, bounded by
+ * the clock, reads and all (#496 F4): counted in settles, a page answering
+ * each read in 0.5–1 s stretched the "1 s" to 4.8 s, holding the Player's
+ * start and every collect behind it. Measured (#496): over the overlap run
+ * of record at 6e0279eb, the 14 clears whose page answered its reads at
+ * once saw the sheet gone 390–1,067 ms after the click; the bound is about
+ * 1.4× the latest. A 5,000 ms arm (the record's slowest wait, 4.8 s)
+ * measured no better on the full overlap set (starts pressed after 13 of 27
+ * clears at 1,500 ms at a960a03b, 12 of 24 at 5,000 ms at 48f14b2b) and
+ * held every collect behind a sheet that stays 5 s.
  */
-export const DISMISSAL_GONE_MS = 1_000
+export const DISMISSAL_GONE_MS = 1_500
 
 /**
  * The most a click on a control of the open dialog waits for its sheet to
@@ -802,14 +823,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return reports
   }
 
-  /** Tier 1: deterministically dismiss a consent-classified dialog. */
-  async function dismissConsentIfOpen(snapshot: PageSnapshot): Promise<string | null> {
+  /** Tier 1: deterministically dismiss a consent-classified dialog. Given `times`, where its time went is written there (#496). */
+  async function dismissConsentIfOpen(snapshot: PageSnapshot, times?: DismissalTimes): Promise<string | null> {
     if (!snapshot.dialogOpen) return null
     const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
     const labels = controls.map((ref) => ref.label)
     if (!isConsentDialog(snapshot.dialogText, labels)) return null
     // Jev's sure pick of the control that declines first (ADR 0089), else the rule's reject (privacy first, ADR 0061), else the accept.
-    const choice = (await chosenConsent(snapshot.dialogText, labels)) ?? consentRejectOf(labels) ?? consentAcceptOf(labels)
+    const asking = clock.now()
+    const chosen = await chosenConsent(snapshot.dialogText, labels)
+    if (times !== undefined) times.askMs = clock.now() - asking
+    const choice = chosen ?? consentRejectOf(labels) ?? consentAcceptOf(labels)
     if (choice === null) return null
     const target = controls[choice]
     const at = addressOfRef(target.ref)
@@ -821,10 +845,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       el.click()
       return true
     })()`)
+    const click = clock.now()
     lastSnapshot = undefined
     await awaitReadiness('consent-dismiss')
-    if (clicked) await awaitDialogGone()
-    return clicked ? consentDismissalLine(target.ref, truncateOutcomeText(target.label, 60)) : null
+    if (!clicked) return null
+    const gone = await awaitDialogGone()
+    if (times !== undefined) Object.assign(times, { clickAt: click, goneMs: clock.now() - click, gone })
+    return consentDismissalLine(target.ref, truncateOutcomeText(target.label, 60))
   }
 
   /** The control Jev finds declining the wall's optional cookies; null when it finds none, or none is wired. */
@@ -838,12 +865,21 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  /** Wait, bounded by {@link DISMISSAL_GONE_MS}, until no dialog root is open: the dismissed sheet has left, and a recollection reads the page behind it. */
-  async function awaitDialogGone(): Promise<void> {
-    for (let waited = 0; waited < DISMISSAL_GONE_MS; waited += STILL_POLL_MS) {
-      if (!(await dialogOpenInPlace())) return
+  /**
+   * Wait, bounded by {@link DISMISSAL_GONE_MS}, until no dialog root is open: the dismissed sheet has left, and a recollection
+   * reads the page behind it. Whether it was seen gone inside the bound. The bound passes on the clock, or on the settles where
+   * the clock does not move (a scripted page); a read the page holds past the bound is not waited for (live 2026-10-28: one
+   * read held 3.9 s after a YouTube click).
+   */
+  async function awaitDialogGone(): Promise<boolean> {
+    const from = clock.now()
+    for (let settled = 0; Math.max(clock.now() - from, settled) < DISMISSAL_GONE_MS; settled += STILL_POLL_MS) {
+      const open = await withDeadline(dialogOpenInPlace(), clock, DISMISSAL_GONE_MS - Math.max(clock.now() - from, settled))
+      if (open === null) return false
+      if (!open) return true
       await settle('consent-gone', STILL_POLL_MS)
     }
+    return false
   }
 
   /** What the open dialog shows, read in place in the top and, for a framed control, in its frame; null once its frame has gone. */
@@ -1624,23 +1660,71 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   let consentUnconfirmedAt: string | null = null
 
-  /** The landing's consent clear on the page as it stands (#492): a look in place first, so a page with no wall is never collected. */
-  async function clearConsent(): Promise<string | null> {
+  /**
+   * The landing's consent clear on the page as it stands (#492): a look in place first, so a page with no wall is never
+   * collected — skipped when the page's own watch said it is shown (#496), whose showing then keys the one confirming collect.
+   */
+  async function clearConsent(options?: { readonly shown?: number; readonly playing?: boolean }): Promise<ConsentCleared | null> {
     try {
-      if ((await evaluateInPage<unknown>(CONSENT_SHOWN_SCRIPT)) !== true) {
+      const shown = options?.shown
+      if (shown === undefined && (await evaluateInPage<unknown>(CONSENT_SHOWN_SCRIPT)) !== true) {
         consentUnconfirmedAt = null
         return null
       }
-      const at = state().url
+      const url = state().url
+      // Media that began playing under a wall told with nothing playing is the page changed (live 2026-10-28: YouTube's sheet,
+      // its first collect clearing nothing a beat after it mounted, then drawn over the song with the same showing).
+      const at = url === null ? null : shown === undefined ? url : `${url}#${shown}${options?.playing === true ? ' playing' : ''}`
       if (at !== null && at === consentUnconfirmedAt) return null
+      const start = clock.now()
       const walled = await recollection('landing-consent', () => collectSnapshot())
-      const line = await dismissConsentIfOpen(walled)
+      const collectMs = clock.now() - start
+      const times: DismissalTimes = { askMs: 0, clickAt: start, goneMs: 0, gone: false }
+      const line = await dismissConsentIfOpen(walled, times)
       consentUnconfirmedAt = line === null ? at : null
-      return line
+      return line === null ? null : { line, collectMs, askMs: times.askMs, clickMs: times.clickAt - start, goneMs: times.goneMs, gone: times.gone }
     } catch (error) {
       reportFault('browser.createCdpBrowserController.clearConsent', error)
       return null
     }
+  }
+
+  // The page's consent watch (#496): in every top document from its start, telling through a binding the browser adds again
+  // at each commit of the top frame (a binding added with the runtime off reaches only the documents already open).
+  const consentListeners = new Set<(drawn: ConsentDrawn) => void>()
+  const addConsentBinding = (): void => {
+    void cdp.send('Runtime.addBinding', { name: CONSENT_DRAWN_BINDING }).catch((error: unknown) => reportFault('browser.createCdpBrowserController.consentBinding', error))
+  }
+  addConsentBinding()
+  void cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: CONSENT_WATCH_SCRIPT }).catch((error: unknown) => reportFault('browser.createCdpBrowserController.consentWatch', error))
+  cdp.on?.('Page.frameNavigated', (params) => {
+    if ((params as { frame?: { parentId?: string } }).frame?.parentId === undefined) addConsentBinding()
+  })
+  cdp.on?.('Page.domContentEventFired', addConsentBinding)
+  cdp.on?.('Runtime.bindingCalled', (params) => {
+    const { name, payload } = params as { name?: string; payload?: string }
+    if (name !== CONSENT_DRAWN_BINDING || typeof payload !== 'string') return
+    let told: { at?: unknown; playing?: unknown; showing?: unknown }
+    try {
+      told = JSON.parse(payload) as typeof told
+    } catch {
+      return
+    }
+    if (typeof told.at !== 'number' || typeof told.showing !== 'number') return
+    // The page's clock is the wall's, as Date.now() is here.
+    const drawn: ConsentDrawn = { ageMs: Math.max(0, Date.now() - told.at), playing: told.playing === true, showing: told.showing }
+    for (const listener of [...consentListeners]) {
+      try {
+        listener(drawn)
+      } catch (error) {
+        reportFault('browser.createCdpBrowserController.consentDrawn', error)
+      }
+    }
+  })
+
+  function onConsentDrawn(listener: (drawn: ConsentDrawn) => void): () => void {
+    consentListeners.add(listener)
+    return () => consentListeners.delete(listener)
   }
 
   /**
@@ -2934,6 +3018,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     navigate,
     land,
     clearConsent,
+    onConsentDrawn,
     readPage,
     pageReadParts,
     click,

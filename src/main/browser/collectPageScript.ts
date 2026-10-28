@@ -80,19 +80,108 @@ const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[t
  * classifier decides. The top frame's alone; a framed wall is met by the
  * next collect.
  */
-export const CONSENT_SHOWN_SCRIPT = `(() => {
-  /* CONSENT_SHOWN */
+const CONSENT_SHOWN_FN = `(() => {
   const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
   const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
   const pinnedAncestor = ${PINNED_ANCESTOR_FN}
-  for (const control of document.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})) {
-    const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
-    if (!CONSENT_LABEL_RE.test(text) || control.closest('[inert]') !== null) continue
-    const rect = control.getBoundingClientRect()
-    if (rect.width < 1 || rect.height < 1) continue
-    if (control.closest(${JSON.stringify(DIALOG_SELECTOR)}) !== null || pinnedAncestor(control) !== null) return true
+  return () => {
+    for (const control of document.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})) {
+      const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
+      if (!CONSENT_LABEL_RE.test(text) || control.closest('[inert]') !== null) continue
+      const rect = control.getBoundingClientRect()
+      if (rect.width < 1 || rect.height < 1) continue
+      if (control.closest(${JSON.stringify(DIALOG_SELECTOR)}) !== null || pinnedAncestor(control) !== null) return true
+    }
+    return false
   }
-  return false
+})()`
+
+export const CONSENT_SHOWN_SCRIPT = `(() => {
+  /* CONSENT_SHOWN */
+  return ${CONSENT_SHOWN_FN}()
+})()`
+
+/** The page's own consent signal (#496): the binding its watch calls, once per showing, with `{ at, playing, showing }`. */
+export const CONSENT_DRAWN_BINDING = '__bingbongConsentDrawn'
+/** How long from a document's start its consent watch is armed with nothing playing (#496, F2 arm ii): the Player's landing watch, measured in #492 (CONSENT_WATCH_MS). */
+export const CONSENT_ARMED_MS = 30_000
+/** The quiet a burst of mutations gets before the look runs: a guess, measured only by its cost in `pnpm perf:report`; a wall is signalled this long after it is drawn, at most once per this long. */
+export const CONSENT_CHECK_MS = 250
+/** Media that paused this recently was playing as a wall drew over it: a page pauses its media as its wall draws (YouTube's, #496). A guess. */
+export const CONSENT_PLAYED_MS = 2_000
+
+/**
+ * The page's consent watch (#496), run in the top document from its start:
+ * a MutationObserver that runs the look's own test (CONSENT_SHOWN) on a
+ * burst of mutations, at most once per {@link CONSENT_CHECK_MS}, and tells
+ * the browser through its binding the moment a wall is shown — an event,
+ * never a poll. Armed by kind (F2 arm ii): for {@link CONSENT_ARMED_MS}
+ * from the document's start, and while any `<video>` or `<audio>` plays,
+ * on any site; disarmed otherwise, so a heavy page with nothing playing
+ * pays no callbacks. Once per showing: told again only after the look said
+ * no, or when media began playing under a wall told with nothing playing.
+ */
+export const CONSENT_WATCH_SCRIPT = `(() => {
+  /* CONSENT_WATCH */
+  if (window !== window.top || window.__bingbongConsentWatch === true) return
+  window.__bingbongConsentWatch = true
+  const shown = ${CONSENT_SHOWN_FN}
+  const from = Date.now()
+  let playedAt = -Infinity
+  // The look said yes on its last run; how many times it went from no to yes; how far this showing was told (1 nothing playing, 2 playing).
+  let up = false
+  let showing = 0
+  let told = 0
+  let timer = null
+  let observer = null
+  const playing = () => {
+    for (const media of document.querySelectorAll('video, audio')) if (!media.paused && !media.ended) return true
+    return false
+  }
+  const inPlay = () => {
+    if (playing()) playedAt = Date.now()
+    return Date.now() - playedAt < ${CONSENT_PLAYED_MS}
+  }
+  const check = () => {
+    timer = null
+    const played = inPlay()
+    if (!played && Date.now() - from >= ${CONSENT_ARMED_MS}) {
+      if (observer !== null) observer.disconnect()
+      observer = null
+      return
+    }
+    if (!shown()) {
+      up = false
+      told = 0
+      return
+    }
+    if (!up) {
+      up = true
+      showing += 1
+    }
+    const level = played ? 2 : 1
+    if (level <= told) return
+    const tell = window[${JSON.stringify(CONSENT_DRAWN_BINDING)}]
+    // The browser adds its binding as the document commits; until it has, the next burst tells.
+    if (typeof tell !== 'function') return schedule()
+    told = level
+    tell(JSON.stringify({ at: Date.now(), playing: played, showing }))
+  }
+  const schedule = () => {
+    if (timer !== null) return
+    inPlay()
+    timer = setTimeout(check, ${CONSENT_CHECK_MS})
+  }
+  const observe = () => {
+    if (observer !== null) return
+    observer = new MutationObserver(schedule)
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'inert', 'open', 'aria-hidden', 'aria-modal'] })
+    schedule()
+  }
+  // Media events do not bubble: a start anywhere on the page arms the watch again.
+  document.addEventListener('playing', observe, true)
+  if (document.documentElement !== null) observe()
+  else document.addEventListener('readystatechange', observe, { once: true })
 })()`
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage

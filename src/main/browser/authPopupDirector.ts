@@ -85,7 +85,9 @@ export function createAuthPopupDirector(
         snapshotInHand: () => target(base).snapshotInHand?.() ?? null,
         // The Player drives the pane's own video (#343), never a sign-in popup — and clears the consent wall over it (#492).
         evaluate: (expression) => base.evaluate(expression),
-        ...(base.clearConsent !== undefined ? { clearConsent: () => base.clearConsent!() } : {}),
+        ...(base.clearConsent !== undefined ? { clearConsent: (options?: { readonly shown?: number; readonly playing?: boolean }) => base.clearConsent!(options) } : {}),
+        // The wall the pane's page signals (#496), never a popup's.
+        ...(base.onConsentDrawn !== undefined ? { onConsentDrawn: (listener: Parameters<NonNullable<typeof base.onConsentDrawn>>[0]) => base.onConsentDrawn!(listener) } : {}),
         ...(base.evaluateInFrames !== undefined ? { evaluateInFrames: <T,>(expression: string) => base.evaluateInFrames!<T>(expression) } : {}),
         // Everything the agent does to "the current page" routes to the
         // popup while one is open.

@@ -1,4 +1,4 @@
-import type { BrowserController } from '../../core/ports/browser'
+import type { BrowserController, ConsentCleared, ConsentDrawn } from '../../core/ports/browser'
 import type { MusicAction } from '../../core/music/musicWords'
 import type { PickSource } from '../../core/command/decisionRecord'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
@@ -9,6 +9,7 @@ import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailu
 import { reportFault } from '../../core/trace/fault'
 import { WithheldResourceError, type BrowserCustody } from '../../core/browser/unsettledAction'
 import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
+import { CONSENT_PLAYED_MS } from '../browser/collectPageScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
@@ -112,20 +113,37 @@ export interface PlayerStart {
   readonly consent: number | null
 }
 
-/** A consent wall the browser cleared over a page the Player opened (#492): what the perf log keeps of each. */
+/** A consent wall the browser cleared for the Player (#492, #496): what the perf log keeps of each. */
 export interface PlayerConsent {
-  readonly video: string
-  /** From the landing to the clear (ms). */
-  readonly ms: number
+  /** The song's video; null for a wall over media on a page the Player did not open. */
+  readonly video: string | null
+  /** From the Player's landing to the clear (ms); null for a page the Player did not open. */
+  readonly ms: number | null
   /** The song's start was already recorded: the wall drew over a song that had started, or given up on. */
   readonly afterStart: boolean
   /** The browser's dismissal line. */
   readonly line: string
+  /** From the draw the page signalled, or the landing's look, to the click (ms). */
+  readonly drawToClickMs: number
+  /** From the click to the sheet gone, or to the wait's bound (ms). */
+  readonly goneMs: number
+  /** The sheet was seen gone inside the bound. */
+  readonly gone: boolean
+}
+
+/** Why a wall the page told of is cleared, or not (#496): over the Player's song, by kind over media playing, or left to the next collect. */
+export type ConsentToldRoad = 'ours' | 'kind' | 'nothing-playing' | 'own-pause'
+
+/** A wall the page told of as it drew (#496), and what the Player did with it: what the perf log's `consent-told` keeps. */
+export interface PlayerConsentTold extends ConsentDrawn {
+  readonly road: ConsentToldRoad
+  /** When the clear runs: at once, after the clear in flight, once custody settles; null for none. */
+  readonly at: 'now' | 'queued' | 'withheld' | null
 }
 
 /** A page the Player opened, watched for a consent wall (#492). */
 interface ConsentWatch {
-  readonly video: string
+  readonly song: Song
   /** The landing, on the clock. */
   readonly from: number
   /** When a wall was cleared over it, on the clock; null while none was. */
@@ -178,7 +196,7 @@ export interface Player {
 }
 
 export interface PlayerDeps {
-  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'evaluateInFrames' | 'clearConsent' | 'state'>
+  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'evaluateInFrames' | 'clearConsent' | 'onConsentDrawn' | 'state'>
   /** A results page's HTML, fetched with the pane's session (its cookies, its consent). */
   fetchResults(url: string): Promise<string>
   /** Waits between reads of a page still building; real time when absent. */
@@ -204,6 +222,8 @@ export interface PlayerDeps {
   onStart?(start: PlayerStart): void
   /** Hears every consent wall cleared over a page the Player opened (#492): the perf log's `media-consent`. */
   onConsent?(consent: PlayerConsent): void
+  /** Hears every wall the page told of as it drew (#496): the perf log's `consent-told`. */
+  onConsentTold?(told: PlayerConsentTold): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
   /** The audio road (#502), behind its switch; absent, every song opens on the watch page as before. */
@@ -248,12 +268,10 @@ const PRESSED_START_MS = 2_500
  * measured — over 56 kept runs on 2026-10-28 (fresh profile, Xvfb) YouTube's
  * consent sheet drew 2.1–4.5 s or 8.5–11.9 s after the watch landing, once
  * 15.3 s, each after the landing's own clear had run; the bound is about
- * twice the latest. A look on a page with no wall finds nothing and costs
- * an evaluate.
+ * twice the latest. It is looked for once at the landing; after that the
+ * page signals a wall as it draws (#496).
  */
 const CONSENT_WATCH_MS = 30_000
-/** How often it is looked for: a guess — each look is one small evaluate, and a wall stays up at most this long before it is cleared. */
-const CONSENT_LOOK_MS = 1_000
 /** How far the element's time must move to be a start (s): one that plays 0.5–1.3 s and stops is not (#488, the kept runs at 919f058f). */
 const PLAYED_S = 1.5
 /** How much `louder` and `quieter` move the volume. */
@@ -317,6 +335,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let consentWatch: ConsentWatch | null = null
   /** Where the song plays (#502): every read and control of it goes there. */
   let road: Road = 'page'
+  // Every wall the page signals as it draws (#496), heard for the Player's life: the browser's own clear is on the Player's road.
+  browser.onConsentDrawn?.((drawn) => consentDrawn(drawn))
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
   let published = 'null'
 
@@ -444,50 +464,105 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /**
-   * The page just opened, watched for a consent wall (#492): the browser's
-   * own clear (ADR 0061), looked for every {@link CONSENT_LOOK_MS} from the
-   * landing for {@link CONSENT_WATCH_MS}, since a wall can draw after the
-   * landing settled — YouTube's sheet over a watch page on a fresh profile
-   * holds its song. In the background: the song's start waits on nothing.
-   * It ends on the first clear, or when the Player opens another page.
+   * The page just opened, watched for a consent wall (#492) for
+   * {@link CONSENT_WATCH_MS}, since a wall can draw after the landing
+   * settled — YouTube's sheet over a watch page on a fresh profile holds its
+   * song. One look at the landing, for a wall up before the watch began;
+   * from then on the page signals a wall as it draws (#496) and the browser's
+   * own clear (ADR 0061) runs at once. In the background: the song's start
+   * waits on nothing. It ends on the first clear, a pause, or when the
+   * Player opens another page.
    */
   function watchConsent(song: Song): void {
     if (browser.clearConsent === undefined) return
-    const mine: ConsentWatch = { video: song.id, from: now(), at: null, looking: null, honoured: false, started: false, paused: false }
+    const mine: ConsentWatch = { song, from: now(), at: null, looking: null, honoured: false, started: false, paused: false }
     consentWatch = mine
-    void (async () => {
-      for (let look = 0; consentWatch === mine && Math.max(now() - mine.from, look * CONSENT_LOOK_MS) < CONSENT_WATCH_MS; look += 1) {
+    void clearWall(mine, null, undefined)
+  }
+
+  /** The Player's own pause, on the clock: a wall the page signals after it is not cleared for the media it paused (#496). */
+  let pausedAt = -Infinity
+
+  /**
+   * A consent wall the page signalled as it drew (#496), cleared at once by
+   * the browser's own clear, by kind: over the song the Player opened while
+   * its watch runs, or over media playing on any page — never for the site,
+   * and never over media the Player has just paused (a clear lets a page
+   * start what its wall held). A wall over a page with nothing playing is
+   * the next Command's collect's, as it always was.
+   */
+  function consentDrawn(drawn: ConsentDrawn): void {
+    const heard = now()
+    const watch = consentWatch !== null && heard - consentWatch.from < CONSENT_WATCH_MS ? consentWatch : null
+    const ours = watch !== null && videoIdOf(browser.state().url ?? '') === watch.song.id
+    // The page counts media paused within CONSENT_PLAYED_MS as playing: the Player's own pause in that window is not a wall's.
+    const kind = drawn.playing && heard - drawn.ageMs >= pausedAt + CONSENT_PLAYED_MS
+    const way: ConsentToldRoad = ours ? 'ours' : !drawn.playing ? 'nothing-playing' : kind ? 'kind' : 'own-pause'
+    const at = way === 'ours' || way === 'kind' ? (clearingWall ? 'queued' : withheld !== null ? 'withheld' : 'now') : null
+    deps.onConsentTold?.({ ...drawn, road: way, at })
+    if (at === null) return
+    void clearWall(ours ? watch : null, heard - drawn.ageMs, drawn)
+  }
+
+  /** Custody holds the page (#433): the wall is looked for again once it settles, the look first — the page told its showing once. */
+  function lookOnceSettled(watch: ConsentWatch | null, drawnAt: number | null): void {
+    const waiting = withheld as Promise<void> | null
+    if (waiting !== null) void waiting.then(() => clearWall(watch, drawnAt, undefined))
+  }
+
+  /** The browser's clear, one at a time. The page tells each showing once, so one told during a clear is kept and cleared after it. */
+  let clearingWall = false
+  let toldDuring: { readonly watch: ConsentWatch | null; readonly drawnAt: number | null; readonly drawn: ConsentDrawn | undefined } | null = null
+
+  async function clearWall(watch: ConsentWatch | null, drawnAt: number | null, drawn: ConsentDrawn | undefined): Promise<void> {
+    if (browser.clearConsent === undefined) return
+    if (clearingWall) {
+      toldDuring = { watch, drawnAt, drawn }
+      return
+    }
+    // The pane left the song's page (a Command's navigate, a link): the page is no longer the Player's to clear.
+    if (watch !== null && (consentWatch !== watch || videoIdOf(browser.state().url ?? '') !== watch.song.id)) return
+    if (withheld !== null) return lookOnceSettled(watch, drawnAt)
+    clearingWall = true
+    const url = browser.state().url ?? ''
+    let cleared: ConsentCleared | null = null
+    const from = now()
+    try {
+      const clearing = browser.clearConsent(drawn === undefined ? undefined : { shown: drawn.showing, playing: drawn.playing })
+      if (watch !== null) watch.looking = clearing.catch(() => null)
+      cleared = await clearing
+    } catch (error) {
+      // A custody hold refuses the clear (#433): one fault for the hold, and the wall looked for again once it settles.
+      if (error instanceof WithheldResourceError && deps.custody !== undefined) {
         if (withheld === null) {
-          // The pane left the song's page (a Command's navigate, a link): the page is no longer the Player's to clear.
-          if (videoIdOf(browser.state().url ?? '') !== song.id) return
-          let line: string | null = null
-          try {
-            const looking = browser.clearConsent!()
-            mine.looking = looking.catch(() => null)
-            line = await looking
-          } catch (error) {
-            // A custody hold refuses the look (#433): one fault for the hold, and no look until it settles, as an evaluate.
-            if (error instanceof WithheldResourceError && deps.custody !== undefined) {
-              if (withheld === null) {
-                reportFault('music.player.clearConsent', error)
-                waitOutWithheld(deps.custody)
-              }
-            } else {
-              reportFault('music.player.clearConsent', error)
-            }
-          } finally {
-            mine.looking = null
-          }
-          if (line !== null) {
-            mine.at = now()
-            deps.onConsent?.({ video: song.id, ms: clearedMs(mine)!, afterStart: mine.started, line })
-            if (mine.paused) await holdPaused(song)
-            return
-          }
+          reportFault('music.player.clearConsent', error)
+          waitOutWithheld(deps.custody)
         }
-        await sleep(CONSENT_LOOK_MS)
+        lookOnceSettled(watch, drawnAt)
+      } else {
+        reportFault('music.player.clearConsent', error)
       }
-    })()
+    } finally {
+      clearingWall = false
+      if (watch !== null) watch.looking = null
+    }
+    const told = toldDuring
+    toldDuring = null
+    // A wall the page told of while this clear ran (a landing's look that ran a beat before it drew) is cleared now.
+    if (told !== null) void clearWall(told.watch, told.drawnAt, told.drawn)
+    if (cleared === null) return
+    if (watch !== null) watch.at = now()
+    deps.onConsent?.({
+      video: watch?.song.id ?? videoIdOf(url),
+      ms: watch === null ? null : clearedMs(watch),
+      afterStart: watch === null || watch.started,
+      line: cleared.line,
+      // From the draw the page signalled to the click; a wall up at the landing's look counts from the look.
+      drawToClickMs: Math.round(from - (drawnAt ?? from) + cleared.clickMs),
+      goneMs: Math.round(cleared.goneMs),
+      gone: cleared.gone,
+    })
+    if (watch?.paused === true) await holdPaused(watch.song)
   }
 
   /**
@@ -697,7 +772,7 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /** The consent watch on this video's page; null when the Player opened another since. */
   function watchOf(video: string): ConsentWatch | null {
-    return consentWatch !== null && consentWatch.video === video ? consentWatch : null
+    return consentWatch !== null && consentWatch.song.id === video ? consentWatch : null
   }
 
   /** A start, decided: its page's watch told a wall cleared from here on comes after it, and the start recorded. */
@@ -1163,6 +1238,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         return playSong(back.song, current, `Back to ${quoted(back.song.title)}.`, () => previous(state).queue)
       }
       case 'pause':
+        pausedAt = now()
         return onElement({ op: 'pause' }, () => STOPPED_ANSWERS.paused, (queue) => {
           ownPause = true
           return pause(queue)
@@ -1219,6 +1295,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       // A pause ends the consent watch (#489): a wall cleared after it lets the page start the song it was told to stop.
       if (consentWatch !== null) consentWatch.paused = true
       consentWatch = null
+      pausedAt = now()
       // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
       // The stream on the audio road pauses beside the pane's media (#502): its element is the song's own.
       const streamPaused = road === 'audio' ? evaluate<PausedAll>(PAUSE_ALL_SCRIPT) : Promise.resolve(null)

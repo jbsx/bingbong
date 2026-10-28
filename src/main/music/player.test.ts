@@ -5,8 +5,8 @@ import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
-import { createPlayer, type PlayerConsent, type PlayerStart, type SongMemory } from './player'
-import { SHEET_DISMISSAL, SHEET_DRAWS_AT, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
+import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerStart, type SongMemory } from './player'
+import { SHEET_DISMISSAL, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
 // page's video in the pane over CDP. Tested against a scripted YouTube:
@@ -726,9 +726,9 @@ describe('a browser custody withholds (#433)', () => {
         asked += 1
         return refusing ? Promise.reject(new WithheldResourceError('evaluate')) : browser.evaluate<T>(expression)
       },
-      clearConsent: (): Promise<string | null> => {
+      clearConsent: (options?: { readonly shown?: number }) => {
         asked += 1
-        return refusing ? Promise.reject(new WithheldResourceError('clearConsent')) : browser.clearConsent()
+        return refusing ? Promise.reject(new WithheldResourceError('clearConsent')) : browser.clearConsent(options)
       },
     }
     const custody = { settled: () => settledEdge }
@@ -1196,10 +1196,18 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
     const starts: PlayerStart[] = []
     const consents: PlayerConsent[] = []
-    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, onStart: (start) => starts.push(start), onConsent: (consent) => consents.push(consent) })
+    const told: PlayerConsentTold[] = []
+    const player = createPlayer({
+      browser,
+      fetchResults: (url) => youtube.fetchResults(url),
+      sleep: async () => {},
+      onStart: (start) => starts.push(start),
+      onConsent: (consent) => consents.push(consent),
+      onConsentTold: (heard) => told.push(heard),
+    })
     const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true)
     const presses = (): number => youtube.controls.filter((op) => op.op === 'play').length
-    return { browser, youtube, player, perform, presses, starts, consents }
+    return { browser, youtube, player, perform, presses, starts, consents, told }
   }
 
   it('a sheet that draws over the watch page after the landing is cleared, and the song starts with no press; the clear is recorded on the start', async () => {
@@ -1225,14 +1233,67 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, consent: expect.any(Number) })])
   })
 
-  it('a page with no wall is only looked at, a bounded number of times, and its start records no clear', async () => {
+  it('a page with no wall is looked at once, at the landing — no poll (#496) — and its start records no clear', async () => {
     const { browser, perform, starts, consents } = sheeted()
     await perform({ kind: 'search', place: 'now' }, 'song a')
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(browser.consentLooks).toBeGreaterThan(0)
-    expect(browser.consentLooks).toBeLessThanOrEqual(30)
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([undefined])
     expect(starts).toEqual([expect.objectContaining({ started: true, consent: null })])
     expect(consents).toEqual([])
+  })
+
+  it('the clear a signal begins is given the page\'s showing: the look is skipped, the page already said the wall is up (#496)', async () => {
+    const { browser, youtube, perform, consents } = sheeted()
+    youtube.starts = 'sheet'
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.consentClears).toEqual([undefined, 1])
+    expect(consents).toEqual([expect.objectContaining({ video: 'aaaaaaaaaaa', ms: expect.any(Number), drawToClickMs: expect.any(Number), gone: true })])
+  })
+
+  it('a wall signalled over media playing on a page the Player did not open is cleared, by kind (#496)', async () => {
+    const { browser, consents } = sheeted()
+    await browser.navigate('https://news.example/clip')
+    browser.consentClear = () => 'dismissed consent dialog: clicked [2] "Reject all"'
+    browser.drawConsent({ playing: true, showing: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([1])
+    expect(consents).toEqual([expect.objectContaining({ video: null, ms: null, afterStart: true, line: 'dismissed consent dialog: clicked [2] "Reject all"' })])
+  })
+
+  it('a wall the page tells of while a clear is in flight is cleared once that clear returns: the page tells each showing once (#496)', async () => {
+    const { browser, consents, told } = sheeted()
+    await browser.navigate('https://news.example/clip')
+    let release: (line: string | null) => void = () => {}
+    browser.consentClear = () => new Promise<string | null>((resolve) => (release = resolve))
+    browser.drawConsent({ playing: true, showing: 1 })
+    // The sheet goes and comes while the first clear is out: a second showing, told during it.
+    browser.drawConsent({ playing: true, showing: 2 })
+    expect(browser.consentClears).toEqual([1])
+    expect(told.map((heard) => [heard.road, heard.at])).toEqual([['kind', 'now'], ['kind', 'queued']])
+    browser.consentClear = () => 'dismissed consent dialog: clicked [2] "Reject all"'
+    release(null)
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([1, 2])
+    expect(consents).toEqual([expect.objectContaining({ line: 'dismissed consent dialog: clicked [2] "Reject all"' })])
+  })
+
+  it('a wall signalled with nothing playing on a page the Player did not open is the next Command\'s collect\'s, as before', async () => {
+    const { browser, told } = sheeted()
+    await browser.navigate('https://news.example/article')
+    browser.drawConsent({ playing: false, showing: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([])
+    expect(told).toEqual([expect.objectContaining({ road: 'nothing-playing', at: null })])
+  })
+
+  it('a wall signalled over media the Player has just paused is not cleared: a clear lets a page start what its wall held', async () => {
+    const { browser, player, told } = sheeted()
+    await browser.navigate('https://news.example/clip')
+    await player.pauseAll()
+    browser.drawConsent({ playing: true, showing: 1, ageMs: 0 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentClears).toEqual([])
+    expect(told).toEqual([expect.objectContaining({ road: 'own-pause', at: null })])
   })
 
   it('the watch stops at the first clear: one sheet, one clear', async () => {
@@ -1276,8 +1337,8 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: () => new Promise((resolve) => setTimeout(resolve, 0)) })
     let live = true
     const played = player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)
-    // The look that finds the sheet is out: the Command ends and the runner pauses the pane under it.
-    while (browser.consentLooks < SHEET_DRAWS_AT) await new Promise((resolve) => setTimeout(resolve, 0))
+    // The clear the sheet's signal began is out (#496): the Command ends and the runner pauses the pane under it.
+    while (!browser.consentClears.includes(1)) await new Promise((resolve) => setTimeout(resolve, 0))
     live = false
     await player.pauseAll()
     await played
@@ -1295,25 +1356,15 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     expect(presses()).toBe(0)
   })
 
-  it('the watch ends once the pane leaves the song\'s page: a Command\'s page is never looked at or cleared', async () => {
-    const browser = new FakeBrowser()
-    const youtube = new ScriptedYouTube(browser)
-    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
-    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
-    // The watch's own waits held until released: the song starts, then the pane is taken elsewhere.
-    const held: (() => void)[] = []
-    const sleep = (ms: number): Promise<void> => (ms === 1_000 ? new Promise<void>((resolve) => held.push(resolve)) : Promise.resolve())
-    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep })
-    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+  it('the watch ends once the pane leaves the song\'s page: a Command\'s page with nothing playing is never cleared', async () => {
+    const { browser, perform } = sheeted()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
     const looks = browser.consentLooks
-    expect(looks).toBeGreaterThan(0)
+    expect(looks).toBe(1)
     await browser.navigate('https://www.bbc.co.uk/news')
-    for (let turn = 0; turn < 5; turn += 1) {
-      held.splice(0).forEach((release) => release())
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
+    browser.drawConsent({ playing: false, showing: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(browser.consentLooks).toBe(looks)
-    expect(held).toHaveLength(0)
   })
 
   it('a browser with no clear opens and plays as before', async () => {

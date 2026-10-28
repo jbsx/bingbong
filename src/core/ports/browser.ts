@@ -13,6 +13,32 @@ import type { Mark } from '../browser/marks'
  */
 export type PageLanding = 'quiet' | 'loaded' | 'capped'
 
+/** A consent wall the page signalled as it drew (#496): its own watch saw it shown. */
+export interface ConsentDrawn {
+  /** How long before the browser heard it the page saw it shown (ms). */
+  readonly ageMs: number
+  /** Media on the page was playing as it drew. */
+  readonly playing: boolean
+  /** Which showing on this document: the page tells each once, and a showing whose collect cleared nothing is not collected again. */
+  readonly showing: number
+}
+
+/** A consent wall cleared (#492), and where its clear's time went (#496), each in ms. */
+export interface ConsentCleared {
+  /** The browser's dismissal line. */
+  readonly line: string
+  /** From the clear's start to the end of its collect. */
+  readonly collectMs: number
+  /** The decline ask (ADR 0089). */
+  readonly askMs: number
+  /** From the clear's start to the click. */
+  readonly clickMs: number
+  /** From the click to the sheet gone, or to the wait's bound. */
+  readonly goneMs: number
+  /** The sheet was seen gone inside the bound. */
+  readonly gone: boolean
+}
+
 export interface BrowserState {
   url: string | null
   title: string | null
@@ -135,9 +161,20 @@ export interface BrowserController {
    * or a pinned layer; only then the page is collected and a Tier-1 wall
    * cleared exactly as a navigate's landing clears it. The dismissal line,
    * null when none was cleared. For a caller that watches a page it landed
-   * (the Player), where a wall draws after the landing has settled.
+   * (the Player), where a wall draws after the landing has settled. Given
+   * the page's own `shown` (its {@link ConsentDrawn.showing}), the look is
+   * skipped: the page already said the wall is up (#496); with its
+   * `playing`, media that began playing under the wall is the page changed,
+   * and the wall is collected once more.
    */
-  clearConsent?(): Promise<string | null>
+  clearConsent?(options?: { readonly shown?: number; readonly playing?: boolean }): Promise<ConsentCleared | null>
+  /**
+   * Hears every consent wall the page signals as it draws (#496): the page's
+   * own watch, by kind on any site, armed from a document's start for 30 s
+   * and while any media on it plays. Hearing clears nothing: the hearer
+   * clears it through {@link clearConsent}. Returns the unsubscribe.
+   */
+  onConsentDrawn?(listener: (drawn: ConsentDrawn) => void): () => void
   /**
    * A Page Read (ADR 0047): the page's refs and one part of its whole text,
    * part 1 — from the top — when none is named. Rejects for a part the

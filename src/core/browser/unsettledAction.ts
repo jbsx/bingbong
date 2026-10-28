@@ -165,6 +165,9 @@ const WITHHELD_READS: Readonly<Record<(typeof SYNCHRONOUS_READERS)[number], unkn
  */
 const ALWAYS_ALLOWED: readonly string[] = ['stop']
 
+/** The port's subscriptions (#496) pass custody too: hearing acts on no page, and a listener added while withheld must not be lost. */
+const SYNCHRONOUS_LISTENERS = ['onConsentDrawn'] as const
+
 /** The members of a port that answer something other than a promise. */
 type NotPromising<T> = { [K in keyof T]-?: NonNullable<T[K]> extends (...args: never[]) => Promise<unknown> ? never : K }[keyof T]
 
@@ -176,7 +179,7 @@ type NotPromising<T> = { [K in keyof T]-?: NonNullable<T[K]> extends (...args: n
  * rather than a hole discovered at runtime.
  */
 type PinnedSynchronousReaders = NotPromising<BrowserController & VisualGroundingController> extends
-  (typeof SYNCHRONOUS_READERS)[number]
+  (typeof SYNCHRONOUS_READERS)[number] | (typeof SYNCHRONOUS_LISTENERS)[number]
   ? true
   : never
 const _synchronousReadersArePinned: PinnedSynchronousReaders = true
@@ -243,7 +246,7 @@ export function holdBrowserCustody<T extends BrowserController>(controller: T): 
           // through, the state an abandoned action left behind.
           withheld() ? WITHHELD_READS[action as (typeof SYNCHRONOUS_READERS)[number]] : method.apply(target, args)
       }
-      if (ALWAYS_ALLOWED.includes(action)) return (...args: unknown[]): unknown => method.apply(target, args)
+      if (ALWAYS_ALLOWED.includes(action) || (SYNCHRONOUS_LISTENERS as readonly string[]).includes(action)) return (...args: unknown[]): unknown => method.apply(target, args)
       return (...args: unknown[]): unknown => {
         if (withheld()) return Promise.reject(new WithheldResourceError(action))
         let call: Promise<unknown>

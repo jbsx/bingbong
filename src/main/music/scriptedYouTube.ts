@@ -37,13 +37,13 @@ export interface ScriptedWatch {
  * never, its press refused with `NotAllowedError`; `reopen`, holding
  * no data however pressed until its page is loaded again, then by itself;
  * or, `sheet` (#492), under a consent sheet that draws on the
- * {@link SHEET_DRAWS_AT}th consent look and holds the element unfed
- * however pressed, until it is cleared — then by itself, and no page of
- * the profile shows it again.
+ * {@link SHEET_DRAWS_AT}th read of the page, the page signalling it as it
+ * draws (#496), and holds the element unfed however pressed, until it is
+ * cleared — then by itself, and no page of the profile shows it again.
  */
 export type ScriptedStart = 'itself' | 'press' | 'stalls' | 'refuses' | 'reopen' | 'sheet'
 
-/** Which consent look first finds the sheet drawn (#492): a sheet draws after the landing settled. */
+/** Which read of the page first finds the sheet drawn (#492): a sheet draws after the landing settled. */
 export const SHEET_DRAWS_AT = 3
 /** The browser's dismissal line for the sheet. */
 export const SHEET_DISMISSAL = 'dismissed consent dialog: clicked [5] "Reject the use of cookies and other data for the purposes d…"'
@@ -82,8 +82,8 @@ export class ScriptedYouTube {
   private refused: string | null = null
   /** A stalling element was pressed: it plays on. */
   private pressed = false
-  /** The consent sheet over this page (#492), and how often it was looked for; null with none. */
-  private sheet: { looks: number } | null = null
+  /** The consent sheet over this page (#492), how often the page was read under it, and whether it has drawn; null with none. */
+  private sheet: { reads: number; drawn: boolean } | null = null
   /** The sheet was cleared once: the profile has consented. */
   private consented = false
   /** How often the browser's clear cleared the sheet. */
@@ -138,9 +138,7 @@ export class ScriptedYouTube {
   /** The browser's consent clear (#492): the sheet, once drawn, is cleared — after {@link sheetClearTurns} timer turns — and the element fed. */
   private async clearSheet(): Promise<string | null> {
     this.onPage()
-    if (this.sheet === null) return null
-    this.sheet.looks += 1
-    if (this.sheet.looks < SHEET_DRAWS_AT) return null
+    if (this.sheet === null || !this.sheet.drawn) return null
     for (let turn = 0; turn < this.sheetClearTurns; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
     this.sheet = null
     this.consented = true
@@ -152,6 +150,12 @@ export class ScriptedYouTube {
 
   private evaluate(expression: string): unknown {
     this.onPage()
+    const sheet = this.sheet
+    if (sheet !== null && !sheet.drawn && ++sheet.reads >= SHEET_DRAWS_AT) {
+      sheet.drawn = true
+      // The page's own watch tells of it as it draws (#496), just after the read that drew it.
+      queueMicrotask(() => this.browser.drawConsent({ playing: false, showing: 1 }))
+    }
     return this.answer(expression)
   }
 
@@ -167,7 +171,7 @@ export class ScriptedYouTube {
         this.readyState = this.reopenLoads === 1 ? 0 : 4
       }
       if (this.starts === 'sheet') {
-        this.sheet = this.consented ? null : { looks: 0 }
+        this.sheet = this.consented ? null : { reads: 0, drawn: false }
         this.readyState = this.consented ? 4 : 0
       }
       this.element = { ...this.element, paused: this.starts === 'press' || this.starts === 'refuses', loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
