@@ -3,7 +3,7 @@
   "input": "typed",
   "lines": [{ "words": "the second" }],
   "expect": {
-    "said": [{ "means": "it is opening or playing a Radiohead album, the one the person picked" }],
+    "said": [{ "means": "it is opening or playing Radiohead's second album" }],
     "lines": ["done"]
   },
   "evidence": ["none yet"],
