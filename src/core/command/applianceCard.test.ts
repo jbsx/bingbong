@@ -139,6 +139,11 @@ describe('the running Command on the Appliance Card (#489)', () => {
     expect(questions.action.options.say_doing).toContain('Still on “play let down by radiohead”: loading youtube.com.')
   })
 
+  it('says how long before the line being read the running one was given, when the runner knows (T1)', () => {
+    const state = applianceState('Page.', { ...WATCH, running: { words: 'Back to-', stage: 'Thinking', done: [], sinceMs: 1039 } })
+    expect(state).toContain('Still running, from the user\'s line before this one, given 1.0 s before it: "Back to-"')
+  })
+
   it('reads the Fate, unsure or missing as goes on; and the doing fact only while a line runs', () => {
     const view = { ...WATCH, running: RUNNING }
     expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('waits') } as unknown as CommandAnswers, view)).toBe('waits')

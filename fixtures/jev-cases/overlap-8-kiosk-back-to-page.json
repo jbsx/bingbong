@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"Page.\"\nPage open: https://www.youtube.com/watch?v=FriyzEMHUDQ — \"Iraada - Niyam - YouTube\"\nPlaying: \"Iraada - Niyam - YouTube\" playing 2:08/4:18 volume 34% loop on\nStill running, from the user's line before this one: \"Back to-\"\nIts stage: Thinking",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"Page.\"\nPage open: https://www.youtube.com/watch?v=FriyzEMHUDQ — \"Iraada - Niyam - YouTube\"\nPlaying: \"Iraada - Niyam - YouTube\" playing 2:08/4:18 volume 34% loop on\nStill running, from the user's line before this one, given 1.0 s before it: \"Back to-\"\nIts stage: Thinking",
     "questions": {
       "action": {
         "type": "choice",
@@ -81,7 +81,7 @@
           "ends": "a new request, or a stop: the running line ends and the words are done instead",
           "joins": "they finish or correct the running line (its missing words, another artist, version or one), so the two are read as one line",
           "waits": "they act on what the running line is opening (pause it, loop it, skip in it, turn it down): done once it is there",
-          "goes_on": "they are about something else, ask about the wait, or are not for the app: the running line goes on"
+          "goes_on": "they are about something else, ask about the wait, or are not for the app (a remark, noise): the running line goes on"
         }
       },
       "slot": {
@@ -129,7 +129,8 @@
     "running": {
       "words": "Back to-",
       "stage": "Thinking",
-      "done": []
+      "done": [],
+      "sinceMs": 1039
     },
     "base": {
       "state": "The user spoke to the appliance, a voice-driven web browser: \"Page.\"\nPage open: https://www.youtube.com/watch?v=FriyzEMHUDQ — \"Iraada - Niyam - YouTube\"\nPlaying: \"Iraada - Niyam - YouTube\" playing 2:08/4:18 volume 34% loop on",

@@ -5514,8 +5514,9 @@ describe('an Overlap (#489): a line given while another runs is read against it'
   it('the card carries the running Command — its words on a labelled line, its stage — and asks its Fate; the doing fact says it, and the line goes on', async () => {
     const { decision, asks, events, runner, first, turnId, land, browser } = await running()
     decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none'), fate: choice('goes_on') } })
-    await runner.run('what are you doing')
-    expect(asks[0]!.state).toContain('Still running, from the user\'s line before this one: "open bbc.com"')
+    await runner.run('what are you doing', { endpointAt: 1200 })
+    // How long before this line the running one was given: a cut-off line's rest comes within a second or so (T1).
+    expect(asks[0]!.state).toMatch(/Still running, from the user's line before this one, given \d+\.\d s before it: "open bbc\.com"/)
     expect(asks[0]!.state).toContain('Its stage: Opening bbc.com')
     expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'fate', 'slot'])
     expect(said(events)).toEqual(['Still on “open bbc.com”: opening bbc.com.'])

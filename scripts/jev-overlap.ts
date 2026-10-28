@@ -52,7 +52,8 @@ const SOURCES: readonly Source[] = [
   { name: '7-is-it-working', turnId: 'turn-mvr7eee9-2', run: `7-is-it-working/${MAMMOTH}/p1`, expect: [{ question: 'action', label: 'say_doing' }] },
   { name: '7-what-are-you-doing', turnId: 'turn-mvr7gp6p-2', run: `7-what-are-you-doing/${MAMMOTH}/p1`, expect: [{ question: 'action', label: 'say_doing' }] },
   { name: '14-remark-during-task', turnId: 'turn-mvr8aguu-v2', run: `14-remark-during-task/${MAMMOTH}/p3`, expect: fate('goes_on') },
-  { name: '8-kiosk-back-to-page', turnId: 'turn-mvphyqdu-vl', kiosk: { running: { words: 'Back to-', stage: 'Thinking', done: [] } }, expect: fate('joins') },
+  // The two halves' words came 1039 ms apart (the kiosk perf log's endpoint-to-words spans, 623856 → 624895).
+  { name: '8-kiosk-back-to-page', turnId: 'turn-mvphyqdu-vl', kiosk: { running: { words: 'Back to-', stage: 'Thinking', done: [], sinceMs: 1039 } }, expect: fate('joins') },
 ]
 
 interface Ask {
@@ -89,7 +90,10 @@ function runningAt(events: readonly Timed[], at: number, own: string): RunningCo
   const play = ofLine.find((each) => each.event.type === 'tool_call' && each.event.name === 'play')?.event.args?.words
   const landed = new Set(ofLine.filter((each) => each.event.type === 'tool_result').map((each) => each.event.turnId))
   const done = ofLine.filter((each) => each.event.type === 'command' && landed.has(each.event.turnId)).map((each) => each.event.action!)
-  return { words: first.event.detail!, stage, ...(detail !== undefined && detail !== '' ? { detail } : {}), done, ...(typeof play === 'string' ? { opening: play } : {}) }
+  // How long before the claimed line it was given: each line's first event is its Thinking at arrival.
+  const given = events.find((each) => each.event.turnId === own)
+  const since = given !== undefined ? { sinceMs: given.t - first.t } : {}
+  return { words: first.event.detail!, stage, ...(detail !== undefined && detail !== '' ? { detail } : {}), done, ...(typeof play === 'string' ? { opening: play } : {}), ...since }
 }
 
 function caseOf(source: Source, base: { state: string; questions: DecisionQuestions }, running: RunningCommand, transcript: string, model: string | undefined, at: number): object {

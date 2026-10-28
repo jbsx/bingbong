@@ -587,6 +587,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly turnId: string
     readonly words: string
     readonly submission: number
+    /** Its Endpoint (monotonic): the card says how long before the line being read it was given (#489). */
+    readonly given: number
     /** The Status Capsule's stage word and detail (#428), as last published for it. */
     stage: string
     detail: string | undefined
@@ -656,10 +658,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The live line a Task, hop or Step belongs to (#489). */
   const liveOfTask = (id: string): LiveLine | undefined => live.get(lineOfTurn.get(id) ?? id)
 
-  /** A live line as the card carries it (#489): its words, stage, actions and the media its `play` is opening. */
-  function runningOf(line: LiveLine): RunningCommand {
+  /** A live line as the card carries it (#489): its words, stage, actions, the media its `play` is opening, and how long before `by` (the line being read) it was given. */
+  function runningOf(line: LiveLine, by?: string): RunningCommand {
     const opening = line.verb === 'play' && line.opening !== undefined ? { opening: line.opening } : {}
-    return { words: line.words, stage: line.stage, ...(line.detail !== undefined ? { detail: line.detail } : {}), done: [...(line.task?.actions ?? [])], ...opening }
+    const later = by !== undefined ? live.get(by) : undefined
+    const since = later !== undefined ? { sinceMs: later.given - line.given } : {}
+    return { words: line.words, stage: line.stage, ...(line.detail !== undefined ? { detail: line.detail } : {}), done: [...(line.task?.actions ?? [])], ...opening, ...since }
   }
 
   /**
@@ -1029,7 +1033,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (isEnded(submission)) return heard
     const next = runningBefore(submission)
     reading = { turnId, submission }
-    const again = await read(turnId, text, null, spoken, { split: true, ...(next !== null ? { running: runningOf(next) } : {}) })
+    const again = await read(turnId, text, null, spoken, { split: true, ...(next !== null ? { running: runningOf(next, turnId) } : {}) })
     if (reading?.turnId === turnId) reading = null
     return settleFate(turnId, text, submission, again, spoken)
   }
@@ -3467,7 +3471,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (wasIdle) idleAt = submission
       reading = { turnId, submission }
       let over: () => void = () => {}
-      live.set(turnId, { turnId, words: trimmed, submission, stage: 'Thinking', detail: undefined, over: new Promise<void>((resolve) => (over = resolve)) })
+      live.set(turnId, { turnId, words: trimmed, submission, given: endpointAt, stage: 'Thinking', detail: undefined, over: new Promise<void>((resolve) => (over = resolve)) })
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared
       prepared = null
@@ -3487,7 +3491,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         lastAnswer = null
         const runningNow = deps.applianceCard !== undefined ? runningBefore(submission) : null
-        const first = await read(turnId, lineRead, pending, source === 'spoken', { split: true, ...(runningNow !== null ? { running: runningOf(runningNow) } : {}) })
+        const first = await read(turnId, lineRead, pending, source === 'spoken', { split: true, ...(runningNow !== null ? { running: runningOf(runningNow, turnId) } : {}) })
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         const heard = await settleFate(turnId, lineRead, submission, first, source === 'spoken')

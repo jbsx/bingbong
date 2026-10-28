@@ -19,6 +19,8 @@ export interface RunningCommand {
   readonly done: readonly string[]
   /** The media it is opening, in the words that named it, before the media exists. */
   readonly opening?: string
+  /** How long before the line being read it was given: a cut-off line's rest comes within a second or so, a new request later. */
+  readonly sinceMs?: number
 }
 
 /** What a line given during an Overlap means for the Command still running (CONTEXT.md, Fate). */
@@ -34,7 +36,7 @@ function stageOf(running: RunningCommand): string {
 /** The running Command's lines on the card's state (T1, measured on the gate). */
 export function runningLines(running: RunningCommand): string[] {
   return [
-    `Still running, from the user's line before this one: ${JSON.stringify(running.words)}`,
+    `Still running, from the user's line before this one${running.sinceMs !== undefined ? `, given ${(Math.max(0, running.sinceMs) / 1000).toFixed(1)} s before it` : ''}: ${JSON.stringify(running.words)}`,
     `Its stage: ${stageOf(running)}`,
     ...(running.done.length > 0 ? [`Its done so far: ${running.done.join('; ')}`] : []),
     ...(running.opening !== undefined ? [`It is opening: ${JSON.stringify(running.opening)}, not playing yet`] : []),
@@ -50,7 +52,7 @@ export function fateQuestion(): DecisionChoiceQuestion {
       ends: 'a new request, or a stop: the running line ends and the words are done instead',
       joins: 'they finish or correct the running line (its missing words, another artist, version or one), so the two are read as one line',
       waits: 'they act on what the running line is opening (pause it, loop it, skip in it, turn it down): done once it is there',
-      goes_on: 'they are about something else, ask about the wait, or are not for the app: the running line goes on',
+      goes_on: 'they are about something else, ask about the wait, or are not for the app (a remark, noise): the running line goes on',
     },
   }
 }

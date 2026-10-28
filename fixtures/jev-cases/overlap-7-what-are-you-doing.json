@@ -11,7 +11,7 @@
     }
   ],
   "ask": {
-    "state": "The user spoke to the appliance, a voice-driven web browser: \"what are you doing\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing\nStill running, from the user's line before this one: \"play let down by radiohead\"\nIts stage: Playing let down by radiohead\nIt is opening: \"let down by radiohead\", not playing yet",
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"what are you doing\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing\nStill running, from the user's line before this one, given 1.2 s before it: \"play let down by radiohead\"\nIts stage: Playing let down by radiohead\nIt is opening: \"let down by radiohead\", not playing yet",
     "questions": {
       "action": {
         "type": "choice",
@@ -64,7 +64,7 @@
           "ends": "a new request, or a stop: the running line ends and the words are done instead",
           "joins": "they finish or correct the running line (its missing words, another artist, version or one), so the two are read as one line",
           "waits": "they act on what the running line is opening (pause it, loop it, skip in it, turn it down): done once it is there",
-          "goes_on": "they are about something else, ask about the wait, or are not for the app: the running line goes on"
+          "goes_on": "they are about something else, ask about the wait, or are not for the app (a remark, noise): the running line goes on"
         }
       },
       "slot": {
@@ -114,7 +114,8 @@
       "stage": "Playing",
       "detail": "let down by radiohead",
       "done": [],
-      "opening": "let down by radiohead"
+      "opening": "let down by radiohead",
+      "sinceMs": 1190
     },
     "base": {
       "state": "The user spoke to the appliance, a voice-driven web browser: \"what are you doing\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing",
