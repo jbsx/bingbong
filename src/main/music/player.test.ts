@@ -1163,6 +1163,25 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
     expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
   })
+
+  it('a Command ended while the start is being read at its bound is never pressed (#489, the overlap gate\'s 1-replace)', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.starts = 'press'
+    // The later line ends this one while the start's read at the self-start bound is out: the pane is paused under it, so a press would start the song.
+    let live = true
+    let reads = 0
+    const evaluator = browser.evaluator!
+    browser.evaluator = (expression) => {
+      if (expression.includes('YT_START') && (reads += 1) > 10) live = false
+      return evaluator(expression)
+    }
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {} })
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)).toMatchObject({ superseded: true })
+    expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+  })
 })
 
 describe("a consent wall over a page the Player opened (#492): the browser's own clear", () => {

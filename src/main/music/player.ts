@@ -548,6 +548,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background })
       }
       if (due) {
+        // The Command may have ended during the read (#489): its pane was paused under it, and a press would start the song.
+        if (!current()) return 'superseded'
         await control({ op: 'play' })
         pressed = true
         phase = { at: now(), read, ms: PRESSED_START_MS }
@@ -601,6 +603,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function playOn(song: Song, current: () => boolean, background: boolean): Promise<PlayerStart | 'superseded'> {
     const first = await startOf(song, current, background, false)
     if (first === 'superseded' || first.started) return first
+    if (!current()) return 'superseded'
     try {
       await browser.navigate(watchUrl(song.id))
     } catch (error) {
