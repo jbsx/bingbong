@@ -21,10 +21,10 @@ describe('the person’s voice over the ducked echo, by level (#490)', () => {
     expect(frameLevel(new Float32Array([0.5, -0.5]))).toBeCloseTo(0.5)
   })
 
-  it('finds a loud stretch once it has ended, with the frames ahead of it', () => {
+  it('finds a loud stretch once it has ended, with the frames ahead of it and the quiet that ended it', () => {
     const found = readAll([...echo(40), ...loud(10), ...echo(30)])
-    expect(found).toMatchObject({ from: 30, to: 50 })
     expect(found!.at).toBe(49 + OVER_LEVEL_END_FRAMES)
+    expect(found).toMatchObject({ from: 30, to: found!.at + 1 })
   })
 
   it('never takes the app’s voice before the duck lands', () => {
