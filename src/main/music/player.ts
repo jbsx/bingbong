@@ -191,6 +191,13 @@ export interface Player {
   /** Resolves when the songs opened in the background (an end, a failed landing) have opened. */
   settled(): Promise<void>
   queue(): Queue
+  /**
+   * The search's pick a correction acts on (#498): its title, its words and
+   * whether it is the Queue's song; held while it opens, after the line
+   * opening it was cut off, and while it plays. Null with none, or once
+   * another song took its place.
+   */
+  picked?(): PickHeld | null
   /** What the Idle Screen's card shows (#344); null when the Player holds no song. */
   nowPlaying(): NowPlaying | null
   /** Hears every change to {@link nowPlaying}; the returned function stops it. */
@@ -210,6 +217,13 @@ export interface Player {
   road(): Road
   /** The audio road is wired (#502): a song not read as a video opens there, and leaves the pane alone. */
   readonly audioRoad: boolean
+}
+
+/** The pick a correction acts on (#498), as the card names it. */
+export interface PickHeld {
+  readonly title: string
+  readonly words: string
+  readonly playing: boolean
 }
 
 export interface PlayerDeps {
@@ -1456,6 +1470,14 @@ export function createPlayer(deps: PlayerDeps): Player {
 
     settled: () => background,
     queue: () => state,
+    picked() {
+      if (pick === null) return null
+      const { song } = pick
+      const playing = state.current?.id === song.id
+      // Not the Queue's song: held only while it never played, so a pick that played and gave way is no correction's.
+      if (!playing && (state.current !== null || ended?.id === song.id || state.played.some((each) => each.id === song.id))) return null
+      return { title: song.title, words: pick.words, playing }
+    },
     nowPlaying,
     onChange(listener) {
       listeners.add(listener)

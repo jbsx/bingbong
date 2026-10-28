@@ -25,11 +25,16 @@ registerHooks({
   },
 })
 const { withEnded, withRunning } = (await import('../src/core/command/runningCommand.ts')) as typeof import('../src/core/command/runningCommand')
+const { withPicked } = (await import('../src/core/command/applianceCard.ts')) as typeof import('../src/core/command/applianceCard')
 const { companionCase } = (await import('../src/core/decision/applianceCompanion.ts')) as typeof import('../src/core/decision/applianceCompanion')
 const { JEV_CORPUS_DIR } = (await import('../src/main/decision/jevCorpus.ts')) as typeof import('../src/main/decision/jevCorpus')
 type RunningCommand = import('../src/core/command/runningCommand').RunningCommand
 type EndedCommand = import('../src/core/command/runningCommand').EndedCommand
 type DecisionQuestions = import('../src/core/ports/decisionModel').DecisionQuestions
+type PickedSong = import('../src/core/command/jevReading').PickedSong
+type JoinedLine = import('../src/core/command/jevReading').JoinedLine
+/** A joined line's ask (#498): the pick the line it joined had made, and that line, its Slot kept beside the correction's words. */
+type Joined = { readonly picked: PickedSong; readonly joins: JoinedLine }
 
 /** A claimed line (#489's table), the run that kept its ask, and the answer the owner's row names. */
 interface Source {
@@ -46,6 +51,8 @@ interface Source {
   readonly running?: RunningCommand
   /** The line just ended when the claimed one was read, nothing running (#499): the card carries it in the running line's place. */
   readonly ended?: EndedCommand
+  /** The joined reading's ask, not the Fate's (#498): the pick the first half held, on the card it was read on. */
+  readonly joined?: Joined
 }
 
 const MAMMOTH = 'decision-models_baseten-mammoth-27b-latest'
@@ -91,6 +98,36 @@ const SOURCES: readonly Source[] = [
   },
   // #499: the question about the wait 3.2 s after the play ended (the run of record at 6e0279eb, p3: its `done` at 1793178308958, the
   // question's Thinking at 1793178312183), read alone as none on a card that had forgotten the play. Its doing fact says its end.
+  // #498: the joined reading of the run of record (6e0279eb), the second Appliance ask of each line: the first half's pick held (the page open
+  // names it at p2 and p3; at p1 the correction came 825 ms into the play, as long as p2's search took to pick, so the same pick), and the
+  // first half's Slot kept beside the correction's words (F2).
+  ...(['p1', 'p2', 'p3'] as const).map((point, index) => ({
+    name: `2-correct-the-other-one-joined-${point}`,
+    turnId: ['turn-mvrvh7xx-2', 'turn-mvrvhoic-2', 'turn-mvrvin9r-2'][index]!,
+    run: `2-correct-the-other-one/${MAMMOTH}/${point}`,
+    joined: { picked: { title: 'Johnny Cash - Hurt', words: 'hurt', playing: false }, joins: { words: 'play hurt', slot: 'hurt' } },
+    expect: [{ question: 'action', label: 'correct' }],
+  })),
+  {
+    name: '2-correct-by-coldplay-joined',
+    turnId: 'turn-mvrvdlhx-2',
+    run: `2-correct-by-coldplay/${MAMMOTH}/p2`,
+    joined: { picked: { title: 'Coldplay - Yellow (Official Video)', words: 'yellow', playing: false }, joins: { words: 'play yellow', slot: 'yellow' } },
+    expect: [
+      { question: 'action', label: 'play' },
+      { question: 'slot', label: 's1-1+3-4' },
+    ],
+  },
+  {
+    name: '2-correct-by-radiohead-joined',
+    turnId: 'turn-mvrvftos-2',
+    run: `2-correct-by-radiohead/${MAMMOTH}/p2`,
+    joined: { picked: { title: 'Let Down (Remastered)', words: 'let down', playing: false }, joins: { words: 'play let down', slot: 'let down' } },
+    expect: [
+      { question: 'action', label: 'play' },
+      { question: 'slot', label: 's1-2+4-5' },
+    ],
+  },
   {
     name: '7-is-it-working-after-end',
     turnId: 'turn-mvrw2gvr-2',
@@ -154,10 +191,17 @@ function runningAt(events: readonly Timed[], at: number, own: string): RunningCo
   return { words: first.event.detail!, stage, ...(detail !== undefined && detail !== '' ? { detail } : {}), done, ...(typeof play === 'string' ? { opening: play } : {}), ...since }
 }
 
-/** The line on the card beside the claimed one: still running (#489), or just ended (#499). */
-type Beside = { readonly running: RunningCommand } | { readonly ended: EndedCommand }
+/** The line on the card beside the claimed one: still running (#489), just ended (#499), or joined, its pick held (#498). */
+type Beside = { readonly running: RunningCommand } | { readonly ended: EndedCommand } | { readonly joined: Joined }
+
+/** The words the ask was read on, off its first state line. */
+function wordsOfState(state: string): string {
+  const quoted = /: ("(?:[^"\\]|\\.)*")/.exec(state.split('\n')[0]!)?.[1]
+  return quoted !== undefined ? (JSON.parse(quoted) as string) : ''
+}
 
 function askWith(base: { state: string; questions: DecisionQuestions }, beside: Beside): { state: string; questions: DecisionQuestions } {
+  if ('joined' in beside) return withPicked(base.state, base.questions, beside.joined.picked, wordsOfState(base.state), beside.joined.joins)
   return 'ended' in beside ? withEnded(base.state, base.questions, beside.ended) : withRunning(base.state, base.questions, beside.running)
 }
 
@@ -166,7 +210,9 @@ function caseOf(source: Source, base: { state: string; questions: DecisionQuesti
     turnId: source.turnId,
     transcript,
     note:
-      'ended' in beside
+      'joined' in beside
+        ? `An Overlap case (#498): the joined reading's ask as its kept run recorded it, on the Appliance Card with the first half's pick held and its Slot kept; built by \`pnpm jev:overlap\`. Expects the correction's own reading (row ${source.name.split('-')[0]}, #486).`
+        : 'ended' in beside
         ? `An Overlap case (#499): the line's ask as its kept run recorded it, on the Appliance Card with the line just ended then; built by \`pnpm jev:overlap\`. Expects the doing fact, which says its end (row ${source.name.split('-')[0]}, #486).`
         : `An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by \`pnpm jev:overlap\`. Expects the Fate the owner's row ${source.name.split('-')[0]} names (#486).`,
     ...(model !== undefined ? { model } : {}),
@@ -195,12 +241,14 @@ if (mode === 'grow') {
       }
       const runFile = join(dir, `${source.run}.json`)
       const asks = asksIn(join(dir, `${source.run}-logs`))
-      const ask = asks.find((each) => each.turnId === source.turnId && each.kind === 'appliance')
+      // A joined reading's ask is the line's second Appliance ask, on the joined words (#498); else its first, the Fate's.
+      const ofLine = asks.filter((each) => each.turnId === source.turnId && each.kind === 'appliance')
+      const ask = source.joined !== undefined ? ofLine[1] : ofLine[0]
       if (ask === undefined) throw new Error(`${source.name}: no Appliance ask for ${source.turnId}`)
       const events = (JSON.parse(readFileSync(runFile, 'utf8')) as { run: { records: { events: Timed[] } } }).run.records.events
-      const running = source.ended !== undefined ? null : (source.running ?? runningAt(events, ask.at, source.turnId))
-      if (running === null && source.ended === undefined) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
-      const beside: Beside = source.ended !== undefined ? { ended: source.ended } : { running: running! }
+      const running = source.ended !== undefined || source.joined !== undefined ? null : (source.running ?? runningAt(events, ask.at, source.turnId))
+      if (running === null && source.ended === undefined && source.joined === undefined) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
+      const beside: Beside = source.joined !== undefined ? { joined: source.joined } : source.ended !== undefined ? { ended: source.ended } : { running: running! }
       const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
       writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutRunning({ state: ask.state, questions: ask.questions }), beside, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
     } else if (source.kiosk !== undefined) {

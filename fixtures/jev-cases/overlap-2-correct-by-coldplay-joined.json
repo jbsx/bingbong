@@ -1,0 +1,269 @@
+{
+  "turnId": "turn-mvrvdlhx-2",
+  "transcript": "play yellow, no, by coldplay",
+  "note": "An Overlap case (#498): the joined reading's ask as its kept run recorded it, on the Appliance Card with the first half's pick held and its Slot kept; built by `pnpm jev:overlap`. Expects the correction's own reading (row 2, #486).",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1793177152529,
+  "expect": [
+    {
+      "question": "action",
+      "label": "play"
+    },
+    {
+      "question": "slot",
+      "label": "s1-1+3-4"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"play yellow, no, by coldplay\"\nMusic picked: \"Coldplay - Yellow (Official Video)\", the result of a search for \"yellow\"\nPage open: https://www.youtube.com/watch?v=yKNxeF4KMsY — \"Coldplay - Yellow (Official Video) - YouTube\"\nPlaying: \"Coldplay - Yellow (Official Video) - YouTube\" playing 0:01/4:32 volume 52% loop off",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "media-play": "carry on playing the media playing, \"Coldplay - Yellow (Official Video) - YouTube\", the one already on: unpause it — never a song the words name, which is the music's play",
+          "media-pause": "pause the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+          "media-forward": "go forward in the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-back": "go back in the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" by a length of time, the amount Choice saying how far",
+          "media-restart": "play the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" again from the start: repeat it once, now",
+          "media-volume": "change the volume of the media playing, \"Coldplay - Yellow (Official Video) - YouTube\": up, down or to the number the words carry, the amount Choice saying which and how far (down a little → 47%, down a step → 42%, down a lot → 27%; up a little → 57%, up a step → 62%, up a lot → 77%)",
+          "media-mute": "mute the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+          "media-unmute": "unmute the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+          "media-loop": "put the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" on loop, so it plays again each time it ends",
+          "media-unloop": "stop looping the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+          "media-rate": "change the playback speed of the media playing, \"Coldplay - Yellow (Official Video) - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far (down a little → 0.75×, down a step → 0.5×, down a lot → 0.25×; up a little → 1.25×, up a step → 1.5×, up a lot → 2×)",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "skip": "music: skip to the next song",
+          "previous": "music: go back to the song before",
+          "show": "music: show the video playing on the screen",
+          "correct": "music: the song playing is the wrong one: play the next result of its search instead",
+          "correct_back": "music: play the result of the search before the song playing instead",
+          "forget": "music: forget the song playing, so its words search again next time",
+          "say_time": "appliance: say the time and date — 08:45, Wednesday 28 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 10°C, mainly clear now; today high 15°C, low 8°C, rain 0%; coming hours 09:00 11°C, 10:00 12°C, 11:00 13°C, 12:00 14°C, 13:00 15°C, 14:00 15°C; coming days 2026-10-29 16°C/11°C overcast, rain 0%, 2026-10-30 15°C/10°C partly cloudy, rain 0%, 2026-10-31 14°C/10°C overcast, rain 0%",
+          "say_playing": "appliance: say the song playing — \"Coldplay - Yellow (Official Video)\" by Coldplay, 0:01 of 4:32",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "panel_open": "app: open the activity panel, the feed of what was said and done — now closed, overlay, 536 px wide",
+          "panel_close": "app: close the activity panel, hiding it — now closed, overlay, 536 px wide",
+          "panel_overlay": "app: float the activity panel over the page — now closed, overlay, 536 px wide",
+          "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, overlay, 536 px wide",
+          "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, overlay, 536 px wide",
+          "show_idle": "app: bring the Idle Screen back over the browser, music playing on — now showing the browser",
+          "show_dashboard": "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page — now showing the browser",
+          "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
+          "show_settings": "app: show the Settings page — now showing the browser",
+          "show_settings_voice": "app: show the Settings page at its Voice section — now showing the browser",
+          "show_settings_learned_terms": "app: show the Settings page at its Speech vocabulary section — now showing the browser",
+          "show_settings_appearance": "app: show the Settings page at its Appearance section — now showing the browser",
+          "show_settings_browsing": "app: show the Settings page at its Browsing section — now showing the browser",
+          "show_settings_idle_screen_cards": "app: show the Settings page at its Cards section — now showing the browser",
+          "show_settings_clock": "app: show the Settings page at its Clock section — now showing the browser",
+          "show_settings_screen": "app: show the Settings page at its Screen section — now showing the browser",
+          "show_settings_weather": "app: show the Settings page at its Weather section — now showing the browser",
+          "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
+          "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
+          "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
+          "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "app_update": "app: update — now version 43.4.0",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "page": "something on the page open, \"Coldplay - Yellow (Official Video) - YouTube\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "play",
+          "s0-1": "play yellow",
+          "s0-2": "play yellow no",
+          "s0-3": "play yellow no by",
+          "s0-4": "play yellow no by coldplay",
+          "s1-1": "yellow",
+          "s1-2": "yellow no",
+          "s1-3": "yellow no by",
+          "s1-4": "yellow no by coldplay",
+          "s2-2": "no",
+          "s2-3": "no by",
+          "s2-4": "no by coldplay",
+          "s3-3": "by",
+          "s3-4": "by coldplay",
+          "s4-4": "coldplay",
+          "s1-1+3-3": "yellow by",
+          "s1-1+3-4": "yellow by coldplay",
+          "s1-1+4-4": "yellow coldplay"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  },
+  "overlap": {
+    "joined": {
+      "picked": {
+        "title": "Coldplay - Yellow (Official Video)",
+        "words": "yellow",
+        "playing": false
+      },
+      "joins": {
+        "words": "play yellow",
+        "slot": "yellow"
+      }
+    },
+    "base": {
+      "state": "The user spoke to the appliance, a voice-driven web browser: \"play yellow, no, by coldplay\"\nPage open: https://www.youtube.com/watch?v=yKNxeF4KMsY — \"Coldplay - Yellow (Official Video) - YouTube\"\nPlaying: \"Coldplay - Yellow (Official Video) - YouTube\" playing 0:01/4:32 volume 52% loop off",
+      "questions": {
+        "action": {
+          "type": "choice",
+          "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+          "options": {
+            "media-play": "carry on playing the media playing, \"Coldplay - Yellow (Official Video) - YouTube\", the one already on: unpause it — never a song the words name, which is the music's play",
+            "media-pause": "pause the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+            "media-forward": "go forward in the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" by a length of time, the amount Choice saying how far",
+            "media-back": "go back in the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" by a length of time, the amount Choice saying how far",
+            "media-restart": "play the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" again from the start: repeat it once, now",
+            "media-volume": "change the volume of the media playing, \"Coldplay - Yellow (Official Video) - YouTube\": up, down or to the number the words carry, the amount Choice saying which and how far (down a little → 47%, down a step → 42%, down a lot → 27%; up a little → 57%, up a step → 62%, up a lot → 77%)",
+            "media-mute": "mute the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+            "media-unmute": "unmute the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+            "media-loop": "put the media playing, \"Coldplay - Yellow (Official Video) - YouTube\" on loop, so it plays again each time it ends",
+            "media-unloop": "stop looping the media playing, \"Coldplay - Yellow (Official Video) - YouTube\"",
+            "media-rate": "change the playback speed of the media playing, \"Coldplay - Yellow (Official Video) - YouTube\": faster, slower or to the number the words carry (1 is normal), the amount Choice saying which and how far (down a little → 0.75×, down a step → 0.5×, down a lot → 0.25×; up a little → 1.25×, up a step → 1.5×, up a lot → 2×)",
+            "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+            "play_next": "music: find a song by the words and play it after the one playing",
+            "queue": "music: find a song by the words and add it to the end of the queue",
+            "skip": "music: skip to the next song",
+            "previous": "music: go back to the song before",
+            "show": "music: show the video playing on the screen",
+            "correct": "music: the song playing is the wrong one: play the next result of its search instead",
+            "correct_back": "music: play the result of the search before the song playing instead",
+            "forget": "music: forget the song playing, so its words search again next time",
+            "say_time": "appliance: say the time and date — 08:45, Wednesday 28 October",
+            "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 10°C, mainly clear now; today high 15°C, low 8°C, rain 0%; coming hours 09:00 11°C, 10:00 12°C, 11:00 13°C, 12:00 14°C, 13:00 15°C, 14:00 15°C; coming days 2026-10-29 16°C/11°C overcast, rain 0%, 2026-10-30 15°C/10°C partly cloudy, rain 0%, 2026-10-31 14°C/10°C overcast, rain 0%",
+            "say_playing": "appliance: say the song playing — \"Coldplay - Yellow (Official Video)\" by Coldplay, 0:01 of 4:32",
+            "say_timer": "appliance: say how long is left on the timer — no timer set",
+            "panel_open": "app: open the activity panel, the feed of what was said and done — now closed, overlay, 536 px wide",
+            "panel_close": "app: close the activity panel, hiding it — now closed, overlay, 536 px wide",
+            "panel_overlay": "app: float the activity panel over the page — now closed, overlay, 536 px wide",
+            "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, overlay, 536 px wide",
+            "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, overlay, 536 px wide",
+            "show_idle": "app: bring the Idle Screen back over the browser, music playing on — now showing the browser",
+            "show_dashboard": "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page — now showing the browser",
+            "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
+            "show_settings": "app: show the Settings page — now showing the browser",
+            "show_settings_voice": "app: show the Settings page at its Voice section — now showing the browser",
+            "show_settings_learned_terms": "app: show the Settings page at its Speech vocabulary section — now showing the browser",
+            "show_settings_appearance": "app: show the Settings page at its Appearance section — now showing the browser",
+            "show_settings_browsing": "app: show the Settings page at its Browsing section — now showing the browser",
+            "show_settings_idle_screen_cards": "app: show the Settings page at its Cards section — now showing the browser",
+            "show_settings_clock": "app: show the Settings page at its Clock section — now showing the browser",
+            "show_settings_screen": "app: show the Settings page at its Screen section — now showing the browser",
+            "show_settings_weather": "app: show the Settings page at its Weather section — now showing the browser",
+            "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
+            "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
+            "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
+            "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
+            "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+            "app_update": "app: update — now version 43.4.0",
+            "timer": "the app: set a timer for the length the words say",
+            "timer_off": "the app: turn the timer off",
+            "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+            "help": "the app: show and say what it can be asked to do",
+            "stop": "stop what the app is doing: the page loading, the voice speaking",
+            "page": "something on the page open, \"Coldplay - Yellow (Official Video) - YouTube\": its links, buttons, fields or text",
+            "none": "not a command: a remark, a question to no one, noise"
+          }
+        },
+        "slot": {
+          "type": "choice",
+          "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+          "options": {
+            "none": "the command carries no words of its own",
+            "s0-0": "play",
+            "s0-1": "play yellow",
+            "s0-2": "play yellow no",
+            "s0-3": "play yellow no by",
+            "s0-4": "play yellow no by coldplay",
+            "s1-1": "yellow",
+            "s1-2": "yellow no",
+            "s1-3": "yellow no by",
+            "s1-4": "yellow no by coldplay",
+            "s2-2": "no",
+            "s2-3": "no by",
+            "s2-4": "no by coldplay",
+            "s3-3": "by",
+            "s3-4": "by coldplay",
+            "s4-4": "coldplay"
+          }
+        },
+        "amount": {
+          "type": "choice",
+          "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+          "options": {
+            "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+            "moment": "a moment: a hundredth of its length",
+            "little": "a little: a twentieth of its length",
+            "chunk": "a chunk: a tenth of its length",
+            "lot": "a lot: a quarter of its length",
+            "half": "half of its length",
+            "end": "all the way: to the end, or back to the start",
+            "to": "the volume, speed or app number to the number the words carry",
+            "up-little": "the volume, speed or app number up a little",
+            "up-step": "the volume, speed or app number up a step",
+            "up-lot": "the volume, speed or app number up a lot",
+            "up-all": "the volume, speed or app number up as far as it goes",
+            "down-little": "the volume, speed or app number down a little",
+            "down-step": "the volume, speed or app number down a step",
+            "down-lot": "the volume, speed or app number down a lot",
+            "down-all": "the volume, speed or app number down as far as it goes"
+          }
+        },
+        "where": {
+          "type": "choice",
+          "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+          "options": {
+            "page": "on this page: one of the numbered refs",
+            "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+            "web": "elsewhere: another website, or a search of the whole web"
+          }
+        }
+      }
+    }
+  }
+}

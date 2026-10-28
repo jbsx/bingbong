@@ -5762,6 +5762,40 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(said(made.events)).toEqual(['Playing “Queen – Bohemian Rhapsody (Official Video Remastered)”.'])
   })
 
+  it("joins (#498): `no, the other one` while a play opens reads on a card carrying the pick, and `correct` plays the search's next result", async () => {
+    const speech = new FakeSpeech()
+    let youtube!: ScriptedYouTube
+    const made = harness({
+      applianceCard: CARD,
+      facts,
+      speech,
+      player: (browser) => {
+        youtube = new ScriptedYouTube(browser)
+        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+      },
+    })
+    youtube.search('hurt', videoItem('8AHCfZTRGiI', 'Johnny Cash - Hurt'), videoItem('kPBzTxZQG5Q', 'Nine Inch Nails - Hurt'))
+    youtube.watches.set('8AHCfZTRGiI', { title: 'Johnny Cash - Hurt' })
+    youtube.watches.set('kPBzTxZQG5Q', { title: 'Nine Inch Nails - Hurt' })
+    // The first pick's watch page is still landing when the correction comes.
+    let land: () => void = () => {}
+    const navigate = made.browser.navigate.bind(made.browser)
+    made.browser.navigate = (url) => (url.includes('8AHCfZTRGiI') ? new Promise((resolve) => (land = () => void navigate(url).then(resolve))) : navigate(url))
+    made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-1') } })
+    const first = made.runner.run('play hurt')
+    await flushMicrotasks()
+    made.decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('correct'), slot: choice('none') } })
+    await made.runner.run('no, the other one')
+    land()
+    await first
+    const joined = made.asks.at(-1)!
+    expect(joined.state).toContain('Music picked: "Johnny Cash - Hurt", the result of a search for "hurt"')
+    expect(Object.keys((joined.questions.action as DecisionChoiceQuestion).options)).toEqual(expect.arrayContaining(['correct', 'correct_back']))
+    // The joined Slot keeps the first line's beside the correction's own words (F2).
+    expect(Object.values((joined.questions.slot as DecisionChoiceQuestion).options)).toContain('hurt the other one')
+    expect(said(made.events)).toEqual(['Playing “Nine Inch Nails - Hurt” instead.'])
+  })
+
   it('waits: the line is held until the running one lands, then read again against what is there', async () => {
     const { decision, asks, events, runner, first, turnId, land } = await running()
     decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('waits') } }, { answers: { action: choice('say_time'), slot: choice('none') } })

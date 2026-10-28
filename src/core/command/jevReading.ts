@@ -119,9 +119,18 @@ export interface Appliance {
   readonly queued?: boolean
   /** The audio road is wired (#502): a `play` is read as music or a video, music playing its sound alone. Off, every play opens the watch page and the card asks nothing of it. */
   readonly audioRoad?: boolean
+  /** The search's pick a correction acts on (#498): held while it opens, after its line was cut off, and while it plays. */
+  readonly picked?: PickedSong
   readonly facts?: ApplianceFacts
   readonly lastPage?: string
   readonly app?: AppState
+}
+
+/** The pick a correction acts on (#498), as the Player holds it: its title, the words it was searched by, and whether it is the Queue's song. */
+export interface PickedSong {
+  readonly title: string
+  readonly words: string
+  readonly playing: boolean
 }
 
 /**
@@ -150,7 +159,8 @@ function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): 
 export function offeredApplianceVerbs(appliance: Appliance | undefined, mediaOn: boolean): ApplianceVerb[] {
   if (appliance?.queued === undefined) return []
   const songOn = appliance.queued || mediaOn
-  const corrections = appliance.queued ? (['correct', 'correct_back', 'forget'] as const) : []
+  // A held pick is a running choice (#498, the orchestrator's ruling): its corrections are offered while it opens or was cut off, not only once it is the Queue's.
+  const corrections = [...(appliance.queued || appliance.picked !== undefined ? (['correct', 'correct_back'] as const) : []), ...(appliance.queued ? (['forget'] as const) : [])]
   return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : []), ...corrections]
 }
 
@@ -209,6 +219,42 @@ export function slotSpans(text: string): SlotSpan[] {
     }
   }
   return spans
+}
+
+/** The line a joined line joins (#494, #498): its words, and the Slot it carried, when it carried one. */
+export interface JoinedLine {
+  readonly words: string
+  readonly slot?: string
+}
+
+/** The longest span of a correction's words a joined Slot keeps beside the line's own (#498). */
+const JOINED_SPAN_WORDS = 6
+
+/**
+ * The Slot options a joined line adds (#498, F2): the line it joins carried
+ * a Slot, and a correction ("no, by coldplay") names what goes with it, so
+ * that Slot beside each span of the correction's own words is offered —
+ * `yellow by coldplay` — and the Slot is never only the verbatim join. Each
+ * names two spans of the joined words; none where the two would be one
+ * contiguous span, already offered, or where the Slot is not among the
+ * first line's words.
+ */
+export function joinedSlotOptions(text: string, joins: JoinedLine): [string, string][] {
+  const words = wordsOf(text)
+  const first = wordsOf(joins.words).length
+  const slot = wordsOf(joins.slot ?? '').map((word) => word.toLowerCase())
+  if (slot.length === 0 || first >= words.length) return []
+  const lower = words.map((word) => word.toLowerCase())
+  let at = -1
+  for (let start = 0; start + slot.length <= first && at === -1; start += 1) if (slot.every((word, index) => lower[start + index] === word)) at = start
+  if (at === -1) return []
+  const end = at + slot.length - 1
+  const kept = words.slice(at, end + 1).join(' ')
+  const options: [string, string][] = []
+  for (let start = Math.max(first, end + 2); start < words.length; start += 1) {
+    for (let last = start; last < words.length && last - start < JOINED_SPAN_WORDS; last += 1) options.push([`s${at}-${end}+${start}-${last}`, `${kept} ${words.slice(start, last + 1).join(' ')}`])
+  }
+  return options
 }
 
 /**
@@ -1897,18 +1943,21 @@ function searchedBefore(words: string, hop: HopContext): boolean {
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
 export function slotWords(answer: DecisionChoiceAnswer, text: string): string {
-  const span = slotSpanOf(answer)
-  if (span !== null) {
-    const words = wordsOf(text).slice(span.start, span.end + 1).join(' ')
+  const spans = slotSpanOf(answer)
+  if (spans !== null) {
+    const all = wordsOf(text)
+    const words = spans.map((span) => all.slice(span.start, span.end + 1).join(' ')).filter((each) => each !== '').join(' ')
     if (words !== '') return words
   }
   return wordsAfterVerb(text)
 }
 
-/** The span of the transcript's words the Slot answer names; null when it names none. */
-function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number } | null {
-  const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
-  return match === null ? null : { start: Number(match[1]), end: Number(match[2]) }
+/** The spans of the transcript's words the Slot answer names, one or, for a joined line's kept Slot beside the correction's words (#498), two; null when it names none. */
+function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number }[] | null {
+  const match = /^s(\d+)-(\d+)(?:\+(\d+)-(\d+))?$/.exec(answer.choice)
+  if (match === null) return null
+  const first = { start: Number(match[1]), end: Number(match[2]) }
+  return match[3] === undefined ? [first] : [first, { start: Number(match[3]), end: Number(match[4]) }]
 }
 
 /**

@@ -901,6 +901,33 @@ describe('correcting the pick (#345)', () => {
     const { perform } = remembering()
     expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Nothing to correct.' })
   })
+
+  it('a pick cut off while it opened is still held, and `not that one` plays its next result (#498)', async () => {
+    const { browser, player, perform } = remembering()
+    expect(player.picked?.()).toBeNull()
+    // The line opening it is joined by "no, the other one" once its watch page is asked for: the join cancels it.
+    let live = true
+    const navigate = browser.navigate.bind(browser)
+    browser.navigate = async (url) => {
+      if (url.includes('first000000')) live = false
+      return navigate(url)
+    }
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'midnight drive', () => live)).toMatchObject({ superseded: true })
+    browser.navigate = navigate
+    expect(player.queue().current).toBeNull()
+    expect(player.picked?.()).toEqual({ title: 'Lumen - Midnight Drive (Official Video)', words: 'midnight drive', playing: false })
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Playing “Second” instead.', video: 'second00000' })
+    expect(player.picked?.()).toEqual({ title: 'Second', words: 'midnight drive', playing: true })
+  })
+
+  it('a pick that played and gave way to another song is held no longer (#498)', async () => {
+    const { player, play, perform } = remembering()
+    await play()
+    expect(player.picked?.()).toMatchObject({ playing: true })
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await perform({ kind: 'skip' })
+    expect(player.picked?.()).toBeNull()
+  })
 })
 
 describe('a pick that stayed (#345)', () => {

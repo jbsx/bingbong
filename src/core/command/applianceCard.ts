@@ -16,6 +16,7 @@ import {
   applianceVerbLine,
   heardLine,
   isApplianceVerb,
+  joinedSlotOptions,
   mediaActionOf,
   offeredApplianceVerbs,
   scopableSite,
@@ -27,6 +28,8 @@ import {
   asksKind,
   type Appliance,
   type CommandAnswers,
+  type JoinedLine,
+  type PickedSong,
   type StepContext,
 } from './jevReading'
 
@@ -70,6 +73,8 @@ export interface ApplianceView {
   readonly running?: RunningCommand
   /** The line just ended, within its window (#499): the doing fact for it, while nothing runs; the state is unchanged. Absent, the card is unchanged. */
   readonly ended?: EndedCommand
+  /** The line this one joined (#498, F2): its Slot beside the correction's own words is offered. Absent, the card is unchanged. */
+  readonly joins?: JoinedLine
 }
 
 /** How the card is asked: whether `steps` rides it (hop 0 of a whole line), and the Hearing. */
@@ -151,12 +156,64 @@ const NONE_LINE = 'not a command: a remark, a question to no one, noise'
 const INSTRUCTIONS =
   "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command."
 
+/** Which shape of the pick on the card is measured (#498, F1): A, a pick line and the corrections; C, A with the `correct` line naming the pick. */
+const PICK_ARM: 'A' | 'C' = 'A'
+
+/** The pick on the state while it is not playing (#498): what a correction said while it opens, or after its line was cut off, corrects. */
+export function pickLines(picked: PickedSong | undefined): string[] {
+  return picked === undefined || picked.playing ? [] : [`Music picked: ${JSON.stringify(picked.title)}, the result of a search for ${JSON.stringify(picked.words)}`]
+}
+
+/** The `correct` line (#498, F1 arm C): naming the pick it corrects. */
+function correctLine(picked: PickedSong | undefined): string {
+  return PICK_ARM === 'C' && picked !== undefined ? `music: the song picked, ${JSON.stringify(picked.title)}, is the wrong one: play the next result of its search instead` : applianceVerbLine('correct')
+}
+
+/** The Music verbs, in the order the card offers them: the corrections go after the last of them a card carries. */
+const MUSIC_BEFORE_CORRECTIONS = ['play', 'play_next', 'queue', 'skip', 'previous', 'show']
+
+/**
+ * A card made with no pick, with the pick on it (#498): the pick line after
+ * the words, `correct` and `correct_back` after the Music verbs the card
+ * offers, and the joined Slot. What the corpus rebuilds a kept joined ask
+ * with; the live card builds the same from what the Player holds.
+ */
+export function withPicked<Q extends { readonly action?: unknown; readonly slot?: unknown }>(state: string, questions: Q, picked: PickedSong, text: string, joins?: JoinedLine): { state: string; questions: Q } {
+  const [words, ...rest] = state.split('\n')
+  const action = questions.action as DecisionChoiceQuestion | undefined
+  const slot = questions.slot as DecisionChoiceQuestion | undefined
+  const entries = Object.entries(action?.options ?? {})
+  const after = entries.reduce((last, [label], index) => (MUSIC_BEFORE_CORRECTIONS.includes(label) ? index : last), -1)
+  const corrections: [string, string | null][] = [
+    ['correct', correctLine(picked)],
+    ['correct_back', applianceVerbLine('correct_back')],
+  ]
+  const options = Object.hasOwn(action?.options ?? {}, 'correct')
+    ? entries.map(([label, line]): [string, string | null] => [label, label === 'correct' ? correctLine(picked) : line])
+    : [...entries.slice(0, after + 1), ...corrections, ...entries.slice(after + 1)]
+  return {
+    state: [words, ...pickLines(picked), ...rest].join('\n'),
+    questions: {
+      ...questions,
+      ...(action !== undefined ? { action: { ...action, options: Object.fromEntries(options) } } : {}),
+      ...(slot !== undefined && joins !== undefined ? { slot: joinedSlot(slot, text, joins) } : {}),
+    },
+  }
+}
+
+/** The Slot with a joined line's own options after the spans (#498, F2), none of them a span already offered. */
+function joinedSlot(slot: DecisionChoiceQuestion, text: string, joins: JoinedLine): DecisionChoiceQuestion {
+  const offered = new Set(Object.values(slot.options))
+  return { ...slot, options: { ...slot.options, ...Object.fromEntries(joinedSlotOptions(text, joins).filter(([, words]) => !offered.has(words))) } }
+}
+
 /** The state the card is asked over: the words, the Hearing, a Step's place, the page by its address and title, and what is playing. */
 export function applianceState(text: string, view: ApplianceView, heard?: readonly NameHearing[], step?: StepContext): string {
   return [
     `The user spoke to the appliance, a voice-driven web browser: ${JSON.stringify(text)}`,
     // The line still running, right after the words (#494, measured on the Overlap Jev cases): a split line's second half reads as its rest.
     ...(view.running !== undefined ? runningLines(view.running) : []),
+    ...pickLines(view.appliance?.picked),
     ...heardLine(heard),
     ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(step !== undefined && step.done.length > 0 ? [`Done so far: ${step.done.join('; ')}`] : []),
@@ -190,7 +247,7 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const resume = appliance?.lastPage === undefined || isRealPage(view.url) ? [] : [['resume', `reopen the last page the screen showed: ${JSON.stringify(appliance.lastPage)}`] as const]
   const recorded = view.recorded === undefined ? undefined : Object.fromEntries(Object.entries(view.recorded.lines).map(([label, line]) => [label, appLineOf(label, line)]))
   const own: Readonly<Record<string, string>> = recorded ?? {
-    ...Object.fromEntries(verbs.map((verb) => [verb, applianceVerbLine(verb)])),
+    ...Object.fromEntries(verbs.map((verb) => [verb, verb === 'correct' ? correctLine(appliance?.picked) : applianceVerbLine(verb)])),
     ...facts,
     ...Object.fromEntries(app.map((option) => [option.label, appLineOf(option.label, option.line)])),
     ...Object.fromEntries(resume),
@@ -214,7 +271,7 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const steps = options.steps === true ? stepsQuestion(text) : null
   const questions: ApplianceQuestions = {
     action,
-    slot: slotQuestion(text, options.heard),
+    slot: view.joins !== undefined ? joinedSlot(slotQuestion(text, options.heard), text, view.joins) : slotQuestion(text, options.heard),
     ...(amounts ? { amount: amountQuestion() } : {}),
     ...(site !== null ? { where: whereQuestion(site) } : {}),
     ...(asksKind(view.appliance, Object.hasOwn(own, 'play')) ? { kind: kindQuestion() } : {}),

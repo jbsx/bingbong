@@ -3,10 +3,10 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import { defaultSettings } from '../settings/settings'
 import type { AppState } from './appOp'
-import { PAGE_LABEL, applianceQuestions, applianceState, fateOfAnswers, readApplianceAnswers, type ApplianceView } from './applianceCard'
+import { PAGE_LABEL, applianceQuestions, applianceState, fateOfAnswers, readApplianceAnswers, withPicked, type ApplianceView } from './applianceCard'
 import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
 import { ENDED_WINDOW_MS, doingAnswer, endedWithin, stoppedLine, type EndedCommand, type RunningCommand } from './runningCommand'
-import type { CommandAnswers } from './jevReading'
+import type { CommandAnswers, PickedSong } from './jevReading'
 
 const choice = (label: string, confidence = 0.9): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
 
@@ -234,5 +234,71 @@ describe('the line just ended on the Appliance Card (#499)', () => {
     expect(endedWithin({ words: 'w', outcome: 'done', at: 1_000 }, 16_000)).toEqual({ words: 'w', outcome: 'done', agoMs: 15_000 })
     expect(endedWithin({ words: 'w', outcome: 'done', at: 1_000 }, 16_001)).toBeUndefined()
     expect(endedWithin(null, 2_000)).toBeUndefined()
+  })
+})
+
+describe('the pick a correction acts on (#498)', () => {
+  const OPENING: ApplianceView = {
+    url: 'https://www.youtube.com/watch?v=8AHCfZTRGiI',
+    title: 'Johnny Cash - Hurt - YouTube',
+    appliance: { queued: false, app: APP, facts: { now: 0, timeZone: 'UTC', weather: null } },
+    flaggable: true,
+    timer: true,
+  }
+  const PICKED: PickedSong = { title: 'Johnny Cash - Hurt', words: 'hurt', playing: false }
+  const JOINED = 'play hurt, no, the other one'
+  const withPick = (view: ApplianceView, picked: PickedSong): ApplianceView => ({ ...view, appliance: { ...view.appliance, picked } })
+
+  it('a card with nothing picked offers no correction, and is the card it was', () => {
+    expect(Object.keys(applianceQuestions(JOINED, OPENING).action.options)).not.toContain('correct')
+    expect(applianceState(JOINED, OPENING)).not.toContain('picked')
+  })
+
+  it('a pick still opening, or cut off, is on the state right after the words, and its corrections are offered', () => {
+    const view = withPick(OPENING, PICKED)
+    expect(applianceState(JOINED, view).split('\n').slice(0, 2)).toEqual([
+      'The user spoke to the appliance, a voice-driven web browser: "play hurt, no, the other one"',
+      'Music picked: "Johnny Cash - Hurt", the result of a search for "hurt"',
+    ])
+    const labels = Object.keys(applianceQuestions(JOINED, view).action.options)
+    expect(labels.slice(0, 5)).toEqual(['play', 'play_next', 'queue', 'correct', 'correct_back'])
+    // Nothing is the Queue's song: nothing to forget.
+    expect(labels).not.toContain('forget')
+  })
+
+  it('a pick that is the song playing leaves the card as it was', () => {
+    const playing = withPick(WATCH, { ...PICKED, playing: true })
+    expect(applianceState('not that one', playing)).toBe(applianceState('not that one', WATCH))
+    expect(applianceQuestions('not that one', playing)).toEqual(applianceQuestions('not that one', WATCH))
+  })
+
+  it("reads `correct` as the Player's correction", () => {
+    const read = readApplianceAnswers(answers('correct'), JOINED, withPick(OPENING, PICKED))
+    expect(read).toMatchObject({ kind: 'command', command: { verb: 'play', music: { kind: 'correct', step: 1 } } })
+  })
+
+  it('a kept card with the pick put on it is the card the runner builds with the pick held', () => {
+    const joins = { words: 'play hurt', slot: 'hurt' }
+    const live = { ...withPick(OPENING, PICKED), joins }
+    const kept = withPicked(applianceState(JOINED, OPENING), applianceQuestions(JOINED, OPENING), PICKED, JOINED, joins)
+    expect(kept.state).toBe(applianceState(JOINED, live))
+    expect(kept.questions).toEqual(applianceQuestions(JOINED, live))
+  })
+
+  it("a joined Slot keeps the line's own beside the correction's words, never only the verbatim join (F2)", () => {
+    const text = 'play yellow, no, by coldplay'
+    const view: ApplianceView = { ...OPENING, joins: { words: 'play yellow', slot: 'yellow' } }
+    const slot = applianceQuestions(text, view).slot.options
+    expect(slot).toMatchObject({ 's1-1+3-3': 'yellow by', 's1-1+3-4': 'yellow by coldplay', 's1-1+4-4': 'yellow coldplay' })
+    // The spans that are one contiguous run are offered once, as before.
+    expect(Object.values(slot).filter((words) => words === 'yellow no by coldplay')).toHaveLength(1)
+    const read = readApplianceAnswers(answers('play', { slot: 's1-1+3-4' }), text, view)
+    expect(read).toMatchObject({ kind: 'command', command: { verb: 'play', slot: 'yellow by coldplay' } })
+  })
+
+  it('a line that joined none, or whose Slot is not among its words, adds no Slot option', () => {
+    const text = 'play yellow, no, by coldplay'
+    expect(applianceQuestions(text, { ...OPENING, joins: { words: 'play yellow' } }).slot).toEqual(applianceQuestions(text, OPENING).slot)
+    expect(applianceQuestions(text, { ...OPENING, joins: { words: 'play yellow', slot: 'blue' } }).slot).toEqual(applianceQuestions(text, OPENING).slot)
   })
 })

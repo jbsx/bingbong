@@ -55,6 +55,7 @@ import {
   type Appliance,
   type DoneResult,
   type HopContext,
+  type JoinedLine,
   type SetAside,
   type StepContext,
   type ViewBlock,
@@ -298,7 +299,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'> & Partial<Pick<Player, 'audioRoad'>>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad'>>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
@@ -792,9 +793,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const appliance = (): Appliance | undefined => {
     const last = deps.lastPage?.() ?? null
     if (deps.player === undefined && deps.facts === undefined && deps.app === undefined && last === null) return undefined
+    const picked = deps.player?.picked?.()
     return {
       ...(deps.app !== undefined ? { app: deps.app.state() } : {}),
       ...(deps.player !== undefined ? { queued: deps.player.queue().current !== null, ...(deps.player.audioRoad === true ? { audioRoad: true } : {}) } : {}),
+      // The pick a correction acts on (#498): held while it opens and after its line was cut off, as by a join.
+      ...(picked !== null && picked !== undefined ? { picked } : {}),
       ...(deps.facts !== undefined ? { facts: deps.facts() } : {}),
       // `resume` is Jev's to offer on a blank pane (#408): the Last Page by its title, else its address.
       ...(last !== null ? { lastPage: last.title || last.url } : {}),
@@ -1220,8 +1224,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const joined = `${running.words}, ${text}`
       publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: joined, at: at() })
       reading = { turnId, submission }
-      // One line, one step: never split back into the running line and a Step on the bare correction.
-      const again = await read(turnId, joined, null, spoken, { split: false })
+      // One line, one step: never split back into the running line and a Step on the bare correction. Its Slot may keep the running line's beside the correction's words (#498, F2).
+      const slot = running.fired?.slot ?? undefined
+      const again = await read(turnId, joined, null, spoken, { split: false, joins: { words: running.words, ...(slot !== undefined ? { slot } : {}) } })
       if (reading?.turnId === turnId) reading = null
       return { ...again, joined, into }
     }
@@ -1245,6 +1250,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly running?: RunningCommand
     /** The line just ended when this one was given, nothing running (#499): the Appliance Card carries it. */
     readonly ended?: EndedCommand
+    /** The line this one joined (#498): the Appliance Card offers its Slot beside the correction's own words. */
+    readonly joins?: JoinedLine
   }
 
   /**
@@ -1387,7 +1394,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** What the Appliance Card is built from (#485): the page by its address and title, the media, and what the appliance holds. */
-  async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand, ended?: EndedCommand): Promise<ApplianceView> {
+  async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand, ended?: EndedCommand, joins?: JoinedLine): Promise<ApplianceView> {
     const state = browser.state()
     const media = await mediaNow(turnId, pending)
     const own = appliance()
@@ -1400,6 +1407,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       timer: deps.timer !== undefined,
       ...(running !== undefined ? { running } : {}),
       ...(ended !== undefined ? { ended } : {}),
+      ...(joins !== undefined ? { joins } : {}),
     }
   }
 
@@ -1416,7 +1424,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     options: ReadOptions,
     model: DecisionModel,
   ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean; fate?: Fate }> {
-    const view = await applianceView(turnId, pending, options.running, options.ended)
+    const view = await applianceView(turnId, pending, options.running, options.ended, options.joins)
     // The Hearing reads the Page Terms of the page in hand, never waiting for one.
     const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
     const questions = applianceQuestions(text, view, { steps: options.split, heard })
