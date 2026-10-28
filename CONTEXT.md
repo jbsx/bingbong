@@ -1549,6 +1549,16 @@ too, every one that fits a Learned Term's four words. The decision record
 marks a search's pick `remembered` or `searched`.
 _Avoid_: music app, media player (for the page's own controls), playlist (for the Queue), liked songs (for the remembered ones)
 
+**Audio road**:
+Where a song Jev reads as music plays: its bare audio stream, looked up by
+yt-dlp, in an `<audio>` outside the pane, so the pane stays free and the
+Idle Screen up. Behind `BINGBONG_AUDIO_ROAD`; off, every play opens the
+watch page. A video, or a road that fails, opens the watch page, shown.
+
+**Kind**:
+Jev's reading of a `play` as music or a video, asked beside `play` while
+the audio road is wired; an unsure reading is music.
+
 **Queue**:
 The Player's one queue. It holds the song playing (or paused), the songs
 queued after it, the songs played before it (what `previous` returns to),
