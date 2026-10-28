@@ -1389,7 +1389,7 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     browser.drawConsent({ playing: true, showing: 1 })
     for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
     expect(resumes).toHaveLength(1)
-    expect(consents).toEqual([expect.objectContaining({ resumed: 1 })])
+    expect(consents).toEqual([expect.objectContaining({ held: 1, resumed: 1 })])
   })
 
   it('a person\'s pause between the draw and the clear is theirs: the media the wall held is not played again (#492, #496)', async () => {
@@ -1404,7 +1404,7 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     release('dismissed consent dialog: clicked [2] "Reject all"')
     for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
     expect(resumes).toEqual([])
-    expect(consents).toEqual([expect.objectContaining({ resumed: 0 })])
+    expect(consents).toEqual([expect.objectContaining({ held: 0, resumed: 0 })])
   })
 
   it('a wall told with nothing playing resumes nothing after its clear: only media it drew over playing is played again (#496)', async () => {

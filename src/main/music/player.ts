@@ -131,7 +131,9 @@ export interface PlayerConsent {
   readonly goneMs: number
   /** The sheet was seen gone inside the bound. */
   readonly gone: boolean
-  /** Media the wall drew over playing, found paused after the clear and played once (#496); 0 when none was. */
+  /** Media the page marked playing as the wall drew (#496); 0 when none was, or none was asked for. */
+  readonly held: number
+  /** Of those, the ones found paused after the clear and played once. */
   readonly resumed: number
 }
 
@@ -301,6 +303,8 @@ const opensAtYouTubesOwn = (status: WatchStatus): boolean =>
 const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 
 const quoted = (title: string): string => `“${title}”`
+
+const NONE_HELD: HeldResumed = { held: 0, played: 0 }
 
 const isSongs = (read: readonly Song[] | PlayerOutcome): read is readonly Song[] => Array.isArray(read)
 
@@ -572,7 +576,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (told !== null) void clearWall(told.watch, told.drawnAt, told.drawn)
     if (cleared === null) return
     if (watch !== null) watch.at = now()
-    const resumed = drawn?.playing === true && drawnAt !== null && watch?.paused !== true ? await resumeHeld(drawnAt) : 0
+    const { held, played: resumed } = drawn?.playing === true && drawnAt !== null && watch?.paused !== true ? await resumeHeld(drawnAt) : NONE_HELD
     deps.onConsent?.({
       video: watch?.song.id ?? videoIdOf(url),
       ms: watch === null ? null : clearedMs(watch),
@@ -582,6 +586,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       drawToClickMs: Math.round(from - (drawnAt ?? from) + cleared.clickMs),
       goneMs: Math.round(cleared.goneMs),
       gone: cleared.gone,
+      held,
       resumed,
     })
     if (watch?.paused === true) await holdPaused(watch.song)
@@ -595,9 +600,9 @@ export function createPlayer(deps: PlayerDeps): Player {
    * the person's to undo (#492) — and only the elements the page marked
    * playing as it drew, by kind on any site. Nothing new is said.
    */
-  async function resumeHeld(drawnAt: number): Promise<number> {
-    if (pausedAt + CONSENT_PLAYED_MS > drawnAt) return 0
-    return (await evaluate<HeldResumed>(HELD_RESUME_SCRIPT, 'pane'))?.played ?? 0
+  async function resumeHeld(drawnAt: number): Promise<HeldResumed> {
+    if (pausedAt + CONSENT_PLAYED_MS > drawnAt) return NONE_HELD
+    return (await evaluate<HeldResumed>(HELD_RESUME_SCRIPT, 'pane')) ?? NONE_HELD
   }
 
   /**
