@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto'
 import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting, type ConfiguredDecisionRouting, type ModelEndpointConfig } from '../../core/decision/decisionRouting.ts'
 import { withFallbacks } from '../../core/decision/fallbackChain.ts'
+import { sizeRefusalOf } from '../../core/decision/cardBudget.ts'
 import {
   DECISION_UNAVAILABLE_REASONS,
   readDecisionAnswers,
@@ -102,6 +103,9 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
  * timeout as before. `timeoutMs` in place of the routing's for `pnpm
  * jev:replay`, which costs no round; `fallbacks: false` for the gate and
  * the replay, which ask exactly the model they name (ruling 11 of #477).
+ * A size refusal (a 422 for a prompt past the host's limit) is the ask's
+ * fault, not the host's (#495): it ends the chain, and the runner's one
+ * tighter retry goes to the same live host.
  */
 export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, overrides: { readonly timeoutMs?: number; readonly fallbacks?: boolean } = {}): DecisionModel {
   const hosts = overrides.fallbacks === false ? [routing.endpoint] : [routing.endpoint, ...routing.fallbacks]
@@ -112,7 +116,10 @@ export function createRoutedDecisionModel(routing: ConfiguredDecisionRouting, ov
         return { ...createJevDecisionModel(endpoint, { timeoutMs, images: routing.images }), cardBudget: routing.cardBudget }
     }
   }
-  return withFallbacks(hosts.map((endpoint, index) => ({ model: adapter(endpoint, index === hosts.length - 1), host: endpoint.baseUrl })))
+  return withFallbacks(
+    hosts.map((endpoint, index) => ({ model: adapter(endpoint, index === hosts.length - 1), host: endpoint.baseUrl })),
+    (result) => result.status === 'unavailable' && sizeRefusalOf(result.httpStatus, result.message) !== null,
+  )
 }
 
 export function createDecisionModel(env: Record<string, string | undefined>): DecisionModel | null {

@@ -84,6 +84,21 @@ describe('the Fallback Hosts (#477, ADR 0076 as amended)', () => {
     expect(result.attempts?.map((attempt) => attempt.outcome)).toEqual(['http', 'timeout'])
   })
 
+  it('ends where the routing says a failure is the ask\'s own: no host after it is asked (#495)', async () => {
+    const live = host('live', ['http'])
+    const second = host('second', ['answered'])
+    const result = await withFallbacks(
+      [
+        { model: live.decision, host: 'https://live.test' },
+        { model: second.decision, host: 'https://second.test' },
+      ],
+      (failed) => failed.status === 'unavailable' && failed.httpStatus === 429,
+    ).ask(REQUEST)
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'http', httpStatus: 429 })
+    expect(result.attempts).toHaveLength(1)
+    expect(second.asked).toHaveLength(0)
+  })
+
   it("ends on the caller's abort: no host after the cancelled one is asked", async () => {
     const live = host('live', ['cancelled'])
     const second = host('second', ['answered'])

@@ -84,6 +84,47 @@ describe('createDecisionModel', () => {
     expect(decision!.model).toBe('live-model')
   })
 
+  it('ends on a size 422 at the live host: the refusal is the ask\'s, so no Fallback Host is asked (#495)', async () => {
+    const refusal = 'OneJev prompt has 21990 tokens, exceeding max_len 16384; prompts are never truncated'
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message: refusal } }), { status: 422, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+    const decision = createDecisionModel({
+      BINGBONG_DECISION_API_KEY: 'live-secret',
+      BINGBONG_DECISION_BASE_URL: 'https://live.test',
+      BINGBONG_DECISION_MODEL: 'live-model',
+      BINGBONG_DECISION_FALLBACKS: 'second-model|https://second.test|SECOND_KEY',
+      SECOND_KEY: 'second-secret',
+    })
+
+    const result = await decision!.ask({ state: 's', questions: QUESTIONS })
+
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'http', httpStatus: 422 })
+    expect(result.status === 'unavailable' && result.message).toContain('exceeding max_len 16384')
+    expect(result.attempts).toEqual([expect.objectContaining({ host: 'https://live.test', outcome: 'http', httpStatus: 422 })])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('walks the Fallback Hosts on a 422 that is not a size refusal, as on any other status (#477, #495)', async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url.startsWith('https://live.test')
+        ? new Response(JSON.stringify({ error: { message: 'unprocessable' } }), { status: 422, headers: { 'content-type': 'application/json' } })
+        : new Response(JSON.stringify({ model: 'second-v', answers: ANSWERS }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const decision = createDecisionModel({
+      BINGBONG_DECISION_API_KEY: 'live-secret',
+      BINGBONG_DECISION_BASE_URL: 'https://live.test',
+      BINGBONG_DECISION_MODEL: 'live-model',
+      BINGBONG_DECISION_FALLBACKS: 'second-model|https://second.test|SECOND_KEY',
+      SECOND_KEY: 'second-secret',
+    })
+
+    const result = await decision!.ask({ state: 's', questions: QUESTIONS })
+
+    expect(result).toMatchObject({ status: 'answered', model: 'second-v' })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('with no fallback named is unavailable on a 429 after one request, as before (#477)', async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ error: 'rate limited' }), { status: 429, headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', fetch)

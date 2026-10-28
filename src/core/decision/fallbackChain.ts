@@ -6,7 +6,8 @@ import type { DecisionAttempt, DecisionModel, DecisionQuestions, DecisionRequest
 // when it fails for any reason but the caller's abort — a 429 or another
 // status, a timeout, a transport fault, a malformed answer, anything else
 // — the same ask goes at once to the next, with no wait on the one that
-// failed and no second request to it. The ask ends at the first answer,
+// failed and no second request to it; a failure the routing names as the
+// ask's own (a size 422, #495) ends the chain, since no host would take it. The ask ends at the first answer,
 // and "unavailable" means every host failed. Every attempt is on the
 // result, so the record and the asks log name each host's try and the one
 // that answered. Every ask starts at the live host: no host is remembered
@@ -26,13 +27,14 @@ export interface ChainHost {
 const ENDS_CHAIN = new Set(['cancelled'])
 
 /**
- * The hosts as one Decision Model. With one host the chain is that host,
+ * The hosts as one Decision Model; `endsChain` names a failure that is the
+ * ask's fault, not the host's, so no host after it is asked (#495). With one host the chain is that host,
  * its results untouched — the behaviour before #477. The chain's `model`,
  * `readsImages` and `cardBudget` are the live host's: the card is built
  * once, to the live routing, and every host reads the same bytes (ADR
  * 0088: one Card Budget).
  */
-export function withFallbacks(hosts: readonly ChainHost[]): DecisionModel {
+export function withFallbacks(hosts: readonly ChainHost[], endsChain: (result: DecisionResult<DecisionQuestions>) => boolean = () => false): DecisionModel {
   const [live, ...rest] = hosts
   if (live === undefined) throw new Error('a fallback chain needs its live host')
   if (rest.length === 0) return live.model
@@ -56,7 +58,7 @@ export function withFallbacks(hosts: readonly ChainHost[]): DecisionModel {
         attempts.push(attemptOf(host, result as DecisionResult<DecisionQuestions>))
         latencyMs += result.latencyMs
         last = result
-        if (result.status === 'answered' || ENDS_CHAIN.has(result.reason) || request.signal?.aborted === true) break
+        if (result.status === 'answered' || ENDS_CHAIN.has(result.reason) || request.signal?.aborted === true || endsChain(result as DecisionResult<DecisionQuestions>)) break
       }
       // The whole ask's cost is every attempt's; the record's latency is what the round paid.
       return { ...last!, latencyMs, attempts }
