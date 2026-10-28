@@ -1,6 +1,6 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { FileChooser } from '../ports/browser'
-import { promptChars } from '../decision/cardBudget'
+import { promptChars, type CardCut } from '../decision/cardBudget'
 import { fileFieldClause } from '../browser/snapshot'
 import { describeShelfFile, type ShelfFile } from '../shelf/shelf'
 
@@ -22,7 +22,7 @@ export interface ShelfAsk {
 }
 
 /** A Choice offers at most 255 options; one is `none`. */
-export const SHELF_MAX_FILES = 254
+const MAX_FILES = 254
 
 /** The file field as the state names it: its label, what it accepts and whether it takes several, as its ref line says them. */
 function fieldOf(chooser: FileChooser): string {
@@ -37,7 +37,7 @@ function fieldOf(chooser: FileChooser): string {
  * arms), so the arm cheapest to reverse stands.
  */
 export function shelfAsk(text: string, page: { readonly url: string; readonly title: string }, chooser: FileChooser, shelf: readonly ShelfFile[], nowMs: number): ShelfAsk {
-  const files = shelf.slice(0, SHELF_MAX_FILES)
+  const files = shelf.slice(0, MAX_FILES)
   const state = [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
@@ -57,11 +57,12 @@ export function shelfAsk(text: string, page: { readonly url: string; readonly ti
   }
 }
 
-/** The Shelf ask cut to the Card Budget (ADR 0088): the oldest files leave first, the most that fit kept, found by halving. */
-export function fitShelfAsk(budget: number, text: string, page: { readonly url: string; readonly title: string }, chooser: FileChooser, shelf: readonly ShelfFile[], nowMs: number): ShelfAsk {
+/** The Shelf ask cut to the Card Budget (ADR 0088): the oldest files leave first, the most that fit kept, found by halving; the files left off named as its cut (#501). */
+export function fitShelfAsk(budget: number, text: string, page: { readonly url: string; readonly title: string }, chooser: FileChooser, shelf: readonly ShelfFile[], nowMs: number): ShelfAsk & { readonly cuts: readonly CardCut[] } {
   const whole = shelfAsk(text, page, chooser, shelf, nowMs)
   const fits = (ask: ShelfAsk): boolean => promptChars(ask.state, ask.questions) <= budget
-  if (fits(whole)) return whole
+  const cut = (ask: ShelfAsk): ShelfAsk & { readonly cuts: readonly CardCut[] } => ({ ...ask, cuts: ask.files.length < whole.files.length ? [{ kind: 'file', count: whole.files.length - ask.files.length }] : [] })
+  if (fits(whole)) return cut(whole)
   let [low, high] = [0, whole.files.length - 1]
   let best = shelfAsk(text, page, chooser, [], nowMs)
   while (low <= high) {
@@ -72,7 +73,7 @@ export function fitShelfAsk(budget: number, text: string, page: { readonly url: 
       low = middle + 1
     } else high = middle - 1
   }
-  return best
+  return cut(best)
 }
 
 /** The file Jev chose; null for `none`, or a label no option has. */

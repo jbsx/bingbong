@@ -2,7 +2,7 @@ import type { BrowserController, FileChooser, PageLanding, VisualGroundingContro
 import type { ShelfFile } from '../../core/shelf/shelf'
 import type { KeepCapture } from '../shelf/keepCapture'
 import { captureFileName } from '../../core/command/captureOp'
-import { fitShelfAsk, readShelfAnswer, SHELF_MAX_FILES, type ShelfAsk, type ShelfQuestions } from '../../core/command/shelfAsk'
+import { fitShelfAsk, readShelfAnswer, type ShelfAsk, type ShelfQuestions } from '../../core/command/shelfAsk'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import { askImageFile, type AskKind, type AskRecord } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
@@ -1496,12 +1496,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * the page card's are (#495); the card read against is the view itself.
    */
   function fitAppliance(budget: number, text: string, view: ApplianceView, heard: readonly NameHearing[], options: ReadOptions): FittedCard<ReturnType<typeof applianceQuestions>> {
-    const lastPage = view.appliance?.lastPage
-    const shown: ApplianceView = { ...view, url: shownAddress(view.url), ...(view.appliance !== undefined && lastPage !== undefined ? { appliance: { ...view.appliance, lastPage: shownAddress(lastPage) } } : {}) }
-    // The questions read the page open's own address (its site, whether it is one); the last page is only a line on it.
-    const questions = applianceQuestions(text, { ...view, ...(shown.appliance !== undefined ? { appliance: shown.appliance } : {}) }, { steps: options.split, heard })
+    // The last page is a line on the card only while no page is open (its `resume`).
+    const lastPage = isRealPage(view.url) ? undefined : view.appliance?.lastPage
+    const shownAppliance = view.appliance !== undefined && lastPage !== undefined ? { ...view.appliance, lastPage: shownAddress(lastPage) } : view.appliance
+    // The questions read the page open's own address (its site, whether it is one), the state its shown one.
+    const questions = applianceQuestions(text, { ...view, ...(shownAppliance !== undefined ? { appliance: shownAppliance } : {}) }, { steps: options.split, heard })
+    const state = applianceState(text, { ...view, url: shownAddress(view.url) }, heard, options.step)
     const cut = addressesCut([view.url, ...(lastPage !== undefined ? [lastPage] : [])])
-    return fitWhole(budget, { questions, state: applianceState(text, shown, heard, options.step) }, cut !== null ? [cut] : [])
+    return fitWhole(budget, { questions, state }, cut !== null ? [cut] : [])
   }
 
   /**
@@ -2310,8 +2312,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // The Shelf yields its oldest files first (ADR 0088); the cut and the address shown cut are named in the record (#501).
     const fit = (budget: number): FittedCard<ShelfQuestions> & ShelfAsk => {
       const fitted = fitShelfAsk(budget, text, { url: shownAddress(url), title: state.title ?? '' }, chooser, files, now)
-      const left = Math.min(files.length, SHELF_MAX_FILES) - fitted.files.length
-      return { ...fitWhole(budget, fitted, [...(address !== null ? [address] : []), ...(left > 0 ? [{ kind: 'file' as const, count: left }] : [])]), files: fitted.files }
+      return { ...fitWhole(budget, fitted, [...(address !== null ? [address] : []), ...fitted.cuts]), files: fitted.files }
     }
     const result = await askFitted(model, 'shelf', turnId, fit, { ownId: `${turnId}-shelf` })
     const ask = result.fitted

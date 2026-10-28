@@ -158,26 +158,27 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       if (visited.at(-1) !== card.page.url && card.page.url !== '') visited.push(card.page.url)
       // The call's own cap, or what is left of the Errand's: whichever comes first is the call's end.
       const budget = AbortSignal.timeout(Math.max(1, clock.callBudget()))
-      /** The step asked over a card (#501): never sent over the Card Budget, its cuts on the step's span. */
-      const ask = async (over: ErrandCard, retryOf?: PlannerStepDetail['retryOf']): Promise<{ result: PlannerResult; request: Omit<PlannerRequest, 'signal'> } | null> => {
-        const fit = { ...(over.cuts.length > 0 ? { cuts: over.cuts, ...(over.budget !== undefined ? { budget: over.budget } : {}) } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
-        if (over.over === true) {
-          reportFault('run.errand.unsent', `the step's card is ${over.size} characters after every cut, over the Card Budget's ${over.budget ?? 0}: not sent`)
-          deps.stepSpan(turnId, { durMs: 0, detail: { model: planner.model, thinking: planner.thinking, outcome: 'unavailable', waitedMs: 0, ...fit, unsent: true } })
+      // The step asked over a card (#501): never sent over the Card Budget, its cuts on the step's span; null when it was not sent.
+      const ask = async (built: ErrandCard, retryOf?: PlannerStepDetail['retryOf']): Promise<{ result: PlannerResult; request: Omit<PlannerRequest, 'signal'> } | null> => {
+        const record = { ...(built.cuts.length > 0 ? { cuts: built.cuts, ...(built.budget !== undefined ? { budget: built.budget } : {}) } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
+        if (built.over === true) {
+          reportFault('run.errand.unsent', `the step's card is ${built.size} characters after every cut, over the Card Budget's ${built.budget ?? 0}: not sent`)
+          deps.stepSpan(turnId, { durMs: 0, detail: { model: planner.model, thinking: planner.thinking, outcome: 'unavailable', waitedMs: 0, ...record, unsent: true } })
           return null
         }
-        memory = withCard(memory, over.text)
-        const request = { goalLine: start.goalLine, memory: plannerMemoryOf(memory), page: { url: over.page.url, title: over.page.title }, verbs: errandVerbs(over) }
+        memory = withCard(memory, built.text)
+        const request = { goalLine: start.goalLine, memory: plannerMemoryOf(memory), page: { url: built.page.url, title: built.page.title }, verbs: errandVerbs(built) }
         const result = await planner.plan({ ...request, signal: AbortSignal.any([deps.signal, budget]) })
         const span = result.status === 'answered' ? plannerStepSpan(result, result.answer.next) : plannerStepSpan(result, 'unavailable', budget.aborted && result.reason === 'cancelled' ? 'timeout' : result.reason)
-        deps.stepSpan(turnId, { ...span, detail: { ...span.detail, ...fit } })
+        deps.stepSpan(turnId, { ...span, detail: { ...span.detail, ...record } })
         return { result, request }
       }
       let asked = await ask(card)
       if (asked === null) return ending('unavailable', unavailableLine(memory), true)
       const refusal = asked.result.status === 'unavailable' ? sizeRefusalOf(asked.result.httpStatus, asked.result.message) : null
       if (refusal !== null && !deps.superseded()) {
-        // A host that refused the step for its size is asked once more (#495, #501), on the card cut by what the whole ask must lose at its own count; never a third time.
+        // A host that refused the step for its size is asked once more (#495, #501), never a third time. The card is only part of what the Planner is sent, so it is cut by what the whole ask must lose at the host's own count (`tighterBudget` over the whole), not by its own share: derived from #495's rule, no new arm.
+        // Only a refusal in Baseten's words is read as one for size (`sizeRefusalOf`); a Planner host that words it otherwise ends the Errand unavailable, as before.
         const { system, user } = plannerMessages(asked.request)
         const whole = cardChars(system) + cardChars(user)
         card = refitErrandCard(card, start.goalLine, Math.max(0, card.size - (whole - tighterBudget(whole, refusal))))
