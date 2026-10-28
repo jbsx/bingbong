@@ -20,13 +20,16 @@ export function resolveOverSpeech(env: Record<string, string | undefined>): Over
 /**
  * The share of a transcript's sound one stretch of the app's sentence holds,
  * at which the transcript is the app's own. A guess still (the grill, Q3),
- * set on the first measure: the gate's 27 own captures of a YouTube read
- * (Parakeet, the room) all reach 0.81, the owner's 114 labelled lines held
- * against the same read reach 0.64 at ten letters and more, but one (0.82).
+ * set on the first measure, between the grill's 0.7 and what it lets
+ * through: the gate's 28 own captures of a YouTube read (Parakeet, the
+ * room) reach 0.75 at least; the owner's 114 labelled lines held against
+ * the same read reach 0.64 at ten letters and more but one ("open
+ * youtube", 0.82), and "play let down" over a read of Let Down 0.73. A thin
+ * margin both ways.
  * The kiosk's speaking-time dumps (`speaking-*.wav` under
  * BINGBONG_AUDIO_DUMP=1) settle it.
  */
-export const OWN_VOICE_SHARE = 0.8
+export const OWN_VOICE_SHARE = 0.75
 
 /**
  * Fewer letters than this are never the app's own: a word or two is found

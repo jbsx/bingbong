@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isOwnVoice, ownShare, resolveOverSpeech, soundLetters } from './ownVoice'
 
-const READ = 'Let Down (Remastered). Radiohead - Topic 153,268,931 views. If playback doesn’t begin shortly, try restarting your device. Videos that you watch may be added to the TV’s watch history and influence TV recommendations. 4:32Radiohead - Let Down + Choir (Complete) NEW VERSIONDanny Kuroki34m • 1 yr agoLivePlaylist ()Mix (50+)'
+const READ = 'Let Down (Remastered). Radiohead - Topic 153,268,931 views. If playback doesn’t begin shortly, try restarting your device. Videos that you watch may be added to the TV’s watch history and influence TV recommendations. 4:32Radiohead - Let Down + Choir (Complete) NEW VERSIONDanny Kuroki34m • 1 yr agoLivePlaylist ()Mix (50+)4:28Exit Music (For A Film)Radiohead53m • 10 yr agoLivePlaylist ()Mix (50+)'
 
 describe('the app’s own voice in the mic (#490)', () => {
   it('is a stretch of the sentence being said, however the ear wrote it (the gate’s own captures, Parakeet)', () => {
@@ -9,6 +9,7 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(isOwnVoice('and influence T V recommendations.', READ)).toBe(true)
     expect(isOwnVoice('Radio hit Topic 153 million 268 931 views', READ)).toBe(true)
     expect(isOwnVoice('4 32 radio hit let down plus choir complete NEW version Danny Kuroki 34 M 1 or a go live playlist mits 50 plus', READ)).toBe(true)
+    expect(isOwnVoice('B double E version Danny Kuroki 34 M Wanner A Go Life playlist mitts 50 plus score', READ)).toBe(true)
   })
 
   it('is not the person’s line over it, a short one above all', () => {
@@ -29,7 +30,7 @@ describe('the app’s own voice in the mic (#490)', () => {
 
   it('holds the transcript in one stretch, and nothing said is no match', () => {
     expect(ownShare('try restarting your device', READ)).toBe(1)
-    expect(ownShare('device your restarting try', READ)).toBeLessThan(0.8)
+    expect(ownShare('device your restarting try', READ)).toBeLessThan(0.7)
     expect(ownShare('move on', '')).toBe(0)
     expect(ownShare('', READ)).toBe(0)
   })
