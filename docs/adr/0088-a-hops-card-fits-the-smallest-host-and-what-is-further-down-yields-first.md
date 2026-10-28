@@ -12,6 +12,10 @@ Amended 2026-10-23 by #407: what is further down yields right-clicks
 first, then links, then shows, and the budget is built at 2.38 characters
 a token.
 
+Amended 2026-10-28 by #495: an address past 300 characters yields first,
+the fit has a floor, opaque runs weigh at their own ratio, and a size
+refusal is asked once more (below).
+
 ## Context
 
 A hop past the first offers every unvisited link on the page. Each link
@@ -173,3 +177,18 @@ were refused at 2.48–2.56 characters a token, so by this ADR's method
   cases as the guard.
 - The glossary gains **Action Card** and **Card Budget**; the old **Card**
   is marked as the orchestrator's.
+
+## Amendment 2026-10-28: the card has a floor, and no ask leaves over the budget (#495)
+
+(From #495's closing note.) An address past 300 characters yields first,
+shown as its origin, its path and each query parameter that names a host
+(arm A, measured best of three on the grown case `turn-mvruozwf-3`;
+labels whole). Opaque runs past 300 characters weigh at 1.33 characters
+a token, measured against the host's own count. If the card is still over
+once nothing further down is left, refs yield from the page's end in
+document order, never a dialog's refs or a media ref: a **guess**, which a
+live card reaching the floor, grown into a case, would settle. A card
+still over is never sent and reads unavailable; a size 422 does not walk
+the Fallback Hosts and is asked once more on the same host at the host's
+stated max. The ask record names each cut, the budget, `unsent` and
+`retryOf`. Baseline and final on Mammoth: 386/438, no case differing.
