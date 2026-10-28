@@ -7,5 +7,7 @@
   "happened": "overlap:gate 3-add-on-turn-it-down at p1 (media-not-started 21%) on baseten-mammoth-27b-latest at 48f14b2b (impl-496's final set, kept in worktree impl-496 at logs/overlap/impl496-final3): Let Down started at 9.0 s; YouTube's consent sheet drew over it after the start (first sampled 11.6 s, the page answering no read for 1.4 s as it drew) and paused it at 0:05; the page told of the wall at 12.5 s and the browser's clear had not clicked when the gate ended: nothing is playing. Green in the run of record at 6e0279eb, where the sheet drew before the start",
   "meant": "The song plays on once the consent sheet is cleared",
   "log": "decision-1793189865413-1.jsonl",
-  "claimedBy": "#496"
+  "claimedBy": "#496",
+  "fixedBy": "6f1bbfbf",
+  "case": "overlap-3-add-on-turn-it-down"
 }
