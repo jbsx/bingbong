@@ -39,6 +39,27 @@ export type Spans = { -readonly [K in NamedAfter]?: number } & { -readonly [K in
 
 const playingIn = (sample: PaneSample | undefined): boolean => sample?.media.some((media) => media.playing) === true
 
+/** The pane is read this often. */
+export const SAMPLE_MS = 400
+/** A run has ended when nothing has happened for this long and no Command is running. */
+export const QUIET_MS = 2_500
+
+/**
+ * What a person sees has held still at `now`: the pane read lately, the
+ * same page and the same media playing for the whole of QUIET_MS. A read
+ * sent at `readingSince` and not yet returned holds it (#496 F3): a page
+ * that answers no evaluate as a wall draws is never read as still on the
+ * sample taken before it stalled.
+ */
+export function paneHeldStill(pane: readonly PaneSample[], now: number, readingSince: number | null): boolean {
+  if (readingSince !== null) return false
+  const latest = pane[pane.length - 1]
+  if (latest === undefined || now - latest.t >= 2 * SAMPLE_MS + 1_000) return false
+  const playingSet = (sample: PaneSample) => `${sample.url} ${sample.media.map((media) => media.playing).join(',')}`
+  const stretch = pane.filter((sample) => sample.t >= now - QUIET_MS)
+  return stretch.length >= 2 && stretch.every((sample) => playingSet(sample) === playingSet(latest))
+}
+
 export function spansOf(records: RunRecords, lineAt: number): Spans {
   const spans: Spans = {}
   const after = records.events.filter((record) => record.t >= lineAt)

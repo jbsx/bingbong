@@ -61,7 +61,7 @@ import { checkEnd, lineOutcomes, saidFrom, type EndState } from '../e2e/overlap/
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
 import { formatTable, stateDisagreements, through, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
-import { placeMs, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
+import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
@@ -92,15 +92,12 @@ const AFTER_WAKE_MS = 1_200
 const ARM_BEFORE_MS = 400
 /** Everything a run does must end within this of its last line; the wav's silent tail is longer. */
 const RUN_BOUND_MS = 90_000
-/** A run has ended when nothing has happened for this long and no Command is running. */
-const QUIET_MS = 2_500
 /** A spoken line's Endpoint comes after its audio: the run waits at least this past the last one. */
 const ENDPOINT_MS = 2_500
 /** A video with a source that has played nothing is still starting, for a person, this long past the last event. */
 const MEDIA_START_MS = 15_000
 const SETUP_BOUND_MS = 60_000
 const SETTLE_MS = 2_000
-const SAMPLE_MS = 400
 /** A start never reached after the reruns is a wall, in these words (orchestrator, 2026-10-27): the case was never put. */
 const START_NOT_REACHED = 'start never reached'
 /** A start's song not playing this long after its line is started by hand. */
@@ -263,6 +260,8 @@ interface Live {
   readonly app: LaunchedApp
   readonly targets: Targets
   readonly pane: PaneSample[]
+  /** When the sampler's read in flight was sent, or null between reads. */
+  readingSince(): number | null
   records(): Promise<RunRecords & { voice: VoiceRecord[] }>
   stop(): void
 }
@@ -325,10 +324,13 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
   await targets.activate('dashboard')
   const pane: PaneSample[] = []
   let sampling = true
+  let reading: number | null = null
   void (async () => {
     while (sampling) {
       const t = Date.now()
+      reading = t
       const read = await readPane(targets, SAMPLE_TEXT_CHARS)
+      reading = null
       if (read.url !== '(no pane)') pane.push({ t, ...read })
       await sleep(SAMPLE_MS)
     }
@@ -337,6 +339,7 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
     app,
     targets,
     pane,
+    readingSince: () => reading,
     async records() {
       const kept = await targets.evaluate<{ events: RunRecords['events']; voice: VoiceRecord[] }>('dashboard', 'window.__overlap').catch(() => undefined)
       return { events: kept?.events ?? [], voice: kept?.voice ?? [], pane }
@@ -383,13 +386,11 @@ async function quiet(live: Live, from: number, notBefore: number, boundMs: numbe
     const lastEvent = lastOf(records.events)?.t ?? 0
     const voice = lastOf(records.voice)?.state
     const busy = voice?.speaking === true || voice?.transcribing === true || voice?.hearing === true
-    // What a person sees has held still: the pane read lately, the same page and the same media playing for the whole stretch,
-    // and no video still starting (a source, nothing played yet) unless it has sat so past MEDIA_START_MS.
+    // What a person sees has held still, with no pane read outstanding (#496 F3), and no video still starting
+    // (a source, nothing played yet) unless it has sat so past MEDIA_START_MS.
     const now = Date.now()
-    const stretch = live.pane.filter((sample) => sample.t >= now - QUIET_MS)
     const latest = lastOf(live.pane)
-    const playingSet = (sample: PaneSample) => `${sample.url} ${sample.media.map((media) => media.playing).join(',')}`
-    const still = latest !== undefined && now - latest.t < 2 * SAMPLE_MS + 1_000 && stretch.length >= 2 && stretch.every((sample) => playingSet(sample) === playingSet(latest))
+    const still = paneHeldStill(live.pane, now, live.readingSince())
     const starting = latest?.media.some((media) => media.src !== '' && !media.playing && media.position < 0.5) === true && now - lastEvent < MEDIA_START_MS
     return !busy && still && !starting && now - lastEvent >= QUIET_MS && !stageOpen(records, from) && lineOutcomes(records, from).every((outcome) => outcome !== 'running')
   }, boundMs)

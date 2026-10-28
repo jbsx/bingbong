@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeMs, spanBegun, spansOf, stageOpen, wallBefore, type RunRecords } from './timeline'
+import { paneHeldStill, placeMs, spanBegun, spansOf, stageOpen, wallBefore, type RunRecords } from './timeline'
 
 const A = 10_000
 const pane = (t: number, url: string, playing = false) => ({ t, url, title: '', text: '', media: playing ? [{ playing: true, src: 'blob:x', position: 1, volume: 1, loop: false }] : [] })
@@ -118,5 +118,28 @@ describe('a stage still open keeps the run from ending', () => {
   it('a stage entered after its turn’s done opens it again', () => {
     const again: RunRecords = { ...errand, events: [...errand.events.slice(0, 8), { t: A + 50, event: { type: 'status', turnId: 'turn-3', status: 'loading', at: 0 } }] }
     expect(stageOpen(again, A)).toBe(true)
+  })
+})
+
+describe('what a person sees has held still (#496 F3)', () => {
+  const watch = 'https://www.youtube.com/watch?v=1'
+  const playing = [0, 400, 800, 1200, 1600, 2000, 2400].map((ms) => pane(A + ms, watch, true))
+
+  it('holds still when the same page and the same media held through the stretch and no read is outstanding', () => {
+    expect(paneHeldStill(playing, A + 2500, null)).toBe(true)
+  })
+
+  it('never reads a stalled page as still: a read sent and not returned holds the quiet, however fresh the last sample', () => {
+    expect(paneHeldStill(playing, A + 2500, A + 2450)).toBe(false)
+    // The record's red points: the last sample 1.5 s old, the read sent after it never returned before the end.
+    expect(paneHeldStill(playing.slice(0, 5), A + 3100, A + 1700)).toBe(false)
+  })
+
+  it('a change inside the stretch is not still', () => {
+    expect(paneHeldStill([...playing.slice(0, 6), pane(A + 2400, watch, false)], A + 2500, null)).toBe(false)
+  })
+
+  it('a sample older than two reads and a second is stale', () => {
+    expect(paneHeldStill(playing.slice(0, 4), A + 3100, null)).toBe(false)
   })
 })
