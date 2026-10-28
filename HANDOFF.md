@@ -23,7 +23,7 @@ The owner (2026-10-27): "the current app as is feels very unreliable… #486 is 
 | Docs | yield `overlap` row: `missing` → `breaks` 30 → `partly` 20 (17/25, now 18/26); one-model rule; AGENTS unchanged | db5443d7, d6ea60c0 | |
 | Run of record | **18/26 through at 6e0279eb** (note on #486, 2026-10-28), states refreshed, 6 new unclaimed ledger lines | d6ea60c0 | |
 
-Kiosk: the sibling pushed 0.1.4-local.202610280330 (= 7f7cccb0) at 03:32. Everything after (the #489 finish, #490 passes, #494, the record) is NOT on the kiosk; the next push is the owner's (`pnpm kiosk:push`; the classifier refuses it to a background job). With #490's default now `off`, a push from `main` head is safe.
+Kiosk: pushed by the orchestrator at 10:01 on 2026-10-28 on the owner's word: **0.1.4-local.202610281000 = main 94a8fb6d** (everything in this handoff, #490 off by default). The earlier sibling push (03:32, = 7f7cccb0) is superseded. Later pushes are `pnpm kiosk:push` from `main` when the kiosk is idle.
 
 ## In-progress work
 
@@ -51,7 +51,7 @@ Kiosk: the sibling pushed 0.1.4-local.202610280330 (= 7f7cccb0) at 03:32. Everyt
 
 ## Next steps, in order
 
-1. Owner: `pnpm kiosk:push` from `main` (≥ d6ea60c0); then speak a day of lines (BINGBONG_AUDIO_DUMP=1 stays on) — this feeds #439, #469 and #490's next measure.
+1. Owner: speak a day of lines on the kiosk (now on 94a8fb6d) (BINGBONG_AUDIO_DUMP=1 stays on) — this feeds #439, #469 and #490's next measure.
 2. File the consent-sheet-over-a-started-song issue (#492's residue: 7 red points across 5 cases in the run of record; the Player's consent watch does not see a sheet drawn at ~0:05 over a playing song) and implement it: it is the largest red class now.
 3. Rule and amend `10-stop-while-speaking`: check the exact stop sentence ("Stopped.", confirm the direct-abort road says it) instead of a meaning the judge reads from the article's own "stop" words (false greens at p2/p3 in the record).
 4. File the three unowned reds as issues by scenario: a pre-roll ad taken for the song (turn-mvrvb0pl-1); a joined correction searched as one string and played the wrong song (turn-mvrvh7xx-2; #494's named gap: a join on a landed first half reads 0.46 < 0.7); a question arriving just after a play ended was shown, never said (turn-mvrw0yf2-1).
