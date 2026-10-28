@@ -10,6 +10,8 @@ the ref, not from the Player's list, and the list's retirement is #374. Built as
 the media ops (#372). The progress bar that reads the Noul is #375.
 Amended on 2026-10-22 by the owner's ruling on #389, and on 2026-10-23 on
 #398: a search box is a kind, and searching it is its op.
+Amended on 2026-10-28 by #497: an ad its Media Engine states is a fact of
+the media ref (below).
 
 ## Context
 
@@ -214,3 +216,10 @@ The op sets and reads the element alone. It does not call `#movie_player`'s
 must be the level the next read shows (it was not: set 53, read 23%,
 ledger cli-10/11/12-mvle*). The Player's exact lines keep their own
 YouTube calls: the Player is YouTube by design.
+
+## Amendment 2026-10-28: an ad is a fact of the media ref (#497)
+
+An ad its Media Engine states is a fact of the media ref: its line says
+'an ad first' before the ad's time, a seek asked over it is held and put
+on the song once the ad ends, and while the engine offers to skip it the
+ref offers `skip`, the engine's own button; nothing skips an ad unasked.

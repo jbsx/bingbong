@@ -1497,7 +1497,13 @@ video:
 
 Main hears the song end through a once-a-second read and opens the next
 queued song. An ad plays in the same element, and its end (while
-`ad-showing`) is not the song's. A song that is not looping is paused in its
+`ad-showing`) is not the song's. Nor is its time the song's start (#497): a
+song that opens on an ad is not yet playing. The line runs on through the
+ad; Now Playing says "An ad first" with the ad's own seconds, and
+"Playing" comes once the song itself plays. Whether an ad plays is the
+Media Engine's own fact, read by its script; an element whose engine
+states none has no ad. A seek over an ad waits for the song; "skip the
+ad" presses the engine's Skip. A song that is not looping is paused in its
 last second, through YouTube's own pause, before YouTube can load an ad and
 Autoplay another video. That is its end. With nothing queued, the
 song ends and the Player stops. A landing that is not a watch page fails
