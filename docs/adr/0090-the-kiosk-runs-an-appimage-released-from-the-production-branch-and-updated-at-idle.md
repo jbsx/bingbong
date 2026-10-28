@@ -1,5 +1,9 @@
 # The kiosk runs an AppImage released from the production branch and updated at idle
 
+Amended on 2026-10-27 by #422: the owner's "update" installs a Release
+already downloaded at once, past the Idle Screen's gate; see the amendment
+below.
+
 The Docker deployment (ADR 0023) is gone by the owner's ruling, 2026-10-24:
 the project never uses containers. The kiosk runs the app on the host
 (#419).
@@ -92,3 +96,26 @@ Considered:
   the orchestrator.
 - **`KillMode=mixed` alone**: no crash, but 5 of 7 stops left a dead FUSE
   mount.
+
+## Amendment 2026-10-27 — the owner's update installs now (#422)
+
+"Update yourself", "check for updates" and the like are an app op on the
+Appliance Card (ADR 0096), offered there alone. A sure pick asks the feed
+for a newer Release and says one fixed Answer:
+
+- **A Release already downloaded** installs past the Idle Screen's gate
+  once "Installing version X, back in a moment." has been said. The line
+  is itself the owner asking (owner's ruling, 2026-10-24).
+- **A Release found but not yet downloaded** downloads, and installs at
+  the Idle Screen as the hourly check's does: "Downloading version X; it
+  installs when the screen is idle." This is a guess, the arm cheapest to
+  reverse; the owner's first live "update" that lands on downloading
+  settles it.
+- **No newer Release:** "Up to date, version X."
+- **Not the installed AppImage:** "Updates only run in the installed app."
+- **A check that fails or does not answer in 8 s:** "Couldn't check for
+  updates." Each such check reports a fault (`update.checkNow`). The 8 s
+  (`CHECK_NOW_WAIT_MS`) is a guess; the first live checks' spans settle it.
+
+A later line before the install, `stop` among them, keeps the app running.
+This is also a guess.

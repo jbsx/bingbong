@@ -2048,8 +2048,10 @@ _Avoid_: server, deployment environment, target machine
 
 **Release**:
 A build of the app published from the `production` branch, the only build
-the Kiosk runs. The Kiosk installs a new Release only while the Idle Screen
-is up.
+the Kiosk runs. The Kiosk installs a new Release on its own only while the
+Idle Screen is up. When the owner asks for an update (#422, ADR 0090), a
+Release already downloaded installs at once, once its Answer has been said;
+one not yet downloaded downloads and installs when the screen is idle.
 _Avoid_: deploy, push, nightly
 
 **Hardware Floor**:
