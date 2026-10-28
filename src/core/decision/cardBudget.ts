@@ -42,8 +42,11 @@ export const CARD_CHARS_PER_TOKEN = 2.38
  */
 export const OPAQUE_CHARS_PER_TOKEN = 1.33
 
-/** An opaque run: past the bound a card shows an address to (`shownAddress`), so on a card it is a run no address cut reached. */
-const OPAQUE_RUN = /\S{301,}/g
+/** The length past which a card shows an address cut (#495, `shownAddress`): past the corpus's 99th percentile, 289 of 12,568 addresses on 2026-10-28. */
+export const ADDRESS_BOUND = 300
+
+/** An opaque run: past the address bound, so on a card it is a run no address cut reached. */
+const OPAQUE_RUN = new RegExp(`\\S{${ADDRESS_BOUND + 1},}`, 'g')
 
 /** A text's size in the characters the budget is built in: its length, each opaque run weighed at its own ratio. */
 export function cardChars(text: string): number {

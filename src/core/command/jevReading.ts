@@ -12,7 +12,7 @@ import type { MusicAction } from '../music/musicWords'
 import { EXTENT_RUNGS, describeExtent, extentQuestion, isScrollOp, regionChangeOf, regionStateOf, scrollExtent, scrollOpDescription, scrollOpOfVerb, scrollOpsOf, scrollVerbOf, type ExtentRung, type ScrollOp } from './scrollOp'
 import { AMOUNT_RUNGS, LEVEL_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateLevel, seekAmount, volumeLevel, type AmountRung, type LevelRung, type MediaOp, type MediaOpAction } from './mediaOp'
 import { SAY_LABELS, factOfLabel, sayOptions, withPageSong, type ApplianceFacts } from './applianceFacts'
-import { promptChars, type CardCut } from '../decision/cardBudget'
+import { ADDRESS_BOUND, promptChars, type CardCut } from '../decision/cardBudget'
 import { appCardLabels, appCardOptions, appOpOf, settingOptions, takesAmount, type AppOp, type AppState } from './appOp'
 import { sectionsOf } from './passageSections'
 import { CAPTURE_PAGE_LINE, captureKindOf, captureLabelOf, captureOfRef, captureRefLine, captureTextLine, type CaptureAction, type CaptureLabel } from './captureOp'
@@ -798,9 +798,6 @@ function describeLink(link: PageLink): string {
   return `link ${JSON.stringify(link.label)} ${shownAddress(link.href)}`
 }
 
-/** The length past which a card shows an address cut (#495): past the corpus's 99th percentile, 289 of 12,568 addresses on 2026-10-28. */
-const ADDRESS_BOUND = 300
-
 /**
  * An address as the card shows it (#495): whole up to the bound; past it,
  * its origin and path, with each query parameter that names a destination
@@ -823,6 +820,7 @@ export function shownAddress(href: string): string {
     hosts.add(host)
     return [`${key}=${host}`]
   })
+  // A path past half the bound goes too: a guess, unmeasured.
   const path = url.pathname.length <= ADDRESS_BOUND / 2 ? url.pathname : ''
   return `${url.origin}${path}${destinations.length > 0 ? `?${destinations.join('&')}` : ''}…`
 }
