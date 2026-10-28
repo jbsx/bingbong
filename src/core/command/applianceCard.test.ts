@@ -141,8 +141,8 @@ describe('the running Command on the Appliance Card (#489)', () => {
 
   it('reads the Fate, unsure or missing as goes on; and the doing fact only while a line runs', () => {
     const view = { ...WATCH, running: RUNNING }
-    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('waits') } as CommandAnswers, view)).toBe('waits')
-    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('ends', 0.4) } as CommandAnswers, view)).toBe('goes_on')
+    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('waits') } as unknown as CommandAnswers, view)).toBe('waits')
+    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('ends', 0.4) } as unknown as CommandAnswers, view)).toBe('goes_on')
     expect(fateOfAnswers(answers('media-loop'), view)).toBe('goes_on')
     expect(fateOfAnswers(answers('media-loop'), WATCH)).toBeUndefined()
     expect(readApplianceAnswers(answers('say_doing'), 'what are you doing', view)).toMatchObject({ command: { verb: 'say', fact: 'doing' } })

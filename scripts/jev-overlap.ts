@@ -1,0 +1,152 @@
+#!/usr/bin/env node
+// `pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir]` and
+// `pnpm jev:overlap rebuild [dir]` (#489): the Overlap Jev cases. `grow`
+// converts each line #489 claims from the ask its kept run recorded to the
+// Appliance Card it would get now — the running Command at the line's
+// arrival read from that run's events (its words, its stage, its done so
+// far, the media it was opening) — written as `overlap-<case>.json` with the
+// card it was built from kept beside it (`overlap`), each expecting the
+// Fate the owner's row names. `rebuild` makes every Overlap case's ask
+// again from what it keeps, after a change to the card's wording (T1, T2).
+// Node runs this .ts directly via type stripping (#36).
+
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { registerHooks } from 'node:module'
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (!/^\.\.?\//.test(specifier) || /\.[cm]?[jt]s$/.test(specifier)) return nextResolve(specifier, context)
+    try {
+      return nextResolve(`${specifier}.ts`, context)
+    } catch {
+      return nextResolve(specifier, context)
+    }
+  },
+})
+const { withRunning } = (await import('../src/core/command/runningCommand.ts')) as typeof import('../src/core/command/runningCommand')
+const { companionCase } = (await import('../src/core/decision/applianceCompanion.ts')) as typeof import('../src/core/decision/applianceCompanion')
+const { JEV_CORPUS_DIR } = (await import('../src/main/decision/jevCorpus.ts')) as typeof import('../src/main/decision/jevCorpus')
+type RunningCommand = import('../src/core/command/runningCommand').RunningCommand
+type DecisionQuestions = import('../src/core/ports/decisionModel').DecisionQuestions
+
+/** A claimed line (#489's table), the run that kept its ask, and the answer the owner's row names. */
+interface Source {
+  readonly name: string
+  readonly turnId: string
+  readonly expect: readonly { readonly question: string; readonly label: string }[]
+  /** A kept overlap:gate run: `<case>/<model dir>/p<n>`. */
+  readonly run?: string
+  /** A kiosk line read on the page card before the Appliance Card: its ask converted, the running line given. */
+  readonly kiosk?: { readonly running: RunningCommand }
+}
+
+const MAMMOTH = 'decision-models_baseten-mammoth-27b-latest'
+const fate = (label: string) => [{ question: 'fate', label }]
+const SOURCES: readonly Source[] = [
+  { name: '1-replace-new-goal', turnId: 'turn-mvr6e4ow-2', run: `1-replace-new-goal/${MAMMOTH}/p1`, expect: fate('ends') },
+  { name: '2-correct-by-coldplay', turnId: 'turn-mvr6g44c-2', run: `2-correct-by-coldplay/${MAMMOTH}/p1`, expect: fate('joins') },
+  { name: '2-correct-by-radiohead', turnId: 'turn-mvr6ijd2-2', run: `2-correct-by-radiohead/${MAMMOTH}/p1`, expect: fate('joins') },
+  { name: '2-correct-the-other-one', turnId: 'turn-mvr6lcdp-2', run: `2-correct-the-other-one/${MAMMOTH}/p1`, expect: fate('joins') },
+  { name: '4-skip-ahead-while-loading', turnId: 'turn-mvr6whm8-2', run: `4-skip-ahead-while-loading/${MAMMOTH}/p3`, expect: fate('waits') },
+  { name: '7-is-it-working', turnId: 'turn-mvr7eee9-2', run: `7-is-it-working/${MAMMOTH}/p1`, expect: [{ question: 'action', label: 'say_doing' }] },
+  { name: '7-what-are-you-doing', turnId: 'turn-mvr7gp6p-2', run: `7-what-are-you-doing/${MAMMOTH}/p1`, expect: [{ question: 'action', label: 'say_doing' }] },
+  { name: '14-remark-during-task', turnId: 'turn-mvr8aguu-v2', run: `14-remark-during-task/${MAMMOTH}/p3`, expect: fate('goes_on') },
+  { name: '8-kiosk-back-to-page', turnId: 'turn-mvphyqdu-vl', kiosk: { running: { words: 'Back to-', stage: 'Thinking', done: [] } }, expect: fate('joins') },
+]
+
+interface Ask {
+  readonly turnId: string
+  readonly kind: string
+  readonly at: number
+  readonly state: string
+  readonly questions: DecisionQuestions
+  readonly model?: string
+}
+interface Timed {
+  readonly t: number
+  readonly event: { readonly type: string; readonly turnId?: string; readonly status?: string; readonly word?: string; readonly detail?: string; readonly text?: string; readonly action?: string; readonly name?: string; readonly args?: Record<string, unknown>; readonly task?: { readonly id: string } }
+}
+
+const asksIn = (dir: string): Ask[] =>
+  readdirSync(dir)
+    .filter((file) => file.startsWith('asks-') && file.endsWith('.jsonl'))
+    .flatMap((file) => readFileSync(join(dir, file), 'utf8').split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as Ask))
+
+/**
+ * The line running when the ask was made, as the runner's live line would
+ * carry it then. Every source's Sequence Case gives one line before the
+ * claimed one, so every other turn before the ask is that line's, its later
+ * hops among them.
+ */
+function runningAt(events: readonly Timed[], at: number, own: string): RunningCommand | null {
+  const ofLine = events.filter((each) => each.t <= at && each.event.turnId !== undefined && each.event.turnId !== own)
+  const first = ofLine.find((each) => each.event.type === 'status' && each.event.status === 'thinking')
+  if (first === undefined) return null
+  const status = ofLine.filter((each) => each.event.type === 'status' && each.event.status !== 'cancelled').at(-1)!.event
+  const stage = status.word ?? `${status.status!.charAt(0).toUpperCase()}${status.status!.slice(1)}`
+  const detail = status.status === 'thinking' && status.word === undefined ? undefined : status.detail
+  const play = ofLine.find((each) => each.event.type === 'tool_call' && each.event.name === 'play')?.event.args?.words
+  const landed = new Set(ofLine.filter((each) => each.event.type === 'tool_result').map((each) => each.event.turnId))
+  const done = ofLine.filter((each) => each.event.type === 'command' && landed.has(each.event.turnId)).map((each) => each.event.action!)
+  return { words: first.event.detail!, stage, ...(detail !== undefined && detail !== '' ? { detail } : {}), done, ...(typeof play === 'string' ? { opening: play } : {}) }
+}
+
+function caseOf(source: Source, base: { state: string; questions: DecisionQuestions }, running: RunningCommand, transcript: string, model: string | undefined, at: number): object {
+  return {
+    turnId: source.turnId,
+    transcript,
+    note: `An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by \`pnpm jev:overlap\`. Expects the Fate the owner's row ${source.name.split('-')[0]} names (#486).`,
+    ...(model !== undefined ? { model } : {}),
+    recordedAt: at,
+    expect: source.expect,
+    ask: withRunning(base.state, base.questions, running),
+    overlap: { running, base },
+  }
+}
+
+const [mode, ...rest] = process.argv.slice(2)
+const out = rest.includes('--out') ? rest[rest.indexOf('--out') + 1]! : JEV_CORPUS_DIR
+const positional = rest.filter((arg, index) => arg !== '--out' && rest[index - 1] !== '--out')
+
+if (mode === 'grow') {
+  const [kept, kiosk] = positional
+  if (kept === undefined) throw new Error('usage: pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir]')
+  for (const source of SOURCES) {
+    if (source.run !== undefined) {
+      const runFile = join(kept, `${source.run}.json`)
+      const asks = asksIn(join(kept, `${source.run}-logs`))
+      const ask = asks.find((each) => each.turnId === source.turnId && each.kind === 'appliance')
+      if (ask === undefined) throw new Error(`${source.name}: no Appliance ask for ${source.turnId}`)
+      const events = (JSON.parse(readFileSync(runFile, 'utf8')) as { run: { records: { events: Timed[] } } }).run.records.events
+      const running = runningAt(events, ask.at, source.turnId)
+      if (running === null) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
+      const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, { state: ask.state, questions: ask.questions }, running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+    } else if (source.kiosk !== undefined) {
+      if (kiosk === undefined || !existsSync(kiosk)) {
+        console.log(`${source.name}: no kiosk logs given, skipped`)
+        continue
+      }
+      const ask = asksIn(kiosk).find((each) => each.turnId === source.turnId && each.kind === 'command')
+      if (ask === undefined) throw new Error(`${source.name}: no page-card ask for ${source.turnId}`)
+      const companion = companionCase(source.name, { turnId: source.turnId, expect: [], ask: { state: ask.state, questions: ask.questions } })
+      if (companion === null) throw new Error(`${source.name}: its ask has no Appliance companion`)
+      const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, companion.ask, source.kiosk.running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+    }
+    console.log(`overlap-${source.name}.json`)
+  }
+} else if (mode === 'rebuild') {
+  const dir = positional[0] ?? JEV_CORPUS_DIR
+  let rebuilt = 0
+  for (const file of readdirSync(dir).filter((each) => each.startsWith('overlap-') && each.endsWith('.json'))) {
+    const path = join(dir, file)
+    const kept = JSON.parse(readFileSync(path, 'utf8')) as { overlap: { running: RunningCommand; base: { state: string; questions: DecisionQuestions } } }
+    writeFileSync(path, `${JSON.stringify({ ...kept, ask: withRunning(kept.overlap.base.state, kept.overlap.base.questions, kept.overlap.running), overlap: kept.overlap }, null, 2)}\n`)
+    rebuilt += 1
+  }
+  console.log(`${rebuilt} Overlap cases rebuilt in ${dir}`)
+} else {
+  throw new Error('usage: pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir] | rebuild [dir]')
+}

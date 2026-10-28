@@ -30,6 +30,7 @@
     "jev:candidates": "node scripts/jev-candidates.ts",
     "jev:case": "node scripts/jev-case.ts",
     "jev:appliance": "node scripts/jev-appliance.ts",
+    "jev:overlap": "node scripts/jev-overlap.ts",
     "bugs": "node scripts/bugs.ts",
     "bugs:candidates": "node scripts/bugs-candidates.ts",
     "bugs:add": "node scripts/bugs-add.ts",

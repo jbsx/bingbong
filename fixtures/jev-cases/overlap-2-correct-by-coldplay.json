@@ -1,0 +1,215 @@
+{
+  "turnId": "turn-mvr6g44c-2",
+  "transcript": "no, by coldplay",
+  "note": "An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by `pnpm jev:overlap`. Expects the Fate the owner's row 2 names (#486).",
+  "model": "decision-models/baseten-mammoth-27b-latest",
+  "recordedAt": 1793135278815,
+  "expect": [
+    {
+      "question": "fate",
+      "label": "joins"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to the appliance, a voice-driven web browser: \"no, by coldplay\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing\nStill running, from the user's line before this one: \"play yellow\"\nIts stage: Playing yellow\nIt is opening: \"yellow\", not playing yet",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+        "options": {
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "say_time": "appliance: say the time and date — 21:07, Tuesday 27 October",
+          "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 12°C, clear sky now; today high 17°C, low 10°C, rain 100%; coming hours 22:00 11°C, 23:00 11°C, 00:00 10°C, 01:00 10°C, 02:00 10°C, 03:00 10°C; coming days 2026-10-28 16°C/9°C overcast, rain 2%, 2026-10-29 16°C/11°C overcast, rain 0%, 2026-10-30 15°C/9°C clear sky, rain 0%",
+          "say_playing": "appliance: say the song playing — nothing playing",
+          "say_timer": "appliance: say how long is left on the timer — no timer set",
+          "panel_open": "app: open the activity panel, the feed of what was said and done — now closed, overlay, 536 px wide",
+          "panel_close": "app: close the activity panel, hiding it — now closed, overlay, 536 px wide",
+          "panel_overlay": "app: float the activity panel over the page — now closed, overlay, 536 px wide",
+          "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, overlay, 536 px wide",
+          "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, overlay, 536 px wide",
+          "show_idle": "app: bring the Idle Screen back over the browser, music playing on — now showing the browser",
+          "show_dashboard": "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page — now showing the browser",
+          "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
+          "show_settings": "app: show the Settings page — now showing the browser",
+          "show_settings_voice": "app: show the Settings page at its Voice section — now showing the browser",
+          "show_settings_learned_terms": "app: show the Settings page at its Speech vocabulary section — now showing the browser",
+          "show_settings_appearance": "app: show the Settings page at its Appearance section — now showing the browser",
+          "show_settings_browsing": "app: show the Settings page at its Browsing section — now showing the browser",
+          "show_settings_idle_screen_cards": "app: show the Settings page at its Cards section — now showing the browser",
+          "show_settings_clock": "app: show the Settings page at its Clock section — now showing the browser",
+          "show_settings_screen": "app: show the Settings page at its Screen section — now showing the browser",
+          "show_settings_weather": "app: show the Settings page at its Weather section — now showing the browser",
+          "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
+          "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
+          "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
+          "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
+          "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+          "app_update": "app: update — now version 43.4.0",
+          "timer": "the app: set a timer for the length the words say",
+          "timer_off": "the app: turn the timer off",
+          "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+          "help": "the app: show and say what it can be asked to do",
+          "stop": "stop what the app is doing: the page loading, the voice speaking",
+          "say_doing": "appliance: say what the app is doing now, for the line still running — Still on “play yellow”: playing yellow.",
+          "page": "something on the page open, \"DuckDuckGo - Protection. Privacy. Peace of mind.\": its links, buttons, fields or text",
+          "none": "not a command: a remark, a question to no one, noise"
+        }
+      },
+      "fate": {
+        "type": "choice",
+        "instructions": "What do the user's words mean for the line still running?",
+        "options": {
+          "ends": "a new request, or a stop: the running line ends and the words are done instead",
+          "joins": "they finish or correct the running line (its missing words, another artist, version or one), so the two are read as one line",
+          "waits": "they act on what the running line is opening (pause it, loop it, skip in it, turn it down): done once it is there",
+          "goes_on": "they are about something else, ask about the wait, or are not for the app: the running line goes on"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "no",
+          "s0-1": "no by",
+          "s0-2": "no by coldplay",
+          "s1-1": "by",
+          "s1-2": "by coldplay",
+          "s2-2": "coldplay"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start",
+          "to": "the volume, speed or app number to the number the words carry",
+          "up-little": "the volume, speed or app number up a little",
+          "up-step": "the volume, speed or app number up a step",
+          "up-lot": "the volume, speed or app number up a lot",
+          "up-all": "the volume, speed or app number up as far as it goes",
+          "down-little": "the volume, speed or app number down a little",
+          "down-step": "the volume, speed or app number down a step",
+          "down-lot": "the volume, speed or app number down a lot",
+          "down-all": "the volume, speed or app number down as far as it goes"
+        }
+      },
+      "steps": {
+        "type": "choice",
+        "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",
+        "options": {
+          "none": "one command: the whole line",
+          "w1": "no | by coldplay"
+        }
+      }
+    }
+  },
+  "overlap": {
+    "running": {
+      "words": "play yellow",
+      "stage": "Playing",
+      "detail": "yellow",
+      "done": [],
+      "opening": "yellow"
+    },
+    "base": {
+      "state": "The user spoke to the appliance, a voice-driven web browser: \"no, by coldplay\"\nPage open: https://duckduckgo.com/ — \"DuckDuckGo - Protection. Privacy. Peace of mind.\"\nPlaying: nothing",
+      "questions": {
+        "action": {
+          "type": "choice",
+          "instructions": "Which one action does the appliance take for the user's words? Each option is a whole action on what the appliance itself holds: what is playing, the music, the app, what it knows. Choose page when the words are about something on the page open. Choose none when the words are not a command.",
+          "options": {
+            "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+            "play_next": "music: find a song by the words and play it after the one playing",
+            "queue": "music: find a song by the words and add it to the end of the queue",
+            "say_time": "appliance: say the time and date — 21:07, Tuesday 27 October",
+            "say_weather": "appliance: say today's weather in London, the home city — words naming another place or a website are a search, not this — London: 12°C, clear sky now; today high 17°C, low 10°C, rain 100%; coming hours 22:00 11°C, 23:00 11°C, 00:00 10°C, 01:00 10°C, 02:00 10°C, 03:00 10°C; coming days 2026-10-28 16°C/9°C overcast, rain 2%, 2026-10-29 16°C/11°C overcast, rain 0%, 2026-10-30 15°C/9°C clear sky, rain 0%",
+            "say_playing": "appliance: say the song playing — nothing playing",
+            "say_timer": "appliance: say how long is left on the timer — no timer set",
+            "panel_open": "app: open the activity panel, the feed of what was said and done — now closed, overlay, 536 px wide",
+            "panel_close": "app: close the activity panel, hiding it — now closed, overlay, 536 px wide",
+            "panel_overlay": "app: float the activity panel over the page — now closed, overlay, 536 px wide",
+            "panel_docked": "app: dock the activity panel beside the page, in its own room — now closed, overlay, 536 px wide",
+            "panel_width": "app: change the activity panel's width: wider, narrower or to the pixels the words carry, the amount Choice saying which and how far — now closed, overlay, 536 px wide",
+            "show_idle": "app: bring the Idle Screen back over the browser, music playing on — now showing the browser",
+            "show_dashboard": "app: show the app's own home screen, the browser, leaving Settings or the Weight page — not a website's home page — now showing the browser",
+            "show_weight": "app: show the Weight page, the weigh-ins — now showing the browser",
+            "show_settings": "app: show the Settings page — now showing the browser",
+            "show_settings_voice": "app: show the Settings page at its Voice section — now showing the browser",
+            "show_settings_learned_terms": "app: show the Settings page at its Speech vocabulary section — now showing the browser",
+            "show_settings_appearance": "app: show the Settings page at its Appearance section — now showing the browser",
+            "show_settings_browsing": "app: show the Settings page at its Browsing section — now showing the browser",
+            "show_settings_idle_screen_cards": "app: show the Settings page at its Cards section — now showing the browser",
+            "show_settings_clock": "app: show the Settings page at its Clock section — now showing the browser",
+            "show_settings_screen": "app: show the Settings page at its Screen section — now showing the browser",
+            "show_settings_weather": "app: show the Settings page at its Weather section — now showing the browser",
+            "show_settings_weight": "app: show the Settings page at its Weight section — now showing the browser",
+            "show_settings_ai_usage": "app: show the Settings page at its AI usage section — now showing the browser",
+            "show_settings_environment": "app: show the Settings page at its Environment section — now showing the browser",
+            "show_settings_this_computer": "app: show the Settings page at its This computer section — now showing the browser",
+            "settings": "app setting: change one of the app's settings — ad blocking, appearance (light or dark mode), the clock (12- or 24-hour), seconds on the clock, the date format, the first day of the week, the idle timeout, night dimming, web page zoom, the weather city and units, the voice, the Idle Screen's cards, the upload folder",
+            "app_update": "app: update — now version 43.4.0",
+            "timer": "the app: set a timer for the length the words say",
+            "timer_off": "the app: turn the timer off",
+            "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
+            "help": "the app: show and say what it can be asked to do",
+            "stop": "stop what the app is doing: the page loading, the voice speaking",
+            "page": "something on the page open, \"DuckDuckGo - Protection. Privacy. Peace of mind.\": its links, buttons, fields or text",
+            "none": "not a command: a remark, a question to no one, noise"
+          }
+        },
+        "slot": {
+          "type": "choice",
+          "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. A line with no command word, such as a question, carries itself: its search terms are the line as asked. Choose none when it carries none.",
+          "options": {
+            "none": "the command carries no words of its own",
+            "s0-0": "no",
+            "s0-1": "no by",
+            "s0-2": "no by coldplay",
+            "s1-1": "by",
+            "s1-2": "by coldplay",
+            "s2-2": "coldplay"
+          }
+        },
+        "amount": {
+          "type": "choice",
+          "instructions": "Only when the action skips forward or back in a video or audio, changes its volume or speed, or changes an app number (a setting's amount, the panel's width): how far? For a skip, choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. For a volume, a speed or an app number, choose to when the words carry the level, else up or down and how far. Ignored for every other action.",
+          "options": {
+            "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+            "moment": "a moment: a hundredth of its length",
+            "little": "a little: a twentieth of its length",
+            "chunk": "a chunk: a tenth of its length",
+            "lot": "a lot: a quarter of its length",
+            "half": "half of its length",
+            "end": "all the way: to the end, or back to the start",
+            "to": "the volume, speed or app number to the number the words carry",
+            "up-little": "the volume, speed or app number up a little",
+            "up-step": "the volume, speed or app number up a step",
+            "up-lot": "the volume, speed or app number up a lot",
+            "up-all": "the volume, speed or app number up as far as it goes",
+            "down-little": "the volume, speed or app number down a little",
+            "down-step": "the volume, speed or app number down a step",
+            "down-lot": "the volume, speed or app number down a lot",
+            "down-all": "the volume, speed or app number down as far as it goes"
+          }
+        },
+        "steps": {
+          "type": "choice",
+          "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",
+          "options": {
+            "none": "one command: the whole line",
+            "w1": "no | by coldplay"
+          }
+        }
+      }
+    }
+  }
+}
