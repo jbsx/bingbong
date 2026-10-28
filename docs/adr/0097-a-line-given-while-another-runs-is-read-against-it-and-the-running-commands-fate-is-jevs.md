@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended 2026-10-28 by #498: a joined line's ask carries the first line's
+held pick, offers `correct` while a pick is held, and reads the first
+line's Slot beside the correction's own words (the `joins` bullet).
+
 Amended 2026-10-28 by #494: the running Command's lines sit right after
 the words, not after the state's own lines (measured on the Overlap Jev
 cases, the row-8 Fate at the runner's 0.7); and a joined line is the line
@@ -67,6 +71,16 @@ read each line alone: `no, by coldplay` played Meghan Trainor's "No".
     order ("play yellow, no, by coldplay"), are read again as one line on
     one more ask (T3, arm J1). That ask never offers Steps: the joined
     line takes one step, never a second on the bare correction.
+    That ask is the Appliance Card with the first line's held pick on it
+    ("Music picked: “<title>”, the result of a search for “<words>”"),
+    `correct` and `correct_back` offered while a pick is held, not only
+    while the Queue has a current song (a held pick is a running choice),
+    and, when the first line carried a Slot, the Slot read as the
+    correction's own words: no span across the join, the first line's
+    Slot beside each span of the correction, and the Slot instructions
+    saying the words are a line and its correction (#498; F1 arm A,
+    measured tie with arm C at 18/19; F2 arm c 2/2 against arms a and b
+    at 0/2).
   - `waits`: the new line waits until the running line ends, however it
     ends (every runner wait is bounded), and is read again against what
     is there.

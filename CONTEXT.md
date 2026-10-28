@@ -653,7 +653,12 @@ control on media still opening waits, any other goes on. A joined line is
 the line it joins, one line on its Task: a first half still being read gives
 way into it; one that fired and ended stands when the two read as one fire
 what it fired (or nothing), and otherwise the joined Command is its next
-hop. #489, ADR 0097, #494.
+hop. The joined line's ask carries what the first line holds: the pick a
+play's search made (held while it opens, after the line was cut off, and
+while it plays), so a correction can choose the search's next result
+(`correct`) instead of a new search; and a first line's Slot, offered
+beside each span of the correction's own words and never across the join.
+#489, ADR 0097, #494, #498.
 _Avoid_: relation, interruption type, supersede
 
 **Sequence Case**:
