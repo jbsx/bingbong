@@ -92,11 +92,11 @@ each calibration (`<dir>/<case>/<model>/calibration.json`) and
 Only what a person could see or hear once the run has settled. A run has
 settled when nothing has happened for 2.5 s, the app is not speaking or
 hearing, the page and its media have held still, and nothing begun since
-line 1 is still going: no line still running, and no stage (thinking,
-acting, loading) entered with no end after it, a step of an Errand or a
-Plan included, since a step thinks without a sign. A question the app has
-asked waits on the person, so what was thinking before it does not count.
-A run that never settles is read at the bound, 90 s past its last line.
+line 1 is still under way: no line running, and no Thinking, Acting or
+Loading entered since line 1 without its end, an Errand's own steps
+included. A question the app has asked waits on the person, so it counts
+as an end. A run that never settles is read at the bound, 90 s past its
+last line.
 
 - `url`: the pane's address. `host` matches the host or any subdomain of it.
 - `view.has`: text in view in the pane (case and spacing ignored).

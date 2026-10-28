@@ -8,7 +8,7 @@
 // and a named point is placed inside what it found.
 
 import { classifyBlockerPage } from '../../src/core/browser/blockerNudge.ts'
-import type { PipelineEvent } from '../../src/core/pipeline/events.ts'
+import type { PipelineEvent, PipelineStatus } from '../../src/core/pipeline/events.ts'
 import type { NamedAfter, NamedWhile } from './sequenceCase.ts'
 import type { PlacedTime } from './points.ts'
 
@@ -103,7 +103,7 @@ function loadingBegun(records: RunRecords, lineAt: number): number | undefined {
   return loading === undefined ? undefined : loading.t - lineAt
 }
 
-const OPEN_STAGES: ReadonlySet<string> = new Set(['thinking', 'acting', 'loading'])
+const OPEN_STAGES: ReadonlySet<PipelineStatus> = new Set(['thinking', 'acting', 'loading'])
 
 /**
  * Whether any turn since `from` has entered a stage (thinking, acting,
@@ -111,7 +111,8 @@ const OPEN_STAGES: ReadonlySet<string> = new Set(['thinking', 'acting', 'loading
  * step publishes nothing while it thinks, so a run that went quiet with one
  * open has not ended: its next effect is still coming. Every turn counts,
  * an Errand's next step included, whoever's line it serves; a question the
- * app asked closes what came before it, since it then waits on the person.
+ * app asked (an alert asks nothing) closes what came before it, since it
+ * then waits on the person.
  */
 export function stageOpen(records: RunRecords, from: number): boolean {
   const entered = new Set<string>()
@@ -119,7 +120,6 @@ export function stageOpen(records: RunRecords, from: number): boolean {
     if (t < from) continue
     if (event.type === 'status' && OPEN_STAGES.has(event.status)) entered.add(event.turnId)
     else if (event.type === 'done') entered.delete(event.turnId)
-    // A question asked waits on the person: what was thinking before it is not deciding (an alert asks nothing).
     else if (event.type === 'site_question' && event.alert !== true) entered.clear()
   }
   return entered.size > 0
