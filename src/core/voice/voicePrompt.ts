@@ -47,9 +47,10 @@ export type EarPhase = 'starting' | 'failed' | 'rest' | 'listening' | 'hearing' 
  * wake word (at rest), or nothing at all — the microphone off. While the
  * app speaks, an open ear that has heard nothing is at rest (#472): what
  * starts under the line is dropped as its own voice, and only the wake
- * word, which cuts it, is heard. Before main has said, at rest.
+ * word, which cuts it, is heard — unless it hears the person over the
+ * app's voice (#490), when it listens still. Before main has said, at rest.
  */
-export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; speaking?: boolean; loading?: EarLoading } | null): EarPhase {
+export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; speaking?: boolean; overSpeech?: boolean; loading?: EarLoading } | null): EarPhase {
   if (voice === null) return 'rest'
   // A model that did not load ends the wait (#447) open or shut — a monitor whose VAD threw has stopped itself, and is not a microphone switched off —
   // unless a listen or a read is under way: with only the wake word failed, Ctrl+Space still opens an ear that hears.
@@ -59,7 +60,7 @@ export function earPhase(voice: { listening: boolean; transcribing: boolean; mon
   // A line taken before the transcriber is in waits for it: still the ear's cold start, counted from the Endpoint.
   if (voice.transcribing) return voice.loading === 'words' ? 'starting' : 'transcribing'
   if (voice.listening && voice.hearing) return 'hearing'
-  if (voice.listening && voice.speaking !== true) return 'listening'
+  if (voice.listening && (voice.speaking !== true || voice.overSpeech === true)) return 'listening'
   return voice.monitoring ? 'rest' : 'off'
 }
 

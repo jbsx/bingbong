@@ -10,6 +10,7 @@ import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
+import { isOwnVoice, ownShare, type OverSpeech } from './ownVoice'
 
 /**
  * The complete local phrase-routing vocabulary — abort alone, the one
@@ -42,14 +43,16 @@ export interface SubmittedCommand {
   readonly truncated: boolean
   /** The tracer's monotonic ms at the Endpoint — where the Reaction span opens (#324). */
   readonly endpointAt?: number
+  /** Spoken over the app's voice, which ducked for it (#490): the line's Command stops it by firing, and its end lets it back up. */
+  readonly overSpeech?: true
 }
 
 export interface VoiceSessionDeps {
   vad: VadScorer
   transcriber: Transcriber
   clock: Clock
-  /** Stopped when the hotkey arms or the wake word fires — the barge-in hook. */
-  tts: Pick<TtsSpeaker, 'stop'>
+  /** Stopped when the hotkey arms or the wake word fires — the barge-in hook; ducked under speech over it (#490). */
+  tts: Pick<TtsSpeaker, 'stop' | 'duck'>
   wake?: VoiceWakeDeps
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /**
@@ -71,6 +74,8 @@ export interface VoiceSessionDeps {
    * clock waits out the playback. Absent hears everything.
    */
   speaking?: TtsIdle
+  /** Live: what speech that starts while the app talks inside a listen is (#490); absent is `off`, the speaking gate. */
+  getOverSpeech?(): OverSpeech
   /** Always-on perf logging (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
@@ -223,6 +228,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // The utterance in capture is the app's own voice (#326): a line was
   // playing when it started, or started under it. Dropped at its Endpoint.
   let muted = false
+  // The utterance in capture started over the app's voice, or the app started under it, and is read to tell whose it is (#490):
+  // the app's sentences heard while it was captured, and whether the app's voice ducked for it.
+  let over: { said: Set<string>; ducked: boolean } | null = null
+  // The capture has met the app's voice already: it is decided once per capture (#490).
+  let metSpeech = false
   // The Utterance in capture's pauses (#443): how many decoded at a pause, and the audio length of the one standing (null when speech came back after it).
   let pauseDecodes = 0
   let pauseSamples: number | null = null
@@ -230,12 +240,47 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
 
   const speaking = (): boolean => deps.speaking?.isSpeaking() ?? false
+  const overSpeech = (): OverSpeech => deps.getOverSpeech?.() ?? 'off'
+
+  /**
+   * Speech in capture met the app's voice (#490), at its start or as a line
+   * started under it: per the arm, the capture is the app's own and dropped
+   * (`off`), the app yields at once (`stop`), or the capture is read to tell
+   * whose it is, the app's voice ducked meanwhile (`duck`). Whether the
+   * capture is muted.
+   */
+  function meetSpeech(): boolean {
+    metSpeech = true
+    const mode = overSpeech()
+    if (mode === 'off') return true
+    if (mode === 'stop') {
+      deps.tts.stop()
+      return false
+    }
+    over = { said: new Set(), ducked: mode === 'duck' }
+    hearSpeech()
+    if (over.ducked) deps.tts.duck?.(true)
+    return false
+  }
+
+  /** The app's sentence now, kept while a capture over it runs. */
+  function hearSpeech(): void {
+    const said = deps.speaking?.speechText?.()
+    if (over !== null && said !== undefined && said !== '') over.said.add(said)
+  }
+
+  /** The capture over the app's voice is over with no line: the app comes back up (#490). */
+  function releaseOver(): void {
+    if (over?.ducked === true) deps.tts.duck?.(false)
+    over = null
+  }
 
   // The live partial (#324): the Status Capsule shows it while the user
   // speaks; a partial from a capture that has ended is dropped here, and
   // one heard over a line playing is the app's own voice (#326).
   deps.transcriber.onPartial((text) => {
-    if (listening && !transcribing && !muted && !speaking()) deps.onPartial?.(text)
+    // Over the app's voice the words are read only at the Endpoint, never fired early (#490).
+    if (listening && !transcribing && !muted && over === null && !speaking()) deps.onPartial?.(text)
   })
 
   /** Whether an utterance's capture is under way: speech started, its Endpoint not yet come. */
@@ -245,6 +290,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   /** The utterance in capture is let go before its Endpoint: the engine drops it, and the runner its partials (#326). */
   function letGo(): void {
+    releaseOver()
     setHearing(false)
     deps.transcriber.cancel()
     clearPartial()
@@ -426,6 +472,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     hearing = false
     hot = false
     muted = false
+    releaseOver()
+    metSpeech = false
     stopSilenceClock()
     reason = null
     commandListenStart = null
@@ -499,8 +547,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         if (wasIdle) {
           // Speech inside a Hot Listen stops its silence clock (#326).
           stopSilenceClock()
-          // A line is playing: this is the app's own voice — not transcribed, dropped at its Endpoint (#326).
-          muted = speaking()
+          // A line is playing: the app's own voice, dropped at its Endpoint (#326), or speech over it, by the arm (#490).
+          metSpeech = false
+          muted = speaking() ? meetSpeech() : false
           pauseDecodes = 0
           pauseSamples = null
           if (!muted) {
@@ -510,11 +559,13 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
             deps.onSpeechStart?.()
             setHearing(true)
           }
-        } else if (!muted && speaking()) {
-          // A line started under the speech: the capture so far is let go.
-          letGo()
-          muted = true
-        }
+        } else if (!muted && !metSpeech && speaking()) {
+          // A line started under the speech: by the arm, the capture so far is let go as the app's own (#326), or read (#490).
+          if (meetSpeech()) {
+            letGo()
+            muted = true
+          }
+        } else if (over !== null) hearSpeech()
         // Streaming STT (#40): utterance frames flow to the transcriber as
         // they arrive, so a streaming engine transcribes during speech; a
         // final-only engine ignores them and still gets the whole utterance
@@ -524,6 +575,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         // The endpointer discarded a blip — drop the in-flight capture too.
         if (!muted) letGo()
         muted = false
+        metSpeech = false
         clearPartial()
         startSilenceClock()
       }
@@ -532,12 +584,17 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   async function handleUtterance(utterance: UtteranceEnd): Promise<void> {
+    metSpeech = false
     if (muted) {
-      // Captured while a line played (#326): no transcript, no Command; the listen stays open.
+      // Captured while a line played (#326): no transcript, no Command; the listen stays open. Dumped, so the kiosk's own voice at the mic can be heard later (#490).
       muted = false
+      deps.dumper?.dump(utterance.pcm, 'speaking')
       startSilenceClock()
       return
     }
+    // Speech over the app's voice is read for whose it is (#490).
+    const heardOver = over
+    over = null
     // The endpoint fired: the ear is closed for this utterance's STT window
     // (#38) — the state flips here, not when the transcript arrives, so the
     // UI never claims "listening" while it thinks.
@@ -549,7 +606,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // The dump rides detection, not transcription (#34): the WAV exists for
     // A/B-ing STT offline, so it must survive — and precede — any STT outcome.
     // The dumper itself never throws and writes nothing with the flag off.
-    deps.dumper?.dump(utterance.pcm)
+    deps.dumper?.dump(utterance.pcm, heardOver !== null ? 'speaking' : 'utterance')
 
     // The turn id rides utterance end, not wake detection, so blips that
     // never become turns mint nothing; STT is the turn's first span (#27).
@@ -609,6 +666,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       text = (await deps.transcriber.finish(utterance.pcm)).trim()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (heardOver?.ducked === true) deps.tts.duck?.(false)
       recordStt({ error: message })
       fail(message)
       return
@@ -617,8 +675,29 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (!listening) {
       // The listen closed under the STT window (disarm) — stopListening
       // emitted the terminal state; drop the transcript.
+      if (heardOver?.ducked === true) deps.tts.duck?.(false)
       transcribing = false
       return
+    }
+    if (heardOver !== null) {
+      const said = [...heardOver.said].join(' ')
+      const own = text !== '' && isOwnVoice(text, said)
+      if (tracer && turnId !== null) {
+        try {
+          tracer.span(turnId, 'over-speech', 0, { verdict: text === '' ? 'blank' : own ? 'own' : 'person', share: ownShare(text, said), mode: heardOver.ducked ? 'duck' : 'filter' })
+        } catch (error) {
+          reportFault('voice.voiceSession.overSpeechSpan', error)
+        }
+      }
+      if (text === '' || own) {
+        // The app's own voice, or nothing: no line, and the app comes back up.
+        if (heardOver.ducked) deps.tts.duck?.(false)
+        backToListening()
+        startSilenceClock()
+        return
+      }
+      // The person's: B1 yields the floor now; under the duck, the line's Command stops the app when it fires (F2 arm b).
+      if (!heardOver.ducked) deps.tts.stop()
     }
     if (text === '') {
       // A blip, not a command: back to the open ear, reason intact.
@@ -642,6 +721,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     const phrase = normalizedPhrase(text)
     if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase)) {
+      if (heardOver?.ducked === true) deps.tts.duck?.(false)
       deps.onAbort()
       deps.onHeard({ text, routed: 'abort' })
       stopListening()
@@ -649,6 +729,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
 
     if (reason !== 'hotkey' && reason !== 'wake') {
+      if (heardOver?.ducked === true) deps.tts.duck?.(false)
       deps.onHeard({ text, routed: 'ignored' })
       backToListening()
       return
@@ -657,6 +738,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       ...(turnId !== null ? { turnId } : {}),
       truncated: utterance.truncated,
       ...(endpointAt !== null ? { endpointAt } : {}),
+      ...(heardOver?.ducked === true ? { overSpeech: true as const } : {}),
     })
     deps.onHeard({ text, routed: 'command' })
     // One wake, one spoken session (#326): a wake listen stays open; the hotkey's is single-shot.

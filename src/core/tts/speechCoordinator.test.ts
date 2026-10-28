@@ -65,6 +65,11 @@ class FakeStream implements AudioStream {
     this.stopped = true
     this.resolveDone()
   }
+
+  readonly gains: number[] = []
+  setGain(gain: number): void {
+    this.gains.push(gain)
+  }
 }
 
 class FakePlayer implements AudioStreamPlayer {
@@ -459,5 +464,36 @@ describe('speech coordinator — perf spans (#31, #327)', () => {
 
     expect(await outcome).toEqual({ ok: true })
     expect(sounds).toBe(1)
+  })
+
+  it('ducks the line in flight and the next, comes back on release, and a stop lets the duck go (#490)', async () => {
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player })
+
+    void tts.speak('the page reads on')
+    synth.finishNext()
+    await flush()
+    tts.duck!(true)
+    tts.duck!(true)
+    expect(player.streams[0]!.gains).toEqual([0.15])
+    player.streams[0]!.finish()
+    await flush()
+    // A line begun while the duck holds starts at the floor.
+    void tts.speak('and on')
+    synth.finishNext()
+    await flush()
+    expect(player.streams[1]!.gains).toEqual([0.15])
+    tts.duck!(false)
+    expect(player.streams[1]!.gains).toEqual([0.15, 1])
+
+    tts.duck!(true)
+    tts.stop()
+    await flush()
+    void tts.speak('a new line')
+    await flush()
+    synth.finishNext()
+    await flush()
+    expect(player.streams[2]!.gains).toEqual([])
   })
 })

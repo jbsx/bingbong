@@ -68,6 +68,11 @@ describe('earPhase', () => {
     expect(earPhase({ ...ear(false, true, true), speaking: true })).toBe('transcribing')
     expect(earPhase({ ...ear(true, false, true), speaking: false })).toBe('listening')
   })
+
+  it('listens while the app speaks when it hears the person over it (#490)', () => {
+    expect(earPhase({ ...ear(true, false, true), speaking: true, overSpeech: true })).toBe('listening')
+    expect(earPhase({ ...ear(false, false, true), speaking: true, overSpeech: true })).toBe('rest')
+  })
 })
 
 describe('wordlessLine', () => {

@@ -58,11 +58,13 @@ export interface UtteranceDumpWriter {
 }
 
 /**
- * What a dump holds: an endpointed `utterance`, or the ear's last ~2 s at a
- * `wake` (#435), so a wake corpus grows from daily use. The kind leads the
- * file name, so a replay of utterances leaves the wakes out.
+ * What a dump holds: an endpointed `utterance`, the ear's last ~2 s at a
+ * `wake` (#435), so a wake corpus grows from daily use, or an utterance
+ * captured while the app was `speaking` (#490), the app's own voice at the
+ * mic or the person over it, labelled so `stt:gate` can take them apart. The
+ * kind leads the file name, so a replay of utterances leaves the wakes out.
  */
-export type AudioDumpKind = 'utterance' | 'wake'
+export type AudioDumpKind = 'utterance' | 'wake' | 'speaking'
 
 /** The prefix of a wake dump's file name; the utterance replays skip it. */
 export const WAKE_DUMP_PREFIX = 'wake-'

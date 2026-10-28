@@ -20,6 +20,8 @@ export interface SpeakingGate extends TtsIdle {
  */
 export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   let outstanding = 0
+  // The texts being said now, in the order they were asked (#490).
+  const saying: string[] = []
   let idleListeners: (() => void)[] = []
   const changeListeners = new Set<(speaking: boolean) => void>()
 
@@ -38,25 +40,33 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
 
   const tts: TtsSpeaker = {
     speak: (text, options) => {
+      const said = stripMarkdownForSpeech(text)
+      saying.push(said)
       outstanding += 1
       if (outstanding === 1) changed(true)
-      return inner.speak(stripMarkdownForSpeech(text), options).then(
+      const over = (): void => {
+        saying.splice(saying.indexOf(said), 1)
+        settled()
+      }
+      return inner.speak(said, options).then(
         (outcome) => {
-          settled()
+          over()
           return outcome
         },
         (err: unknown) => {
-          settled()
+          over()
           throw err
         },
       )
     },
     stop: () => inner.stop(),
+    ...(inner.duck ? { duck: (on: boolean) => inner.duck!(on) } : {}),
   }
 
   return {
     tts,
     isSpeaking: () => outstanding > 0,
+    speechText: () => saying.join(' '),
     onSpeakingChange(listener) {
       changeListeners.add(listener)
       return () => changeListeners.delete(listener)

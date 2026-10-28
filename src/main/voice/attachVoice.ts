@@ -19,6 +19,7 @@ import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import { vadLag, wakeGate } from '../perf/attachAppTelemetry'
 import { recordModelLoad } from '../perf/modelLoads'
 import type { VoiceProcessConfig } from './voiceProcessConfig'
+import type { OverSpeech } from '../../core/voice/ownVoice'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, and on to the voice process (#430), whose voice session (seam-tested
@@ -104,8 +105,12 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   // The cold ear (#442): what it waits for, told by the voice process's model loads; the screen reads the session's state through it.
   const ear = createEarState(deps.earLoads ?? { vad: false, wake: false, stt: false }, Date.now)
   let raw: VoiceState = { listening: false, reason: null, monitoring: false, transcribing: false, hearing: false }
-  // The app's own voice rides the shown state (#472): an ear that drops what it hears while a line plays is not said to listen.
-  const withSpeech = (state: VoiceState): VoiceState => (deps.speaking?.isSpeaking() === true ? { ...state, speaking: true } : state)
+  const overSpeech = deps.overSpeech ?? 'off'
+  // The app's own voice rides the shown state (#472): an ear that drops what it hears while a line plays is not said to listen;
+  // one that hears the person over it (#490) still listens.
+  const withSpeech = (state: VoiceState): VoiceState => (deps.speaking?.isSpeaking() === true ? { ...state, speaking: true, ...(overSpeech !== 'off' ? { overSpeech: true } : {}) } : state)
+  // Speech heard starting over the app's voice (#490): the `speech-yield` span runs from it to the app's voice ending.
+  let yieldFrom: number | null = null
   // The Mic Mute shows the ear shut on every surface, and the renderer closes the microphone on it.
   const shown = (state: VoiceState): VoiceState => {
     const told = ear.show(withSpeech(state))
@@ -127,6 +132,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     // What the session reads off the app rides with each frame (#430).
     context: () => ({
       speaking: deps.speaking?.isSpeaking() ?? false,
+      ...(deps.speaking?.speechText ? { speech: deps.speaking.speechText() } : {}),
+      overSpeech,
       runState: runnerFor(win)?.getState() ?? 'idle',
       wakeThreshold: deps.getWakeThreshold?.() ?? 0.5,
       ...(deps.getEndpointerConfig ? { endpointerConfig: deps.getEndpointerConfig() } : {}),
@@ -140,12 +147,22 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onWakeGate: (count) => wakeGate.record(count),
     callbacks: {
       stopSpeech: () => deps.tts.stop(),
+      duckSpeech: (on) => deps.tts.duck?.(on),
       chime: () => deps.chime?.(),
       // The Command's Task (#328): the Hot Listen's silence clock restarts when it ends.
       onSubmitCommand: (text, submitted) => {
         // The Utterance ended: the music comes back before its Command runs (#344).
         deps.ducking?.utteranceEnded()
-        return runCommand(win, text, { ...submitted, source: 'spoken' })
+        const { overSpeech: ducked, ...rest } = submitted
+        const task = runCommand(win, text, { ...rest, source: 'spoken' })
+        // Said over the app's voice, which ducked for it (#490, F2 arm b): a line that fires stops the voice, and its end puts back
+        // what is still playing — a line read as no Command lets the app go on.
+        if (ducked === true) {
+          const restore = (): void => deps.tts.duck?.(false)
+          if (task === undefined) restore()
+          else void task.then(restore, restore)
+        }
+        return task
       },
       // Speech started (#324): the page's refs are collected while the user
       // speaks — and the page, once collected, names the Page Terms the same
@@ -153,6 +170,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       onSpeechStart: () => {
         // The chunk being scored is the one speech started in: the hearing receipt is timed from its arrival (#441).
         if (receipt) receipt.onset = receipt.arrivals[0] ?? receipt.tracer.now()
+        if (overSpeech !== 'off' && deps.speaking?.isSpeaking() === true && tracer) yieldFrom ??= tracer.now()
         deps.ducking?.speechStarted()
         const page = runnerFor(win)?.prepare()
         if (page !== undefined && deps.onPagePrepared !== undefined) void page.then((snapshot) => deps.onPagePrepared?.(snapshot))
@@ -193,7 +211,13 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
 
   sessions.set(win, session)
   shownStates.set(win, () => shown(session.getState()))
-  const unsubSpeech = deps.speaking?.onSpeakingChange(() => publishState())
+  const unsubSpeech = deps.speaking?.onSpeakingChange((speaking) => {
+    if (!speaking && yieldFrom !== null && tracer) {
+      tracer.span(APP_TURN_ID, 'speech-yield', tracer.now() - yieldFrom)
+      yieldFrom = null
+    }
+    publishState()
+  })
   // Muting closes a listen under way; the screen hears the change either way.
   const unsubMic = deps.micMute?.onChange((muted) => {
     if (muted && session.getState().listening) session.disarm()
@@ -217,7 +241,7 @@ export interface AttachVoiceDeps {
   startVoiceProcess(events: VoiceChainEvents): VoiceChainLink<VoiceProcessConfig>
   /** What the voice process builds its models from. */
   config: VoiceProcessConfig
-  tts: Pick<TtsSpeaker, 'stop' | 'speak'>
+  tts: Pick<TtsSpeaker, 'stop' | 'speak' | 'duck'>
   /** A wake word is configured: the ear monitors from the start; false means hotkey-only. */
   wakeEnabled: boolean
   /** Which of the ear's models load in this run (#442): the screen says the ear is starting until they are in; absent waits on none. */
@@ -233,7 +257,9 @@ export interface AttachVoiceDeps {
   /** The decode's bias (ADR 0022, 0077), identity-stable until it changes; absent biases toward nothing. */
   getBiasPhrases?(): ChainBias
   /** The speaking gate (#326): the mic takes no Utterance while a line plays, and the screen is told when one starts and stops (#472). */
-  speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange'>
+  speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange' | 'speechText'>
+  /** What speech over the app's voice is, inside a listen (#490); absent is `off`, the speaking gate. */
+  overSpeech?: OverSpeech
   /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */
   ducking?: Ducking
   /** The Mic Mute: the ear is shown shut while it holds, and a listen under way closes as it comes on; absent never mutes. */

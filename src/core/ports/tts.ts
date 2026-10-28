@@ -20,6 +20,12 @@ export interface TtsSpeaker {
   speak(text: string, options?: SpeakOptions): Promise<SpeakOutcome>
   /** Barge-in hook (wake word, T10): kills playback and queued lines instantly. Safe to call anytime. */
   stop(): void
+  /**
+   * The person may be speaking over the line (#490): the line in flight, and
+   * any queued behind it, drops to a floor (on) or comes back (off). A stop
+   * lets the duck go. Absent, a speaker cannot duck.
+   */
+  duck?(on: boolean): void
 }
 
 /** Text → WAV bytes (piper in main). */
@@ -48,6 +54,8 @@ export interface AudioStream extends AudioPlayback {
   write(wav: Uint8Array): void
   /** No more sentences: `done` resolves once the last has played. */
   end(): void
+  /** Plays what is left from now at this share of its level (#490): 1 is whole. */
+  setGain?(gain: number): void
 }
 
 export interface AudioStreamPlayer {
@@ -61,4 +69,6 @@ export interface TtsIdle {
   isSpeaking(): boolean
   /** Resolves when nothing is being said. */
   waitIdle(): Promise<void>
+  /** The texts being said now, joined (#490): what the app's own voice in the mic would be heard to say; '' when nothing is. */
+  speechText?(): string
 }

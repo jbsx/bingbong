@@ -2,6 +2,7 @@ import type { AudioStream, AudioStreamPlayer, SpeakOptions, SpeakOutcome, Speech
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { splitSentences } from './sentences'
+import { DUCK_SHARE } from '../music/ducking'
 
 export interface SpeechCoordinatorDeps {
   synth: SpeechSynthesizer
@@ -35,7 +36,9 @@ interface QueuedSpeak {
  * being synthesized is discarded and the ones after it are never
  * synthesized. A text stopped mid-flight resolves `{ ok: true }` — being
  * interrupted is normal, not an error. The pane's media ducks under the
- * line through the Ducking gate (#461), not here.
+ * line through the Ducking gate (#461), not here; the line itself ducks to
+ * the same floor while the person may be speaking over it (#490), until
+ * let go or stopped.
  */
 export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker {
   const { synth, player, tracer } = deps
@@ -44,6 +47,8 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
   // Barge-in epoch: sentences from before the latest stop() never reach playback.
   let stopEpoch = 0
   let current: AudioStream | null = null
+  // The person may be speaking over the line (#490): the line in flight, and each after it, plays at the floor until let go or stopped.
+  let ducked = false
 
   /**
    * Advisory bookkeeping (#31), same stance as every perf call site: a
@@ -68,6 +73,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
   }
 
   function stop(): void {
+    ducked = false
     stopEpoch += 1
     for (const item of queue.splice(0)) {
       // Never synthesized: the stop reached it while it waited its turn.
@@ -124,6 +130,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
         if (epoch !== stopEpoch) return { ok: true, stopped: true }
         if (stream === null) {
           stream = player.open({ onFirstSample: () => firstSound(item) })
+          if (ducked) stream.setGain?.(DUCK_SHARE)
           current = stream
           playStart = tracer?.now()
         }
@@ -147,5 +154,11 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     }
   }
 
-  return { speak, stop }
+  function duck(on: boolean): void {
+    if (ducked === on) return
+    ducked = on
+    current?.setGain?.(on ? DUCK_SHARE : 1)
+  }
+
+  return { speak, stop, duck }
 }

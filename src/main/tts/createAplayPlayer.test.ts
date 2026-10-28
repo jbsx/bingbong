@@ -141,6 +141,34 @@ describe('aplay stream', () => {
     await expect(stream.done).resolves.toBeUndefined()
   })
 
+  it('a gain change plays the rest from where it is at the new level, and done waits for that aplay (#490)', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    let clock = 0
+    const player = createAplayPlayer({ spawnFn, now: () => clock })
+    // Four s16 samples at 1 kHz: a sample per ms.
+    const pcm = new Uint8Array(new Int16Array([1000, 1000, 1000, 1000]).buffer)
+    const stream = player.open()
+    stream.write(wrapRawPcmAsWav(pcm, 1000))
+    const first = readStdin(calls[0]!.child)
+    clock = 2
+    stream.setGain!(0.5)
+    expect(calls[0]!.child.killed).toBe(true)
+    expect(calls).toHaveLength(2)
+    const rest = readStdin(calls[1]!.child)
+    stream.write(wrapRawPcmAsWav(new Uint8Array(new Int16Array([800]).buffer), 1000))
+    stream.end()
+    expect(Buffer.from(await first)).toEqual(Buffer.from(pcm))
+    // The two samples played are not played again; the two left and the next sentence come at half their level.
+    expect([...new Int16Array(new Uint8Array(await rest).buffer)]).toEqual([500, 500, 400])
+
+    let settled = false
+    void stream.done.then(() => (settled = true))
+    await flush()
+    expect(settled).toBe(false)
+    calls[1]!.child.emit('close', 0)
+    await expect(stream.done).resolves.toBeUndefined()
+  })
+
   it('stop() kills the stream at once, done resolves, and later writes reach nothing', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const player = createAplayPlayer({ spawnFn })

@@ -11,6 +11,7 @@ import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import type { UtteranceDumper } from './utteranceDump'
 import type { UtteranceEndpointerConfig } from './vadEndpointing'
 import { createVoiceSession, type SubmittedCommand, type VoiceSession } from './voiceSession'
+import type { OverSpeech } from './ownVoice'
 
 // The voice chain off the main thread (#430): the voice session — the VAD,
 // the endpointer, the wake trio, Smart Turn and the STT engine — runs in a
@@ -27,6 +28,10 @@ import { createVoiceSession, type SubmittedCommand, type VoiceSession } from './
 export interface VoiceChainContext {
   /** A line is playing (the speaking gate, #326). */
   speaking: boolean
+  /** What the app is saying now (#490): the app's own words, told from the person's over them. */
+  speech?: string
+  /** What speech over the app's voice is, inside a listen (#490); absent is `off`. */
+  overSpeech?: OverSpeech
   runState: CommandRunState
   /** The wake threshold Setting. */
   wakeThreshold: number
@@ -89,6 +94,8 @@ export type FromVoiceChain =
   | { type: 'error'; message: string }
   | { type: 'abort' }
   | { type: 'ttsStop' }
+  /** The app's voice drops to its floor, or comes back (#490). */
+  | { type: 'ttsDuck'; on: boolean }
   | { type: 'chime' }
   | { type: 'span'; turnId: string; stage: string; durMs: number; detail?: Record<string, unknown> }
   | { type: 'prepared'; ok: boolean }
@@ -176,7 +183,7 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
       transcriber: models.transcriber,
       ...(models.turn ? { turn: models.turn } : {}),
       clock,
-      tts: { stop: () => deps.send({ type: 'ttsStop' }) },
+      tts: { stop: () => deps.send({ type: 'ttsStop' }), duck: (on) => deps.send({ type: 'ttsDuck', on }) },
       ...(wake
         ? {
             wake: {
@@ -188,8 +195,10 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
         : {}),
       getEndpointerConfig: () => context.endpointerConfig ?? {},
       getHotListenSilenceMs: () => context.hotListenSilenceMs ?? HOT_LISTEN_SILENCE_MS_DEFAULT,
+      getOverSpeech: () => context.overSpeech ?? 'off',
       speaking: {
         isSpeaking: () => context.speaking,
+        speechText: () => (context.speaking ? (context.speech ?? '') : ''),
         waitIdle: () => (context.speaking ? new Promise<void>((resolve) => idleWaiters.push(resolve)) : Promise.resolve()),
       },
       tracer: tracerFor(init.tracerEpochMs),
@@ -320,6 +329,8 @@ export interface VoiceChainEvents {
 /** What the session tells the app, as createVoiceSession's deps name it. */
 export interface VoiceChainCallbacks {
   stopSpeech(): void
+  /** The app's voice ducks under speech over it, or comes back (#490). */
+  duckSpeech?(on: boolean): void
   chime(): void
   onSubmitCommand(text: string, submitted: SubmittedCommand): void | Promise<unknown>
   onSpeechStart?(): void
@@ -467,6 +478,9 @@ export function createVoiceChainClient<C>(deps: VoiceChainClientDeps<C>): VoiceC
         return
       case 'ttsStop':
         deps.callbacks.stopSpeech()
+        return
+      case 'ttsDuck':
+        deps.callbacks.duckSpeech?.(message.on)
         return
       case 'chime':
         deps.callbacks.chime()

@@ -50,6 +50,8 @@ export interface VoiceState {
    * which cuts the speech, is heard. Absent while nothing is said.
    */
   speaking?: boolean
+  /** The ear hears the person over the app's voice inside a listen (#490), main's to say beside `speaking`: the open ear still listens. */
+  overSpeech?: boolean
   /**
    * What the ear still waits for at its cold start (#442), main's to say:
    * `ear` until the models it hears with are in, so nothing said is heard;

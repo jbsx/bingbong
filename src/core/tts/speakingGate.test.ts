@@ -131,6 +131,21 @@ describe('speaking gate', () => {
 })
 
 describe('isSpeaking (#326)', () => {
+  it('says the texts in flight, as spoken, until each settles; a duck reaches the inner speaker (#490)', async () => {
+    const { speaker, finish } = deferredSpeaker()
+    const ducks: boolean[] = []
+    const gate = createSpeakingGate({ ...speaker, duck: (on) => ducks.push(on) })
+    expect(gate.speechText!()).toBe('')
+    const first = gate.tts.speak('**Let Down**, by Radiohead.')
+    void gate.tts.speak('Six years ago.')
+    expect(gate.speechText!()).toBe('Let Down, by Radiohead. Six years ago.')
+    finish('Let Down, by Radiohead.')
+    await first
+    expect(gate.speechText!()).toBe('Six years ago.')
+    gate.tts.duck!(true)
+    expect(ducks).toEqual([true])
+  })
+
   it('reports a line in flight until it, and every line queued with it, settles', async () => {
     const { speaker, finish } = deferredSpeaker()
     const gate = createSpeakingGate(speaker)

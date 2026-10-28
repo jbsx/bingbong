@@ -8,6 +8,7 @@ import type { CommandRunState } from '../pipeline/runState'
 import type { TurnDetector } from '../ports/stt'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
+import type { OverSpeech } from './ownVoice'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command runner as
@@ -40,7 +41,7 @@ interface SessionHarness {
   errors: string[]
   commands: string[]
   /** Submit-command calls with their threaded turn id (#27), cap flag (#61) and Endpoint reading (#324). */
-  submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number }[]
+  submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true }[]
   /** Every speech start the session reported (#324). */
   speechStarts: number[]
   /** Every live partial the session forwarded (#324). */
@@ -62,10 +63,16 @@ interface SessionHarness {
 /** The speaking gate as the session reads it (#326): whether a line is playing, and when it stops. */
 class FakeSpeaking {
   speaking = false
+  /** What the app is saying (#490). */
+  text = ''
   private waiters: (() => void)[] = []
 
   isSpeaking(): boolean {
     return this.speaking
+  }
+
+  speechText(): string {
+    return this.speaking ? this.text : ''
   }
 
   waitIdle(): Promise<void> {
@@ -105,6 +112,8 @@ async function createSession(overrides?: {
   submitResult?: () => Promise<unknown>
   /** The turn check (#357); absent leaves the pause cap a plain timer. */
   turn?: TurnDetector
+  /** Speech over the app's voice (#490); absent is `off`. */
+  overSpeech?: OverSpeech
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -114,7 +123,7 @@ async function createSession(overrides?: {
   const heard: VoiceHeardEvent[] = []
   const errors: string[] = []
   const commands: string[] = []
-  const submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number }[] = []
+  const submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true }[] = []
   const speechStarts: number[] = []
   const partials: string[] = []
   const drops: number[] = []
@@ -203,6 +212,7 @@ async function createSession(overrides?: {
     tracer,
     dumper,
     speaking: overrides?.speaking,
+    ...(overrides?.overSpeech !== undefined ? { getOverSpeech: () => overrides.overSpeech! } : {}),
     getHotListenSilenceMs: overrides?.hotListenSilenceMs,
     wake: overrides?.wake
       ? {
@@ -1579,6 +1589,111 @@ describe('voice session — Hot Listen (#326)', () => {
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
     expect(harness.aborts).toHaveLength(1)
     expect(harness.states.at(-1)).toEqual(closed)
+  })
+})
+
+describe('voice session — speech over the app’s own voice, inside a listen (#490)', () => {
+  const READ = 'Let Down, Radiohead. If playback doesn’t begin shortly, try restarting your device.'
+
+  /** A Hot Listen open, the app saying READ. */
+  async function overRead(script: string[], overSpeech: OverSpeech, extra?: Parameters<typeof createSession>[0]) {
+    const detector = new FakeWakeDetector({ wake: [0.9, 0], abort: [0] })
+    const speaking = new FakeSpeaking()
+    const harness = await createSession({ transcriber: new FakeTranscriber(script), wake: { detector }, speaking, overSpeech, ...extra })
+    harness.session.enableWakeMonitoring()
+    for (const prob of [SPEECH, SPEECH, SPEECH]) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    speaking.speaking = true
+    speaking.text = READ
+    // The wake itself cut whatever was said before (barge-in): only what follows counts.
+    harness.tts.stopCalls = 0
+    harness.dumps.length = 0
+    return { harness, speaking }
+  }
+
+  it('duck: the person’s line is taken and the app’s voice ducks at speech start; the session never stops it, the line’s Command does', async () => {
+    const { harness } = await overRead(['move on'], 'duck')
+    await harness.speakUtterance()
+    expect(harness.tts.ducks).toEqual([true])
+    expect(harness.tts.stopCalls).toBe(0)
+    expect(harness.submitted).toMatchObject([{ text: 'move on', overSpeech: true }])
+    expect(harness.speechStarts).toHaveLength(1)
+  })
+
+  it('duck: the app’s own words over it are not taken, and its voice comes back up', async () => {
+    const { harness } = await overRead(['if playback doesnt begin shortly'], 'duck')
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual([])
+    expect(harness.tts.ducks).toEqual([true, false])
+    expect(harness.tts.stopCalls).toBe(0)
+    expect(harness.session.getState()).toMatchObject({ listening: true, transcribing: false })
+  })
+
+  it('duck: a partial over the app’s voice is never offered early', async () => {
+    const { harness } = await overRead(['move on'], 'duck')
+    const probs = utteranceProbs()
+    for (const [i, prob] of probs.entries()) {
+      if (i === 3) harness.transcriber.emitPartial('move')
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    expect(harness.partials.filter((text) => text !== '')).toEqual([])
+    expect(harness.commands).toEqual(['move on'])
+  })
+
+  it('stop: the app yields the floor at speech start, and the line is taken', async () => {
+    const { harness } = await overRead(['move on'], 'stop')
+    await harness.speakUtterance()
+    expect(harness.tts.stopCalls).toBe(1)
+    expect(harness.tts.ducks).toEqual([])
+    expect(harness.commands).toEqual(['move on'])
+  })
+
+  it('filter: the person’s line stops the app at its Endpoint; the app’s own words are dropped, the app never stopped', async () => {
+    const person = await overRead(['move on'], 'filter')
+    await person.harness.speakUtterance()
+    expect(person.harness.tts.stopCalls).toBe(1)
+    expect(person.harness.submitted).toEqual([expect.not.objectContaining({ overSpeech: true })])
+    const own = await overRead(['try restarting your device'], 'filter')
+    await own.harness.speakUtterance()
+    expect(own.harness.commands).toEqual([])
+    expect(own.harness.tts.stopCalls).toBe(0)
+  })
+
+  it('a line the app starts under the person’s speech is read too, not let go', async () => {
+    const { harness, speaking } = await overRead(['move on'], 'duck')
+    speaking.speaking = false
+    const probs = utteranceProbs()
+    for (const [i, prob] of probs.entries()) {
+      if (i === 3) speaking.speaking = true
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    expect(harness.tts.ducks).toEqual([true])
+    expect(harness.commands).toEqual(['move on'])
+  })
+
+  it('off: speech over the app’s voice is its own, dropped untranscribed, as before', async () => {
+    const { harness } = await overRead(['move on'], 'off')
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual([])
+    expect(harness.transcriber.audio).toHaveLength(0)
+  })
+
+  it('dumps what it captured while the app spoke apart from the utterances, taken or not', async () => {
+    const own = await overRead(['try restarting your device'], 'duck', { audioDump: true })
+    await own.harness.speakUtterance()
+    const muted = await overRead(['move on'], 'off', { audioDump: true })
+    await muted.harness.speakUtterance()
+    expect([...own.harness.dumps, ...muted.harness.dumps].map((dump) => dump.path.split('/').pop()!.split('-')[0])).toEqual(['speaking', 'speaking'])
+  })
+
+  it('records whose it was read to be', async () => {
+    const { harness } = await overRead(['if playback doesnt begin shortly'], 'duck', { perf: { sttMs: 0 } })
+    await harness.speakUtterance()
+    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toEqual({ verdict: 'own', share: 1, mode: 'duck' })
   })
 })
 

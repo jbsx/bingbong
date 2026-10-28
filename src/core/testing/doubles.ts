@@ -120,6 +120,12 @@ export class RecordingTts implements TtsSpeaker {
   stop(): void {
     this.stopCalls += 1
   }
+
+  /** Each duck asked (#490), in order. */
+  readonly ducks: boolean[] = []
+  duck(on: boolean): void {
+    this.ducks.push(on)
+  }
 }
 
 /** TTS that always fails — exercises the display-only degradation path. */
