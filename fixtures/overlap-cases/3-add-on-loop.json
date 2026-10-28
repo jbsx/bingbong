@@ -24,5 +24,5 @@
   "evidence": [
     "none yet"
   ],
-  "state": {"is": "green", "on": "6e0279eb", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"is": "green", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }

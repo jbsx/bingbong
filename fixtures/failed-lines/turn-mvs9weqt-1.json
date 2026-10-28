@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvs9weqt-1",
+  "transcript": "play radiohead",
+  "at": 1793201550213,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 1-replace-new-goal at p3 (media-not-started 98%) on baseten-mammoth-27b-latest at 6588a8b1 (run of record 2026-10-28 afternoon, kept at logs/overlap/record-6588a8b1): both readings hit Jev's 3 s timeout on a slow host, no 429 (play radiohead: command ask 3001 ms and appliance ask 3007 ms, reason timeout; open the weather the same 13 s later), so each line ended unavailable and went to the Planner alone: open the weather was never read against the running play and did not replace it. The weather was said, then the play ended and said Playing Radiohead — No Surprises is on now; under it, YouTube's consent sheet drew after the song started and the told road clicked Reject (draw→click 3197 ms) but the sheet stayed (media-consent gone false, consent-gone 1507 ms), holding the song at 0:05 to the end: a consent residue past #496. Nothing said meant the music was stopped or not played",
+  "meant": "open the weather replaces the play still loading: the play is stopped and the weather given, even when the host is slow to read",
+  "log": "decision-1793201550214-1.jsonl"
+}
