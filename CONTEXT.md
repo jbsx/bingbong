@@ -94,7 +94,10 @@ above the ducked voice is cut out of its capture and read alone. The voice
 stops at the read when the line is for the app (an action, or a Fate that
 ends, joins or waits on the line running), and comes back up when it was the
 app's own words, or a line read as no Command that lets the running one go
-on.
+on. A line over the voice that fires nothing (read as no Command, unsure, or
+unanswered) is never handed to the Errand and ends with nothing said. A line
+still saying its outcome, a Page Read among them, is the line running until
+its sentence ends, so "move on" over it is read against it.
 
 **Ducking**:
 The music dropping under the voice (#344): while the ear is open — from a
