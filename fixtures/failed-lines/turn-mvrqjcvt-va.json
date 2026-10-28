@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvrqjcvt-va",
+  "transcript": "Move on.",
+  "at": 1793169022932,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "overlap:gate 10-move-on-while-speaking at p1 (speaking 73%) on baseten-mammoth-27b-latest at a461c40a (narrow13): `Move on.` was cut by level over the ducked Page Read and read `person` (share 0.67); 37 ms after it was submitted the Abort Head (stop_now.onnx) fired and the runner's abort ended the read and the line itself (`abandoned: stopped`, dropped): `cancelled, dropped`, not `cancelled, done`. The heads fire on the reset itself: stayHot resets the wake monitor at the submission, the warm-up is 5 chunks against a 16-embedding zero-seeded window, and the frames heard during the line's STT spend the warm-up at once; over the app's echo 12/84 captures fire the Abort Head and 14/84 the wake head in chunks 6-9 after a reset, 0/84 at a 12-chunk warm-up (offline, the real detector over the gate's speaking dumps). narrow12 (33ae8614) has the same signature (abort 8 ms after a submission), and narrow16's echo negative a wake 19 ms after one (the wake's tts.stop() cut the read)",
+  "meant": "A reset of the ear's heads fires neither: `Move on.` is read by the runner, its Fate ends the read and the line comes to done",
+  "log": "/tmp/impl490/s6/narrow13d/10-move-on-while-speaking/decision-models_baseten-mammoth-27b-latest/p1-logs (dump p1-dumps/speaking-1793169022457-0011.wav)",
+  "claimedBy": "#490"
+}
