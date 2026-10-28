@@ -9,6 +9,7 @@
 // every playing media element on the page, YouTube's player among them, by
 // kind and in the top frame only (#376).
 
+import { CONSENT_HELD_MARK } from '../browser/collectPageScript'
 import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
 // The audio road's surface (#502, audioSurface.ts) answers the same
@@ -373,4 +374,32 @@ export const PAUSE_ALL_SCRIPT = `(() => {
   const own = player ? player.querySelector(${SONG_ELEMENT}) : null
   const paused = ${PAUSE_PLAYING_JS}
   return { paused: paused.length, youtube: own !== null && paused.includes(own) }
+})()`
+
+/** What the held-media resume did (#496): how many elements the wall held, and how many of them it played again. */
+export interface HeldResumed {
+  readonly held: number
+  readonly played: number
+}
+
+/**
+ * The media a consent wall held, played once after its clear (#496), by
+ * kind on any site: each element the page's watch marked playing as the
+ * wall drew (CONSENT_HELD_MARK) that is paused and not ended now takes its
+ * own `play()`; the marks are taken off, so it is once.
+ */
+export const HELD_RESUME_SCRIPT = `(() => {
+  /* WALL_HELD_PLAY */
+  const mark = ${JSON.stringify(CONSENT_HELD_MARK)}
+  let held = 0
+  let played = 0
+  for (const media of document.querySelectorAll('video, audio')) {
+    if (!(mark in media)) continue
+    delete media[mark]
+    held += 1
+    if (!media.paused || media.ended) continue
+    media.play().catch(() => {})
+    played += 1
+  }
+  return { held, played }
 })()`

@@ -1380,6 +1380,40 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     expect(told).toEqual([expect.objectContaining({ road: 'nothing-playing', at: null })])
   })
 
+  it('media the wall drew over playing is played once after the clear, through the page\'s own marks, with nothing said (#496)', async () => {
+    const { browser, consents } = sheeted()
+    await browser.navigate('https://news.example/clip')
+    const resumes: string[] = []
+    browser.evaluator = (expression) => (expression.includes('/* WALL_HELD_PLAY */') ? (resumes.push(expression), { held: 1, played: 1 }) : undefined)
+    browser.consentClear = () => 'dismissed consent dialog: clicked [2] "Reject all"'
+    browser.drawConsent({ playing: true, showing: 1 })
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(resumes).toHaveLength(1)
+    expect(consents).toEqual([expect.objectContaining({ resumed: 1 })])
+  })
+
+  it('a person\'s pause between the draw and the clear is theirs: the media the wall held is not played again (#492, #496)', async () => {
+    const { browser, player, consents } = sheeted()
+    await browser.navigate('https://news.example/clip')
+    const resumes: string[] = []
+    browser.evaluator = (expression) => (expression.includes('/* WALL_HELD_PLAY */') ? (resumes.push(expression), { held: 1, played: 1 }) : undefined)
+    let release: (line: string | null) => void = () => {}
+    browser.consentClear = () => new Promise<string | null>((resolve) => (release = resolve))
+    browser.drawConsent({ playing: true, showing: 1 })
+    await player.pauseAll()
+    release('dismissed consent dialog: clicked [2] "Reject all"')
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(resumes).toEqual([])
+    expect(consents).toEqual([expect.objectContaining({ resumed: 0 })])
+  })
+
+  it('a wall told with nothing playing resumes nothing after its clear: only media it drew over playing is played again (#496)', async () => {
+    const { browser, youtube, perform } = sheeted()
+    youtube.starts = 'sheet'
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.evaluations.filter((expression) => expression.includes('/* WALL_HELD_PLAY */'))).toEqual([])
+  })
+
   it('a wall signalled over media the Player has just paused is not cleared: a clear lets a page start what its wall held', async () => {
     const { browser, player, told } = sheeted()
     await browser.navigate('https://news.example/clip')

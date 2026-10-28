@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
+import { COLLECT_PAGE_SCRIPT, CONSENT_HELD_MARK } from '../src/main/browser/collectPageScript.ts'
+import { HELD_RESUME_SCRIPT, type HeldResumed } from '../src/main/music/youtubeScripts.ts'
 import { createCdpBrowserController } from '../src/main/browser/createCdpBrowserController.ts'
 import type { ConsentCleared, ConsentDrawn } from '../src/core/ports/browser.ts'
 import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
@@ -126,6 +127,13 @@ describe.skipIf(!canDriveChrome)("the page tells of a consent wall as it draws o
       expect(collects()).toBe(1)
       expect(looks()).toBe(0)
       expect(await fixtures.chrome.evaluate<boolean>(`document.getElementById('sheet') === null && !document.getElementById('v').paused`)).toBe(true)
+      // The video the wall drew over playing carries the watch's mark: the media the Player plays once after the clear, and only it.
+      expect(await fixtures.chrome.evaluate<number>(`document.getElementById('v')[${JSON.stringify(CONSENT_HELD_MARK)}]`)).toBe(1)
+      await fixtures.chrome.evaluate(`document.getElementById('v').pause()`)
+      expect(await fixtures.chrome.evaluate<HeldResumed>(HELD_RESUME_SCRIPT)).toEqual({ held: 1, played: 1 })
+      await until(() => fixtures.chrome.evaluate<boolean>(`!document.getElementById('v').paused`), 'the held video to play again')
+      // Once: the mark is taken off with the resume.
+      expect(await fixtures.chrome.evaluate<HeldResumed>(HELD_RESUME_SCRIPT)).toEqual({ held: 0, played: 0 })
     } finally {
       stop()
     }

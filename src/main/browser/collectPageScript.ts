@@ -109,6 +109,8 @@ export const CONSENT_ARMED_MS = 30_000
 export const CONSENT_CHECK_MS = 250
 /** Media that paused this recently was playing as a wall drew over it: a page pauses its media as its wall draws (YouTube's, #496). A guess. */
 export const CONSENT_PLAYED_MS = 2_000
+/** The mark the watch puts on each element playing as a wall drew over it (#496): what the Player resumes once after the clear, and only those. */
+export const CONSENT_HELD_MARK = '__bingbongWallHeld'
 
 /**
  * The page's consent watch (#496), run in the top document from its start:
@@ -120,6 +122,8 @@ export const CONSENT_PLAYED_MS = 2_000
  * on any site; disarmed otherwise, so a heavy page with nothing playing
  * pays no callbacks. Once per showing: told again only after the look said
  * no, or when media began playing under a wall told with nothing playing.
+ * A wall told over media playing marks the elements last seen playing
+ * ({@link CONSENT_HELD_MARK}): the media the wall held.
  */
 export const CONSENT_WATCH_SCRIPT = `(() => {
   /* CONSENT_WATCH */
@@ -134,9 +138,12 @@ export const CONSENT_WATCH_SCRIPT = `(() => {
   let told = 0
   let timer = null
   let observer = null
+  // The elements last seen playing: those a wall told as playing drew over.
+  let lastPlaying = []
   const playing = () => {
-    for (const media of document.querySelectorAll('video, audio')) if (!media.paused && !media.ended) return true
-    return false
+    const now = [...document.querySelectorAll('video, audio')].filter((media) => !media.paused && !media.ended)
+    if (now.length > 0) lastPlaying = now
+    return now.length > 0
   }
   const inPlay = () => {
     if (playing()) playedAt = Date.now()
@@ -165,6 +172,7 @@ export const CONSENT_WATCH_SCRIPT = `(() => {
     // The browser adds its binding as the document commits; until it has, the next burst tells.
     if (typeof tell !== 'function') return schedule()
     told = level
+    if (played) for (const media of lastPlaying) if (media.isConnected) media[${JSON.stringify(CONSENT_HELD_MARK)}] = showing
     tell(JSON.stringify({ at: Date.now(), playing: played, showing }))
   }
   const schedule = () => {

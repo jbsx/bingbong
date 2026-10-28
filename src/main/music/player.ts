@@ -13,7 +13,7 @@ import { CONSENT_PLAYED_MS } from '../browser/collectPageScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
-import { CONTINUE_SCRIPT, END_LEAD_S, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, START_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
+import { CONTINUE_SCRIPT, END_LEAD_S, HELD_RESUME_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, START_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type HeldResumed, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
 // queue and the verbs live here. `play <words>` fetches the results with
@@ -131,6 +131,8 @@ export interface PlayerConsent {
   readonly goneMs: number
   /** The sheet was seen gone inside the bound. */
   readonly gone: boolean
+  /** Media the wall drew over playing, found paused after the clear and played once (#496); 0 when none was. */
+  readonly resumed: number
 }
 
 /** Why a wall the page told of is cleared, or not (#496): over the Player's song, by kind over media playing, or left to the next collect. */
@@ -570,6 +572,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (told !== null) void clearWall(told.watch, told.drawnAt, told.drawn)
     if (cleared === null) return
     if (watch !== null) watch.at = now()
+    const resumed = drawn?.playing === true && drawnAt !== null && watch?.paused !== true ? await resumeHeld(drawnAt) : 0
     deps.onConsent?.({
       video: watch?.song.id ?? videoIdOf(url),
       ms: watch === null ? null : clearedMs(watch),
@@ -579,8 +582,22 @@ export function createPlayer(deps: PlayerDeps): Player {
       drawToClickMs: Math.round(from - (drawnAt ?? from) + cleared.clickMs),
       goneMs: Math.round(cleared.goneMs),
       gone: cleared.gone,
+      resumed,
     })
     if (watch?.paused === true) await holdPaused(watch.song)
+  }
+
+  /**
+   * The media a wall drew over playing, played once after its clear (#496):
+   * a page that pauses its media under its wall may not start it again as
+   * the wall leaves (YouTube's sheet over a song playing). Only with no
+   * pause of the person's since the draw — a pause the wall did not make is
+   * the person's to undo (#492) — and only the elements the page marked
+   * playing as it drew, by kind on any site. Nothing new is said.
+   */
+  async function resumeHeld(drawnAt: number): Promise<number> {
+    if (pausedAt + CONSENT_PLAYED_MS > drawnAt) return 0
+    return (await evaluate<HeldResumed>(HELD_RESUME_SCRIPT, 'pane'))?.played ?? 0
   }
 
   /**
