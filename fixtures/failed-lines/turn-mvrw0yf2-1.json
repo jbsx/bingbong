@@ -7,5 +7,6 @@
   "happened": "overlap:gate 7-is-it-working at p1 (media-not-started 15%) on baseten-mammoth-27b-latest at 6e0279eb (run of record): `is it working` was answered (Still opening …), Let Down started, then YouTube's consent sheet drew over it and it stopped at 0:05: nothing is playing at the end (#492's residue). At p3 (84%) the line came at 14.8 s, after the play had ended at 11.5 s: read alone as none (0.87), shown muted (No response.) and never said, so nothing said meant it is playing",
   "meant": "The song plays on once the consent sheet is cleared; a question about the wait just after it ends is answered aloud",
   "log": "decision-1793178244284-1.jsonl",
-  "claimedBy": "#499"
+  "claimedBy": "#499",
+  "case": "overlap-7-is-it-working-after-end"
 }
