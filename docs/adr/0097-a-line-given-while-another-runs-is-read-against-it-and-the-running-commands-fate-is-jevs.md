@@ -2,6 +2,9 @@
 
 ## Status
 
+Amended 2026-10-28 by #499: `say_doing` is offered for the line just
+ended, within 15 s of its sentence's end, as well as while a line runs.
+
 Amended 2026-10-28 by #498: a joined line's ask carries the first line's
 held pick, offers `correct` while a pick is held, and reads the first
 line's Slot beside the correction's own words (the `joins` bullet).
@@ -54,9 +57,18 @@ read each line alone: `no, by coldplay` played Meghan Trainor's "No".
   (something else, a question about the wait, a remark or noise). A
   `page` or `none` action keeps the Fate it picked. An idle line's card is
   unchanged byte for byte; a unit test holds it.
-- **A fact Appliance Verb, `say_doing`**, offered only while a line runs:
-  its option carries the sentence it says ("Still opening “let down by
-  radiohead”: loading youtube.com."). Picking it goes on.
+- **A fact Appliance Verb, `say_doing`**, offered while a line runs, and,
+  with nothing running, for the line just ended within 15 s of its
+  sentence's end (#499; the Peek Card's and Turn Card's linger, one number
+  across the UI). Running, its option carries the sentence it says ("Still
+  opening “let down by radiohead”: loading youtube.com.") and picking it
+  goes on. Ended, the option is kept to a question about that line,
+  "whether it worked and how it ended — never a new request —", and
+  carries its end ("Done, 3 seconds ago: Playing “Let Down
+  (Remastered)”."); no Fate is asked and the card's state is unchanged
+  (measured: the ended line on the state lured the next line's own
+  action). A line read `none`, one that gave way into or stood on a join,
+  and a doing question never become the line just ended.
 - **Unsure is `goes_on`.** A Fate under the Appliance Card's bar (0.7), a
   missing one, or a failed host: a wrong goes-on costs one `stop`, a
   wrong end loses the person's first line (ui.md 3).
