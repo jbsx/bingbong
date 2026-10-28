@@ -1,7 +1,7 @@
 import type { FakeBrowser } from '../../core/testing/doubles'
 import { videoIdOf } from '../../core/music/youtubeSearch'
 import { loudnessFactor } from '../../core/music/loudness'
-import type { ElementOp, ElementState, LevelRead, PausedAll, WatchStatus } from './youtubeScripts'
+import type { ElementOp, ElementState, LevelRead, PausedAll, StartRead, WatchStatus } from './youtubeScripts'
 
 // A scripted YouTube for the tests (#343): it answers the Player's tagged
 // scripts the way the real pages would — the results' `ytInitialData` for a
@@ -31,6 +31,19 @@ export interface ScriptedWatch {
   readonly fails?: 'error' | 'notWatch'
 }
 
+/**
+ * How a new watch page's element starts (#488): by itself; only once
+ * pressed; playing {@link STALLS_AT_S} and pausing until pressed;
+ * never, its press refused with `NotAllowedError`; or, `reopen`, holding
+ * no data however pressed until its page is loaded again, then by itself.
+ */
+export type ScriptedStart = 'itself' | 'press' | 'stalls' | 'refuses' | 'reopen'
+
+/** Where a stalling element pauses by itself (s): a moment of play, as on a fresh profile under Xvfb (#488). */
+export const STALLS_AT_S = 0.6
+/** How far the element's time moves between two start reads while it plays (s): the Player's read interval. */
+export const START_STEP_S = 0.25
+
 export class ScriptedYouTube {
   /** Search words → the results' data. */
   readonly results = new Map<string, unknown>()
@@ -54,6 +67,14 @@ export class ScriptedYouTube {
   /** The pane's duck (#461), its floor's share while it holds: it reaches a new page's element before the Player does. */
   paneDuck: number | null = null
   adShowing = false
+  /** How the next watch page's element starts (#488). */
+  starts: ScriptedStart = 'itself'
+  /** The element's `readyState`: 4 holds enough to play through. */
+  readyState = 4
+  /** The last press's refusal, as the element keeps it. */
+  private refused: string | null = null
+  /** A stalling element was pressed: it plays on. */
+  private pressed = false
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
   /** How often the prompt was answered Yes. */
@@ -86,14 +107,25 @@ export class ScriptedYouTube {
     return videoIdOf(this.browser.state().url ?? '')
   }
 
-  /** The address the element was last read on: a new watch page plays from the start, unlooped. */
+  /** The address the element was last read on, and how many loads in: a new watch page — the same one loaded again too — plays from the start, unlooped. */
   private shownUrl: string | null = null
+  private shownLoads = 0
+  /** Loads of a `reopen` page: its first holds no data. */
+  private reopenLoads = 0
 
   private evaluate(expression: string): unknown {
     const url = this.browser.state().url ?? ''
-    if (url !== this.shownUrl) {
+    const loads = this.browser.navigations.length
+    if (url !== this.shownUrl || loads !== this.shownLoads) {
       this.shownUrl = url
-      this.element = { ...this.element, paused: false, loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
+      this.shownLoads = loads
+      if (this.starts === 'reopen') {
+        this.reopenLoads += 1
+        this.readyState = this.reopenLoads === 1 ? 0 : 4
+      }
+      this.element = { ...this.element, paused: this.starts === 'press' || this.starts === 'refuses', loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
+      this.refused = null
+      this.pressed = false
       this.duckMark = null
       // The pane's duck holds (#461): a new page's element is marked at the level it opened at before the Player reads it.
       if (this.paneDuck !== null) {
@@ -107,6 +139,7 @@ export class ScriptedYouTube {
     }
     if (expression.includes('/* YT_WATCH */')) return this.watchStatus()
     if (expression.includes('/* YT_LEVEL */')) return this.level()
+    if (expression.includes('/* YT_START */')) return this.startRead()
     if (expression.includes('/* YT_CONTINUE */')) return this.answerPrompt()
     if (expression.includes('/* PAGE_PAUSE_ALL */')) return this.pauseAll()
     // The op rides at the script's end, `})(<op json>)`; the body holds other IIFEs before it.
@@ -123,6 +156,21 @@ export class ScriptedYouTube {
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return null
     return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume, restore: this.duckMark?.restore ?? null }
+  }
+
+  /** The element read for its start (#488): while it plays, its time moves a read's step — a stalling one pausing at its moment. */
+  private startRead(): StartRead | null {
+    const id = this.currentId()
+    const watch = id === null ? undefined : this.watches.get(id)
+    if (watch === undefined || watch.fails !== undefined) return null
+    // Time moves only on an element holding data to play.
+    if (!this.element.paused && this.readyState > 2) {
+      const time = this.element.currentTime + START_STEP_S
+      const stalls = this.starts === 'stalls' && !this.pressed && time >= STALLS_AT_S
+      this.element = { ...this.element, currentTime: stalls ? STALLS_AT_S : time, paused: stalls }
+    }
+    const { paused, currentTime } = this.element
+    return { paused, ended: false, ready: this.readyState, time: currentTime, refused: this.refused }
   }
 
   private watchStatus(): WatchStatus {
@@ -165,6 +213,11 @@ export class ScriptedYouTube {
     const element = this.element
     switch (op.op) {
       case 'play':
+        // A press (#488): refused, the element stays paused and keeps the reason.
+        this.pressed = true
+        this.refused = this.starts === 'refuses' ? 'NotAllowedError' : null
+        this.element = { ...element, paused: this.starts === 'refuses' }
+        break
       case 'restart':
         this.element = { ...element, paused: false }
         break

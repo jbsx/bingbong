@@ -186,6 +186,34 @@ export const CONTINUE_SCRIPT = `(() => {
   return true
 })()`
 
+/** Where a press's refusal is kept on the element (#488): the `play()` promise's rejection name, read by the start script after it. */
+const REFUSED_MARK = '__bingbongRefused'
+
+/** The element's own playback as the start script reads it (#488). */
+export interface StartRead {
+  readonly paused: boolean
+  readonly ended: boolean
+  /** `readyState`, 0–4: above 2 it holds data to play now. */
+  readonly ready: number
+  /** `currentTime` (s): moving between reads is what tells a song playing from one that only looks it. */
+  readonly time: number
+  /** The rejection name of the last press's `play()` (`NotAllowedError`, `AbortError`); null while none was refused. */
+  readonly refused: string | null
+}
+
+/**
+ * Reads `#movie_player video`'s own playback (#488): whether a song just
+ * opened is playing, by kind — its pause, end, readiness and time, never
+ * YouTube's player state. Null with no such element.
+ */
+export const START_SCRIPT = `(() => {
+  /* YT_START */
+  const player = document.querySelector('#movie_player')
+  const video = player ? player.querySelector('video') : null
+  if (!video) return null
+  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, refused: video.${REFUSED_MARK} || null }
+})()`
+
 /** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */
 export interface DuckHeld {
   readonly restore: number
@@ -265,7 +293,11 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   // A volume under a duck the poll has not marked on this element yet: marked first, so the level set is the one put back.
   if (op.duck && !video.${DUCK_MARK}) video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.duck.restore)) / 100, share: op.duck.share }
   switch (op.op) {
-    case 'play': video.play().catch(() => {}); break
+    // A refused press keeps its reason on the element, for the start script to read (#488).
+    case 'play':
+      delete video.${REFUSED_MARK}
+      video.play().catch((error) => { video.${REFUSED_MARK} = (error && error.name) || 'Error' })
+      break
     case 'pause': video.pause(); break
     case 'loop': video.loop = op.on; break
     case 'restart': video.currentTime = 0; video.play().catch(() => {}); break

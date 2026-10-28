@@ -12,7 +12,7 @@ import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
-import { CONTINUE_SCRIPT, END_LEAD_S, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type WatchStatus } from './youtubeScripts'
+import { CONTINUE_SCRIPT, END_LEAD_S, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, START_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
 // queue and the verbs live here. `play <words>` fetches the results with
@@ -47,6 +47,12 @@ import { CONTINUE_SCRIPT, END_LEAD_S, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SC
 // pick the poll hears play past 30 s with no correction, `skip` or
 // `forget` is remembered against its words, and its trimmed title joins
 // the Learned Terms; the next `play` of those words opens it at once.
+//
+// A song opened is not yet playing (#488): on a fresh profile YouTube's
+// video may sit paused at 0 s, or play a moment and stop. The Player reads
+// the element's own playback after every open, presses play on it once
+// when it has not started, and says Playing only when it plays; else the
+// Command fails in words and the Queue holds the song, paused.
 
 /** What a Player verb came to: the tool result line, its Answer, and the video it opened or queued. */
 export interface PlayerOutcome {
@@ -55,10 +61,31 @@ export interface PlayerOutcome {
   readonly answer: string
   readonly failure?: true
   readonly video?: string
+  /** The song opened but its element never played (#488): a failure that is the start's, not the song's. */
+  readonly unstarted?: true
   /** A later Command came while it ran: nothing more was opened, and it answers nothing. */
   readonly superseded?: true
   /** For a search (#345): the video came from the Remembered Songs, or from YouTube's results. */
   readonly pick?: PickSource
+}
+
+/** How a song opened came to play (#488): what the perf log keeps of each start. */
+export interface PlayerStart {
+  readonly video: string
+  /** The element played, its time moving past a moment's play. */
+  readonly started: boolean
+  /** It was pressed once, not having started by itself. */
+  readonly pressed: boolean
+  /** This try is on the page opened again, the first one's press having not started it. */
+  readonly reopened: boolean
+  /** The press's `play()` rejection name (`NotAllowedError`, `AbortError`); null when none was refused. */
+  readonly refused: string | null
+  /** The element as last read (null for none): what tells a refused press from one the page paused again. */
+  readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time'> | null
+  /** From the landing to the start, or to giving up on it (ms). */
+  readonly ms: number
+  /** Opened by the Queue moving on (an end, a failed landing), with no Command waiting on it. */
+  readonly background: boolean
 }
 
 /** The Remembered Songs (#345) as the Player reads and grows them: a store beside the Learned Terms. */
@@ -112,6 +139,10 @@ export interface PlayerDeps {
    * more failed read.
    */
   custody?: Pick<BrowserCustody<BrowserController>, 'settled'>
+  /** Hears every song's start, or its failing to (#488): the perf log's `media-start`. */
+  onStart?(start: PlayerStart): void
+  /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
+  now?(): number
 }
 
 /**
@@ -134,6 +165,19 @@ const WATCH_READ_MS = 250
 /** How long the results page may take to carry its data. */
 const RESULTS_READS = 8
 const RESULTS_READ_MS = 250
+/** How often a song just opened is read for its start (#488). */
+const START_READ_MS = 250
+/**
+ * How long a song just opened may take to play by itself before it is
+ * pressed (#488): measured — in #486's kept runs at 919f058f (fresh profile,
+ * Xvfb), the latest of the songs that started by themselves was playing
+ * 2.2 s after the landing, read every 400 ms.
+ */
+const SELF_START_MS = 2_500
+/** How long a pressed song may take to play before it is taken as unstarted: a guess, the self-start bound again; #488's perf `media-start` records settle it. */
+const PRESSED_START_MS = 2_500
+/** How far the element's time must move to be a start (s): one that plays 0.5–1.3 s and stops is not (#488, the kept runs at 919f058f). */
+const PLAYED_S = 1.5
 /** How much `louder` and `quieter` move the volume. */
 const VOLUME_STEP = 10
 /** How far into a newly opened song (s) its carried level is put back over YouTube's own (#460). */
@@ -161,6 +205,7 @@ const isSongs = (read: readonly Song[] | PlayerOutcome): read is readonly Song[]
 export function createPlayer(deps: PlayerDeps): Player {
   const { browser } = deps
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const now = deps.now ?? (() => performance.now())
   let state: Queue = EMPTY_QUEUE
   /** Bumped by every verb and every background open: an open a later one overtook stops where it stands. */
   let generation = 0
@@ -340,6 +385,16 @@ export function createPlayer(deps: PlayerDeps): Player {
     return true
   }
 
+  /**
+   * A page just opened starts at YouTube's remembered volume: the level heard
+   * on the last song at once (#460), else down to the duck's floor while
+   * ducked (#344). Over an ad, the poll carries it once the song itself plays.
+   */
+  async function levelOpened(): Promise<void> {
+    const carried = carrying !== null && (await carry(await evaluate<LevelRead>(LEVEL_SCRIPT)))
+    if (!carried && ducked !== null) await duckElement()
+  }
+
   /** Open a song's watch page, leaving `leaving`; the queue moves on to it only when it landed. */
   async function open(song: Song, current: () => boolean, leaving: Song | null): Promise<'opened' | 'failed' | 'superseded'> {
     let landed: boolean | 'elsewhere' | 'superseded'
@@ -352,11 +407,85 @@ export function createPlayer(deps: PlayerDeps): Player {
       return current() ? 'failed' : 'superseded'
     }
     if (landed === true && heard !== null) carrying = { id: song.id, from: heard }
-    // A page opened starts at YouTube's remembered volume: the level heard on the last song at once (#460), else
-    // down to the duck's floor while ducked (#344). Over an ad, the poll carries it once the song itself plays.
-    const carried = landed === true && carrying !== null && (await carry(await evaluate<LevelRead>(LEVEL_SCRIPT)))
-    if (landed === true && !carried && ducked !== null) await duckElement()
+    if (landed === true) await levelOpened()
     return landed === 'superseded' ? 'superseded' : landed === true ? 'opened' : 'failed'
+  }
+
+  /**
+   * The element of a song just opened, read until it plays (#488): playing,
+   * by kind, is not paused, not ended, holding data (`readyState` > 2), and
+   * its time moved {@link PLAYED_S} — a moment of play that stops is no
+   * start. Not playing by its bound, it is pressed once with the element's
+   * own `play`, and read again to the same bound.
+   */
+  async function startOf(song: Song, current: () => boolean, background: boolean, reopened: boolean): Promise<PlayerStart | 'superseded'> {
+    const from = now()
+    let pressed = false
+    // A bound passes on the clock, or on the reads' own waits where the clock does not move (a scripted page).
+    let phase = { at: from, read: 0, ms: SELF_START_MS }
+    const elapsed = (read: number): number => Math.max(now() - phase.at, (read - phase.read) * START_READ_MS)
+    /** Where the element's time stood when this run of play began; null while it is not playing. */
+    let since: number | null = null
+    let last: StartRead | null = null
+    for (let read = 0; ; read += 1) {
+      if (!current()) return 'superseded'
+      const before = last
+      last = await evaluate<StartRead>(START_SCRIPT)
+      // Custody withholds the page (#433): the start goes unread, and is taken as it was before #488 — playing.
+      if (last === null && withheld !== null) return record({ video: song.id, started: true, pressed, reopened, refused: null, element: null, ms: Math.round(now() - from), background })
+      // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
+      const playing = last !== null && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
+      since = playing ? (since ?? last!.time) : null
+      const started = playing && last!.time - since! >= PLAYED_S
+      // Playing at the bound, it has a start's play longer to show it is one.
+      const due = elapsed(read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)
+      if (started || (due && pressed)) {
+        const element = last === null ? null : { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }
+        return record({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background })
+      }
+      if (due) {
+        await control({ op: 'play' })
+        pressed = true
+        phase = { at: now(), read, ms: PRESSED_START_MS }
+      }
+      await sleep(START_READ_MS)
+      if (!current()) return 'superseded'
+    }
+  }
+
+  /** A start, as the perf log hears it. */
+  function record(start: PlayerStart): PlayerStart {
+    deps.onStart?.(start)
+    return start
+  }
+
+  /**
+   * A song just opened, played (#488): read and pressed once; a page whose
+   * element a press did not start — on a fresh profile it holds no data,
+   * `readyState` 0, the page never feeding it — is opened again once in
+   * full, which dismisses what walls it can, and read and pressed once more.
+   * Each try is its own `media-start`.
+   */
+  async function playOn(song: Song, current: () => boolean, background: boolean): Promise<PlayerStart | 'superseded'> {
+    const first = await startOf(song, current, background, false)
+    if (first === 'superseded' || first.started) return first
+    try {
+      await browser.navigate(watchUrl(song.id))
+    } catch (error) {
+      reportFault('music.player.reopen', error)
+      return current() ? first : 'superseded'
+    }
+    const landed = await landedOn(song, current)
+    if (landed === 'superseded') return landed
+    if (landed !== true) return first
+    await levelOpened()
+    return startOf(song, current, background, true)
+  }
+
+  /** A song the Queue holds whose element never played (#488): held paused, so the card says so and `resume` presses it. */
+  function holdUnstarted(): void {
+    state = pause(state)
+    publish()
   }
 
   /** The next queued song opens in the background, a failed one passed over, until one lands or none is left. */
@@ -375,6 +504,11 @@ export function createPlayer(deps: PlayerDeps): Player {
         publish()
         if (next === null || !current()) return
         const opened = await open(next, current, was)
+        if (opened === 'opened') {
+          const start = await playOn(next, current, true)
+          if (start !== 'superseded' && !start.started) holdUnstarted()
+          return
+        }
         if (opened !== 'failed') return
         state = dropCurrent(state)
         publish()
@@ -399,6 +533,13 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (opened === 'superseded') return superseded
     state = then()
     if (opened === 'failed') return failedToOpen(song)
+    const start = await playOn(song, current, false)
+    if (start === 'superseded') return superseded
+    if (!start.started) {
+      holdUnstarted()
+      const tried = [start.pressed ? ' pressed' : '', start.reopened ? ' reopened' : '', start.refused === null ? '' : ` refused=${start.refused}`].join('')
+      return { result: `unstarted: id=${song.id} title=${JSON.stringify(song.title)}${tried}`, answer: `${quoted(song.title)} opened but didn't start.`, failure: true, unstarted: true, video: song.id }
+    }
     return { result: `playing: id=${song.id} title=${JSON.stringify(song.title)}`, answer, video: song.id }
   }
 
@@ -465,7 +606,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     const known = deps.songs?.recall(words) ?? null
     if (known !== null) {
       const outcome = await openPick({ words, results: [], index: -1, song: known, remembered: true }, current, `Playing ${quoted(known.title)}.`)
-      if (outcome.failure === true) deps.songs?.forgetWords(words)
+      // A song that opened and did not start is still the song (#488): its words stay.
+      if (outcome.failure === true && outcome.unstarted !== true) deps.songs?.forgetWords(words)
       return outcome
     }
     const songs = await readResults(words, current)

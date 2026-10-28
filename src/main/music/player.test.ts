@@ -5,7 +5,7 @@ import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
-import { createPlayer, type SongMemory } from './player'
+import { createPlayer, type PlayerStart, type SongMemory } from './player'
 import { ScriptedYouTube, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
@@ -601,7 +601,8 @@ describe('the level heard carries into the next song (#460)', () => {
     await perform({ kind: 'search', place: 'now' }, 'song b')
     expect(youtube.element.volume).toBeCloseTo(100 * BF, 1)
     youtube.adShowing = false
-    youtube.element = { ...youtube.element, volume: 100 * BF }
+    // The ad played through the start's reads (#488); the song itself begins at 0 s.
+    youtube.element = { ...youtube.element, volume: 100 * BF, currentTime: 0 }
     await player.check()
     expect(youtube.element.volume).toBeCloseTo(19.93, 1)
     // YouTube puts its own level back as the song starts: the poll puts the matched one back over it.
@@ -1020,5 +1021,128 @@ describe('a pick that stayed (#345)', () => {
     youtube.adShowing = true
     await playFor(31)
     expect(songs.all()).toEqual([])
+  })
+})
+
+describe("a song's start (#488): Playing only when the element plays", () => {
+  function starting() {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
+    const starts: PlayerStart[] = []
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, onStart: (start) => starts.push(start) })
+    const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true)
+    const presses = (): number => youtube.controls.filter((op) => op.op === 'play').length
+    return { youtube, player, perform, presses, starts }
+  }
+
+  it('a song that starts by itself is not pressed: Playing, and its start is recorded', async () => {
+    const { perform, presses, starts } = starting()
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(presses()).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ video: 'aaaaaaaaaaa', started: true, pressed: false, refused: null, background: false })])
+  })
+
+  it('a page whose element a press left holding no data is opened again once, in full, and the song plays there', async () => {
+    const { youtube, perform, presses, starts } = starting()
+    youtube.starts = 'reopen'
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(played.failure).toBeUndefined()
+    expect(presses()).toBe(1)
+    expect(starts).toEqual([
+      expect.objectContaining({ started: false, pressed: true, reopened: false, element: expect.objectContaining({ ready: 0 }) }),
+      expect.objectContaining({ started: true, pressed: false, reopened: true }),
+    ])
+  })
+
+  it('a song that never starts until pressed is pressed once, then Playing', async () => {
+    const { youtube, perform, presses, starts } = starting()
+    youtube.starts = 'press'
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(played.failure).toBeUndefined()
+    expect(presses()).toBe(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: true })])
+  })
+
+  it('a song that plays a moment and pauses is pressed once: a moment of play is not a start', async () => {
+    const { youtube, perform, presses } = starting()
+    youtube.starts = 'stalls'
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(presses()).toBe(1)
+  })
+
+  it('a song whose press is refused, on its page and on that page opened again, fails, said as not started; the Queue keeps it, paused, and the reason is recorded', async () => {
+    const { youtube, player, perform, presses, starts } = starting()
+    youtube.starts = 'refuses'
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played).toMatchObject({ failure: true, answer: "“Song A” opened but didn't start.", video: 'aaaaaaaaaaa', result: 'unstarted: id=aaaaaaaaaaa title="Song A" pressed reopened refused=NotAllowedError' })
+    expect(presses()).toBe(2)
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+    expect(player.queue().paused).toBe(true)
+    expect(player.nowPlaying()).toMatchObject({ paused: true })
+    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: true, reopened: false, refused: 'NotAllowedError' }), expect.objectContaining({ started: false, pressed: true, reopened: true, refused: 'NotAllowedError' })])
+  })
+
+  it('an element holding no data to play is not playing, however unpaused: pressed once on each page, then unstarted with no refusal', async () => {
+    const { youtube, perform, presses, starts } = starting()
+    youtube.readyState = 2
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ failure: true, unstarted: true })
+    expect(presses()).toBe(2)
+    expect(starts.at(-1)).toMatchObject({ started: false, pressed: true, reopened: true, refused: null, element: { paused: false, ended: false, ready: 2, time: 0 } })
+  })
+
+  it('a song left unstarted plays on `resume`', async () => {
+    const { youtube, player, perform } = starting()
+    youtube.starts = 'refuses'
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.starts = 'press'
+    await perform({ kind: 'unpause' })
+    expect(youtube.element.paused).toBe(false)
+    expect(player.queue().paused).toBe(false)
+  })
+
+  it('a remembered song that opened but did not start is not forgotten: the song is fine, its start was not', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    const forgotten: string[] = []
+    const songs: SongMemory = { recall: () => ({ id: 'aaaaaaaaaaa', title: 'Song A' }), remember: () => {}, forgetWords: (words) => forgotten.push(words), forgetVideo: () => false }
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, songs })
+    youtube.starts = 'refuses'
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).toMatchObject({ failure: true })
+    expect(forgotten).toEqual([])
+  })
+
+  it('a queued song opened in the background is read, pressed and opened again too; left unstarted, it is held paused', async () => {
+    const { youtube, player, perform, presses, starts } = starting()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    youtube.starts = 'refuses'
+    youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+    expect(presses()).toBe(2)
+    expect(player.queue().paused).toBe(true)
+    expect(starts.at(-1)).toMatchObject({ video: 'bbbbbbbbbbb', started: false, background: true })
+  })
+
+  it('a later Command while the song starts supersedes the wait: nothing is pressed, and the song stays current', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.starts = 'press'
+    // The landing reads at once; the first wait on the start is where the later Command comes.
+    let live = true
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => { live = false } })
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)).toMatchObject({ superseded: true })
+    expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
   })
 })
