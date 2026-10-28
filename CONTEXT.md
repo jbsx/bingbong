@@ -1552,12 +1552,14 @@ _Avoid_: music app, media player (for the page's own controls), playlist (for th
 **Audio road**:
 Where a song Jev reads as music plays: its bare audio stream, looked up by
 yt-dlp, in an `<audio>` outside the pane, so the pane stays free and the
-Idle Screen up. Behind `BINGBONG_AUDIO_ROAD`; off, every play opens the
-watch page. A video, or a road that fails, opens the watch page, shown.
+Idle Screen up. Taken while **audio-only music** is on in Settings (off
+by default), read at each song; off, every play opens the watch page. A
+video, or a road that fails, opens the watch page, shown.
+`BINGBONG_AUDIO_ROAD` names only which yt-dlp runs.
 
 **Kind**:
 Jev's reading of a `play` as music or a video, asked beside `play` while
-the audio road is wired; an unsure reading is music.
+audio-only music is on; an unsure reading is music.
 
 **Queue**:
 The Player's one queue. It holds the song playing (or paused), the songs
