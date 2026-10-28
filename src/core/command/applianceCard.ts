@@ -9,7 +9,7 @@ import { isMediaEngine } from './siteScope'
 import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
 import { appCardOptions, appOpOf, DASHBOARD_LINE, takesAmount, updateOption } from './appOp'
-import { DOING_LABEL, readFate, runningLines, withRunning, type Fate, type RunningCommand } from './runningCommand'
+import { DOING_LABEL, readFate, runningLines, withEnded, withRunning, type EndedCommand, type Fate, type RunningCommand } from './runningCommand'
 import {
   appCommand,
   applianceCommand,
@@ -66,6 +66,8 @@ export interface ApplianceView {
   readonly recorded?: { readonly lines: Readonly<Record<string, string>>; readonly amount: boolean }
   /** The line still running when this one is read (#489): its lines on the state, the doing fact and the Fate question. Absent, the card is unchanged. */
   readonly running?: RunningCommand
+  /** The line just ended, within its window (#499): the doing fact for it, while nothing runs; the state is unchanged. Absent, the card is unchanged. */
+  readonly ended?: EndedCommand
 }
 
 /** How the card is asked: whether `steps` rides it (hop 0 of a whole line), and the Hearing. */
@@ -214,7 +216,8 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
     ...(site !== null ? { where: whereQuestion(site) } : {}),
     ...(steps !== null ? { steps } : {}),
   }
-  return view.running === undefined ? questions : withRunning('', questions, view.running).questions
+  if (view.running !== undefined) return withRunning('', questions, view.running).questions
+  return view.ended === undefined ? questions : withEnded('', questions, view.ended).questions
 }
 
 /** The Fate the answers read for the line still running (#489); none while nothing runs. Unsure or unanswered, it goes on. */
@@ -256,7 +259,7 @@ export function readApplianceAnswers(answers: CommandAnswers, text: string, view
     return command(applianceCommand(label, answers.slot, text, answers, view.url, undefined))
   }
   const fact = factOfLabel(label)
-  if (fact !== null && (fact !== 'doing' || (label === DOING_LABEL && view.running !== undefined))) return command({ verb: 'say', target: null, slot: null, fact })
+  if (fact !== null && (fact !== 'doing' || (label === DOING_LABEL && (view.running !== undefined || view.ended !== undefined)))) return command({ verb: 'say', target: null, slot: null, fact })
   const app = view.appliance?.app
   const op = app === undefined ? null : appOpOf(label, app)
   if (op !== null) return command(appCommand(op, answers, text))

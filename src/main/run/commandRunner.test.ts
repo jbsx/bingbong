@@ -5571,6 +5571,63 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(taken.youtube().pauseAlls).toBe(0)
   })
 
+  describe('the line just ended (#499)', () => {
+    const SONG = 'Let Down (Remastered)'
+    /** `play let down by radiohead`, played to its end: "Playing “Let Down (Remastered)”." shown. */
+    async function played() {
+      let youtube!: ScriptedYouTube
+      const speech = new FakeSpeech()
+      const made = harness({
+        applianceCard: CARD,
+        facts,
+        speech,
+        player: (browser) => {
+          youtube = new ScriptedYouTube(browser)
+          return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+        },
+      })
+      youtube.search('let down by radiohead', videoItem('ZVgHPSyEIqk', SONG))
+      youtube.watches.set('ZVgHPSyEIqk', { title: SONG })
+      made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-4') } })
+      await made.runner.run('play let down by radiohead')
+      await flushMicrotasks()
+      made.asks.length = 0
+      return { ...made, speech }
+    }
+
+    it('a question 3 s after a play ended is read against it on the card, and its doing fact is said', async () => {
+      const { decision, asks, events, runner, perf } = await played()
+      expect(events.some((event) => event.type === 'display' && event.text === `Playing “${SONG}”.`)).toBe(true)
+      perf.state.monotonicMs += 3_000
+      decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none') } })
+      await runner.run('is it working')
+      expect(Object.keys(asks[0]!.questions)).not.toContain('fate')
+      expect((asks[0]!.questions.action as DecisionChoiceQuestion).options.say_doing).toMatch(/just before this one.* — Done, 3 seconds ago: Playing “Let Down \(Remastered\)”\.$/)
+      const spoken = events.filter((event) => event.type === 'speak').at(-1)
+      expect(spoken).toMatchObject({ type: 'speak', text: `Done, 3 seconds ago: Playing “${SONG}”.` })
+    })
+
+    it('past 15 s, or after a line read as none, the card is as it was', async () => {
+      const late = await played()
+      late.perf.state.monotonicMs += 15_001
+      late.decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+      await late.runner.run('is it working')
+      expect(Object.keys((late.asks[0]!.questions.action as DecisionChoiceQuestion).options)).not.toContain('say_doing')
+      // A none is no Command: the line ended before it stays the last, and a doing answer never becomes it.
+      const noise = await played()
+      noise.decision.script.push({ answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+      await noise.runner.run('hmm right')
+      noise.decision.script.length = 0
+      noise.decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none') } }, { answers: { action: choice('say_doing'), slot: choice('none') } })
+      await noise.runner.run('is it working')
+      noise.speech.finish()
+      await flushMicrotasks()
+      await noise.runner.run('did it work')
+      const last = noise.asks.filter((ask) => ask.kind === 'appliance').at(-1)!
+      expect((last.questions.action as DecisionChoiceQuestion).options.say_doing).toMatch(/ — Done, 1 second ago: Playing “Let Down \(Remastered\)”\.$/)
+    })
+  })
+
   it('joins: the running line gives way unsaid, and the two lines are read as one', async () => {
     const { decision, asks, events, runner, first, turnId, land } = await running()
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_time'), slot: choice('none') } })

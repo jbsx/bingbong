@@ -4,7 +4,8 @@ import type { MediaFacts } from '../browser/snapshot'
 import { defaultSettings } from '../settings/settings'
 import type { AppState } from './appOp'
 import { PAGE_LABEL, applianceQuestions, applianceState, fateOfAnswers, readApplianceAnswers, type ApplianceView } from './applianceCard'
-import { doingAnswer, stoppedLine, type RunningCommand } from './runningCommand'
+import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
+import { ENDED_WINDOW_MS, doingAnswer, endedWithin, stoppedLine, type EndedCommand, type RunningCommand } from './runningCommand'
 import type { CommandAnswers } from './jevReading'
 
 const choice = (label: string, confidence = 0.9): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
@@ -161,5 +162,53 @@ describe('the running Command on the Appliance Card (#489)', () => {
     expect(stoppedLine('“play let down”')).toBe('Stopped “play let down”.')
     expect(stoppedLine('Searching for tour dates.')).toBe('Stopped searching for tour dates.')
     expect(doingAnswer(null)).toBe('Nothing is running.')
+  })
+})
+
+describe('the line just ended on the Appliance Card (#499)', () => {
+  const ENDED: EndedCommand = { words: 'play let down by radiohead', outcome: 'done', answer: 'Playing “Let Down (Remastered)”.', agoMs: 3225 }
+
+  it('offers the doing fact for it before page, naming how it ended and how long ago, kept to a question; the state as it was; no Fate', () => {
+    const view = { ...WATCH, ended: ENDED }
+    // Measured: the ended line's lines on the state lured the next line's own action (arm J, runningCommand.ts).
+    expect(applianceState('is it working', view)).toBe(applianceState('is it working', WATCH))
+    const questions = applianceQuestions('is it working', view)
+    expect(Object.keys(questions)).not.toContain('fate')
+    const labels = Object.keys(questions.action.options)
+    expect(labels.indexOf('say_doing')).toBe(labels.indexOf(PAGE_LABEL) - 1)
+    expect(questions.action.options.say_doing).toBe(
+      "appliance: answer a question about the user's line just before this one, whether it worked and how it ended — never a new request — Done, 3 seconds ago: Playing “Let Down (Remastered)”.",
+    )
+    expect(readApplianceAnswers(answers('say_doing'), 'is it working', view)).toMatchObject({ command: { verb: 'say', fact: 'doing' } })
+    expect(fateOfAnswers(answers('say_doing'), view)).toBeUndefined()
+  })
+
+  it('says its end in one sentence: done with its sentence, failed, or stopped', () => {
+    expect(doingAnswer(null, ENDED)).toBe('Done, 3 seconds ago: Playing “Let Down (Remastered)”.')
+    expect(doingAnswer(null, { ...ENDED, agoMs: 900 })).toBe('Done, 1 second ago: Playing “Let Down (Remastered)”.')
+    expect(doingAnswer(null, { words: 'open bbc.com', outcome: 'failed', answer: "Couldn't open bbc.com.\n\nTry “search bbc”.", agoMs: 5000 })).toBe("Didn't work, 5 seconds ago: Couldn't open bbc.com.")
+    expect(doingAnswer(null, { words: 'play hurt', outcome: 'cancelled', agoMs: 2000 })).toBe('Stopped, 2 seconds ago: “play hurt”.')
+    expect(doingAnswer(null, { words: 'Play the song from the beginning.', outcome: 'done', agoMs: 2000 })).toBe('Done, 2 seconds ago: “Play the song from the beginning”.')
+    // A line running is what the doing fact says, whatever ended before it.
+    expect(doingAnswer({ words: 'open bbc.com', stage: 'Loading', detail: 'bbc.com', done: [] }, ENDED)).toBe('Still on “open bbc.com”: loading bbc.com.')
+  })
+
+  it('leaves a card with a line running as it was, whatever ended before it', () => {
+    const running: RunningCommand = { words: 'play let down by radiohead', stage: 'Loading', detail: 'youtube.com', done: [], opening: 'let down by radiohead' }
+    expect(applianceState('on loop', { ...WATCH, running, ended: ENDED })).toBe(applianceState('on loop', { ...WATCH, running }))
+    expect(applianceQuestions('on loop', { ...WATCH, running, ended: ENDED })).toEqual(applianceQuestions('on loop', { ...WATCH, running }))
+  })
+
+  it('leaves the card byte for byte as before with no line ended in the window', () => {
+    expect(applianceState('is it working', { ...WATCH, ended: undefined })).toBe(applianceState('is it working', WATCH))
+    expect(applianceQuestions('is it working', { ...WATCH, ended: undefined })).toEqual(applianceQuestions('is it working', WATCH))
+    expect(readApplianceAnswers(answers('say_doing'), 'is it working', WATCH)).toEqual({ kind: 'page', chose: 'page' })
+  })
+
+  it('keeps an ended line for 15 s from its end, the Peek Card and Turn Card linger', () => {
+    expect(ENDED_WINDOW_MS).toBe(PEEK_CARD_LINGER_MS)
+    expect(endedWithin({ words: 'w', outcome: 'done', at: 1_000 }, 16_000)).toEqual({ words: 'w', outcome: 'done', agoMs: 15_000 })
+    expect(endedWithin({ words: 'w', outcome: 'done', at: 1_000 }, 16_001)).toBeUndefined()
+    expect(endedWithin(null, 2_000)).toBeUndefined()
   })
 })

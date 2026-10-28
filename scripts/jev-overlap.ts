@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir]` and
+// `pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir] [--only name]` and
 // `pnpm jev:overlap rebuild [dir]` (#489): the Overlap Jev cases. `grow`
 // converts each line #489 claims from the ask its kept run recorded to the
 // Appliance Card it would get now — the running Command at the line's
@@ -24,10 +24,11 @@ registerHooks({
     }
   },
 })
-const { withRunning } = (await import('../src/core/command/runningCommand.ts')) as typeof import('../src/core/command/runningCommand')
+const { withEnded, withRunning } = (await import('../src/core/command/runningCommand.ts')) as typeof import('../src/core/command/runningCommand')
 const { companionCase } = (await import('../src/core/decision/applianceCompanion.ts')) as typeof import('../src/core/decision/applianceCompanion')
 const { JEV_CORPUS_DIR } = (await import('../src/main/decision/jevCorpus.ts')) as typeof import('../src/main/decision/jevCorpus')
 type RunningCommand = import('../src/core/command/runningCommand').RunningCommand
+type EndedCommand = import('../src/core/command/runningCommand').EndedCommand
 type DecisionQuestions = import('../src/core/ports/decisionModel').DecisionQuestions
 
 /** A claimed line (#489's table), the run that kept its ask, and the answer the owner's row names. */
@@ -43,6 +44,8 @@ interface Source {
   readonly from?: string
   /** The running line as the runner carries it now, when the run's own events say otherwise (#494: a line whose failure still sounds is running, #490). */
   readonly running?: RunningCommand
+  /** The line just ended when the claimed one was read, nothing running (#499): the card carries it in the running line's place. */
+  readonly ended?: EndedCommand
 }
 
 const MAMMOTH = 'decision-models_baseten-mammoth-27b-latest'
@@ -85,6 +88,15 @@ const SOURCES: readonly Source[] = [
     run: `8-split-by-pause/${MAMMOTH}/p1`,
     running: { words: 'Back to', stage: 'Loading', detail: 'duckduckgo.com', done: ['back (opened duckduckgo.com)'], sinceMs: 1500 },
     expect: [{ question: 'fate', label: 'joins', atLeast: 0.7 }],
+  },
+  // #499: the question about the wait 3.2 s after the play ended (the run of record at 6e0279eb, p3: its `done` at 1793178308958, the
+  // question's Thinking at 1793178312183), read alone as none on a card that had forgotten the play. Its doing fact says its end.
+  {
+    name: '7-is-it-working-after-end',
+    turnId: 'turn-mvrw2gvr-2',
+    run: `7-is-it-working/${MAMMOTH}/p3`,
+    ended: { words: 'play let down by radiohead', outcome: 'done', answer: 'Playing “Let Down (Remastered)”.', agoMs: 3225 },
+    expect: [{ question: 'action', label: 'say_doing', atLeast: 0.7 }],
   },
 ]
 
@@ -142,27 +154,39 @@ function runningAt(events: readonly Timed[], at: number, own: string): RunningCo
   return { words: first.event.detail!, stage, ...(detail !== undefined && detail !== '' ? { detail } : {}), done, ...(typeof play === 'string' ? { opening: play } : {}), ...since }
 }
 
-function caseOf(source: Source, base: { state: string; questions: DecisionQuestions }, running: RunningCommand, transcript: string, model: string | undefined, at: number): object {
+/** The line on the card beside the claimed one: still running (#489), or just ended (#499). */
+type Beside = { readonly running: RunningCommand } | { readonly ended: EndedCommand }
+
+function askWith(base: { state: string; questions: DecisionQuestions }, beside: Beside): { state: string; questions: DecisionQuestions } {
+  return 'ended' in beside ? withEnded(base.state, base.questions, beside.ended) : withRunning(base.state, base.questions, beside.running)
+}
+
+function caseOf(source: Source, base: { state: string; questions: DecisionQuestions }, beside: Beside, transcript: string, model: string | undefined, at: number): object {
   return {
     turnId: source.turnId,
     transcript,
-    note: `An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by \`pnpm jev:overlap\`. Expects the Fate the owner's row ${source.name.split('-')[0]} names (#486).`,
+    note:
+      'ended' in beside
+        ? `An Overlap case (#499): the line's ask as its kept run recorded it, on the Appliance Card with the line just ended then; built by \`pnpm jev:overlap\`. Expects the doing fact, which says its end (row ${source.name.split('-')[0]}, #486).`
+        : `An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by \`pnpm jev:overlap\`. Expects the Fate the owner's row ${source.name.split('-')[0]} names (#486).`,
     ...(model !== undefined ? { model } : {}),
     recordedAt: at,
     expect: source.expect,
-    ask: withRunning(base.state, base.questions, running),
-    overlap: { running, base },
+    ask: askWith(base, beside),
+    overlap: { ...beside, base },
   }
 }
 
 const [mode, ...rest] = process.argv.slice(2)
 const out = rest.includes('--out') ? rest[rest.indexOf('--out') + 1]! : JEV_CORPUS_DIR
-const positional = rest.filter((arg, index) => arg !== '--out' && rest[index - 1] !== '--out')
+// `--only <name>` grows one source (#499): the kept dir of a later run holds the others' cases under other turns.
+const only = rest.includes('--only') ? rest[rest.indexOf('--only') + 1]! : undefined
+const positional = rest.filter((arg, index) => arg !== '--out' && arg !== '--only' && rest[index - 1] !== '--out' && rest[index - 1] !== '--only')
 
 if (mode === 'grow') {
   const [kept, kiosk] = positional
-  if (kept === undefined) throw new Error('usage: pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir]')
-  for (const source of SOURCES) {
+  if (kept === undefined) throw new Error('usage: pnpm jev:overlap grow <kept-overlap-dir> [kiosk-logs-dir] [--out dir] [--only name]')
+  for (const source of SOURCES.filter((each) => only === undefined || each.name === only)) {
     if (source.run !== undefined) {
       const dir = source.from ?? kept
       if (!existsSync(join(dir, `${source.run}.json`))) {
@@ -174,10 +198,11 @@ if (mode === 'grow') {
       const ask = asks.find((each) => each.turnId === source.turnId && each.kind === 'appliance')
       if (ask === undefined) throw new Error(`${source.name}: no Appliance ask for ${source.turnId}`)
       const events = (JSON.parse(readFileSync(runFile, 'utf8')) as { run: { records: { events: Timed[] } } }).run.records.events
-      const running = source.running ?? runningAt(events, ask.at, source.turnId)
-      if (running === null) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
+      const running = source.ended !== undefined ? null : (source.running ?? runningAt(events, ask.at, source.turnId))
+      if (running === null && source.ended === undefined) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
+      const beside: Beside = source.ended !== undefined ? { ended: source.ended } : { running: running! }
       const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
-      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutRunning({ state: ask.state, questions: ask.questions }), running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutRunning({ state: ask.state, questions: ask.questions }), beside, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
     } else if (source.kiosk !== undefined) {
       if (kiosk === undefined || !existsSync(kiosk)) {
         console.log(`${source.name}: no kiosk logs given, skipped`)
@@ -188,7 +213,7 @@ if (mode === 'grow') {
       const companion = companionCase(source.name, { turnId: source.turnId, expect: [], ask: { state: ask.state, questions: ask.questions } })
       if (companion === null) throw new Error(`${source.name}: its ask has no Appliance companion`)
       const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
-      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, companion.ask, source.kiosk.running, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, companion.ask, { running: source.kiosk.running }, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
     }
     console.log(`overlap-${source.name}.json`)
   }
@@ -197,8 +222,8 @@ if (mode === 'grow') {
   let rebuilt = 0
   for (const file of readdirSync(dir).filter((each) => each.startsWith('overlap-') && each.endsWith('.json'))) {
     const path = join(dir, file)
-    const kept = JSON.parse(readFileSync(path, 'utf8')) as { overlap: { running: RunningCommand; base: { state: string; questions: DecisionQuestions } } }
-    writeFileSync(path, `${JSON.stringify({ ...kept, ask: withRunning(kept.overlap.base.state, kept.overlap.base.questions, kept.overlap.running), overlap: kept.overlap }, null, 2)}\n`)
+    const kept = JSON.parse(readFileSync(path, 'utf8')) as { overlap: Beside & { base: { state: string; questions: DecisionQuestions } } }
+    writeFileSync(path, `${JSON.stringify({ ...kept, ask: askWith(kept.overlap.base, kept.overlap), overlap: kept.overlap }, null, 2)}\n`)
     rebuilt += 1
   }
   console.log(`${rebuilt} Overlap cases rebuilt in ${dir}`)

@@ -110,7 +110,7 @@ import { errandCard, type ErrandCard } from '../../core/errand/plannerCommand'
 import { NO_PLANNER_LINE } from '../../core/errand/errandMemory'
 import { ERRAND_STAGE, PLANNER_STEP_STAGE } from '../../core/planner/plannerSpan'
 import { runErrand, type ActedStep, type ErrandStart } from './errand'
-import { doingAnswer, stoppedLine, type Fate, type RunningCommand } from '../../core/command/runningCommand'
+import { doingAnswer, endedWithin, stoppedLine, type EndedCommand, type EndedLine, type Fate, type RunningCommand } from '../../core/command/runningCommand'
 
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
 // lands and becomes one Command. The Local Match first — the CLI grammar,
@@ -584,6 +584,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   let floor = 0
   const isEnded = (submission: number): boolean => submission < floor
+  /** How a line ended, as its events said (#499): its Answer as shown, its outcome, and whether it was read as no Command. */
+  interface LineEnd {
+    answer?: string
+    outcome?: EndedLine['outcome']
+    none?: boolean
+    /** It asked what the line before did (the doing fact): it leaves that line the last ended, never itself. */
+    asked?: boolean
+  }
   /** A line given and not yet ended (#489). */
   interface LiveLine {
     readonly turnId: string
@@ -611,6 +619,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     sounding: number
     /** Its Task is over; it stays live only while a sentence of it sounds. */
     settled: boolean
+    /** How it ended, as its events say (#499): what the card carries of it once it has. */
+    end: LineEnd
     readonly close: () => void
   }
   /** The lines given and not yet ended, by their turn (#489): the running Command the Appliance Card carries, and what a `waits` waits on. */
@@ -654,6 +664,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const owner = live.get(event.task.id)
       if (owner !== undefined) owner.hops = Math.max(owner.hops, event.task.hop + 1)
     }
+    noteEnd(event)
     if (event.type !== 'status' || event.status === 'cancelled') return
     const line = live.get(lineOfTurn.get(event.turnId) ?? event.turnId)
     if (line === undefined) return
@@ -664,14 +675,46 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (event.status === 'acting') line.acting = event.word === ERRAND_WORD ? `“${line.words}”` : event.detail !== undefined && event.detail !== '' ? `${line.stage} ${event.detail}` : line.stage
   }
 
+  /** The line that ended last (#499): what the next line's card carries while it is recent, and the doing fact says. */
+  let lastEnded: (EndedLine & { readonly submission: number }) | null = null
+
+  /** A line's end as its events tell it (#499): its Answer, its outcome, a none; an Early Fire's Task, having no live line, ends at its `done`. */
+  function noteEnd(event: PipelineEvent): void {
+    const turnId = event.type === 'display' || event.type === 'done' || event.type === 'command' ? event.turnId : undefined
+    if (turnId === undefined) return
+    // A line's own turn first: a joined line's events are its own, though its Task is the line it joined (#494).
+    const id = live.has(turnId) || earlyLines.has(turnId) ? turnId : (lineOfTurn.get(turnId) ?? turnId)
+    const line = live.get(id)
+    const early = line === undefined ? earlyLines.get(id) : undefined
+    const end = line?.end ?? early?.end
+    if (end === undefined) return
+    if (event.type === 'display') end.answer = event.text
+    else if (event.type === 'command' && event.dropped === true && event.action === undefined) end.none = true
+    else if (event.type === 'done') {
+      end.outcome = event.outcome ?? 'done'
+      if (early !== undefined && turnId === id) noteEnded(early.words, early.submission, end)
+    }
+  }
+
+  /** A line has ended (#499): kept as the last, unless it was read as no Command. */
+  function noteEnded(words: string, submission: number, end: LineEnd): void {
+    if (end.none === true || end.asked === true || givenWay.has(submission)) return
+    lastEnded = { words, outcome: end.outcome ?? 'done', ...(end.answer !== undefined ? { answer: end.answer } : {}), at: monotonic(), submission }
+  }
+
+  /** The line ended last before `submission`, while within its window of `given` (#499); none with a line still running. */
+  function endedBefore(submission: number, given: number): EndedCommand | undefined {
+    return lastEnded !== null && lastEnded.submission < submission ? endedWithin(lastEnded, given) : undefined
+  }
+
   /**
    * The words of a line an Early Fire took (#490), which has no live line
    * while its Task runs: a sentence it says makes it one until the sentence
    * ends, as any spoken outcome is. Kept for the last few submissions.
    */
-  const earlyLines = new Map<string, { readonly words: string; readonly submission: number; readonly given: number }>()
+  const earlyLines = new Map<string, { readonly words: string; readonly submission: number; readonly given: number; readonly end: LineEnd }>()
   function noteFired(turnId: string, words: string, submission: number, given: number): void {
-    earlyLines.set(turnId, { words, submission, given })
+    earlyLines.set(turnId, { words, submission, given, end: {} })
     for (const [id, line] of earlyLines) if (line.submission < submission - 8) earlyLines.delete(id)
   }
 
@@ -679,7 +722,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function openLine(turnId: string, words: string, submission: number, given: number, settled = false): LiveLine {
     let close: () => void = () => {}
     const over = new Promise<void>((resolve) => (close = resolve))
-    const line: LiveLine = { turnId, words, submission, given, stage: 'Thinking', detail: undefined, hops: 0, over, sounding: 0, settled, close }
+    const line: LiveLine = { turnId, words, submission, given, stage: 'Thinking', detail: undefined, hops: 0, over, sounding: 0, settled, end: {}, close }
     live.set(turnId, line)
     return line
   }
@@ -689,6 +732,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (!line.settled || line.sounding > 0 || live.get(line.turnId) !== line) return
     live.delete(line.turnId)
     earlyLines.delete(line.turnId)
+    // Its end counts from its sentence's, as the Peek Card's linger does (#499).
+    noteEnded(line.words, line.submission, line.end)
     line.close()
   }
 
@@ -711,6 +756,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (took === undefined) return undefined
       line = openLine(id, took.words, took.submission, took.given, true)
       line.stage = 'Speaking'
+      line.end = took.end
     }
     if (isEnded(line.submission)) return undefined
     line.sounding += 1
@@ -1151,6 +1197,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly askId?: string
     /** The line running when this one was given (#489): the Appliance Card carries it and asks its Fate. */
     readonly running?: RunningCommand
+    /** The line just ended when this one was given, nothing running (#499): the Appliance Card carries it. */
+    readonly ended?: EndedCommand
   }
 
   /**
@@ -1291,11 +1339,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** What the Appliance Card is built from (#485): the page by its address and title, the media, and what the appliance holds. */
-  async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand): Promise<ApplianceView> {
+  async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand, ended?: EndedCommand): Promise<ApplianceView> {
     const state = browser.state()
     const media = await mediaNow(turnId, pending)
     const own = appliance()
-    return { url: state.url ?? '', title: state.title ?? '', ...(media !== null ? { media } : {}), ...(own !== undefined ? { appliance: own } : {}), flaggable: lastTask !== null, timer: deps.timer !== undefined, ...(running !== undefined ? { running } : {}) }
+    return {
+      url: state.url ?? '',
+      title: state.title ?? '',
+      ...(media !== null ? { media } : {}),
+      ...(own !== undefined ? { appliance: own } : {}),
+      flaggable: lastTask !== null,
+      timer: deps.timer !== undefined,
+      ...(running !== undefined ? { running } : {}),
+      ...(ended !== undefined ? { ended } : {}),
+    }
   }
 
   /**
@@ -1311,7 +1368,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     options: ReadOptions,
     model: DecisionModel,
   ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean; fate?: Fate }> {
-    const view = await applianceView(turnId, pending, options.running)
+    const view = await applianceView(turnId, pending, options.running, options.ended)
     // The Hearing reads the Page Terms of the page in hand, never waiting for one.
     const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
     const questions = applianceQuestions(text, view, { steps: options.split, heard })
@@ -1643,7 +1700,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // What the app is doing (#489): the line still running, the one before the line firing this.
         if (command.fact === 'doing') {
           const lines = [...live.values()].filter((line) => !isEnded(line.submission)).sort((a, b) => b.submission - a.submission)
-          return doingAnswer(lines[1] !== undefined ? runningOf(lines[1]) : null)
+          if (lines[0] !== undefined) lines[0].end.asked = true
+          if (lines[1] !== undefined) return doingAnswer(runningOf(lines[1]))
+          // Nothing running: the line just ended, as the card carried it (#499), its age as it is said.
+          const ended = lines[0] !== undefined ? endedBefore(lines[0].submission, lines[0].given) : undefined
+          return doingAnswer(null, ended !== undefined && lastEnded !== null ? { ...ended, agoMs: Math.max(ended.agoMs, monotonic() - lastEnded.at) } : undefined)
         }
         // A fact (#402): its sentence, filled from what the appliance holds as it fires.
         if (deps.facts === undefined || command.fact === undefined) throw new Error('no facts on this surface')
@@ -3617,7 +3678,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         lastAnswer = null
         const runningNow = deps.applianceCard !== undefined ? runningBefore(submission) : null
-        const first = await read(turnId, lineRead, pending, source === 'spoken', { split: true, ...(runningNow !== null ? { running: runningOf(runningNow, turnId) } : {}) })
+        // With nothing running, the line just ended rides the card in its place while it is recent (#499).
+        const endedNow = deps.applianceCard !== undefined && runningNow === null ? endedBefore(submission, endpointAt) : undefined
+        const first = await read(turnId, lineRead, pending, source === 'spoken', {
+          split: true,
+          ...(runningNow !== null ? { running: runningOf(runningNow, turnId) } : {}),
+          ...(endedNow !== undefined ? { ended: endedNow } : {}),
+        })
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
         // Said over the app's voice (#490, F2 arm b): it stops at the read when the line is for the app — any Fate but going on
