@@ -35,12 +35,25 @@ export const OWN_VOICE_SHARE = 0.75
  * Fewer letters than this are never the app's own by a near stretch: a word
  * or two is near something in any long read by chance, and a short line of
  * the person's is the one that must not be lost. A short capture is the
- * app's own only when its words are found whole in what the app said (the
- * orchestrator's ruling, #490): the runner read short echoes of titles and
- * of "Stopped." as Commands (narrow18–20 at c7e80bf0), and a person's
- * "stop" or "back" is still heard when the app did not just say it.
+ * app's own only when its words are found whole in what the app's voice has
+ * just sounded (the orchestrator's rulings, #490): the runner read short
+ * echoes of titles and of "Stopped." as Commands (narrow18–20 at c7e80bf0),
+ * and a person's "stop" or "back" is still heard when the app did not just
+ * say it, even over a read that names "Stop Crying Your Heart Out" further on.
  */
 export const OWN_VOICE_LETTERS = 10
+
+/**
+ * How far back what the app's voice sounded is held against a short capture
+ * (#490): the ruling's "~2 s", a guess. Each frame of a capture over the
+ * voice takes this window, so a capture holds what sounded from this long
+ * before it began to its end. What it must cover: the room's echo delay and
+ * the error of placing a word by its letters inside a sentence's sound;
+ * the speaking dumps carry no playback clock, so the delay is not measured
+ * from them, and the gate's over-speech span says whether the window held
+ * each long own capture (`recentShare`).
+ */
+export const ECHO_WINDOW_MS = 2000
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
 const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
@@ -174,8 +187,13 @@ function foundWhole(transcript: string, said: string | readonly string[]): boole
   return false
 }
 
-/** Whether a transcript taken while the app spoke is the app's own voice: it sounds like a stretch of what is being said, or, short, its words are found whole in it. */
-export function isOwnVoice(transcript: string, said: string | readonly string[]): boolean {
-  if (soundLetters(transcript).length < OWN_VOICE_LETTERS) return foundWhole(transcript, said)
+/**
+ * Whether a transcript taken while the app spoke is the app's own voice: it
+ * sounds like a stretch of what is being said, or, short, its words are
+ * found whole in what has just sounded (`recent`; what is being said, when
+ * the speaker cannot tell).
+ */
+export function isOwnVoice(transcript: string, said: string | readonly string[], recent: string | readonly string[] = said): boolean {
+  if (soundLetters(transcript).length < OWN_VOICE_LETTERS) return foundWhole(transcript, recent)
   return ownShare(transcript, said) >= OWN_VOICE_SHARE
 }

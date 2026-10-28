@@ -30,6 +30,8 @@ export interface VoiceChainContext {
   speaking: boolean
   /** What the app is saying now (#490): the app's own words, told from the person's over them. */
   speech?: string
+  /** What the app's voice sounded in the last echo window (#490): the words its own voice in the mic can have just said. */
+  sounded?: string
   /** What speech over the app's voice is, inside a listen (#490); absent is `off`. */
   overSpeech?: OverSpeech
   runState: CommandRunState
@@ -199,6 +201,7 @@ export function createVoiceChainHost<C>(deps: VoiceChainHostDeps<C>): VoiceChain
       speaking: {
         isSpeaking: () => context.speaking,
         speechText: () => (context.speaking ? (context.speech ?? '') : ''),
+        soundedText: () => context.sounded ?? '',
         waitIdle: () => (context.speaking ? new Promise<void>((resolve) => idleWaiters.push(resolve)) : Promise.resolve()),
       },
       tracer: tracerFor(init.tracerEpochMs),

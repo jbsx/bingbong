@@ -19,7 +19,7 @@ import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import { vadLag, wakeGate } from '../perf/attachAppTelemetry'
 import { recordModelLoad } from '../perf/modelLoads'
 import type { VoiceProcessConfig } from './voiceProcessConfig'
-import type { OverSpeech } from '../../core/voice/ownVoice'
+import { ECHO_WINDOW_MS, type OverSpeech } from '../../core/voice/ownVoice'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, and on to the voice process (#430), whose voice session (seam-tested
@@ -133,6 +133,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     context: () => ({
       speaking: deps.speaking?.isSpeaking() ?? false,
       ...(deps.speaking?.speechText ? { speech: deps.speaking.speechText() } : {}),
+      ...(deps.speaking?.soundedText ? { sounded: deps.speaking.soundedText(ECHO_WINDOW_MS) } : {}),
       overSpeech,
       runState: runnerFor(win)?.getState() ?? 'idle',
       wakeThreshold: deps.getWakeThreshold?.() ?? 0.5,
@@ -257,7 +258,7 @@ export interface AttachVoiceDeps {
   /** The decode's bias (ADR 0022, 0077), identity-stable until it changes; absent biases toward nothing. */
   getBiasPhrases?(): ChainBias
   /** The speaking gate (#326): the mic takes no Utterance while a line plays, and the screen is told when one starts and stops (#472). */
-  speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange' | 'speechText'>
+  speaking?: Pick<SpeakingGate, 'isSpeaking' | 'waitIdle' | 'onSpeakingChange' | 'speechText' | 'soundedText'>
   /** What speech over the app's voice is, inside a listen (#490); absent is `off`, the speaking gate. */
   overSpeech?: OverSpeech
   /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */

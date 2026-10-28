@@ -10,7 +10,7 @@ import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
-import { isOwnVoice, ownShare, OWN_VOICE_SHARE, type OverSpeech } from './ownVoice'
+import { ECHO_WINDOW_MS, isOwnVoice, ownShare, OWN_VOICE_SHARE, type OverSpeech } from './ownVoice'
 import { createOverLevel, type LoudStretch, type OverLevel } from './overLevel'
 
 /**
@@ -154,6 +154,14 @@ export interface VoiceSession {
  * activation while a Command is in flight opens a listen like any other
  * (#324): the Command it yields supersedes the one running.
  */
+/** One window of words after another (#490): the next window's words that the last already ends with are not taken twice. */
+function mergeWords(held: readonly string[], next: readonly string[]): string[] {
+  for (let overlap = Math.min(held.length, next.length); overlap > 0; overlap--) {
+    if (next.slice(0, overlap).every((word, i) => word === held[held.length - overlap + i])) return [...held, ...next.slice(overlap)]
+  }
+  return [...held, ...next]
+}
+
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
   const endpointerDeps = {
@@ -230,9 +238,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // playing when it started, or started under it. Dropped at its Endpoint.
   let muted = false
   // The utterance in capture started over the app's voice, or the app started under it, and is read to tell whose it is (#490):
-  // the app's sentences heard while it was captured, and whether the app's voice ducked for it. Under the duck its frames are
-  // read by level too: the audio before the read began, then each frame, so a stretch of the person's can be cut out.
-  let over: { said: Set<string>; ducked: boolean; level?: { read: OverLevel; lead: Float32Array; frames: Float32Array[] } } | null = null
+  // the app's sentences heard while it was captured, the words its voice sounded from an echo window before the capture to now,
+  // and whether the app's voice ducked for it. Under the duck its frames are read by level too: the audio before the read
+  // began, then each frame, so a stretch of the person's can be cut out.
+  let over: { said: Set<string>; recent: string[]; ducked: boolean; level?: { read: OverLevel; lead: Float32Array; frames: Float32Array[] } } | null = null
   // The capture has met the app's voice already: it is decided once per capture (#490).
   let metSpeech = false
   // The Utterance in capture's pauses (#443): how many decoded at a pause, and the audio length of the one standing (null when speech came back after it).
@@ -259,16 +268,21 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       deps.tts.stop()
       return false
     }
-    over = { said: new Set(), ducked: mode === 'duck', ...(mode === 'duck' ? { level: { read: createOverLevel(), lead: endpointer.preRoll(), frames: [] } } : {}) }
+    over = { said: new Set(), recent: [], ducked: mode === 'duck', ...(mode === 'duck' ? { level: { read: createOverLevel(), lead: endpointer.preRoll(), frames: [] } } : {}) }
     hearSpeech()
     if (over.ducked) deps.tts.duck?.(true)
     return false
   }
 
-  /** The app's sentence now, kept while a capture over it runs. */
+  /** What a capture over the voice is held against when short (#490): what just sounded; what is being said, when the speaker cannot tell. */
+  const recentOf = (heard: { said: Set<string>; recent: string[] }): string | string[] => (deps.speaking?.soundedText !== undefined ? heard.recent.join(' ') : [...heard.said])
+
+  /** The app's sentence now, and the words its voice just sounded, kept while a capture over it runs. */
   function hearSpeech(): void {
     const said = deps.speaking?.speechText?.()
     if (over !== null && said !== undefined && said !== '') over.said.add(said)
+    const sounded = deps.speaking?.soundedText?.(ECHO_WINDOW_MS)
+    if (over !== null && sounded !== undefined && sounded !== '') over.recent = mergeWords(over.recent, sounded.split(/\s+/))
   }
 
   /** One frame of a capture over the ducked voice, read by level: a stretch of the person's that has just ended, or null (#490). */
@@ -721,10 +735,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
     if (heardOver !== null) {
       const said = [...heardOver.said]
-      const own = text !== '' && isOwnVoice(text, said)
+      const recent = recentOf(heardOver)
+      const own = text !== '' && isOwnVoice(text, said, recent)
       if (tracer && turnId !== null) {
         try {
-          tracer.span(turnId, 'over-speech', 0, { verdict: text === '' ? 'blank' : own ? 'own' : 'person', share: ownShare(text, said), mode: heardOver.ducked ? 'duck' : 'filter' })
+          tracer.span(turnId, 'over-speech', 0, {
+            verdict: text === '' ? 'blank' : own ? 'own' : 'person',
+            share: ownShare(text, said),
+            recentShare: ownShare(text, recent),
+            mode: heardOver.ducked ? 'duck' : 'filter',
+          })
         } catch (error) {
           reportFault('voice.voiceSession.overSpeechSpan', error)
         }
@@ -761,7 +781,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     const phrase = normalizedPhrase(text)
     // A stop word over the app's voice that is what the app said (its sentence sounding or just ended) is its echo, never the person's stop (#490): it goes to the runner as any line over the voice.
-    const echoedStop = heardOver !== null && ownShare(text, [...heardOver.said]) >= OWN_VOICE_SHARE
+    const echoedStop = heardOver !== null && ownShare(text, recentOf(heardOver)) >= OWN_VOICE_SHARE
     if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase) && !echoedStop) {
       if (heardOver?.ducked === true) deps.tts.duck?.(false)
       deps.onAbort()

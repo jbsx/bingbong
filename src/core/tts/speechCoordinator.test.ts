@@ -3,6 +3,12 @@ import { createSpeechCoordinator } from './speechCoordinator'
 import type { AudioStream, AudioStreamPlayer, SpeechSynthesizer } from '../ports/tts'
 import { createPerfTracer } from '../perf/perfTracer'
 import { fakePerfHarness } from '../testing/doubles'
+import { wrapRawPcmAsWav } from './wav'
+
+/** A WAV that sounds `ms` long (16-bit mono at 1 kHz, so two bytes a millisecond). */
+function wavOf(ms: number): Uint8Array {
+  return wrapRawPcmAsWav(new Uint8Array(ms * 2), 1000)
+}
 
 class FakeSynth implements SpeechSynthesizer {
   readonly texts: string[] = []
@@ -495,5 +501,52 @@ describe('speech coordinator — perf spans (#31, #327)', () => {
     synth.finishNext()
     await flush()
     expect(player.streams[2]!.gains).toEqual([])
+  })
+
+  it('tells what sounded in a window up to the playback position, by sentence length and letters; never what is still to come (#490)', async () => {
+    let clock = 0
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, now: () => clock })
+
+    const outcome = tts.speak('Aaaa bbbb cccc dddd. Stop crying your heart out.')
+    await flush()
+    expect(tts.sounded!(2000)).toBe('')
+    synth.finishNext(wavOf(2000))
+    await flush()
+    synth.finishNext(wavOf(3000))
+    await flush()
+    // Both sentences are written at 0; the first sounds 0–2000 ms, the second 2000–5000 ms.
+    clock = 900
+    expect(tts.sounded!(2000)).toBe('Aaaa bbbb')
+    clock = 2500
+    expect(tts.sounded!(1000)).toBe('dddd. Stop')
+    clock = 4999
+    expect(tts.sounded!(1000)).toBe('heart out.')
+    player.streams[0]!.finish()
+    await outcome
+    // Ended, it is still what just sounded, for a window's length.
+    clock = 6000
+    expect(tts.sounded!(2000)).toBe('heart out.')
+    clock = 8000
+    expect(tts.sounded!(2000)).toBe('')
+  })
+
+  it('a stop ends what sounded where it fell: the rest never sounded (#490)', async () => {
+    let clock = 0
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, now: () => clock })
+
+    void tts.speak('Aaaa bbbb cccc dddd. Stop crying your heart out.')
+    await flush()
+    synth.finishNext(wavOf(2000))
+    await flush()
+    synth.finishNext(wavOf(3000))
+    await flush()
+    clock = 1000
+    tts.stop()
+    clock = 1500
+    expect(tts.sounded!(5000)).toBe('Aaaa bbbb')
   })
 })

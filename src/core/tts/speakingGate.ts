@@ -67,6 +67,7 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
     tts,
     isSpeaking: () => outstanding > 0,
     speechText: () => saying.join(' '),
+    soundedText: (windowMs) => inner.sounded?.(windowMs) ?? '',
     onSpeakingChange(listener) {
       changeListeners.add(listener)
       return () => changeListeners.delete(listener)

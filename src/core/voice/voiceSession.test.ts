@@ -86,6 +86,18 @@ class FakeSpeaking {
   }
 }
 
+/** A speaker that tells what its voice just sounded (#490). */
+class FakeSounding extends FakeSpeaking {
+  /** The words of the last echo window. */
+  sounded = ''
+  /** Windows told one per ask, the last held, ahead of `sounded`. */
+  windows: string[] = []
+
+  soundedText(): string {
+    return (this.windows.length > 1 ? this.windows.shift() : this.windows[0]) ?? this.sounded
+  }
+}
+
 async function flush(microtasks = 5): Promise<void> {
   for (let i = 0; i < microtasks; i++) await Promise.resolve()
 }
@@ -1597,9 +1609,9 @@ describe('voice session — speech over the app’s own voice, inside a listen (
   const READ = 'Let Down, Radiohead. If playback doesn’t begin shortly, try restarting your device.'
 
   /** A Hot Listen open, the app saying READ. */
-  async function overRead(script: string[], overSpeech: OverSpeech, extra?: Parameters<typeof createSession>[0]) {
+  async function overRead<S extends FakeSpeaking = FakeSpeaking>(script: string[], overSpeech: OverSpeech, extra?: Parameters<typeof createSession>[0], given?: S) {
     const detector = new FakeWakeDetector({ wake: [0.9, 0], abort: [0] })
-    const speaking = new FakeSpeaking()
+    const speaking = given ?? new FakeSpeaking()
     const harness = await createSession({ transcriber: new FakeTranscriber(script), wake: { detector }, speaking, overSpeech, ...extra })
     harness.session.enableWakeMonitoring()
     for (const prob of [SPEECH, SPEECH, SPEECH]) {
@@ -1743,7 +1755,40 @@ describe('voice session — speech over the app’s own voice, inside a listen (
   it('records whose it was read to be', async () => {
     const { harness } = await overRead(['if playback doesnt begin shortly'], 'duck', { perf: { sttMs: 0 } })
     await harness.speakUtterance()
-    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toEqual({ verdict: 'own', share: 1, mode: 'duck' })
+    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toEqual({ verdict: 'own', share: 1, recentShare: 1, mode: 'duck' })
+  })
+
+  const CLOCKS = 'Stop the Clocks is a compilation album by Oasis. It was released in November 2006. The album was promoted with a tour. Stop the Clocks reached number one.'
+
+  it('duck: a short line is the app’s own only when its words just sounded: a person’s "stop" over a read that names Stop elsewhere is their abort (the orchestrator’s ruling)', async () => {
+    const sounding = new FakeSounding()
+    sounding.text = CLOCKS
+    const { harness } = await overRead(['Stop.'], 'duck', { runState: { value: 'running' } }, sounding)
+    sounding.text = CLOCKS
+    sounding.sounded = 'released in November 2006. The album'
+    await harness.speakUtterance()
+    expect(harness.aborts).toHaveLength(1)
+  })
+
+  it('duck: a short echo of words that just sounded fires nothing', async () => {
+    const sounding = new FakeSounding()
+    const { harness } = await overRead(['Stop the clocks'], 'duck', { runState: { value: 'running' } }, sounding)
+    sounding.text = CLOCKS
+    sounding.sounded = 'promoted with a tour. Stop the Clocks reached'
+    await harness.speakUtterance()
+    expect(harness.aborts).toEqual([])
+    expect(harness.submitted).toEqual([])
+    expect(harness.session.getState()).toMatchObject({ listening: true })
+  })
+
+  it('the words that sounded are kept across the capture, one window after another, from before it began', async () => {
+    const sounding = new FakeSounding()
+    const { harness } = await overRead(['Be hey Jude'], 'duck', { perf: { sttMs: 0 } }, sounding)
+    sounding.text = CLOCKS
+    sounding.windows = ['played Let It Be', 'It Be Hey', 'Hey Jude, now']
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual([])
+    expect(harness.perf.find((record) => record.stage === 'over-speech')?.detail).toMatchObject({ verdict: 'own' })
   })
 })
 

@@ -6,6 +6,7 @@
     "read-the-page.wav": { "words": "Read the page.", "voice": "en_US-lessac-medium" },
     "move-on.wav": { "words": "Move on.", "voice": "en_US-lessac-medium" },
     "find-wikipedia-radiohead.wav": { "words": "Find the Wikipedia page for Radiohead.", "voice": "en_US-lessac-medium" },
-    "remark-kettle.wav": { "words": "Oh, I think I left the kettle on.", "voice": "en_GB-northern_english_male-medium" }
+    "remark-kettle.wav": { "words": "Oh, I think I left the kettle on.", "voice": "en_GB-northern_english_male-medium" },
+    "stop.wav": { "words": "Stop.", "voice": "en_US-lessac-medium" }
   }
 }

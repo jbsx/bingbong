@@ -1,0 +1,34 @@
+{
+  "start": {
+    "url": "https://en.wikipedia.org/wiki/Stop_the_Clocks"
+  },
+  "input": "spoken",
+  "listen": "wake",
+  "echo": true,
+  "lines": [
+    {
+      "words": "Read the page.",
+      "audio": "read-the-page.wav"
+    },
+    {
+      "words": "Stop.",
+      "audio": "stop.wav",
+      "at": {
+        "while": "speaking"
+      }
+    }
+  ],
+  "expect": {
+    "said": [
+      {
+        "means": "it stopped reading"
+      }
+    ],
+    "lines": [
+      "cancelled"
+    ]
+  },
+  "evidence": [
+    "the orchestrator's ruling on #490's eighth-pass fork: a person's stop over a read whose text holds Stop is heard (arm (i) dropped it: the case-10 reads hold 'Stop Crying Your Heart Out')"
+  ]
+}

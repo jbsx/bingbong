@@ -26,6 +26,13 @@ export interface TtsSpeaker {
    * lets the duck go. Absent, a speaker cannot duck.
    */
   duck?(on: boolean): void
+  /**
+   * The words that sounded in the last `windowMs`, up to where playback is
+   * now (#490), timed by each sentence's sound length and, inside one, by
+   * its letters: what the app's own voice in the mic can have just said.
+   * Absent, a speaker cannot tell.
+   */
+  sounded?(windowMs: number): string
 }
 
 /** Text → WAV bytes (piper in main). */
@@ -71,4 +78,6 @@ export interface TtsIdle {
   waitIdle(): Promise<void>
   /** The texts being said now, joined (#490): what the app's own voice in the mic would be heard to say; '' when nothing is. */
   speechText?(): string
+  /** The words that sounded in the last `windowMs` (#490, `TtsSpeaker.sounded`); '' when none did or the speaker cannot tell. */
+  soundedText?(windowMs: number): string
 }
