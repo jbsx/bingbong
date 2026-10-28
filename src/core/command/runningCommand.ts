@@ -60,11 +60,14 @@ export function fateQuestion(): DecisionChoiceQuestion {
 /** The fact's label for "what are you doing" (#489): a fact Appliance Verb, offered only while a line runs. */
 export const DOING_LABEL = 'say_doing'
 
-/** The sentence the doing fact says (ui.md 10: one sentence, no mechanics): `Still on “play let down by radiohead”: loading youtube.com.` */
+/** The sentence the doing fact says (ui.md 10: one sentence, no mechanics): `Still opening “let down by radiohead”: loading youtube.com.`, or `Still on “open bbc.com”: opening bbc.com.` */
 export function doingAnswer(running: RunningCommand | null): string {
   if (running === null) return 'Nothing is running.'
   const stage = stageOf(running)
-  return `Still on “${running.words}”: ${stage.charAt(0).toLowerCase()}${stage.slice(1)}.`
+  const lower = `${stage.charAt(0).toLowerCase()}${stage.slice(1)}`
+  // Media still opening is named, not the line (the overlap gate's row 7): the stage after it only while a page loads.
+  if (running.opening !== undefined) return `Still opening “${running.opening}”${running.stage === 'Loading' ? `: ${lower}` : ''}.`
+  return `Still on “${running.words}”: ${lower}.`
 }
 
 /** The doing fact's option line, carrying what it would say. */

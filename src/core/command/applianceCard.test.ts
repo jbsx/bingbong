@@ -136,7 +136,7 @@ describe('the running Command on the Appliance Card (#489)', () => {
     expect(Object.keys(questions.fate!.options)).toEqual(['ends', 'joins', 'waits', 'goes_on'])
     const labels = Object.keys(questions.action.options)
     expect(labels.indexOf('say_doing')).toBe(labels.indexOf(PAGE_LABEL) - 1)
-    expect(questions.action.options.say_doing).toContain('Still on “play let down by radiohead”: loading youtube.com.')
+    expect(questions.action.options.say_doing).toContain("Still opening “let down by radiohead”: loading youtube.com.")
   })
 
   it('says how long before the line being read the running one was given, when the runner knows (T1)', () => {

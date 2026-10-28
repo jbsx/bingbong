@@ -52,7 +52,7 @@
           "flag": "the app: mark the last thing it did as a failure, for its makers to look at — the words after it, if any, are the hint",
           "help": "the app: show and say what it can be asked to do",
           "stop": "stop what the app is doing: the page loading, the voice speaking",
-          "say_doing": "appliance: say what the app is doing now, for the line still running — Still on “play hurt”: loading youtube.com.",
+          "say_doing": "appliance: say what the app is doing now, for the line still running — Still opening “hurt”: loading youtube.com.",
           "page": "something on the page open, \"Johnny Cash - Hurt - YouTube\": its links, buttons, fields or text",
           "none": "not a command: a remark, a question to no one, noise"
         }
