@@ -552,7 +552,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     let cleared: ConsentCleared | null = null
     const from = now()
     try {
-      const clearing = browser.clearConsent(drawn === undefined ? undefined : { shown: drawn.showing, playing: drawn.playing })
+      const clearing = browser.clearConsent(drawn === undefined ? undefined : { shown: drawn.showing, playing: drawn.playing, ...(drawn.wall === undefined ? {} : { wall: drawn.wall }) })
       if (watch !== null) watch.looking = clearing.catch(() => null)
       cleared = await clearing
     } catch (error) {

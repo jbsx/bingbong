@@ -120,6 +120,11 @@ export function consentDismissalLine(ref: number, label: string): string {
   return `dismissed consent dialog: clicked [${ref}] ${JSON.stringify(label)}`
 }
 
+/** The dismissal line for a wall the page told of (#496, F1 arm b): clicked by its handle, with no collect and so no ref. */
+export function consentToldDismissalLine(label: string): string {
+  return `dismissed consent dialog: clicked ${JSON.stringify(label)}`
+}
+
 /**
  * What follows the dismissal line when a click or type met a Blocked Action
  * under an open consent wall (ADR 0061): the retry landed, or still met a

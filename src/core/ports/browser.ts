@@ -21,6 +21,18 @@ export interface ConsentDrawn {
   readonly playing: boolean
   /** Which showing on this document: the page tells each once, and a showing whose collect cleared nothing is not collected again. */
   readonly showing: number
+  /** The wall as the page told it (#496, F1 arm b); absent from a page that told none. */
+  readonly wall?: ConsentWall
+}
+
+/** A consent wall as the page's watch tells it (#496): by kind, never by site. */
+export interface ConsentWall {
+  /** The root's kind: its role or tag for a declared dialog, `pinned` for a fixed or sticky layer. */
+  readonly role: string
+  /** The wall's own text, capped. */
+  readonly text: string
+  /** Its buttons' labels; a button's handle is its index here. */
+  readonly buttons: readonly string[]
 }
 
 /** A consent wall cleared (#492), and where its clear's time went (#496), each in ms. */
@@ -165,9 +177,12 @@ export interface BrowserController {
    * the page's own `shown` (its {@link ConsentDrawn.showing}), the look is
    * skipped: the page already said the wall is up (#496); with its
    * `playing`, media that began playing under the wall is the page changed,
-   * and the wall is collected once more.
+   * and the wall is collected once more. With the page's own `wall` too,
+   * the decline is asked on its told buttons and the chosen one clicked by
+   * its handle, with no collect (#496, F1 arm b); a wall told that way and
+   * not clicked is collected as before.
    */
-  clearConsent?(options?: { readonly shown?: number; readonly playing?: boolean }): Promise<ConsentCleared | null>
+  clearConsent?(options?: { readonly shown?: number; readonly playing?: boolean; readonly wall?: ConsentWall }): Promise<ConsentCleared | null>
   /**
    * Hears every consent wall the page signals as it draws (#496): the page's
    * own watch, by kind on any site, armed from a document's start for 30 s

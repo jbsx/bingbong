@@ -72,6 +72,39 @@ const PINNED_ANCESTOR_FN = `(el) => {
 const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[type="button"], [role="button"], [role="link"]'
 
 /**
+ * The consent wall up in the top frame (#492, #496): its root (a declared
+ * dialog, else the outermost fixed or sticky layer) found by the first
+ * control the collect's consent rule would take, and the controls in it
+ * with size and a label, none for a root off the viewport. Null for none.
+ */
+const CONSENT_WALL_FN = `(() => {
+  const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
+  const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
+  const pinnedAncestor = ${PINNED_ANCESTOR_FN}
+  const labelOf = (control) => [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ').trim()
+  const shows = (control) => {
+    if (control.closest('[inert]') !== null) return false
+    const rect = control.getBoundingClientRect()
+    return rect.width >= 1 && rect.height >= 1
+  }
+  return () => {
+    for (const control of document.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})) {
+      if (!CONSENT_LABEL_RE.test(labelOf(control)) || !shows(control)) continue
+      const declared = control.closest(${JSON.stringify(DIALOG_SELECTOR)})
+      const root = declared ?? pinnedAncestor(control)
+      if (root === null) continue
+      // A layer standing off the viewport is no wall the collect would find (ADR 0061): it tells no buttons. One standing in it
+      // tells them all, those below its own fold too (YouTube's sheet scrolls its Reject into view).
+      const box = root.getBoundingClientRect()
+      const inView = box.bottom > 0 && box.right > 0 && box.top < window.innerHeight && box.left < window.innerWidth
+      const controls = inView ? [...root.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})].filter((el) => shows(el) && labelOf(el) !== '') : []
+      return { root, role: declared === null ? 'pinned' : (root.getAttribute('role') || root.tagName.toLowerCase()), controls, labelOf }
+    }
+    return null
+  }
+})()`
+
+/**
  * Whether a consent wall may be up, looked at in place with no collect
  * (#492): a control the collect's consent rule would take — a consent
  * choice by the dialog policy's own pattern, with size, not inert — inside
@@ -81,19 +114,8 @@ const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[t
  * next collect.
  */
 const CONSENT_SHOWN_FN = `(() => {
-  const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
-  const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
-  const pinnedAncestor = ${PINNED_ANCESTOR_FN}
-  return () => {
-    for (const control of document.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})) {
-      const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
-      if (!CONSENT_LABEL_RE.test(text) || control.closest('[inert]') !== null) continue
-      const rect = control.getBoundingClientRect()
-      if (rect.width < 1 || rect.height < 1) continue
-      if (control.closest(${JSON.stringify(DIALOG_SELECTOR)}) !== null || pinnedAncestor(control) !== null) return true
-    }
-    return false
-  }
+  const wall = ${CONSENT_WALL_FN}
+  return () => wall() !== null
 })()`
 
 export const CONSENT_SHOWN_SCRIPT = `(() => {
@@ -101,7 +123,7 @@ export const CONSENT_SHOWN_SCRIPT = `(() => {
   return ${CONSENT_SHOWN_FN}()
 })()`
 
-/** The page's own consent signal (#496): the binding its watch calls, once per showing, with `{ at, playing, showing }`. */
+/** The page's own consent signal (#496): the binding its watch calls, once per showing, with `{ at, playing, showing, wall }`. */
 export const CONSENT_DRAWN_BINDING = '__bingbongConsentDrawn'
 /** How long from a document's start its consent watch is armed with nothing playing (#496, F2 arm ii): the Player's landing watch, measured in #492 (CONSENT_WATCH_MS). */
 export const CONSENT_ARMED_MS = 30_000
@@ -109,6 +131,12 @@ export const CONSENT_ARMED_MS = 30_000
 export const CONSENT_CHECK_MS = 250
 /** Media that paused this recently was playing as a wall drew over it: a page pauses its media as its wall draws (YouTube's, #496). A guess. */
 export const CONSENT_PLAYED_MS = 2_000
+/** Where the watch keeps the told wall's buttons (#496, F1 arm b): `{ showing, controls }`, a button's handle its index. */
+export const CONSENT_WALL_HANDLES = '__bingbongConsentWall'
+/** How much of a told wall's text, how many of its buttons and how much of each label the tell carries: the collect's dialog text cap (400), the rest guesses. */
+export const CONSENT_TOLD_TEXT = 400
+export const CONSENT_TOLD_BUTTONS = 16
+export const CONSENT_TOLD_LABEL = 80
 /** The mark the watch puts on each element playing as a wall drew over it (#496): what the Player resumes once after the clear, and only those. */
 export const CONSENT_HELD_MARK = '__bingbongWallHeld'
 
@@ -129,7 +157,7 @@ export const CONSENT_WATCH_SCRIPT = `(() => {
   /* CONSENT_WATCH */
   if (window !== window.top || window.__bingbongConsentWatch === true) return
   window.__bingbongConsentWatch = true
-  const shown = ${CONSENT_SHOWN_FN}
+  const wallUp = ${CONSENT_WALL_FN}
   const from = Date.now()
   let playedAt = -Infinity
   // The look said yes on its last run; how many times it went from no to yes; how far this showing was told (1 nothing playing, 2 playing).
@@ -157,7 +185,8 @@ export const CONSENT_WATCH_SCRIPT = `(() => {
       observer = null
       return
     }
-    if (!shown()) {
+    const wall = wallUp()
+    if (wall === null) {
       up = false
       told = 0
       return
@@ -173,7 +202,12 @@ export const CONSENT_WATCH_SCRIPT = `(() => {
     if (typeof tell !== 'function') return schedule()
     told = level
     if (played) for (const media of lastPlaying) if (media.isConnected) media[${JSON.stringify(CONSENT_HELD_MARK)}] = showing
-    tell(JSON.stringify({ at: Date.now(), playing: played, showing }))
+    // The wall itself (#496, F1 arm b): its kind, text and buttons, each button's handle its place in the list kept here.
+    const controls = wall.controls.slice(0, ${CONSENT_TOLD_BUTTONS})
+    window[${JSON.stringify(CONSENT_WALL_HANDLES)}] = { showing, controls }
+    const text = (wall.root.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, ${CONSENT_TOLD_TEXT})
+    const buttons = controls.map((control) => wall.labelOf(control).slice(0, ${CONSENT_TOLD_LABEL}))
+    tell(JSON.stringify({ at: Date.now(), playing: played, showing, wall: { role: wall.role, text, buttons } }))
   }
   const schedule = () => {
     if (timer !== null) return

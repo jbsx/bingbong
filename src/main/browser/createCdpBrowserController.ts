@@ -5,6 +5,7 @@ import type {
   CaptureTarget,
   ConsentCleared,
   ConsentDrawn,
+  ConsentWall,
   FileChooser,
   KeyPress,
   MarkedScreenshot,
@@ -37,7 +38,7 @@ import {
   type CoverProbe,
   type RefAction,
 } from '../../core/browser/actionOutcome'
-import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
+import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, consentToldDismissalLine, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
   coverOf,
@@ -88,6 +89,7 @@ import {
   TAG_OF_FN,
   CONSENT_SHOWN_SCRIPT,
   CONSENT_DRAWN_BINDING,
+  CONSENT_WALL_HANDLES,
   CONSENT_WATCH_SCRIPT,
 } from './collectPageScript'
 import { readRefStates, type RefStatesTally } from './readRefStates'
@@ -280,6 +282,15 @@ const STILL_POLL_MS = 100
  * held every collect behind a sheet that stays 5 s.
  */
 export const DISMISSAL_GONE_MS = 1_500
+
+/**
+ * How the browser's clear meets a wall the page told with its own buttons
+ * (#496, F1): `told` asks the decline on the told labels and clicks the
+ * chosen button by its handle, with no collect (arm b); `collect` collects
+ * the page first, as every other clear does (arm a). Under measure on the
+ * overlap gate; the losing arm leaves the tree.
+ */
+export const TOLD_WALL_CLEAR: 'told' | 'collect' = 'told'
 
 /**
  * The most a click on a control of the open dialog waits for its sheet to
@@ -871,10 +882,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * the clock does not move (a scripted page); a read the page holds past the bound is not waited for (live 2026-10-28: one
    * read held 3.9 s after a YouTube click).
    */
-  async function awaitDialogGone(): Promise<boolean> {
+  async function awaitDialogGone(openInPlace: () => Promise<boolean> = dialogOpenInPlace): Promise<boolean> {
     const from = clock.now()
     for (let settled = 0; Math.max(clock.now() - from, settled) < DISMISSAL_GONE_MS; settled += STILL_POLL_MS) {
-      const open = await withDeadline(dialogOpenInPlace(), clock, DISMISSAL_GONE_MS - Math.max(clock.now() - from, settled))
+      const open = await withDeadline(openInPlace(), clock, DISMISSAL_GONE_MS - Math.max(clock.now() - from, settled))
       if (open === null) return false
       if (!open) return true
       await settle('consent-gone', STILL_POLL_MS)
@@ -1664,7 +1675,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * The landing's consent clear on the page as it stands (#492): a look in place first, so a page with no wall is never
    * collected — skipped when the page's own watch said it is shown (#496), whose showing then keys the one confirming collect.
    */
-  async function clearConsent(options?: { readonly shown?: number; readonly playing?: boolean }): Promise<ConsentCleared | null> {
+  async function clearConsent(options?: { readonly shown?: number; readonly playing?: boolean; readonly wall?: ConsentWall }): Promise<ConsentCleared | null> {
     try {
       const shown = options?.shown
       if (shown === undefined && (await evaluateInPage<unknown>(CONSENT_SHOWN_SCRIPT)) !== true) {
@@ -1676,6 +1687,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // its first collect clearing nothing a beat after it mounted, then drawn over the song with the same showing).
       const at = url === null ? null : shown === undefined ? url : `${url}#${shown}${options?.playing === true ? ' playing' : ''}`
       if (at !== null && at === consentUnconfirmedAt) return null
+      if (TOLD_WALL_CLEAR === 'told' && shown !== undefined && options?.wall !== undefined) {
+        const told = await clearToldWall(shown, options.wall)
+        if (told !== null) {
+          consentUnconfirmedAt = null
+          return told
+        }
+      }
       const start = clock.now()
       const walled = await recollection('landing-consent', () => collectSnapshot())
       const collectMs = clock.now() - start
@@ -1687,6 +1705,37 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       reportFault('browser.createCdpBrowserController.clearConsent', error)
       return null
     }
+  }
+
+  /**
+   * A wall the page told with its own buttons, cleared on them (#496, F1 arm b): the decline asked of Jev on the told labels
+   * (ADR 0089), else the rule's reject, else the accept, and the chosen button clicked by its handle — no collect. Null when
+   * nothing was clicked: the button gone, or another showing up since, which the collect then meets as before.
+   */
+  async function clearToldWall(shown: number, wall: ConsentWall): Promise<ConsentCleared | null> {
+    const labels = [...wall.buttons]
+    if (!isConsentDialog(wall.text, labels)) return null
+    const start = clock.now()
+    const chosen = await chosenConsent(wall.text, labels)
+    const askMs = clock.now() - start
+    const choice = chosen ?? consentRejectOf(labels) ?? consentAcceptOf(labels)
+    if (choice === null) return null
+    await armReadiness()
+    const clicked = await evaluateInPage<unknown>(`((wall) => {
+      if (!wall || wall.showing !== ${shown}) return false
+      const el = wall.controls[${choice}]
+      if (!el || !el.isConnected) return false
+      if (typeof el.focus === 'function') el.focus()
+      el.click()
+      return true
+    })(window[${JSON.stringify(CONSENT_WALL_HANDLES)}])`)
+    const clickAt = clock.now()
+    lastSnapshot = undefined
+    await awaitReadiness('consent-dismiss')
+    if (clicked !== true) return null
+    // No collect ran, so the collect's own dialog read is not on the page: the look's test says whether the wall is up.
+    const gone = await awaitDialogGone(async () => (await evaluateInPage<unknown>(CONSENT_SHOWN_SCRIPT).catch(() => false)) === true)
+    return { line: consentToldDismissalLine(truncateOutcomeText(labels[choice], 60)), collectMs: 0, askMs, clickMs: clickAt - start, goneMs: clock.now() - clickAt, gone }
   }
 
   // The page's consent watch (#496): in every top document from its start, telling through a binding the browser adds again
@@ -1704,7 +1753,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   cdp.on?.('Runtime.bindingCalled', (params) => {
     const { name, payload } = params as { name?: string; payload?: string }
     if (name !== CONSENT_DRAWN_BINDING || typeof payload !== 'string') return
-    let told: { at?: unknown; playing?: unknown; showing?: unknown }
+    let told: { at?: unknown; playing?: unknown; showing?: unknown; wall?: unknown }
     try {
       told = JSON.parse(payload) as typeof told
     } catch {
@@ -1712,7 +1761,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     if (typeof told.at !== 'number' || typeof told.showing !== 'number') return
     // The page's clock is the wall's, as Date.now() is here.
-    const drawn: ConsentDrawn = { ageMs: Math.max(0, Date.now() - told.at), playing: told.playing === true, showing: told.showing }
+    const wall = toldWall(told.wall)
+    const drawn: ConsentDrawn = { ageMs: Math.max(0, Date.now() - told.at), playing: told.playing === true, showing: told.showing, ...(wall === null ? {} : { wall }) }
     for (const listener of [...consentListeners]) {
       try {
         listener(drawn)
@@ -3060,4 +3110,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     takeFileChooser,
     attachFiles,
   }
+}
+
+/** The wall a page's tell carried (#496), checked: null for none, or for one not shaped as the watch sends it. */
+function toldWall(value: unknown): ConsentWall | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { role, text, buttons } = value as { role?: unknown; text?: unknown; buttons?: unknown }
+  if (typeof role !== 'string' || typeof text !== 'string' || !Array.isArray(buttons) || !buttons.every((label) => typeof label === 'string')) return null
+  return { role, text, buttons }
 }
