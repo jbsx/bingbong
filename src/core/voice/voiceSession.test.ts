@@ -42,7 +42,7 @@ interface SessionHarness {
   errors: string[]
   commands: string[]
   /** Submit-command calls with their threaded turn id (#27), cap flag (#61) and Endpoint reading (#324). */
-  submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true }[]
+  submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true; speechLevelDb?: number }[]
   /** Every speech start the session reported (#324). */
   speechStarts: number[]
   /** Every live partial the session forwarded (#324). */
@@ -136,7 +136,7 @@ async function createSession(overrides?: {
   const heard: VoiceHeardEvent[] = []
   const errors: string[] = []
   const commands: string[] = []
-  const submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true }[] = []
+  const submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number; overSpeech?: true; speechLevelDb?: number }[] = []
   const speechStarts: number[] = []
   const partials: string[] = []
   const drops: number[] = []
@@ -830,6 +830,20 @@ describe('voice session — perf spans (#27)', () => {
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
     expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + 20) * 32, truncated: false, endedBy: 'cap', silenceMs: SUBMIT_SILENCE * 32, cold: true })
+  })
+
+  it('carries the Utterance\'s Speech Level to the runner and the stt span (#500): a `none` said at the mic is answered aloud', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['L-O-O-P.']), perf: {} })
+
+    harness.session.arm()
+    // Every frame at 0.1: the loudest fifth reads −20 dBFS.
+    for (const prob of utteranceProbs()) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512).fill(0.1))
+    }
+
+    expect(harness.submitted[0]!.speechLevelDb).toBeCloseTo(-20, 3)
+    expect((harness.perf.find((record) => record.stage === 'stt')!.detail as { levelDb: number }).levelDb).toBeCloseTo(-20, 1)
   })
 
   it('marks only the run\'s first decode cold: it loads the engine\'s sessions', async () => {

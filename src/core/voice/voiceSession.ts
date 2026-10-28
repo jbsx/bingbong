@@ -11,7 +11,7 @@ import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
 import { ECHO_WINDOW_MS, isOwnVoice, ownShare, OWN_VOICE_SHARE, type OverSpeech } from './ownVoice'
-import { createOverLevel, type LoudStretch, type OverLevel } from './overLevel'
+import { createOverLevel, speechLevelDb, type LoudStretch, type OverLevel } from './overLevel'
 
 /**
  * The complete local phrase-routing vocabulary — abort alone, the one
@@ -46,6 +46,8 @@ export interface SubmittedCommand {
   readonly endpointAt?: number
   /** Spoken over the app's voice, which ducked for it (#490): the line's Command stops it by firing, and its end lets it back up. */
   readonly overSpeech?: true
+  /** The Utterance's Speech Level in dBFS (#500, `speechLevelDb`); absent for silence. */
+  readonly speechLevelDb?: number
 }
 
 export interface VoiceSessionDeps {
@@ -674,6 +676,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // (the STT thread also decodes afresh when Page Terms landed between the pause and here, which this does not see).
     const atPause = pauseSamples === utterance.pcm.length
     const endOfSpeechMs = utterance.silenceMs + (utterance.endedBy === 'turn' ? (utterance.turn?.scoreMs ?? 0) : 0)
+    // How loud it was said (#500): the runner answers a `none` aloud only for speech at the mic; the stt span keeps it so the floor is measured.
+    const levelDb = speechLevelDb(utterance.pcm)
     const recordStt = (extra?: Record<string, unknown>): void => {
       if (!tracer || turnId === null || endpointAt === null) return
       // The log is advisory; never fail an utterance over bookkeeping (the
@@ -689,6 +693,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           ...(deps.transcriber.keyterms !== undefined ? { keyterms: deps.transcriber.keyterms } : {}),
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
+          ...(levelDb !== null ? { levelDb: Math.round(levelDb * 10) / 10 } : {}),
           truncated: utterance.truncated,
           // What fired the Endpoint and the turn check behind it (#357): `pnpm perf:report` counts the cap against Smart Turn.
           endedBy: utterance.endedBy,
@@ -801,6 +806,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       truncated: utterance.truncated,
       ...(endpointAt !== null ? { endpointAt } : {}),
       ...(heardOver?.ducked === true ? { overSpeech: true as const } : {}),
+      ...(levelDb !== null ? { speechLevelDb: levelDb } : {}),
     })
     deps.onHeard({ text, routed: 'command' })
     // One wake, one spoken session (#326): a wake listen stays open; the hotkey's is single-shot.

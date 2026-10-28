@@ -100,6 +100,22 @@ export function frameLevel(frame: Float32Array): number {
   return frame.length === 0 ? 0 : Math.sqrt(sum / frame.length)
 }
 
+/** The share of an Utterance's frames, its loudest, that its Speech Level is read from (#500): the voiced part of a short line, not its gaps. */
+export const SPEECH_LEVEL_SHARE = 0.2
+
+/**
+ * An Utterance's Speech Level (#500): the mean RMS of its loudest fifth of 512-sample frames, in dBFS. Speech said
+ * at the mic reads well above speech across the room; null for silence, which has no level.
+ */
+export function speechLevelDb(pcm: Float32Array, frameSamples = 512): number | null {
+  const levels: number[] = []
+  for (let start = 0; start + frameSamples <= pcm.length; start += frameSamples) levels.push(frameLevel(pcm.subarray(start, start + frameSamples)))
+  levels.sort((a, b) => b - a)
+  const loudest = levels.slice(0, Math.max(1, Math.floor(levels.length * SPEECH_LEVEL_SHARE)))
+  const mean = loudest.reduce((sum, level) => sum + level, 0) / loudest.length
+  return levels.length === 0 || mean <= 0 ? null : 20 * Math.log10(mean)
+}
+
 /**
  * Reads a capture over the ducked voice frame by frame. The echo's level is
  * read from every settled frame so far, so a person who spoke first is
