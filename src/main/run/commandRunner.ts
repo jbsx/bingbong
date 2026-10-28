@@ -3696,6 +3696,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /** The running line's doing sentence (#504), left to be said as its stop line would be: a line no host read let it go on. */
+  function goesOnSaid(turnId: string, submission: number): void {
+    const running = runningBefore(submission)
+    if (running !== null) stopSaid = { text: doingAnswer(runningOf(running)), by: turnId }
+  }
+
   /** Whether an Errand is under way and not yet ended (#504). */
   const errandLive = (): boolean => errand !== null && !errand.controller.signal.aborted
 
@@ -3909,16 +3915,22 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           publish({ type: 'done', turnId, outcome: 'done', at: at() })
           return
         }
+        // No host read it over a running Command and the Local Match has no action for it (#504, ruling 2): it is an Errand's Goal Line,
+        // as `errand <words>` is, handed over aloud. What came of the running line goes ahead of it: its stop, or its doing sentence.
+        if (heard.overTimeout === true && heard.command.verb === 'none' && heard.steps === undefined && !isEnded(submission) && handsOff('unavailable') && !quietOver(turnId, [])) {
+          log({ ...recordOf(turnId, at(), source, lineRead, heard, heard.command, null, truncated), task: { id: turnId, hop: 0 }, ended: 'unavailable' })
+          if (heard.fate === 'goes_on' && !errandLive()) goesOnSaid(turnId, submission)
+          publish({ type: 'command', turnId, text: trimmed, action: `errand: ${lineRead}`, task: { id: turnId, hop: 0 }, at: at() })
+          span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'errand', effect: 'settled', reading: 'best_guess', source })
+          await startErrand({ id: turnId, goalLine: lineRead, source }, submission, newGoalLine(lineRead))
+          return
+        }
         const joinedTask = into !== undefined ? { taskId: into.taskId, hop: into.hop } : {}
         const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true, ...joinedTask })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
-        const handing = end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)
-        // No host read it over a running Command (#504): a line running on is said so, unless the Errand it is handed to ends that line's own.
-        if (heard.overTimeout === true && heard.fate === 'goes_on' && !isEnded(submission) && !(handing && errandLive())) {
-          const running = runningBefore(submission)
-          if (running !== null) stopSaid = { text: doingAnswer(runningOf(running)), by: turnId }
-        }
-        if (handing) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission, heard.overTimeout === true ? newGoalLine(lineRead) : undefined)
+        // No host read it over a running Command, and no Planner takes it (#504): a line running on is said so.
+        if (heard.overTimeout === true && heard.fate === 'goes_on' && !isEnded(submission)) goesOnSaid(turnId, submission)
+        if (end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
       try {
         await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
