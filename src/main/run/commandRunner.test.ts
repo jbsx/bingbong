@@ -6047,3 +6047,99 @@ describe('a line split by a pause (#494): the join J1 reaches a first half that 
     expect(said(events).at(-1)).toMatch(/^Done, \d+ seconds? ago: It's 12:34 on Friday 23 October\.$/)
   })
 })
+
+describe('an ad before the song, on the runner (#497)', () => {
+  const CARD = { asks: 'sequential' } as const
+  const SONG = 'Let Down (Remastered)'
+  const displays = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+  /** The Appliance Card's media over the ad: the element's time and length are the ad's. */
+  const AD_MEDIA = { title: SONG, facts: { paused: false, ended: false, currentTime: 5, duration: 15, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 15 }, tracks: 0, captions: null, hiddenTrack: false, buffering: false, failed: false } }
+
+  function overAd() {
+    let youtube!: ScriptedYouTube
+    let player!: Player
+    const made = harness({
+      applianceCard: CARD,
+      player: (browser) => {
+        youtube = new ScriptedYouTube(browser)
+        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+        return player
+      },
+    })
+    youtube.search('let down', videoItem('ZVgHPSyEIqk', SONG))
+    youtube.watches.set('ZVgHPSyEIqk', { title: SONG })
+    const play = async (): Promise<void> => {
+      made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-2') } })
+      await made.runner.run('play let down')
+    }
+    /** Mid-song, an ad in the song's element at 0:05 of 0:15, as the poll reads it. */
+    const adNow = async (skippable = false): Promise<void> => {
+      youtube.skippableAtS = skippable ? 5 : null
+      youtube.adShowing = true
+      youtube.element = { ...youtube.element, currentTime: 5, duration: 15 }
+      await player.check()
+      made.browser.applianceMediaNow = AD_MEDIA
+      made.asks.length = 0
+    }
+    return { ...made, youtube: () => youtube, player: () => player, play, adNow }
+  }
+
+  it("a play over a pre-roll: the Capsule's Loading names the ad and counts it off the element, and Playing is said once the song plays", async () => {
+    const { youtube, events, play } = overAd()
+    youtube().preRollS = 15
+    await play()
+    const loading = events.flatMap((event) => (event.type === 'status' && event.status === 'loading' && event.detail !== undefined ? [event.detail] : []))
+    expect(loading).toContain('an ad first, 0:05 of 0:15')
+    expect(loading.filter((detail) => detail.startsWith('an ad first')).length).toBeGreaterThan(5)
+    expect(displays(events).at(-1)).toBe(`Playing “${SONG}”.`)
+  })
+
+  it("a seek asked over a mid-song ad: the card's line says the ad, the seek is held and named, and the song moves once the ad ends", async () => {
+    const { browser, decision, asks, events, youtube, player, play, adNow, runner } = overAd()
+    await play()
+    await adNow()
+    decision.script.push({ answers: { action: choice('media-forward'), slot: choice('none'), amount: choice('words') } })
+    await runner.run('skip ahead a minute', { source: 'spoken' })
+    expect(asks[0]!.state).toContain(`Playing: "${SONG}" an ad first playing 0:05/0:15 volume 100% loop off`)
+    expect((asks[0]!.questions.action as DecisionChoiceQuestion).options.say_playing ?? '').not.toContain(`Playing “${SONG}”`)
+    expect(browser.applianceMediaOps).toEqual([])
+    expect(displays(events).at(-1)).toBe('An ad first, 0:05 of 0:15: the song will skip forward 60 s once it plays.')
+    youtube().adShowing = false
+    youtube().element = { ...youtube().element, currentTime: 40, duration: 180 }
+    await player().check()
+    expect(youtube().controls.filter((op) => op.op === 'seek')).toEqual([{ op: 'seek', by: 60 }])
+  })
+
+  it('no ad: the seek is the browser’s, on the element, with no read added', async () => {
+    const { browser, decision, youtube, play, runner } = overAd()
+    await play()
+    browser.applianceMediaNow = { title: SONG, facts: { ...AD_MEDIA.facts, currentTime: 16, duration: 200, seekable: { start: 0, end: 200 } } }
+    const reads = youtube().controls.length
+    decision.script.push({ answers: { action: choice('media-forward'), slot: choice('none'), amount: choice('words') } })
+    await runner.run('skip ahead a minute', { source: 'spoken' })
+    expect(browser.applianceMediaOps).toEqual([{ op: 'forward', rung: 'words', seconds: 60 }])
+    expect(youtube().controls).toHaveLength(reads)
+  })
+
+  it('over an ad the engine says may be skipped, the card offers the media’s `skip`, and its pick presses the engine’s Skip', async () => {
+    const { decision, asks, events, youtube, play, adNow, runner } = overAd()
+    await play()
+    await adNow(true)
+    decision.script.push({ answers: { action: choice('media-skip'), slot: choice('none') } })
+    await runner.run('get past this ad', { source: 'spoken' })
+    expect((asks[0]!.questions.action as DecisionChoiceQuestion).options['media-skip']).toBe(`skip the ad playing in the media playing, "${SONG}" now, with the player's own Skip button`)
+    expect(asks[0]!.state).toContain('an ad first playing 0:05/0:15 skippable')
+    expect(youtube().adsSkipped).toBe(1)
+    expect(displays(events).at(-1)).toBe('Skipped the ad.')
+  })
+
+  it('"skip the ad" is an exact line: no ask, the engine’s Skip pressed', async () => {
+    const { decision, youtube, play, adNow, runner } = overAd()
+    await play()
+    await adNow(true)
+    const asked = decision.requests.length
+    await runner.run('skip the ad')
+    expect(decision.requests).toHaveLength(asked)
+    expect(youtube().adsSkipped).toBe(1)
+  })
+})

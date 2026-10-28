@@ -105,6 +105,8 @@ import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars, sizeRefusalOf
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
+import { adWait, type AdShowing } from '../../core/music/nowPlaying'
+import { isSeek, type MediaOpAction } from '../../core/browser/mediaOp'
 import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
 import { HANDS_OFF, errandGoalOf } from '../../core/errand/errandLine'
 import { errandCard, type ErrandCard } from '../../core/errand/plannerCommand'
@@ -299,7 +301,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad'>>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad' | 'nowPlaying' | 'onChange' | 'seekOverAd'>>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
@@ -929,6 +931,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /** A play's Loading detail over an ad before the song (#497): "an ad first, 0:05 of 2:00", in Now Playing's words (ui.md 9). */
+  const adDetail = (ad: AdShowing): string => `${adWait(ad).charAt(0).toLowerCase()}${adWait(ad).slice(1)}`
+
   /** A Loading stage's detail (#442): the host of the page the pane is on, which the action left it loading. */
   function loadingOn(): { detail?: string } {
     const detail = loadingDetail(browser.state().url)
@@ -1393,10 +1398,33 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     })
   }
 
+  /**
+   * The appliance's media with the ad its Media Engine states (#497): the
+   * Player reads it off the song's element, so the card's line says it and
+   * offers its `skip`; as it was while the Player counts none.
+   */
+  function withAd(media: ApplianceMedia | null): ApplianceMedia | null {
+    const ad = deps.player?.nowPlaying?.()?.ad ?? null
+    return media === null || ad === null ? media : { ...media, facts: { ...media.facts, ad: { skippable: ad.skippable } } }
+  }
+
+  /**
+   * A Media Op over an ad the Player counts (#497): a seek is held for the
+   * song, put on it once the ad ends, and `skip` is the engine's own Skip
+   * button. Null with no ad counted: the op is the browser's, no read added.
+   */
+  async function overAd(op: MediaOpAction, current: () => boolean): Promise<PlayerOutcome | null> {
+    const player = deps.player
+    if (player === undefined) return null
+    if (op.op === 'skip') return player.perform({ kind: 'skip', ad: true }, null, current)
+    if (!isSeek(op.op) || (player.nowPlaying?.()?.ad ?? null) === null) return null
+    return (await player.seekOverAd?.(op)) ?? null
+  }
+
   /** What the Appliance Card is built from (#485): the page by its address and title, the media, and what the appliance holds. */
   async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand, ended?: EndedCommand, joins?: JoinedLine): Promise<ApplianceView> {
     const state = browser.state()
-    const media = await mediaNow(turnId, pending)
+    const media = withAd(await mediaNow(turnId, pending))
     // The pick is a running choice (#498): carried while a running play opens it, or on the line that joined it; a pick whose line a stop ended is no one's.
     const own = appliance(joins !== undefined || running?.opening !== undefined)
     return {
@@ -1716,6 +1744,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'media': {
         // A Media Op (#372, ADR 0080): one evaluate on the media ref's own element, beside click and type.
         if (command.mediaOp === undefined) throw new Error('a media Command names no op')
+        const held = await overAd(command.mediaOp, current)
+        if (held !== null) {
+          onPlayed(held)
+          return held.result
+        }
         // The Appliance Card's op (#485) reaches the appliance's element by kind, never through a ref.
         if (command.target === null) {
           if (browser.applianceMediaOp === undefined) throw new Error('no media on this surface')
@@ -2047,6 +2080,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const landedHost = loadingDetail(browser.state().url)
       if (loading && performing && landedHost !== undefined && landedHost !== loadingHost) sayLoading(landedHost)
     })
+    // An ad before the song (#497): the play's wait names it, its seconds counted off the element, until the song itself plays.
+    const releaseAd =
+      command.verb === 'play'
+        ? deps.player?.onChange?.((nowPlaying) => {
+            const ad = nowPlaying?.ad ?? null
+            if (ad === null || !current() || !performing) return
+            loading = true
+            sayLoading(adDetail(ad))
+          })
+        : undefined
     let unchanged = false
     /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
     let played: PlayerOutcome | null = null
@@ -2192,6 +2235,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       performing = false
       release?.()
       releaseLanding?.()
+      releaseAd?.()
       reacting.settled()
     }
   }
