@@ -10,7 +10,7 @@
 | Speech starts inside a listen while the app speaks | arm `duck` (the default) | the capture is kept, not muted (before: muted and dropped as the app's own voice, #326); the app's voice ducks to the duck floor (15 %) | `meetSpeech`, `speechCoordinator.duck` |
 | A line starts under a capture already running | the app began speaking during it | the same: the capture is read, the voice ducked | `meetSpeech` |
 | A partial arrives over the app's voice | — | not shown, never fired early | `onPartial` guard (`over === null && !speaking()`) |
-| The Endpoint of a capture over the voice | the transcript is blank, or ≥ 0.7 of its words are the app's sentence in order | dropped, nothing shown; the voice comes back up | `isOwnVoice`, `releaseOver` |
+| The Endpoint of a capture over the voice | the transcript is blank, or has ≥ 10 letters and ≥ 0.75 of its sound is one stretch of the app's sentence (numbers and signs as said, letters aligned) | dropped, nothing shown; the voice comes back up | `isOwnVoice`, `releaseOver` |
 | The Endpoint of a capture over the voice | any other line | submitted to the runner with `overSpeech: true`; a Command that fires silences the voice as any fire does; the duck is let go when the line's Task settles (a `none` fires nothing, so the voice comes back up) | `handleUtterance`, `attachVoice` (restore on settle) |
 | Arms | `BINGBONG_OVER_SPEECH` | `duck` (default), `filter` (no duck; a line of yours stops the voice at the Endpoint), `stop` (any speech stops the voice at its start), `off` (as before: muted) | `resolveOverSpeech` |
 | Perf | — | `over-speech` span per read (verdict, share); `speech-yield` from speech start over speech to the voice going quiet | `voiceSession`, `attachVoice` |
