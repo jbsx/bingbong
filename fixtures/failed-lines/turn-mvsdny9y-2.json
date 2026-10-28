@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvsdny9y-2",
+  "transcript": "skip ahead a minute",
+  "at": 1793207872876,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 4-skip-ahead-while-loading at p3 (media-not-started 87%, repeat 1/3) on baseten-mammoth-27b-latest at 77df0b40 (#505 narrow run impl505-c): skip ahead a minute, given while the play was still starting the song (Waiting), was read as no command — No response, Nothing on this page fits the words — and no seek fired; the play then said Playing Let Down and the media ended at 0:05",
+  "meant": "the song skips ahead a minute once it plays (or now, if it already plays)",
+  "log": "decision-1793207867974-1.jsonl"
+}

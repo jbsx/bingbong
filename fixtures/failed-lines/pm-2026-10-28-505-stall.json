@@ -1,0 +1,10 @@
+{
+  "turnId": "pm-2026-10-28-505-stall",
+  "transcript": "skip ahead a minute",
+  "at": 1793202606604,
+  "source": "typed",
+  "stage": "player",
+  "happened": "overlap:gate 4-skip-ahead-while-loading at p2 (media-not-started 44%) on baseten-mammoth-27b-latest at 6588a8b1 (run of record 2026-10-28 afternoon): the Appliance Card's forward 60 s on Let Down was one evaluate that took 2.9 s (fired 14,039 ms, result `forward [0]: 0:07 → 1:07` at 16,934 ms from line 1), the pane's main thread blocked meanwhile: no pane sample from 13,643 to 17,333 ms, and the run's pane long tasks reached 8.9 s. The seek's own line was turn-mvsaj62q-2 (#505, the pause it left); this is the stall under it, split out by #505's ruling 4",
+  "meant": "One Media Op evaluate lands within the Instant tier (fire to effect well under a second): the pane's main thread free to run it",
+  "log": "logs/overlap/record-6588a8b1/4-skip-ahead-while-loading/decision-models_baseten-mammoth-27b-latest/p2-logs (record-1028b worktree; perf-1793202586179-1.jsonl)"
+}
