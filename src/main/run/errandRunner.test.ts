@@ -188,14 +188,14 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
     expect(staged.size).toBeGreaterThanOrEqual(4)
   })
 
-  it('Escape while the question waits ends the Errand, saying nothing more', async () => {
+  it('Escape while the question waits ends the Errand, saying only that it stopped (#489)', async () => {
     const { planner } = scriptedPlanner({ next: 'ask', question: 'Which shoes?' })
     const { events, records, spoken, runner } = harness({ errand: { planner: () => planner, answerWindowMs: () => 60_000 } })
     const errand = runner.run('errand order the same shoes as last time')
     await until(() => events.some((event) => event.type === 'site_question'))
     expect(runner.abort()).toBe(true)
     await errand
-    expect(spoken).toEqual(['Which shoes?'])
+    expect(spoken).toEqual(['Which shoes?', 'Stopped.'])
     expect(errandOf(records)).toMatchObject({ outcome: 'superseded' })
   })
 

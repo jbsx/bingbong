@@ -9,6 +9,7 @@ import { isMediaEngine } from './siteScope'
 import { MEDIA_OPS, amountQuestion, mediaOpLineOf, mediaOpsOf, mediaStateOf, rateLevel, volumeLevel, type LevelRung, type MediaOp } from './mediaOp'
 import { factOfLabel, sayOptions, withPageSong } from './applianceFacts'
 import { appCardOptions, appOpOf, DASHBOARD_LINE, takesAmount, updateOption } from './appOp'
+import { DOING_LABEL, readFate, runningLines, withRunning, type Fate, type RunningCommand } from './runningCommand'
 import {
   appCommand,
   applianceCommand,
@@ -63,6 +64,8 @@ export interface ApplianceView {
    * lines `appliance` would make; `amount` whether that card asked one.
    */
   readonly recorded?: { readonly lines: Readonly<Record<string, string>>; readonly amount: boolean }
+  /** The line still running when this one is read (#489): its lines on the state, the doing fact and the Fate question. Absent, the card is unchanged. */
+  readonly running?: RunningCommand
 }
 
 /** How the card is asked: whether `steps` rides it (hop 0 of a whole line), and the Hearing. */
@@ -78,6 +81,8 @@ export type ApplianceQuestions = {
   readonly amount?: DecisionChoiceQuestion
   readonly where?: DecisionChoiceQuestion
   readonly steps?: DecisionChoiceQuestion
+  /** The running Command's Fate (#489), only while one runs. */
+  readonly fate?: DecisionChoiceQuestion
 }
 
 /** How the Appliance Card stands in the env (#485): null when `BINGBONG_APPLIANCE_CARD=off`; else its asks, sequential unless `BINGBONG_APPLIANCE_ASKS=parallel` (T1). */
@@ -150,6 +155,7 @@ export function applianceState(text: string, view: ApplianceView, heard?: readon
     ...(step !== undefined && step.done.length > 0 ? [`Done so far: ${step.done.join('; ')}`] : []),
     isRealPage(view.url) ? `Page open: ${view.url} — ${JSON.stringify(view.title)}` : 'Page open: none, the screen is blank',
     view.media !== undefined ? `Playing: ${JSON.stringify(view.media.title)} ${mediaStateOf(view.media.facts)}` : 'Playing: nothing',
+    ...(view.running !== undefined ? runningLines(view.running) : []),
   ].join('\n')
 }
 
@@ -200,13 +206,19 @@ export function applianceQuestions(text: string, view: ApplianceView, options: A
   const amounts = ops.length > 0 || (view.recorded?.amount ?? app.some((option) => takesAmount(option.op)))
   const site = Object.hasOwn(own, 'play') ? scopableSite(view.url, undefined) : null
   const steps = options.steps === true ? stepsQuestion(text) : null
-  return {
+  const questions: ApplianceQuestions = {
     action,
     slot: slotQuestion(text, options.heard),
     ...(amounts ? { amount: amountQuestion() } : {}),
     ...(site !== null ? { where: whereQuestion(site) } : {}),
     ...(steps !== null ? { steps } : {}),
   }
+  return view.running === undefined ? questions : withRunning('', questions, view.running).questions
+}
+
+/** The Fate the answers read for the line still running (#489); none while nothing runs. Unsure or unanswered, it goes on. */
+export function fateOfAnswers(answers: CommandAnswers, view: ApplianceView): Fate | undefined {
+  return view.running === undefined ? undefined : readFate((answers as unknown as { readonly fate?: Parameters<typeof readFate>[0] }).fate)
 }
 
 /** What the Appliance Card's answers come to: a Command fired from it, the Flag, or the line going on to the page card — `page`, or `none`. */
@@ -243,7 +255,7 @@ export function readApplianceAnswers(answers: CommandAnswers, text: string, view
     return command(applianceCommand(label, answers.slot, text, answers, view.url, undefined))
   }
   const fact = factOfLabel(label)
-  if (fact !== null) return command({ verb: 'say', target: null, slot: null, fact })
+  if (fact !== null && (fact !== 'doing' || (label === DOING_LABEL && view.running !== undefined))) return command({ verb: 'say', target: null, slot: null, fact })
   const app = view.appliance?.app
   const op = app === undefined ? null : appOpOf(label, app)
   if (op !== null) return command(appCommand(op, answers, text))

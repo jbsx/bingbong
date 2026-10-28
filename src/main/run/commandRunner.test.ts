@@ -5483,3 +5483,160 @@ describe('the Appliance Card (#485)', () => {
     expect(asks.some((ask) => ask.kind === 'appliance')).toBe(false)
   })
 })
+
+describe('an Overlap (#489): a line given while another runs is read against it', () => {
+  const CARD = { asks: 'sequential' } as const
+  const facts = () => ({ now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } })
+  const said = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'speak' ? [event.text] : []))
+  const doneOf = (events: PipelineEvent[], turnId: string): string | undefined => events.flatMap((event) => (event.type === 'done' && event.turnId === turnId ? [event.outcome] : [])).at(-1)
+  /** `open bbc.com` held mid-navigation: the line running. */
+  async function running() {
+    const speech = new FakeSpeech()
+    const made = harness({ applianceCard: CARD, facts, speech })
+    let land: () => void = () => {}
+    const navigate = made.browser.navigate.bind(made.browser)
+    made.browser.navigate = (url) => new Promise((resolve) => (land = () => void navigate(url).then(resolve)))
+    const first = made.runner.run('open bbc.com')
+    await flushMicrotasks()
+    const turnId = (made.events.find((event) => event.type === 'command') as { turnId: string }).turnId
+    return { ...made, speech, first, turnId, land: () => land() }
+  }
+
+  it("an idle line's card carries no running Command and no Fate", async () => {
+    const { decision, asks, runner } = harness({ applianceCard: CARD, facts })
+    decision.script.push({ answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run("what's the time?")
+    expect(asks[0]!.state).not.toContain('Still running')
+    expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'slot'])
+    expect(Object.keys((asks[0]!.questions.action as DecisionChoiceQuestion).options)).not.toContain('say_doing')
+  })
+
+  it('the card carries the running Command — its words on a labelled line, its stage — and asks its Fate; the doing fact says it, and the line goes on', async () => {
+    const { decision, asks, events, runner, first, turnId, land, browser } = await running()
+    decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none'), fate: choice('goes_on') } })
+    await runner.run('what are you doing')
+    expect(asks[0]!.state).toContain('Still running, from the user\'s line before this one: "open bbc.com"')
+    expect(asks[0]!.state).toContain('Its stage: Opening bbc.com')
+    expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'fate', 'slot'])
+    expect(said(events)).toEqual(['Still on “open bbc.com”: opening bbc.com.'])
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('done')
+    expect(browser.navigations).toEqual(['https://bbc.com'])
+  })
+
+  it('ends: the running Command is cancelled, and its stop is said ahead of the new outcome', async () => {
+    const { decision, events, runner, first, turnId, land } = await running()
+    decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('ends') } })
+    await runner.run("what's the time?")
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('cancelled')
+    expect(said(events)).toEqual(["Stopped opening bbc.com. It's 12:34 on Friday 23 October."])
+  })
+
+  it('joins: the running line gives way unsaid, and the two lines are read as one', async () => {
+    const { decision, asks, events, runner, first, turnId, land } = await running()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run('no, the news page')
+    // No page card in between: the joined line is the next ask.
+    expect(asks.map((ask) => ask.kind)).toEqual(['appliance', 'appliance'])
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('cancelled')
+    expect(asks[1]!.state).toContain('"open bbc.com, no, the news page"')
+    expect(asks[1]!.state).not.toContain('Still running')
+    expect(said(events)).toEqual(["It's 12:34 on Friday 23 October."])
+  })
+
+  it('waits: the line is held until the running one lands, then read again against what is there', async () => {
+    const { decision, asks, events, runner, first, turnId, land } = await running()
+    decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('waits') } }, { answers: { action: choice('say_time'), slot: choice('none') } })
+    const second = runner.run('then tell me the time')
+    await flushMicrotasks()
+    expect(events).toContainEqual(expect.objectContaining({ type: 'status', status: 'thinking', word: 'Waiting', detail: 'open bbc.com' }))
+    expect(said(events)).toEqual([])
+    land()
+    await first
+    await second
+    expect(doneOf(events, turnId)).toBe('done')
+    expect(asks).toHaveLength(2)
+    expect(asks[1]!.state).not.toContain('Still running')
+    expect(said(events)).toEqual(["It's 12:34 on Friday 23 October."])
+  })
+
+  it('goes on: an exact line that moves nothing fires beside it, and the running Task reaches done', async () => {
+    const { events, runner, first, turnId, land, browser } = await running()
+    await runner.run('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('done')
+  })
+
+  it('an exact line that moves the pane ends it, said', async () => {
+    const { events, runner, first, turnId, land } = await running()
+    await runner.run('back')
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('cancelled')
+    expect(said(events)).toEqual(['Stopped opening bbc.com.'])
+  })
+
+  it('stop ends it and is said: "Stopped."', async () => {
+    const { events, runner, first, turnId, land } = await running()
+    await runner.run('stop')
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('cancelled')
+    expect(said(events)).toEqual(['Stopped.'])
+  })
+
+  it('a spoken stop (the abort) is said too', async () => {
+    const { events, runner, first, land } = await running()
+    expect(runner.abort()).toBe(true)
+    land()
+    await first
+    expect(said(events)).toEqual(['Stopped.'])
+  })
+
+  it('an unsure Fate, or a failed host, goes on', async () => {
+    const one = await running()
+    one.decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('ends', 0.4) } })
+    await one.runner.run("what's the time?")
+    one.land()
+    await one.first
+    expect(doneOf(one.events, one.turnId)).toBe('done')
+    const two = await running()
+    two.decision.script.push({ unavailable: 'timeout' }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await two.runner.run('oh, I think I left the kettle on')
+    two.land()
+    await two.first
+    expect(doneOf(two.events, two.turnId)).toBe('done')
+  })
+
+  it('a remark read none leaves the running Task to its end', async () => {
+    const { decision, events, runner, first, turnId, land } = await running()
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('goes_on') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
+    await runner.run('oh, I think I left the kettle on')
+    land()
+    await first
+    expect(doneOf(events, turnId)).toBe('done')
+  })
+
+  it('an Early Fire follows the same rule: a still exact line goes on beside it, a moving one ends it', async () => {
+    const one = await running()
+    void one.runner.prepare()
+    await one.runner.consider('scroll down')
+    expect(one.browser.scrolls).toEqual(['down'])
+    one.land()
+    await one.first
+    expect(doneOf(one.events, one.turnId)).toBe('done')
+    const two = await running()
+    void two.runner.prepare()
+    await two.runner.consider('reload')
+    two.land()
+    await two.first
+    expect(doneOf(two.events, two.turnId)).toBe('cancelled')
+  })
+})

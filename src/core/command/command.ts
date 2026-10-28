@@ -381,7 +381,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     case 'play':
       return describeMusic(command.music, command.slot)
     case 'say':
-      return `say ${command.fact === 'playing' ? 'the song playing' : `the ${command.fact ?? 'fact'}`}`
+      return `say ${command.fact === 'playing' ? 'the song playing' : command.fact === 'doing' ? 'what it is doing' : `the ${command.fact ?? 'fact'}`}`
     case 'app':
       return command.app !== undefined ? describeAppOp(command.app) : 'app'
     case 'capture':

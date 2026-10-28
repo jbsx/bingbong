@@ -19,7 +19,7 @@ import { dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
-import { applianceQuestions, applianceState, appliancePage, readApplianceAnswers, type ApplianceMedia, type ApplianceView } from '../../core/command/applianceCard'
+import { applianceQuestions, applianceState, appliancePage, fateOfAnswers, readApplianceAnswers, type ApplianceMedia, type ApplianceView } from '../../core/command/applianceCard'
 import { hostOf } from '../../core/pipeline/stageWords'
 import {
   commandQuestions,
@@ -110,6 +110,7 @@ import { errandCard, type ErrandCard } from '../../core/errand/plannerCommand'
 import { NO_PLANNER_LINE } from '../../core/errand/errandMemory'
 import { ERRAND_STAGE, PLANNER_STEP_STAGE } from '../../core/planner/plannerSpan'
 import { runErrand, type ActedStep, type ErrandStart } from './errand'
+import { doingAnswer, stoppedLine, type Fate, type RunningCommand } from '../../core/command/runningCommand'
 
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
 // lands and becomes one Command. The Local Match first — the CLI grammar,
@@ -378,6 +379,9 @@ const APPLIANCE_MEDIA_BOUND_MS = 1_000
 /** The stage a line going on from the Appliance Card to the page card shows (#485, ui.md 2 and 9): the page named by its host. */
 const PAGE_CARD_WORD = 'Looking'
 
+/** The stage a line whose Fate waits shows while the line running lands (#489, ui.md 2): "Waiting · let down by radiohead". */
+const WAITING_WORD = 'Waiting'
+
 /**
  * How long a retry chain stays open (ADR 0077): a Slot spoken this long
  * after the one before, sounding like it, is a retry of it; the Command
@@ -558,15 +562,48 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   // A bare word the app's own surfaces carry ("open settings") has two readings (#420, ADR 0089): never a Known Address, Jev's.
   const ownWords = appWords()
   const knownAddress = (word: string): string | null => (deps.app !== undefined && ownWords.has(word.toLowerCase()) ? null : (deps.knownAddress?.(word) ?? null))
-  const { browser, publish, tracer } = deps
-  /** The Command whose action is in flight, if one is. */
-  let inFlight: { turnId: string; generation: number; text: string } | null = null
+  const { browser, tracer } = deps
+  /** Every event the runner publishes, the live lines' stages read off it on the way (#489). */
+  const publish = (event: PipelineEvent): void => {
+    track(event)
+    deps.publish(event)
+  }
+  /** The Commands whose actions are in flight, by generation (#489: a line whose Fate goes on fires beside the one running). */
+  const inFlight = new Map<number, { turnId: string; text: string }>()
   let generation = 0
-  /**
-   * Counts every submission and abort: a reading that finishes after a
-   * later submission (or an abort) is stale, and fires nothing.
-   */
+  /** Counts every submission and abort: a partial's reading made before a later one is stale (#326). */
   let submitted = 0
+  /**
+   * The lowest submission still live (#489): a line, its Task or its
+   * Errand below it was ended — by a line whose Fate ends or joins it, a
+   * `stop`, an abort, or an exact line that takes the pane — and fires
+   * nothing more. A later line's arrival alone ends nothing; with the
+   * Appliance Card off it does, today's road (ADR 0096).
+   */
+  let floor = 0
+  const isEnded = (submission: number): boolean => submission < floor
+  /** A line given and not yet ended (#489). */
+  interface LiveLine {
+    readonly turnId: string
+    readonly words: string
+    readonly submission: number
+    /** The Status Capsule's stage word and detail (#428), as last published for it. */
+    stage: string
+    detail: string | undefined
+    /** Its Acting stage as one phrase (`Playing let down by radiohead`): what an ended line says it stopped. */
+    acting?: string
+    /** The verb it fired, once it has; and the words a `play` named, the media it is opening. */
+    verb?: Command['verb']
+    opening?: string
+    /** Its Task, whose actions are its done so far. */
+    task?: Task
+    /** Resolves when the line ends, however it ends: what a `waits` waits on. */
+    readonly over: Promise<void>
+  }
+  /** The lines given and not yet ended, by their turn (#489): the running Command the Appliance Card carries, and what a `waits` waits on. */
+  const live = new Map<string, LiveLine>()
+  /** Each hop's and Step's turn to its line's (#489): a stage published on a later hop is its line's. */
+  const lineOfTurn = new Map<string, string>()
   /** The submissions an abort made (#330): a reading the next of which went stale on was stopped, not superseded. */
   const stoppedAt = new Set<number>()
   /** The Command being read, if one is — so abort reaches it and the state says running. */
@@ -595,7 +632,35 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The Errand's step turns (#467): their actions speak nothing — aloud only the confirm, the question and the outcome — and their Answers are kept for "done so far". */
   const quietTurns = new Map<string, string | null>()
   /** Nothing in flight, being read, sounding or carried by an Errand: what the run state calls idle. */
-  const idle = (): boolean => inFlight === null && reading === null && sounding === 0 && errand === null
+  const idle = (): boolean => inFlight.size === 0 && reading === null && sounding === 0 && errand === null
+
+  /** A line's stage as the Status Capsule shows it (#428), kept on its live line for the card (#489). */
+  function track(event: PipelineEvent): void {
+    if (event.type === 'command' && event.task !== undefined && event.task.id !== event.turnId) lineOfTurn.set(event.turnId, event.task.id)
+    if (event.type !== 'status' || event.status === 'cancelled') return
+    const line = live.get(lineOfTurn.get(event.turnId) ?? event.turnId)
+    if (line === undefined) return
+    line.stage = event.word ?? `${event.status.charAt(0).toUpperCase()}${event.status.slice(1)}`
+    // A Thinking stage's detail is the words themselves, already on their own line.
+    line.detail = event.status === 'thinking' && event.word === undefined ? undefined : event.detail
+    if (event.status === 'acting') line.acting = event.detail !== undefined && event.detail !== '' ? `${line.stage} ${event.detail}` : line.stage
+  }
+
+  /** The line running when one is given (#489): the latest still live before it, as the Appliance Card carries it; null with none. */
+  function runningBefore(submission: number): LiveLine | null {
+    let latest: LiveLine | null = null
+    for (const line of live.values()) if (line.submission < submission && !isEnded(line.submission) && (latest === null || line.submission > latest.submission)) latest = line
+    return latest
+  }
+
+  /** The live line a Task, hop or Step belongs to (#489). */
+  const liveOfTask = (id: string): LiveLine | undefined => live.get(lineOfTurn.get(id) ?? id)
+
+  /** A live line as the card carries it (#489): its words, stage, actions and the media its `play` is opening. */
+  function runningOf(line: LiveLine): RunningCommand {
+    const opening = line.verb === 'play' && line.opening !== undefined ? { opening: line.opening } : {}
+    return { words: line.words, stage: line.stage, ...(line.detail !== undefined ? { detail: line.detail } : {}), done: [...(line.task?.actions ?? [])], ...opening }
+  }
 
   /**
    * What the appliance holds for the card's Appliance Verbs (#374): whether
@@ -735,14 +800,36 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Stop ended it or as a later Command did (#333) unless it already has
    * its Answer, and whatever its action answers later reaches nothing.
    */
-  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS): boolean {
-    if (inFlight === null) return false
-    const { turnId } = inFlight
-    inFlight = null
-    publish({ type: 'status', turnId, status: 'cancelled', at: at() })
-    answer(turnId, STOPPED_ANSWERS[by], 'muted')
-    publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS, said?: string): boolean {
+    if (inFlight.size === 0) return false
+    const cancelled = [...inFlight.values()]
+    inFlight.clear()
+    for (const { turnId } of cancelled) {
+      publish({ type: 'status', turnId, status: 'cancelled', at: at() })
+      answer(turnId, said ?? STOPPED_ANSWERS[by], 'muted')
+      publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+    }
     return true
+  }
+
+  /** The stop line an ended Command left to be said (#489, the grill's Q11): spoken ahead of the next sentence its ender says, or alone when it says none. */
+  let stopSaid: { readonly text: string; readonly by: string } | null = null
+
+  /**
+   * End the lines running before `submission` (#489): by a Fate that ends
+   * or joins them, a `stop`, or an exact line that takes the pane. Their
+   * readings and later hops fire nothing, their action in flight ends
+   * cancelled, an Errand ends; an ended line says it stopped, naming what it
+   * was doing (the grill's Q11), a joined one gives way unsaid. Nothing ends
+   * on a line's arrival alone.
+   */
+  function endRunning(submission: number, how: 'ends' | 'joins' | 'stop', by: string): void {
+    const running = runningBefore(submission)
+    floor = Math.max(floor, submission)
+    endErrand()
+    const said = how === 'ends' && running !== null ? stoppedLine(running.acting) : undefined
+    cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
+    if (said !== undefined) stopSaid = { text: said, by }
   }
 
   /** Stop ends the page's load too (#330), not only the Command's wait on it: the pane stops where it stands. */
@@ -762,6 +849,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { onFirstSound, failure } = options
     // An Errand's step says nothing of its own (#467, docs/agents/ui.md): its Answer is shown, and the Errand's end is what is said.
     if (quietTurns.has(turnId)) return Promise.resolve({ ok: true })
+    // An ended Command's stop line goes ahead of the next sentence, as one utterance (#489).
+    const ahead = stopSaid?.text ?? null
+    stopSaid = null
+    if (ahead !== null && ahead !== text) text = `${ahead} ${text}`
     publish({ type: 'speak', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
     sounding += 1
     return speech
@@ -775,6 +866,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // Its end, however it came (#470): the Peek Card's linger counts from here.
         publish({ type: 'spoken', turnId, at: at() })
       })
+  }
+
+  /**
+   * Say a stop's own word (#489, ui.md 9: "Stopped." on every road): shown
+   * and spoken, but never the runner's own sounding, so the run state is
+   * idle as soon as the stop has stopped what it stopped.
+   */
+  function sayStop(turnId: string, text: string): void {
+    if (deps.speech === undefined) return
+    publish({ type: 'speak', turnId, text, at: at() })
+    void deps.speech
+      .speak(text, { turnId })
+      .catch((error: unknown) => reportFault('run.commandRunner.sayStop', error, { turnId }))
+      .finally(() => publish({ type: 'spoken', turnId, at: at() }))
   }
 
   /**
@@ -857,6 +962,76 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     appliance?: DecisionRecord['appliance']
     /** The Appliance Card read the line as the Flag (#485): kept as the grammar's Flag is, with its hint. */
     flag?: { readonly hint?: string }
+    /** The running Command's Fate the Appliance Card read (#489): it stands when the line goes on to the page card. */
+    fate?: Fate
+    /** The words read as one line when this one joined the line running (#489, T3 arm J1): the running line's, then this one's. */
+    joined?: string
+    /** Read no further than its Fate (#489): a line that joins or waits, whose words are read again as the Fate says. */
+    unread?: true
+  }
+
+  /** A Command that takes the one pane (the grill's Q8): it moves the page, so a line running in the pane ends. */
+  const takesPane = (command: Command): boolean =>
+    command.verb === 'navigate' || command.verb === 'search' || command.verb === 'back' || command.verb === 'forward' || command.verb === 'reload' || command.verb === 'resume' || (command.verb === 'play' && command.music?.kind === 'search' && command.music.place === 'now')
+
+  /** A Command on the media itself (a Media Op, the Player's own controls): with its element still being opened, it waits for it (the grill's Q8). */
+  const actsOnMedia = (command: Command): boolean => command.verb === 'media' || (command.verb === 'play' && command.music !== undefined && command.music.kind !== 'search')
+
+  /**
+   * What a line means for the line running when it was read (#489): the
+   * Fate Jev read on the Appliance Card, else by kind — an exact line, or a
+   * line no Appliance Card was asked of. A `stop` ends it; a Command that
+   * takes the one pane ends it unless it joins or waits; a control on media
+   * a `play` is still opening waits; anything else goes on.
+   */
+  function fateOf(heard: Reading, running: LiveLine): Fate {
+    const { command } = heard
+    if (command.verb === 'stop') return 'ends'
+    if (takesPane(command)) return heard.fate === 'joins' || heard.fate === 'waits' ? heard.fate : 'ends'
+    if (heard.fate !== undefined) return heard.fate
+    return actsOnMedia(command) && running.verb === 'play' ? 'waits' : 'goes_on'
+  }
+
+  /**
+   * The Fate acted on before the line fires (#489): `ends` ends the line
+   * running, said; `joins` ends it unsaid and reads the two lines as one
+   * (T3 arm J1), on one more ask; `waits` holds this line until the running
+   * one has ended, however it ends, then reads it again against what is
+   * there; `goes_on` leaves it to its own end. The reading to fire.
+   */
+  async function settleFate(turnId: string, text: string, submission: number, heard: Reading, spoken: boolean): Promise<Reading> {
+    if (deps.applianceCard === undefined || isEnded(submission)) return heard
+    const running = runningBefore(submission)
+    // The line it joins or waits on ended while it was read: it is read again alone, as any line with nothing running.
+    if (running === null) return heard.unread === true ? read(turnId, text, null, spoken) : heard
+    const fate = fateOf(heard, running)
+    try {
+      tracer?.span(turnId, 'fate', 0, { fate, ...(heard.fate !== undefined ? { read: heard.fate } : {}), running: running.turnId })
+    } catch (error) {
+      reportFault('run.commandRunner.fateSpan', error, { turnId })
+    }
+    if (fate === 'goes_on' || fate === 'ends') {
+      if (fate === 'ends') endRunning(submission, heard.command.verb === 'stop' ? 'stop' : 'ends', turnId)
+      return heard.unread === true ? read(turnId, text, null, spoken) : heard
+    }
+    if (fate === 'joins') {
+      endRunning(submission, 'joins', turnId)
+      const joined = `${running.words}, ${text}`
+      publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: joined, at: at() })
+      reading = { turnId, submission }
+      const again = await read(turnId, joined, null, spoken)
+      if (reading?.turnId === turnId) reading = null
+      return { ...again, joined }
+    }
+    // Waiting (#489, ui.md 2): the stage names what it waits for.
+    publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: WAITING_WORD, detail: running.opening ?? running.words, at: at() })
+    await running.over
+    if (isEnded(submission)) return heard
+    const next = runningBefore(submission)
+    reading = { turnId, submission }
+    const again = await read(turnId, text, null, spoken, { split: true, ...(next !== null ? { running: runningOf(next) } : {}) })
+    if (reading?.turnId === turnId) reading = null
+    return settleFate(turnId, text, submission, again, spoken)
   }
 
   /** How a hop 0 is read (#364): whether Jev may split the line, and, for a Step's own words, where the Step stands and the ask's own id. */
@@ -864,6 +1039,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly split: boolean
     readonly step?: StepContext
     readonly askId?: string
+    /** The line running when this one was given (#489): the Appliance Card carries it and asks its Fate. */
+    readonly running?: RunningCommand
   }
 
   /**
@@ -953,9 +1130,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if ('reading' in first) return first.reading
     // The Appliance Card's host failed (reliability.md rule 3): an Instant line fires the Local Match's best guess; any other goes on.
     if (first.failed && quick !== null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: true, jev: first.appliance.jev, ask: first.appliance.ask, card: 'appliance' }
-    if (reading?.turnId === turnId && reading.submission === submitted) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
+    // A line that joins the one running, or waits on it, is read again as the Fate says (#489): the page card now would read words about to be read again.
+    if (first.fate === 'joins' || first.fate === 'waits') return { command: UNREAD, page: blankPage(browser), reading: 'jev', jevAsked: true, jev: first.appliance.jev, ask: first.appliance.ask, card: 'appliance', appliance: first.appliance, fate: first.fate, unread: true }
+    if (reading?.turnId === turnId && !isEnded(reading.submission)) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
     const onward = await (beside ?? readPageCard(turnId, text, pending, spoken, options, quick, dismissed))
-    return { ...onward, appliance: first.appliance }
+    return { ...onward, appliance: first.appliance, ...(first.fate !== undefined ? { fate: first.fate } : {}) }
   }
 
   /** The page card's object on the Status Capsule (#485): the host of the page open, or "the page". */
@@ -1002,11 +1181,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** What the Appliance Card is built from (#485): the page by its address and title, the media, and what the appliance holds. */
-  async function applianceView(turnId: string, pending: PreparedPage | null): Promise<ApplianceView> {
+  async function applianceView(turnId: string, pending: PreparedPage | null, running?: RunningCommand): Promise<ApplianceView> {
     const state = browser.state()
     const media = await mediaNow(turnId, pending)
     const own = appliance()
-    return { url: state.url ?? '', title: state.title ?? '', ...(media !== null ? { media } : {}), ...(own !== undefined ? { appliance: own } : {}), flaggable: lastTask !== null, timer: deps.timer !== undefined }
+    return { url: state.url ?? '', title: state.title ?? '', ...(media !== null ? { media } : {}), ...(own !== undefined ? { appliance: own } : {}), flaggable: lastTask !== null, timer: deps.timer !== undefined, ...(running !== undefined ? { running } : {}) }
   }
 
   /**
@@ -1021,8 +1200,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     spoken: boolean,
     options: ReadOptions,
     model: DecisionModel,
-  ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean }> {
-    const view = await applianceView(turnId, pending)
+  ): Promise<{ reading: Reading } | { appliance: NonNullable<DecisionRecord['appliance']>; failed: boolean; fate?: Fate }> {
+    const view = await applianceView(turnId, pending, options.running)
     // The Hearing reads the Page Terms of the page in hand, never waiting for one.
     const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
     const questions = applianceQuestions(text, view, { steps: options.split, heard })
@@ -1032,11 +1211,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const answers = result.answers as unknown as CommandAnswers
     const jev = jevDetailOf(answers, result.latencyMs, result.model, result.inputTokens, result.attempts)
     const page = appliancePage(view)
-    const own: Pick<Reading, 'page' | 'reading' | 'jevAsked' | 'jev' | 'ask' | 'card'> = { page, reading: 'jev', jevAsked: true, jev, ask: result.askId, card: 'appliance' }
+    const fate = fateOfAnswers(answers, view)
+    const own: Pick<Reading, 'page' | 'reading' | 'jevAsked' | 'jev' | 'ask' | 'card' | 'fate'> = { page, reading: 'jev', jevAsked: true, jev, ask: result.askId, card: 'appliance', ...(fate !== undefined ? { fate } : {}) }
     const read = readApplianceAnswers(answers, text, view)
     const split = readSteps(answers, text)
     if (split !== null) return { reading: { ...own, command: read.kind === 'command' ? read.command : UNREAD, steps: [split.first, split.rest] } }
-    if (read.kind === 'page') return { appliance: { ask: result.askId, jev, chose: read.chose }, failed: false }
+    if (read.kind === 'page') return { appliance: { ask: result.askId, jev, chose: read.chose }, failed: false, ...(fate !== undefined ? { fate } : {}) }
     if (read.kind === 'flag') return { reading: { ...own, command: UNREAD, flag: read.hint !== undefined ? { hint: read.hint } : {} } }
     const reading: Reading = { ...own, command: read.command }
     return { reading: isSettingsLine(read.command) ? await readSetting(turnId, text, state, reading, heard) : reading }
@@ -1350,6 +1530,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return `timer set: ${describeDuration(command.durationMs)}`
       }
       case 'say': {
+        // What the app is doing (#489): the line still running, the one before the line firing this.
+        if (command.fact === 'doing') {
+          const lines = [...live.values()].filter((line) => !isEnded(line.submission)).sort((a, b) => b.submission - a.submission)
+          return doingAnswer(lines[1] !== undefined ? runningOf(lines[1]) : null)
+        }
         // A fact (#402): its sentence, filled from what the appliance holds as it fires.
         if (deps.facts === undefined || command.fact === undefined) throw new Error('no facts on this surface')
         return factAnswer(command.fact, withPageSong(deps.facts(), page.media))
@@ -1535,20 +1720,26 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
     // Whether a `stop` finds anything to stop: nothing in flight, being read or sounding pauses the music instead (#343, owner's ruling 2).
     const nothingInFlight = idleAt === submitted && idle()
-    // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
-    cancelInFlight(command.verb === 'stop' ? 'stopped' : 'superseded')
+    // A Command fired silences what the runner was saying (the grill's Q12). What it does to the one in flight was settled before it
+    // fired, by its Fate (#489): only `stop` ends it here — and every Command does on today's road, with the Appliance Card off.
+    if (command.verb === 'stop' || deps.applianceCard === undefined) cancelInFlight(command.verb === 'stop' ? 'stopped' : 'superseded')
     silence()
     generation += 1
     const mine = generation
-    inFlight = { turnId, generation: mine, text }
-    const current = (): boolean => inFlight !== null && inFlight.generation === mine
+    inFlight.set(mine, { turnId, text })
+    const current = (): boolean => inFlight.has(mine)
+    const owner = liveOfTask(task.id)
+    if (owner !== undefined && task.hop === 0) {
+      owner.verb = command.verb
+      if (command.verb === 'play' && command.slot !== null) owner.opening = command.slot
+    }
 
     const paneHasPage = isRealPage(page.url) || isRealPage(browser.state().url)
     const action = describeCommand(command, page)
     publish({ type: 'command', turnId, text, action, ...(commandKeepsIdle(command, paneHasPage) ? { keepsIdle: true } : {}), task, at: firedAt })
     if (!paneHasPage && verbNeedsPage(command.verb)) {
       // A blank pane has nothing to act on (#361): it is never shown, and an action on it, hidden under the Idle Screen, would never settle.
-      inFlight = null
+      inFlight.delete(mine)
       answerFailure(turnId, SPOKEN_FAILURES.noPage, { command })
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { outcome: 'wall' }
@@ -1561,10 +1752,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const silenced = deps.timer?.silence() ?? false
       // With nothing else to stop, what plays is what "stop" means: every playing media element on the page pauses, by kind (#376).
       const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseAll())
-      inFlight = null
-      // Pausing the music is an action done; a Stop is grey, and one that found nothing says so.
-      if (paused) answer(turnId, STOPPED_ANSWERS.paused)
-      else answer(turnId, nothingInFlight && !silenced ? STOPPED_ANSWERS.nothing : STOPPED_ANSWERS.stopped, 'muted')
+      inFlight.delete(mine)
+      // Pausing the music is an action done; a Stop is grey, and one that found nothing says so. Each is said (#489: every line answered).
+      const stopped = paused ? STOPPED_ANSWERS.paused : nothingInFlight && !silenced ? STOPPED_ANSWERS.nothing : STOPPED_ANSWERS.stopped
+      answer(turnId, stopped, paused ? undefined : 'muted')
+      sayStop(turnId, stopped)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -1704,7 +1896,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (!current()) return ended('superseded')
         if (stayed && reacting.deferStay === true) {
           // The next rung of the Dismissal Ladder is the runner's to fire (#354): nothing is said of this one.
-          inFlight = null
+          inFlight.delete(mine)
           publish({ type: 'done', turnId, outcome: 'done', at: at() })
           return ended('stayed')
         }
@@ -1726,7 +1918,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           if (text !== null && command.verb === 'capture' && deps.speech !== undefined) void say(deps.speech, turnId, text)
         }
       }
-      inFlight = null
+      inFlight.delete(mine)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return ended(outcome)
     } catch (error) {
@@ -1739,14 +1931,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if ((onPopup && !open) || (stayed && reacting.deferStay === true)) {
         react('settled')
         publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-        inFlight = null
+        inFlight.delete(mine)
         publish({ type: 'done', turnId, outcome: 'done', at: at() })
         return ended(stayed ? 'stayed' : 'landed')
       }
       react('failed')
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
       answerFailure(turnId, stayed ? SPOKEN_FAILURES.dialogStayed : failureLineOf(name, message), { command })
-      inFlight = null
+      inFlight.delete(mine)
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return { ...ended('wall'), error: message }
     } finally {
@@ -1839,7 +2031,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   deps.siteQuestions?.subscribe((event) => {
     if (event.type === 'question') {
-      siteRaisedBy = inFlight?.text ?? null
+      siteRaisedBy = [...inFlight.values()].at(-1)?.text ?? null
       tellSite(siteQuestionLine(event.question), false)
     } else if (event.type === 'alert') {
       const said = alertLine(event.text)
@@ -2034,7 +2226,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** Whether a later submission (a Command, an Early Fire) or an abort has superseded the Task. */
-  const superseded = (task: Pick<Task, 'submission'>): boolean => task.submission !== submitted
+  const superseded = (task: Pick<Task, 'submission'>): boolean => isEnded(task.submission)
 
   /** How a continuing hop's action came out, for the Task (#328): its end, or null when it goes on. */
   function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
@@ -2685,12 +2877,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const found = await readPartial(words, stale)
     if (found === null || stale()) return null
     const turnId = tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+    const { command, matched } = matchName(found.command, found.page, true)
+    // Its line is exact, so what it does to a line running is by kind (the grill's Q8, #489); with the Appliance Card off, it supersedes.
+    const running = deps.applianceCard !== undefined ? runningBefore(submitted + 1) : null
+    const fate = running === null ? null : fateOf({ ...found, command }, running)
+    // A control on the media a `play` is still opening waits for it: never early, the Endpoint's line waits (#489).
+    if (fate === 'waits') return null
     // A new Utterance firing soon after a Jev-read hop: the Task overran (#328).
     overrun(turnId)
-    // An Early Fire is a submission: a reading still under way for an earlier Command is stale now.
+    // An Early Fire is a submission: a partial still being read for an earlier one is stale now.
     submitted += 1
+    const submission = submitted
+    if (deps.applianceCard === undefined) floor = submission
+    else if (fate === 'ends') endRunning(submission, command.verb === 'stop' ? 'stop' : 'ends', turnId)
     const firedAt = at()
-    const { command, matched } = matchName(found.command, found.page, true)
     const hop0: TaskHop = { id: turnId, hop: 0 }
     const fired: EarlyFired = {
       utterance: mine,
@@ -2698,7 +2898,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       partial: words,
       firedMono: monotonic(),
       record: { ...recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false), task: hop0 },
-      submission: submitted,
+      submission,
       command,
       page: found.page,
       outcome: Promise.resolve({ outcome: 'landed' }),
@@ -2744,7 +2944,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { source, endpointAt, truncated, submission, givenAt } = line
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
-    if (first.flag !== undefined && submission === submitted) {
+    const owner = liveOfTask(task.id)
+    if (owner !== undefined) owner.task = task
+    if (first.flag !== undefined && !isEnded(submission)) {
       // The Appliance Card read the line, or a Step's words, as the Flag (#485): kept as the grammar's Flag is, then its ask recorded —
       // after, so the Flag's own record is never the Task a next Flag names.
       await flag(turnId, line.text, first.flag.hint)
@@ -2757,14 +2959,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let whereRead: Reading | null = null
     // The line's extra fields go on hop 0's first record: the first reading's, when another reading followed it.
     let extraLogged = false
-    if (asksWhere(first) && submission === submitted) {
+    if (asksWhere(first) && !isEnded(submission)) {
       // A none at hop 0 asks where (#379, ADR 0082): its record stays, and the Where Ask's reading is hop 0's, with a record of its own.
       log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
       extraLogged = true
       reading = { turnId, submission }
       heard = await readWhere(turnId, words, first, options.step, hearingOf(words, first.page, source === 'spoken'))
       whereRead = heard
-      if (asksMarks(whereRead) && submission === submitted) {
+      if (asksMarks(whereRead) && !isEnded(submission)) {
         // The Where Ask read none too (#382, ADR 0084): a card with a Textless Ref is asked once more with the marked page, and its record stays.
         const marked = await readMarks(turnId, words, first, whereRead, options.step, hearingOf(words, whereRead.page, source === 'spoken'))
         if (marked !== null) {
@@ -2773,7 +2975,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
       }
       if (reading?.turnId === turnId) reading = null
-    } else if (submission === submitted && guessesTextless(first, words)) {
+    } else if (!isEnded(submission) && guessesTextless(first, words)) {
       // An unsure click on a Textless Ref (owner ruling 2026-10-22, ADR 0084 amended): the Mark Ask is asked before the guess fires.
       // Its answer is hop 0's reading, the guess keeping its record; no answer, or no capture, leaves the guess to fire as read.
       reading = { turnId, submission }
@@ -2796,7 +2998,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(extraLogged ? {} : extra), task: hop0 }
     const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
 
-    if (submission !== submitted) {
+    if (isEnded(submission)) {
       // A later Command (or an abort) arrived while this one was being
       // read: the later one stands. The reading is data; nothing fires.
       log({ ...record, ended: 'superseded' })
@@ -2886,7 +3088,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * nothing: the later Command stands.
    */
   function stopSteps(line: Line, lineId: string, end: StepEnd, next: number, of: number): void {
-    if (end.ended === 'superseded' || line.submission !== submitted) return
+    if (end.ended === 'superseded' || isEnded(line.submission)) return
     const turnId = tracer?.mintTurnId() ?? `${lineId}-step${next}`
     publish({ type: 'command', turnId, text: line.text, action: `Step ${next} not run`, dropped: true, task: { id: lineId, hop: 0, step: next, of }, at: at() })
     if (ENDS_UNSAID.has(end.ended) && end.said !== true && !handsOff(end.ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
@@ -2906,7 +3108,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null): Promise<StepEnd | null> {
     const done: string[] = []
     for (let index = 0; index < words.length; index += 1) {
-      if (line.submission !== submitted) return null
+      if (isEnded(line.submission)) return null
       const first = index === 0
       const step: StepContext = { line: line.text, step: index + 1, of: words.length, done: [...done] }
       const stepTurnId = first ? turnId : (tracer?.mintTurnId() ?? `${turnId}-step${index + 1}`)
@@ -2964,7 +3166,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const failed = fired.outcome === 'wall' ? ` — it failed${said !== undefined ? `: ${said}` : fired.error !== undefined ? `: ${fired.error}` : ''}` : ''
       const capture = fired.outcome === 'landed' ? capturedBy(command, card.page) : undefined
       return {
-        superseded: fired.outcome === 'superseded' || run.submission !== submitted,
+        superseded: fired.outcome === 'superseded' || isEnded(run.submission),
         outcome: `${doneLine(command, card.page, doneResult(card.page, fired))}${failed}`,
         ...(said !== undefined ? { said } : {}),
         ...(capture !== undefined ? { capture } : {}),
@@ -3001,7 +3203,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * the Hot Listen window, or Escape or the Abort Head, is no answer.
    */
   async function errandAsk(run: ErrandRun, text: string, kind: 'confirm' | 'question'): Promise<string | null> {
-    if (run.submission !== submitted) return null
+    if (isEnded(run.submission)) return null
     let resolveOwn: (line: string | null) => void = () => {}
     const answered = new Promise<string | null>((resolve) => {
       resolveOwn = resolve
@@ -3053,7 +3255,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             steps += 1
             return tracer?.mintTurnId() ?? `${start.id}-errand${steps}`
           },
-          superseded: () => run.submission !== submitted,
+          superseded: () => isEnded(run.submission),
           signal: run.controller.signal,
           card: (goalLine, step, visited) => errandCardNow(run, goalLine, step, visited, start.id),
           app: () => deps.app?.state(),
@@ -3109,12 +3311,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     getState: () => (idle() ? 'idle' : 'running'),
 
     abort() {
-      const acting = reading !== null || inFlight !== null
+      const running = runningBefore(submitted + 1)
+      const acting = reading !== null || inFlight.size > 0 || running !== null
       const had = acting || sounding > 0
       // Escape, "stop" or the Abort Head soon after a Jev-read hop fired: the Task overran (#328).
       overrun()
       // A reading under way is stale from here: when its answer comes, it fires nothing — and it reads stopped now, never still thinking (#428).
       submitted += 1
+      floor = submitted
       stoppedAt.add(submitted)
       // An Errand ends like a Task (#467): Escape and the Abort Head stop it where it stands.
       const errandWas = errand !== null
@@ -3125,6 +3329,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       silence()
       // A Command in flight or being read may be waiting on a page still loading: the load ends with it.
       if (acting) stopLoading()
+      // A stop is said, as on every road (#489, ui.md 9): "Stopped."
+      stopSaid = null
+      if (acting || errandWas) sayStop(running?.turnId ?? 'abort', STOPPED_ANSWERS.stopped)
       return had || errandWas
     },
 
@@ -3247,14 +3454,20 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const givenAt = at()
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
       overrun(turnId)
-      // This submission: a reading still under way for an earlier one is stale now.
+      // This submission: a partial still being read for an earlier one is stale now.
       const wasIdle = idle()
       submitted += 1
-      // A later line ends an Errand under way (#467), as it supersedes a Task.
-      endErrand()
       const submission = submitted
+      // Its arrival ends nothing (#489): what it means for a line still running is read as its Fate, and acted on once read.
+      // With the Appliance Card off, today's road: it supersedes the line before, and ends an Errand under way (#467).
+      if (deps.applianceCard === undefined) {
+        floor = submission
+        endErrand()
+      }
       if (wasIdle) idleAt = submission
       reading = { turnId, submission }
+      let over: () => void = () => {}
+      live.set(turnId, { turnId, words: trimmed, submission, stage: 'Thinking', detail: undefined, over: new Promise<void>((resolve) => (over = resolve)) })
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared
       prepared = null
@@ -3265,21 +3478,32 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (goal !== null) {
           reading = null
           if (source === 'spoken') observeTerms(trimmed)
+          // An Errand takes the pane: by kind, it ends the line running (the grill's Q8).
+          if (deps.applianceCard !== undefined && runningBefore(submission) !== null) endRunning(submission, 'ends', turnId)
           publish({ type: 'command', turnId, text: lineRead, action: `errand: ${goal}`, task: { id: turnId, hop: 0 }, at: at() })
           span(turnId, Math.max(0, monotonic() - endpointAt), { verb: 'errand', effect: 'settled', reading: 'local_match', source })
           await startErrand({ id: turnId, goalLine: goal, source }, submission)
           return
         }
         lastAnswer = null
-        const heard = await read(turnId, lineRead, pending, source === 'spoken')
+        const runningNow = deps.applianceCard !== undefined ? runningBefore(submission) : null
+        const first = await read(turnId, lineRead, pending, source === 'spoken', { split: true, ...(runningNow !== null ? { running: runningOf(runningNow) } : {}) })
         if (reading !== null && reading.submission === submission) reading = null
         if (source === 'spoken') observeTerms(trimmed)
+        const heard = await settleFate(turnId, lineRead, submission, first, source === 'spoken')
         const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-        const end = heard.steps !== undefined && submission === submitted ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, lineRead, heard, {}, { measured: true })
+        const end = heard.steps !== undefined && !isEnded(submission) ? await runSteps(line, turnId, heard, heard.steps, pending) : await runStep(line, turnId, heard.joined ?? lineRead, heard, {}, { measured: true })
         // A Task that ended not done hands its line to an Errand (#467, ADR 0095), its steps the Errand's first memory, instead of saying it could not finish.
-        if (end !== null && submission === submitted && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
+        if (end !== null && !isEnded(submission) && handsOff(end.ended)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
-      await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
+      try {
+        await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
+      } finally {
+        live.delete(turnId)
+        over()
+        // An ended Command's stop line its ender never said a sentence after (#489): said alone.
+        if (stopSaid?.by === turnId && deps.speech !== undefined) void say(deps.speech, turnId, stopSaid.text)
+      }
       return true
     },
   }

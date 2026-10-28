@@ -2,6 +2,7 @@ import type { PageMedia } from '../browser/snapshot'
 import type { NowPlaying } from '../music/nowPlaying'
 import type { TimerState } from '../timer/timer'
 import type { WeatherReport } from '../weather/weather'
+import { doingAnswer, type RunningCommand } from './runningCommand'
 
 // What the appliance knows (#402): the facts the Idle Screen holds — the
 // time, today's weather at home, the song playing, the Timer — each worded
@@ -19,6 +20,8 @@ export interface ApplianceFacts {
   readonly weather: WeatherReport | null
   readonly nowPlaying?: NowPlaying | null
   readonly timer?: TimerState
+  /** The line still running (#489), what the doing fact says; absent with none, so an idle card is unchanged. */
+  readonly doing?: RunningCommand | null
 }
 
 /**
@@ -33,7 +36,8 @@ export function withPageSong(facts: ApplianceFacts, media: PageMedia | undefined
   return { ...facts, nowPlaying: { id: '', title: media.title, channel: '', elapsedS: media.currentTime, durationS: duration, paused: media.paused, loop: media.loop, muted: media.muted, ended: false, queued: [] } }
 }
 
-export type ApplianceFact = 'time' | 'weather' | 'playing' | 'timer'
+/** `doing` (#489) is offered only while a line runs, by the card itself: never among the facts offered by ability, nor the Seed Lexicon's labels. */
+export type ApplianceFact = 'time' | 'weather' | 'playing' | 'timer' | 'doing'
 
 /** The facts a card offers, by ability: the clock and the weather always, the song and the Timer while their feature is wired. */
 export function factsOffered(facts: ApplianceFacts): ApplianceFact[] {
@@ -101,6 +105,8 @@ export function factValue(fact: ApplianceFact, facts: ApplianceFacts): string {
       return playingValue(facts.nowPlaying)
     case 'timer':
       return timerValue(facts.timer, facts.now)
+    case 'doing':
+      return doingAnswer(facts.doing ?? null)
   }
 }
 
@@ -121,6 +127,8 @@ function factName(fact: ApplianceFact, facts: ApplianceFacts): string {
       return 'the song playing'
     case 'timer':
       return 'how long is left on the timer'
+    case 'doing':
+      return 'what the app is doing now'
   }
 }
 
@@ -153,6 +161,8 @@ export function factAnswer(fact: ApplianceFact, facts: ApplianceFacts): string {
       if (timer.status === 'ringing') return "The timer's up."
       return `${span(timer.endsAt - facts.now)} left on the timer.`
     }
+    case 'doing':
+      return doingAnswer(facts.doing ?? null)
   }
 }
 
@@ -166,7 +176,7 @@ export const SAY_LABELS: readonly string[] = FACTS.map(sayLabel)
 
 /** The fact an action card label says; null for any other label. */
 export function factOfLabel(label: string): ApplianceFact | null {
-  return FACTS.find((fact) => sayLabel(fact) === label) ?? null
+  return [...FACTS, 'doing' as const].find((fact) => sayLabel(fact) === label) ?? null
 }
 
 /**

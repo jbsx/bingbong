@@ -3,7 +3,8 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import { defaultSettings } from '../settings/settings'
 import type { AppState } from './appOp'
-import { PAGE_LABEL, applianceQuestions, applianceState, readApplianceAnswers, type ApplianceView } from './applianceCard'
+import { PAGE_LABEL, applianceQuestions, applianceState, fateOfAnswers, readApplianceAnswers, type ApplianceView } from './applianceCard'
+import { doingAnswer, stoppedLine, type RunningCommand } from './runningCommand'
 import type { CommandAnswers } from './jevReading'
 
 const choice = (label: string, confidence = 0.9): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
@@ -109,5 +110,48 @@ describe('reading the Appliance Card', () => {
     expect(readApplianceAnswers(answers('media-volume', { amount: 'to' }), 'volume', WATCH)).toEqual({ kind: 'page', chose: 'page' })
     expect(readApplianceAnswers(answers('media-pause'), 'pause', { ...WATCH, media: undefined })).toEqual({ kind: 'page', chose: 'page' })
     expect(readApplianceAnswers(answers('click-3'), 'click', WATCH)).toEqual({ kind: 'page', chose: 'page' })
+  })
+})
+
+describe('the running Command on the Appliance Card (#489)', () => {
+  const RUNNING: RunningCommand = { words: 'play let down by radiohead', stage: 'Loading', detail: 'youtube.com', done: [], opening: 'let down by radiohead' }
+
+  it('leaves an idle line\'s card byte for byte as it was: no running lines, no doing fact, no Fate', () => {
+    expect(applianceState('pause', { ...WATCH, running: undefined })).toBe(
+      'The user spoke to the appliance, a voice-driven web browser: "pause"\nPage open: https://www.youtube.com/watch?v=abc — "Tum Se - YouTube"\nPlaying: "Tum Se" playing 0:16/1:51 volume 50% loop off',
+    )
+    const questions = applianceQuestions('pause', WATCH)
+    expect(Object.keys(questions)).not.toContain('fate')
+    expect(Object.keys(questions.action.options)).not.toContain('say_doing')
+  })
+
+  it('carries its words on a labelled line, its stage, and the media it is opening; asks its Fate after the action; offers the doing fact before page', () => {
+    const view = { ...WATCH, running: RUNNING }
+    const state = applianceState('on loop', view)
+    expect(state).toContain('Still running, from the user\'s line before this one: "play let down by radiohead"')
+    expect(state).toContain('Its stage: Loading youtube.com')
+    expect(state).toContain('It is opening: "let down by radiohead", not playing yet')
+    const questions = applianceQuestions('on loop', view)
+    expect(Object.keys(questions).slice(0, 3)).toEqual(['action', 'fate', 'slot'])
+    expect(Object.keys(questions.fate!.options)).toEqual(['ends', 'joins', 'waits', 'goes_on'])
+    const labels = Object.keys(questions.action.options)
+    expect(labels.indexOf('say_doing')).toBe(labels.indexOf(PAGE_LABEL) - 1)
+    expect(questions.action.options.say_doing).toContain('Still on “play let down by radiohead”: loading youtube.com.')
+  })
+
+  it('reads the Fate, unsure or missing as goes on; and the doing fact only while a line runs', () => {
+    const view = { ...WATCH, running: RUNNING }
+    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('waits') } as CommandAnswers, view)).toBe('waits')
+    expect(fateOfAnswers({ ...answers('media-loop'), fate: choice('ends', 0.4) } as CommandAnswers, view)).toBe('goes_on')
+    expect(fateOfAnswers(answers('media-loop'), view)).toBe('goes_on')
+    expect(fateOfAnswers(answers('media-loop'), WATCH)).toBeUndefined()
+    expect(readApplianceAnswers(answers('say_doing'), 'what are you doing', view)).toMatchObject({ command: { verb: 'say', fact: 'doing' } })
+    expect(readApplianceAnswers(answers('say_doing'), 'what are you doing', WATCH)).toEqual({ kind: 'page', chose: 'page' })
+  })
+
+  it('says an ended line in one sentence, naming what it was doing', () => {
+    expect(stoppedLine('Playing let down by radiohead')).toBe('Stopped playing let down by radiohead.')
+    expect(stoppedLine(undefined)).toBe('Stopped.')
+    expect(doingAnswer(null)).toBe('Nothing is running.')
   })
 })
