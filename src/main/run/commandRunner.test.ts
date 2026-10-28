@@ -5587,6 +5587,33 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(said(events)).toEqual(["It's 12:34 on Friday 23 October."])
   })
 
+  it("joins: a joined line that plays says what it played — the correction's answer is said, not only shown", async () => {
+    const SONG = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
+    const speech = new FakeSpeech()
+    let youtube!: ScriptedYouTube
+    const made = harness({
+      applianceCard: CARD,
+      facts,
+      speech,
+      player: (browser) => {
+        youtube = new ScriptedYouTube(browser)
+        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+      },
+    })
+    youtube.search('bohemian rhapsody', videoItem('fJ9rUzIMcZQ', SONG))
+    youtube.watches.set('fJ9rUzIMcZQ', { title: SONG })
+    let land: () => void = () => {}
+    const navigate = made.browser.navigate.bind(made.browser)
+    made.browser.navigate = (url) => (url.includes('bbc') ? new Promise((resolve) => (land = () => void navigate(url).then(resolve))) : navigate(url))
+    const first = made.runner.run('open bbc.com')
+    await flushMicrotasks()
+    made.decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('play'), slot: choice('s4-5') } })
+    await made.runner.run('no, play bohemian rhapsody')
+    land()
+    await first
+    expect(said(made.events)).toEqual(['Playing “Queen – Bohemian Rhapsody (Official Video Remastered)”.'])
+  })
+
   it('waits: the line is held until the running one lands, then read again against what is there', async () => {
     const { decision, asks, events, runner, first, turnId, land } = await running()
     decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('waits') } }, { answers: { action: choice('say_time'), slot: choice('none') } })

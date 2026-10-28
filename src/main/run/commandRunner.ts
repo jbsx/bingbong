@@ -1698,6 +1698,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly tellsPopup?: true
     /** An Errand's step (#467): its Acting stage is the Errand's, on the Planner's why, never the action's own word. */
     readonly stage?: { readonly word: string; readonly object: string }
+    /** A line read again with the line it joined (#489, ADR 0097): its outcome is said, the correction's answer to what was asked twice. */
+    readonly says?: true
   }
 
   /**
@@ -1889,6 +1891,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           outcome = 'wall'
         } else {
           answer(turnId, outcomeOfPlay.answer)
+          if (reacting.says === true && deps.speech !== undefined) void say(deps.speech, turnId, outcomeOfPlay.answer)
         }
       } else {
         const state = browser.state()
@@ -3059,6 +3062,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         settled: () => summarize(turnId),
         ...(ladder.length > 0 ? { deferStay: true as const } : {}),
         ...(command.verb === 'navigate' && ending !== null ? { tellsPopup: true as const } : {}),
+        ...(first.joined !== undefined ? { says: true as const } : {}),
       },
       hop0,
     )
