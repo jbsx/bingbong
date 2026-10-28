@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { controlScript, PAUSE_ALL_SCRIPT, type ControlReach, type ElementState, type PausedAll } from '../src/main/music/youtubeScripts.ts'
-import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
+import { controlScript, PAUSE_ALL_SCRIPT, SEEK_SETTLE_MS, WATCH_SCRIPT, type ControlReach, type ElementState, type PausedAll, type WatchStatus } from '../src/main/music/youtubeScripts.ts'
+import { APPLY_MEDIA_OP_FN, SEEK_MARK } from '../src/main/browser/pageMediaScript.ts'
+import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
 import { silentWav } from './fixtureServer.ts'
 
 // The Player's control script in a real headless Chrome (#362, ADR 0079):
@@ -12,6 +13,7 @@ import { silentWav } from './fixtureServer.ts'
 // An idle `stop` is no control: it pauses every playing element (#376).
 
 const SONG = `data:audio/wav;base64,${silentWav(5).toString('base64')}`
+const LONG_SONG = `data:audio/wav;base64,${silentWav(30).toString('base64')}`
 
 const PAGES: Record<string, string> = {
   '/song': `<body><audio id="song" src="${SONG}" title="Fixture Song" muted controls></audio><p>A song page.</p></body>`,
@@ -85,5 +87,78 @@ describe.skipIf(!canDriveChrome)('an idle `stop` pauses every playing media elem
   it('a page with no media has nothing to stop', async () => {
     await fixtures.open('/none')
     expect(await pausedAll()).toEqual({ paused: 0, youtube: false })
+  })
+})
+
+// The Seek Mark (#505): a seek of a playing element — a Media Op's or the
+// Player's own — marks it; the watch read takes the mark once it reads the
+// element paused, on the first read after the seek or within the settle.
+describe.skipIf(!canDriveChrome)('a seek of a playing element is marked, and the watch read takes the mark once it reads paused (#505)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures({ '/player': `<body><div id="movie_player"><audio id="song" src="${LONG_SONG}" muted></audio></div></body>` }, 'bingbong-seek-mark-chrome-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  const song = "document.querySelector('#song')"
+  const op = (action: object): Promise<unknown> => fixtures.chrome.evaluate(`${APPLY_MEDIA_OP_FN}(${song}, ${JSON.stringify(action)})`)
+  const seeked = async (): Promise<number | null> => (await fixtures.chrome.evaluate<WatchStatus>(WATCH_SCRIPT)).seekAgeMs
+  async function playing(): Promise<void> {
+    await fixtures.open('/player')
+    await fixtures.chrome.evaluate(`${song}.play()`)
+    await until(() => fixtures.chrome.evaluate<boolean>(`!${song}.paused && ${song}.seekable.length > 0`), 'the song to play')
+  }
+
+  it('a Media Op seek the page pauses after: read once, then taken', async () => {
+    await playing()
+    await op({ op: 'forward', seconds: 5 })
+    await fixtures.chrome.evaluate(`${song}.pause()`)
+    expect(await seeked()).toEqual(expect.any(Number))
+    expect(await seeked()).toBeNull()
+  })
+
+  it('the Player’s own seek is marked too', async () => {
+    await playing()
+    await fixtures.chrome.evaluate(controlScript({ op: 'seek', by: 5 }))
+    await fixtures.chrome.evaluate(`${song}.pause()`)
+    expect(await seeked()).toEqual(expect.any(Number))
+  })
+
+  it('a pause op after the seek takes the mark off; a seek of a paused element leaves none', async () => {
+    await playing()
+    await op({ op: 'back', seconds: 1 })
+    await op({ op: 'pause' })
+    expect(await seeked()).toBeNull()
+    await op({ op: 'forward', seconds: 5 })
+    expect(await seeked()).toBeNull()
+  })
+
+  it('reads that see it playing keep the mark: a pause on a later read inside the settle is the seek’s', async () => {
+    await playing()
+    await op({ op: 'forward', seconds: 5 })
+    for (let read = 0; read < 3; read += 1) expect(await seeked()).toBeNull()
+    await fixtures.chrome.evaluate(`${song}.pause()`)
+    expect(await seeked()).toEqual(expect.any(Number))
+  })
+
+  it('a read playing after the settle lapsed lets the mark go: a pause after it is not the seek’s', async () => {
+    await playing()
+    await op({ op: 'forward', seconds: 5 })
+    await fixtures.chrome.evaluate(`${song}.${SEEK_MARK}.at -= ${SEEK_SETTLE_MS + 500}`)
+    expect(await seeked()).toBeNull()
+    expect(await fixtures.chrome.evaluate<boolean>(`'${SEEK_MARK}' in ${song}`)).toBe(false)
+    await fixtures.chrome.evaluate(`${song}.pause()`)
+    expect(await seeked()).toBeNull()
+  })
+
+  it('past the settle’s ceiling a first read paused is not the seek’s: a stalled poll does not stretch it', async () => {
+    await playing()
+    await op({ op: 'forward', seconds: 5 })
+    await fixtures.chrome.evaluate(`${song}.${SEEK_MARK}.at -= ${SEEK_SETTLE_MS + 500}`)
+    await fixtures.chrome.evaluate(`${song}.pause()`)
+    expect(await seeked()).toBeNull()
+    expect(await fixtures.chrome.evaluate<boolean>(`'${SEEK_MARK}' in ${song}`)).toBe(false)
   })
 })

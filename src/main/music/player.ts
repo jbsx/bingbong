@@ -169,6 +169,16 @@ export interface PlayerConsentTold extends ConsentDrawn {
   readonly at: 'now' | 'queued' | 'withheld' | null
 }
 
+/** A seek that left the playing song paused (#505), as the poll read it: what the perf log's `media-seek` keeps. */
+export interface PlayerSeekResume {
+  readonly video: string
+  /** How long before the read the element seeked (ms), by the page's clock. */
+  readonly seekAgeMs: number
+  /** Played once; else what held it: a pause the person asked for after the seek, one the Player made, the song's end. */
+  readonly resumed: boolean
+  readonly held: 'person' | 'own' | 'end' | null
+}
+
 /** A page the Player opened, watched for a consent wall (#492). */
 interface ConsentWatch {
   readonly song: Song
@@ -270,6 +280,8 @@ export interface PlayerDeps {
   onConsent?(consent: PlayerConsent): void
   /** Hears every wall the page told of as it drew (#496): the perf log's `consent-told`. */
   onConsentTold?(told: PlayerConsentTold): void
+  /** Hears every seek the poll read as having left the playing song paused (#505): the perf log's `media-seek`. */
+  onSeekResume?(seek: PlayerSeekResume): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
   /** The audio road (#502), taken while its `on` says so; absent, every song opens on the watch page as before. */
@@ -339,6 +351,9 @@ const opensAtYouTubesOwn = (status: WatchStatus): boolean =>
   youTubesOwn(status) || (status.restore !== null && youTubesOwn({ ...status, volume: status.restore }))
 
 const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
+
+/** The song is in its end's lead (END_LEAD_S): the end rule's to pause, never a resume's. */
+const atEnd = (status: Pick<WatchStatus, 'elapsed' | 'duration'>): boolean => status.duration !== null && status.elapsed >= status.duration - END_LEAD_S
 
 const quoted = (title: string): string => `“${title}”`
 
@@ -1308,8 +1323,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     await duckElement()
   }
 
-  /** The poll's read of the song playing: its progress for the card, a new page's volume ducked, YouTube's own pause answered. */
-  async function readWatch(status: WatchStatus): Promise<void> {
+  /** The poll's read of the song playing, begun at `readAt`: its progress for the card, a new page's volume ducked, YouTube's own pause answered. */
+  async function readWatch(status: WatchStatus, readAt: number): Promise<void> {
     const song = state.current
     // An ad in the song's element (#497), mid-song too: Now Playing says it until the song itself plays again.
     // Off the song's page, or its element gone, no ad is counted: a count that stands still would read as frozen (ui.md 2).
@@ -1331,7 +1346,26 @@ export function createPlayer(deps: PlayerDeps): Player {
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes — asked
     // again every tick it stays up, a page pause adopted meanwhile notwithstanding.
     const continued = status.paused && !ownPause && status.prompt && (await evaluate<boolean>(CONTINUE_SCRIPT)) === true
-    adoptElementFlags(continued ? { ...status, paused: false } : status)
+    const resumed = !continued && (await resumeSeeked(status, readAt))
+    adoptElementFlags(continued || resumed ? { ...status, paused: false } : status)
+  }
+
+  /**
+   * A seek that left the playing song paused (#505), played once, by kind:
+   * the Seek Mark says the element was playing as it seeked and reads paused
+   * now, within the settle. A pause the person asked for after the seek
+   * holds (`pausedAt`, the read's start less the seek's age: a pause in
+   * doubt is the person's), as does one the Player made; a song at its end
+   * is the end rule's. Nothing is said: the seek's own sentence stays true.
+   */
+  async function resumeSeeked(status: WatchStatus, readAt: number): Promise<boolean> {
+    const { seekAgeMs } = status
+    if (seekAgeMs === null || !status.paused) return false
+    const held = ownPause ? 'own' : readAt - seekAgeMs <= pausedAt ? 'person' : atEnd(status) ? 'end' : null
+    const element = held === null ? await control({ op: 'play' }) : null
+    const resumed = element !== null && element.found && !element.paused
+    deps.onSeekResume?.({ video: status.id ?? '', seekAgeMs: Math.round(seekAgeMs), resumed, held })
+    return resumed
   }
 
   /** The watch page shows this song's video, no ad in it: the read is of the song. */
@@ -1372,7 +1406,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       return false
     }
     if (!showsSong(status, song) || status.paused) return false
-    if (!status.loop && status.duration !== null && status.elapsed >= status.duration - END_LEAD_S) return false
+    if (!status.loop && atEnd(status)) return false
     state = replay(state, song)
     return true
   }
@@ -1499,6 +1533,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (checking || (state.current === null && (ended === null || endedLeft))) return
       checking = true
       try {
+        const readAt = now()
         const status = await evaluate<WatchStatus>(WATCH_SCRIPT)
         if (status === null) return
         if (state.current === null && !resumeEnded(status)) return
@@ -1506,7 +1541,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         const end = status.ended
         // An ad plays in the same element: its end is not the song's.
         if (end === null || end.ad || end.id !== state.current?.id) {
-          await readWatch(status)
+          await readWatch(status, readAt)
           return
         }
         advanceInBackground()

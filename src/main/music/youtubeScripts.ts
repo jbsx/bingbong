@@ -10,7 +10,7 @@
 // kind and in the top frame only (#376).
 
 import { CONSENT_HELD_MARK } from '../browser/collectPageScript'
-import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
+import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, MARK_SEEK_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SEEK_MARK, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
 // The audio road's surface (#502, audioSurface.ts) answers the same
 // scripts: its page holds the bare stream's `<audio>` in a `#movie_player`
@@ -67,7 +67,27 @@ export interface WatchStatus {
   readonly loudnessDb: number | null
   /** YouTube's remembered level, 0–100, as its player gives it; null when it gives none (#460). */
   readonly playerVolume: number | null
+  /**
+   * A seek of the playing element left it paused (#505): how long ago (ms)
+   * it seeked, the Seek Mark taken off as this read; null for none. Read on
+   * any read within {@link SEEK_SETTLE_MS} of the seek.
+   */
+  readonly seekAgeMs: number | null
 }
+
+/**
+ * How long after a seek a pause counts as the seek's (#505, ruling 2 on the
+ * issue, as measured): two poll intervals (`attachPlayer`'s CHECK_MS) from
+ * the seek, by the page's clock — a pause read on any read inside it, and
+ * none after. The page paused the element ~260–400 ms after the seek's
+ * result in the runs that showed it (impl505-a p2, impl505-recheck p3),
+ * after a read that saw it still playing: one interval from the seek can
+ * lapse before the next read, and a count of reads lapses when custody's
+ * settle reads twice inside it. A stalled poll does not stretch it: in
+ * impl505-full p1 the next read came 3,550 ms after the seek and took a
+ * consent sheet's pause for the seek's.
+ */
+export const SEEK_SETTLE_MS = 2_000
 
 /** Reads the player response's `loudnessDb` and the player's remembered level: `loudnessOf(player)`, `playerVolumeOf(player)`, null when there is none. */
 const LOUDNESS_READER = `const loudnessOf = (player) => {
@@ -162,6 +182,14 @@ export const WATCH_SCRIPT = `(() => {
   }
   const ended = window.__bingbongPlayer.ended
   window.__bingbongPlayer.ended = null
+  // The Seek Mark (#505): a playing element a seek left paused, read within the settle; else let go once it lapses.
+  let seekAgeMs = null
+  const seek = video ? video.${SEEK_MARK} : undefined
+  if (typeof seek === 'object' && seek !== null) {
+    const age = performance.now() - seek.at
+    if (video.paused && !video.ended && age <= ${SEEK_SETTLE_MS}) seekAgeMs = age
+    if (video.paused || age > ${SEEK_SETTLE_MS}) delete video.${SEEK_MARK}
+  }
   const data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : null
   const errorNode = player ? player.querySelector('.ytp-error') : null
   ${PROMPT_FINDER}
@@ -188,6 +216,7 @@ export const WATCH_SCRIPT = `(() => {
     prompt: continuePrompt() !== null,
     loudnessDb: loudnessOf(player),
     playerVolume: playerVolumeOf(player),
+    seekAgeMs,
   }
 })()`
 
@@ -331,7 +360,9 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
     setHeard(video, level / 100)
   }
   // A volume under a duck the poll has not marked on this element yet: marked first, so the level set is the one put back.
-  if (op.duck && !video.${DUCK_MARK}) video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.duck.restore)) / 100, share: op.duck.share }
+  if (op.duck && !video.${DUCK_MARK}) video.${DUCK_MARK} = { restore: Math.max(0, Math.min(100, op.duck.restore)) / 100, share: op.duck.share };
+  // A seek of the playing song is marked (#505), as a Media Op's is; a pause or a play takes the mark off. The semicolon above keeps this call off that line.
+  ${MARK_SEEK_FN}(video, op.op, !video.paused)
   switch (op.op) {
     // A refused press keeps its reason on the element, for the start script to read (#488).
     case 'play':

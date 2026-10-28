@@ -19,6 +19,23 @@ const MEDIA_SELECTOR = "'video, audio'"
  */
 export const DUCK_MARK = '__bingbongDuck'
 
+/**
+ * The Seek Mark (#505): the property a seek leaves on an element that was
+ * playing as it seeked, `{ at }` — the page's `performance.now()` at the seek. A
+ * seek that leaves its element paused is resumed once, the Player's poll
+ * reading the mark; a `pause` or `play` on the element takes it off, so a
+ * pause asked after the seek is never undone. Set by kind by every seek, a
+ * Media Op's and the Player's own.
+ */
+export const SEEK_MARK = '__bingbongSeekedPlaying'
+
+/** A JS function source `(el, op, playing)`: a seek (`forward`, `back`, `restart`, `seek`) marks the element if it was playing, unmarks it if not; a `pause` or `play` unmarks it; other ops leave it be. */
+export const MARK_SEEK_FN = `((el, op, playing) => {
+  const seek = op === 'forward' || op === 'back' || op === 'restart' || op === 'seek'
+  if (seek && playing) el.${SEEK_MARK} = { at: performance.now() }
+  else if (seek || op === 'pause' || op === 'play') delete el.${SEEK_MARK}
+})`
+
 /** A JS function source `(el) => 0–1`: the element's volume as heard once no duck holds it — the level a duck puts back, else its own. */
 export const HEARD_VOLUME_FN = `((el) => el.${DUCK_MARK} ? el.${DUCK_MARK}.restore : el.volume)`
 
@@ -190,6 +207,8 @@ export const APPLY_MEDIA_OP_FN = `((el, op) => {
     }
     case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
   }
+  // A seek of a playing element is marked (#505): if it leaves the element paused, the Player plays it once.
+  ${MARK_SEEK_FN}(el, op.op, !before.paused)
   // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
   return { before, after: facts(el) }
 })`

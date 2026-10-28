@@ -6,8 +6,8 @@ import type { MusicAction } from '../../core/music/musicWords'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
-import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerOutcome, type PlayerStart, type SongMemory } from './player'
-import type { ElementOp } from './youtubeScripts'
+import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerOutcome, type PlayerSeekResume, type PlayerStart, type SongMemory } from './player'
+import { SEEK_SETTLE_MS, type ElementOp } from './youtubeScripts'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { SHEET_DISMISSAL, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
 
@@ -1221,10 +1221,11 @@ function prerolled(sleep: () => Promise<void> = async () => {}) {
   youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
   youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
   const starts: PlayerStart[] = []
-  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep, onStart: (start) => starts.push(start) })
+  const seekResumes: PlayerSeekResume[] = []
+  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep, onStart: (start) => starts.push(start), onSeekResume: (seek) => seekResumes.push(seek) })
   const shown: (NowPlaying | null)[] = []
   player.onChange((nowPlaying) => shown.push(nowPlaying))
-  return { youtube, player, starts, shown }
+  return { youtube, player, starts, shown, seekResumes }
 }
 
 describe('a pre-roll ad before the song (#497): the start counts only the song’s own time', () => {
@@ -1374,6 +1375,159 @@ describe('a seek that lands inside an ad (#497, turn-mvrzkyzj-2): held, and put 
   it('no song held: null', async () => {
     const { player } = prerolled()
     expect(await player.seekOverAd({ op: 'forward', rung: 'words', seconds: 60 })).toBeNull()
+  })
+})
+
+describe('a seek that leaves the playing song paused (#505, turn-mvsaj62q-2): played once, by kind', () => {
+  const plays = (youtube: ScriptedYouTube): ElementOp[] => youtube.controls.filter((op) => op.op === 'play')
+
+  /** Song A playing 7 s in, its page pausing the element after a seek of it playing, as the kept run at 6588a8b1 did. */
+  async function playingSong() {
+    const built = prerolled()
+    await built.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    built.youtube.element = { ...built.youtube.element, currentTime: 7, paused: false }
+    await built.player.check()
+    built.youtube.pausesOnSeek = true
+    return built
+  }
+
+  it('"skip ahead a minute" lands and the page pauses it: the next poll plays it once, on from the landed time, and nothing is said', async () => {
+    const { youtube, player, shown, seekResumes } = await playingSong()
+    const spoken = shown.length
+    expect(youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 }).after).toEqual({ paused: false, currentTime: 67 })
+    expect(youtube.element.paused).toBe(true)
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+    expect(youtube.element).toMatchObject({ paused: false, currentTime: 67 })
+    expect(player.queue().paused).toBe(false)
+    // Never shown paused, and once: the next poll has nothing to play.
+    expect(shown.slice(spoken).some((nowPlaying) => nowPlaying?.paused)).toBe(false)
+    await player.check()
+    expect(plays(youtube)).toHaveLength(1)
+    // The perf log's `media-seek`: one, played.
+    expect(seekResumes).toEqual([{ video: 'aaaaaaaaaaa', seekAgeMs: 0, resumed: true, held: null }])
+  })
+
+  it('a seek back, by the same rule', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.mediaOp({ op: 'back', rung: 'words', seconds: 5 })
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+    expect(youtube.element).toMatchObject({ paused: false, currentTime: 2 })
+  })
+
+  it('a restart, by the same rule', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.mediaOp({ op: 'restart' })
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+    expect(youtube.element).toMatchObject({ paused: false, currentTime: 0 })
+  })
+
+  it('a `pause` given after the seek is not undone', async () => {
+    const { youtube, player, seekResumes } = await playingSong()
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    await player.perform({ kind: 'pause' }, null, () => true)
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+    // The Player's own pause took the mark off: nothing read, nothing recorded.
+    expect(seekResumes).toEqual([])
+    expect(youtube.element.paused).toBe(true)
+    expect(player.queue().paused).toBe(true)
+  })
+
+  it('an idle `stop` after the seek, which leaves the mark on, is not undone: held, and recorded so', async () => {
+    const { youtube, player, seekResumes } = await playingSong()
+    youtube.pausesOnSeek = false
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    expect(await player.pauseAll()).toBe(true)
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+    expect(youtube.element.paused).toBe(true)
+    expect(seekResumes).toEqual([expect.objectContaining({ resumed: false, held: 'own' })])
+  })
+
+  it('a pause Media Op after the seek takes the mark off: not undone either', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    youtube.mediaOp({ op: 'pause' })
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+    expect(youtube.element.paused).toBe(true)
+  })
+
+  it('an element paused before the seek stays paused', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+    expect(youtube.element).toMatchObject({ paused: true, currentTime: 67 })
+  })
+
+  it('a pause a read after the first read saw it playing is the seek’s: the page paused it inside one poll interval (impl505-a p2)', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.pausesOnSeek = false
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    await player.check()
+    youtube.seekMark!.ageMs = 1_300
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+  })
+
+  it('a poll that stalls past the settle’s ceiling does not stretch it: a pause read 3.55 s after the seek is not the seek’s (impl505-full p1)', async () => {
+    const { youtube, player, seekResumes } = await playingSong()
+    youtube.pausesOnSeek = false
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    youtube.seekMark!.ageMs = 3_550
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+    expect(seekResumes).toEqual([])
+    expect(youtube.seekMark).toBeNull()
+  })
+
+  it('reads that come close together do not use the settle up: three reads saw it playing, a fourth inside the settle reads it paused (impl505-recheck p3)', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.pausesOnSeek = false
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    for (let read = 0; read < 3; read += 1) await player.check()
+    youtube.seekMark!.ageMs = 400
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+  })
+
+  it('a pause read after the settle lapsed is not the seek’s', async () => {
+    const { youtube, player } = await playingSong()
+    youtube.pausesOnSeek = false
+    youtube.mediaOp({ op: 'forward', rung: 'words', seconds: 60 })
+    await player.check()
+    youtube.seekMark!.ageMs = SEEK_SETTLE_MS + 1
+    await player.check()
+    expect(youtube.seekMark).toBeNull()
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    expect(plays(youtube)).toEqual([])
+  })
+
+  it('a seek held over an ad (#497) gets the same resume once it lands on the song', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: 7, duration: 15, paused: false }
+    await player.seekOverAd({ op: 'forward', rung: 'words', seconds: 60 })
+    youtube.pausesOnSeek = true
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 3, duration: 180 }
+    await player.check()
+    expect(youtube.controls.filter((op) => op.op === 'seek')).toEqual([{ op: 'seek', by: 60 }])
+    expect(youtube.element.paused).toBe(true)
+    await player.check()
+    expect(plays(youtube)).toEqual([{ op: 'play' }])
+    expect(youtube.element).toMatchObject({ paused: false, currentTime: 63 })
   })
 })
 

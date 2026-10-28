@@ -1,7 +1,8 @@
 import { FakeBrowser } from '../../core/testing/doubles'
 import { videoIdOf, watchUrl } from '../../core/music/youtubeSearch'
 import { loudnessFactor } from '../../core/music/loudness'
-import type { ElementOp, ElementState, LevelRead, PausedAll, StartRead, WatchStatus } from './youtubeScripts'
+import type { MediaOpAction } from '../../core/browser/mediaOp'
+import { SEEK_SETTLE_MS, type ElementOp, type ElementState, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
 // A scripted YouTube for the tests (#343): it answers the Player's tagged
 // scripts the way the real pages would — the results' `ytInitialData` for a
@@ -107,6 +108,10 @@ export class ScriptedYouTube {
   sheetStartsOnClear = false
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
+  /** The page's own player leaves its element paused after a seek of it playing (#505, the kept run at 6588a8b1). */
+  pausesOnSeek = false
+  /** The Seek Mark on the element (#505): how long ago (ms) the playing element seeked; null with none. */
+  seekMark: { ageMs: number } | null = null
   /** How often the prompt was answered Yes. */
   continued = 0
   private ended: { id: string | null; ad: boolean } | null = null
@@ -283,7 +288,8 @@ export class ScriptedYouTube {
     const ended = this.ended
     this.ended = null
     const element = this.element
-    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
+    const seeked = id === null ? null : this.takeSeeked()
+    const playing = { seekAgeMs: seeked, elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, skippable: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, skippable: this.skippable(), ended, channel: watch?.channel ?? '', ...playing }
   }
@@ -307,12 +313,58 @@ export class ScriptedYouTube {
     return { paused: playing + (youtube ? 1 : 0), youtube }
   }
 
+  /**
+   * The Appliance Card's Media Op on the song's element (#505), as the
+   * browser's op script applies it by kind: a seek of a playing element
+   * marks it, and a pause or a play takes the mark off. A seek the page
+   * pauses after ({@link pausesOnSeek}) leaves it paused.
+   */
+  mediaOp(op: MediaOpAction): { before: { paused: boolean; currentTime: number }; after: { paused: boolean; currentTime: number } } {
+    const element = this.element
+    const before = { paused: element.paused, currentTime: element.currentTime }
+    const end = element.duration ?? element.currentTime
+    switch (op.op) {
+      case 'forward': this.element = { ...element, currentTime: Math.min(end, element.currentTime + (op.seconds ?? 0)) }; break
+      case 'back': this.element = { ...element, currentTime: Math.max(0, element.currentTime - (op.seconds ?? 0)) }; break
+      case 'restart': this.element = { ...element, currentTime: 0, paused: false }; break
+      case 'pause': this.element = { ...element, paused: true }; break
+      case 'play': this.element = { ...element, paused: false }; break
+    }
+    this.markSeek(op.op, !before.paused)
+    // The op's own read is in the same tick: the page's pause comes after it.
+    const after = { paused: this.element.paused, currentTime: this.element.currentTime }
+    if (this.pausesOnSeek && this.seekMark !== null) this.element = { ...this.element, paused: true }
+    return { before, after }
+  }
+
+  /** The Seek Mark as the page scripts keep it (#505). */
+  private markSeek(op: string, playing: boolean): void {
+    const seek = op === 'forward' || op === 'back' || op === 'restart' || op === 'seek'
+    if (seek && playing) this.seekMark = { ageMs: 0 }
+    else if (seek || op === 'pause' || op === 'play') this.seekMark = null
+  }
+
+  /** The element is in its song's last second, the end rule's. */
+  private atEnd(): boolean {
+    return this.element.duration !== null && this.element.currentTime >= this.element.duration - 1
+  }
+
+  /** The Seek Mark read by the watch script (#505): a seek that left its element paused, read within the settle. */
+  private takeSeeked(): number | null {
+    const mark = this.seekMark
+    if (mark === null) return null
+    const seeked = this.element.paused && !this.atEnd() && mark.ageMs <= SEEK_SETTLE_MS ? mark.ageMs : null
+    if (this.element.paused || mark.ageMs > SEEK_SETTLE_MS) this.seekMark = null
+    return seeked
+  }
+
   private control(op: ElementOp): ElementState {
     this.controls.push(op)
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false, ducked: false }
     let changed = true
+    this.markSeek(op.op, !this.element.paused)
     if ((op.op === 'volume' || op.op === 'nudge' || op.op === 'level') && op.duck !== undefined) this.duckMark ??= { restore: Math.max(0, Math.min(100, op.duck.restore)), share: op.duck.share }
     const element = this.element
     switch (op.op) {
@@ -371,6 +423,7 @@ export class ScriptedYouTube {
         break
     }
     const { paused, loop, muted } = this.element
+    if (this.pausesOnSeek && op.op === 'seek' && this.seekMark !== null) this.element = { ...this.element, paused: true }
     return { found: true, changed, title: watch.title, paused, loop, volume: this.heard(), muted, ducked: this.duckMark !== null }
   }
 
