@@ -7,5 +7,7 @@
   "happened": "overlap:gate calibration of 7-what-are-you-doing (line 1 alone) on baseten-mammoth-27b-latest at 919f058f: the Player said Playing while YouTube stayed unstarted — the status read 'Playing let down by radiohead' and the Command ended done, but the watch page's video sat paused at 0.6 s. 7 of Mammoth's 12 'play …' calibrations ended this way on a fresh profile under Xvfb; the gate pressed play on 11 (Mammoth) and 18 (Elephant) starts",
   "meant": "Let Down by Radiohead plays, or the app says it could not start it",
   "log": "decision-1793136975602-1.jsonl",
-  "claimedBy": "#492"
+  "claimedBy": "#492",
+  "fixedBy": "4af8cd45",
+  "case": "7-what-are-you-doing"
 }
