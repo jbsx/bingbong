@@ -6,5 +6,7 @@
   "stage": "runner",
   "happened": "overlap:gate 2-correct-the-other-one at p3 (media-not-started 72%) on baseten-mammoth-27b-latest at 6588a8b1 (run of record 2026-10-28 afternoon, kept at logs/overlap/record-6588a8b1): no, the other one read correct (step 1, #498), the first pick 8AHCfZTRGiI never started, Christina Aguilera - Hurt (wwCykGDEp7M) played and the app said Playing “Christina Aguilera - Hurt (Official Video)” instead.; the judge read that sentence as not meaning another song called Hurt than the one picked first. Likely a judge false red: the sentence says instead but never names the pick it replaced",
   "meant": "the correction plays another song called Hurt and says so in words a listener (and the judge) reads as another one than the first pick",
-  "log": "decision-1793201999568-1.jsonl"
+  "log": "decision-1793201999568-1.jsonl",
+  "fixedBy": "77116bc5",
+  "case": "2-correct-the-other-one"
 }

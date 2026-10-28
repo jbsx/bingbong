@@ -10,6 +10,6 @@
     "view": { "has": ["Hurt"] },
     "said": [{ "startsWith": "Playing", "endsWith": "instead.", "notFirstMedia": true }]
   },
-  "evidence": ["none yet"],
-  "state": {"is": "red", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "evidence": ["turn-mvsa6422-2"],
+  "state": {"is": "green", "on": "77116bc5", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }
