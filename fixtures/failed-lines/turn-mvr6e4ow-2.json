@@ -7,5 +7,5 @@
   "happened": "overlap:gate 1-replace-new-goal at p1 (media-not-started 10%) on baseten-mammoth-27b-latest at 919f058f: `open the weather` given while `play radiohead` was opening the song: the play ended cancelled and nothing was said about it; only the London weather was said (Elephant: the song kept playing at 2 of 3 points)",
   "meant": "The first goal stops and the app says so, then the weather is done",
   "log": "decision-1793135186240-1.jsonl",
-  "claimedBy": "#489"
+  "case": "1-replace-new-goal"
 }
