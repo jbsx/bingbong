@@ -89,32 +89,69 @@ export function soundLetters(text: string): string {
 }
 
 /**
+ * The fewest letter edits that make each head of the heard sound, `heard[0, i)`,
+ * some run of the text's (a semi-global alignment, the run free to start and
+ * end anywhere): `[i]` for every i.
+ */
+function stretchEdits(heard: string, spoken: string): number[] {
+  const out = [0]
+  let row = new Array<number>(spoken.length + 1).fill(0)
+  for (let i = 1; i <= heard.length; i++) {
+    const next = new Array<number>(spoken.length + 1)
+    next[0] = i
+    for (let j = 1; j <= spoken.length; j++) next[j] = Math.min(row[j - 1]! + (heard[i - 1] === spoken[j - 1] ? 0 : 1), row[j]! + 1, next[j - 1]! + 1)
+    row = next
+    out.push(row.reduce((least, edits) => Math.min(least, edits), i))
+  }
+  return out
+}
+
+/** The fewest letter edits that make each tail of the heard sound, `heard[n - t, n)`, a head of the text's: `[t]` for every t. */
+function headEdits(heard: string, spoken: string): number[] {
+  const out = [0]
+  // Read backwards, a head of the text is a run that ends at the text's start: free to begin, fixed to end.
+  let row = new Array<number>(spoken.length + 1).fill(0)
+  for (let t = 1; t <= heard.length; t++) {
+    const letter = heard[heard.length - t]
+    const next = new Array<number>(spoken.length + 1)
+    next[spoken.length] = t
+    for (let j = spoken.length - 1; j >= 0; j--) next[j] = Math.min(row[j + 1]! + (letter === spoken[j] ? 0 : 1), row[j]! + 1, next[j + 1]! + 1)
+    row = next
+    out.push(row[0]!)
+  }
+  return out
+}
+
+/**
  * The share of the transcript the app's text holds in one stretch: one less
  * the fewest letter edits that make the transcript's sound some run of the
  * text's (a semi-global alignment, the run free to start and end anywhere).
  * Kept in one stretch, a short line of the person's cannot borrow its
  * letters from all over a long read; by letters, "T V" is "TV" and "radio
  * hit" is a near "Radiohead".
+ *
+ * Given the sentences in the order said, a stretch may also run from
+ * anywhere in one into the head of the next (#490): a sentence stopped
+ * mid-way is followed at once by the next ("Stopped."), and a capture over
+ * the cut holds the end of what was heard of the one and the start of the
+ * other — "Light on the river stopped." over a read's "Moonlight on the
+ * River" (row 10 at 86d0fbd5, 0.73 as one stretch).
  */
-export function ownShare(transcript: string, said: string): number {
+export function ownShare(transcript: string, said: string | readonly string[]): number {
   const heard = soundLetters(transcript)
-  const spoken = soundLetters(said)
-  if (heard.length === 0 || spoken.length === 0) return 0
-  // row[j]: the fewest edits aligning the transcript so far to a run of the text ending at j.
-  let row = new Array<number>(spoken.length + 1).fill(0)
-  for (let i = 1; i <= heard.length; i++) {
-    const next = new Array<number>(spoken.length + 1)
-    next[0] = i
-    for (let j = 1; j <= spoken.length; j++) {
-      next[j] = Math.min(row[j - 1]! + (heard[i - 1] === spoken[j - 1] ? 0 : 1), row[j]! + 1, next[j - 1]! + 1)
-    }
-    row = next
+  const texts = (typeof said === 'string' ? [said] : said).map(soundLetters).filter((text) => text.length > 0)
+  if (heard.length === 0 || texts.length === 0) return 0
+  let fewest = heard.length
+  const stretches = texts.map((text) => stretchEdits(heard, text))
+  for (const edits of stretches) fewest = Math.min(fewest, edits[heard.length]!)
+  for (let k = 0; k + 1 < texts.length; k++) {
+    const heads = headEdits(heard, texts[k + 1]!)
+    for (let i = 0; i <= heard.length; i++) fewest = Math.min(fewest, stretches[k]![i]! + heads[heard.length - i]!)
   }
-  const fewest = row.reduce((least, edits) => Math.min(least, edits), heard.length)
   return Math.max(0, 1 - fewest / heard.length)
 }
 
 /** Whether a transcript taken while the app spoke is the app's own voice: it sounds like a stretch of what is being said. */
-export function isOwnVoice(transcript: string, said: string): boolean {
+export function isOwnVoice(transcript: string, said: string | readonly string[]): boolean {
   return soundLetters(transcript).length >= OWN_VOICE_LETTERS && ownShare(transcript, said) >= OWN_VOICE_SHARE
 }

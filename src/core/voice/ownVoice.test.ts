@@ -41,4 +41,14 @@ describe('the app’s own voice in the mic (#490)', () => {
     expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'off' })).toBe('off')
     expect(resolveOverSpeech({ BINGBONG_OVER_SPEECH: 'loud' })).toBe('duck')
   })
+
+  it('a stretch may run from anywhere in one sentence into the head of the next: a stopped read, then "Stopped." (#490)', () => {
+    const read = 'Mac DeMarco 4.3m. Moonlight on the River, Mac DeMarco, 4.3m views. Listening to RADIOHEAD For the First Time'
+    expect(ownShare('Light on the river stopped.', read)).toBeLessThan(0.75)
+    expect(isOwnVoice('Light on the river stopped.', [read, 'Stopped.'])).toBe(true)
+    // Never into the middle of the next, nor from the second back into the first.
+    expect(ownShare('stopped light on the river', [read, 'Stopped.'])).toBeLessThan(0.75)
+    expect(isOwnVoice('click on the first video', [read, 'Stopped.'])).toBe(false)
+  })
+
 })

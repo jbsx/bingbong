@@ -720,7 +720,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
     if (heardOver !== null) {
-      const said = [...heardOver.said].join(' ')
+      const said = [...heardOver.said]
       const own = text !== '' && isOwnVoice(text, said)
       if (tracer && turnId !== null) {
         try {
