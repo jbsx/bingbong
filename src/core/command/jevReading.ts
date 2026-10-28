@@ -1,4 +1,4 @@
-import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion, type DecisionQuestions } from '../ports/decisionModel'
 import { fileFieldClause, type MediaFacts, type PageLink, type PageMedia, type RegionFacts } from '../browser/snapshot'
 import type { DialogText, TextBelow } from '../browser/pageText'
 import { isRealPage } from '../browser/lastPage'
@@ -890,7 +890,12 @@ function hostNamed(value: string): string | null {
 
 /** The addresses a card shows cut (#495): how many of the page's own, its refs' and its links', and the characters cut from them; null when none is past the bound. */
 function addressCut(page: CommandPage, links: readonly { readonly href: string }[]): CardCut | null {
-  const cut = [page.url, ...page.refs.flatMap((ref) => (ref.href === null ? [] : [ref.href])), ...links.map((link) => link.href)].filter((href) => href.length > ADDRESS_BOUND)
+  return addressesCut([page.url, ...page.refs.flatMap((ref) => (ref.href === null ? [] : [ref.href])), ...links.map((link) => link.href)])
+}
+
+/** The addresses an ask shows cut (#495, #501): how many of these are past the bound, and the characters `shownAddress` cut from them; null when none is. */
+export function addressesCut(hrefs: readonly string[]): CardCut | null {
+  const cut = hrefs.filter((href) => href.length > ADDRESS_BOUND)
   return cut.length === 0 ? null : { kind: 'address', count: cut.length, chars: cut.reduce((chars, href) => chars + href.length - shownAddress(href).length, 0) }
 }
 
@@ -1749,6 +1754,18 @@ export function fitCard<Q extends CommandQuestions>(
   const floor = most(yielding.length - 1, (kept) => ({ shown: keeping(kept), card: ask(keeping(kept), 0) }), (each) => fitsRest(each.card))
   const refCut: CardCut[] = yielding.length > floor.kept ? [{ kind: 'ref', count: yielding.length - floor.kept }] : []
   return finish(floor.best.shown, floor.best.card, [...furtherCut, ...refCut])
+}
+
+/**
+ * An ask with nothing on it to yield (#501) — no refs, nothing further
+ * down: the Site Question's, the Appliance Card's, a settings ask's last
+ * shape — built to the Card Budget as it stands, its addresses already
+ * shown cut: the cuts it was made with, and over when it is still past the
+ * budget, which is never sent.
+ */
+export function fitWhole<Q extends DecisionQuestions>(budget: number | undefined, ask: { readonly questions: Q; readonly state: string }, cuts: readonly CardCut[] = []): FittedCard<Q> {
+  const card = { questions: ask.questions, state: ask.state, cuts }
+  return budget === undefined || promptChars(ask.state, ask.questions) <= budget ? card : { ...card, over: true }
 }
 
 /** How many of the pop-up's own texts the dismiss Choice offers. */

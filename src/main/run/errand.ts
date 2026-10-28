@@ -4,9 +4,11 @@ import type { AppState } from '../../core/command/appOp'
 import { confirmLine, confirmOf, isYes, type Typed } from '../../core/errand/confirmClass'
 import { errandClock, type ErrandClock } from '../../core/errand/errandClock'
 import { askedStep, capLine, confirmStep, errandMemory, faultLine, plannerMemoryOf, unansweredLine, unavailableLine, withCapture, withCard, withStep, type ErrandMemory, type ErrandStep, type TaskHandOff } from '../../core/errand/errandMemory'
-import { errandVerbs, resolveAction, type ErrandCard } from '../../core/errand/plannerCommand'
+import { errandVerbs, refitErrandCard, resolveAction, type ErrandCard } from '../../core/errand/plannerCommand'
+import { cardChars, sizeRefusalOf, tighterBudget } from '../../core/decision/cardBudget'
+import { plannerMessages } from '../../core/planner/plannerAsk'
 import { plannerStepSpan, type ErrandOutcome, type PlannerStepDetail } from '../../core/planner/plannerSpan'
-import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
+import type { PlannerCapture, PlannerModel, PlannerRequest, PlannerResult } from '../../core/ports/plannerModel'
 import { reportFault } from '../../core/trace/fault'
 
 // The Errand loop (#467, ADR 0095): one spoken outcome carried across as
@@ -151,20 +153,38 @@ export async function runErrand(deps: ErrandDeps, start: ErrandStart): Promise<E
       const began = clock.elapsed()
       deps.planning(turnId, step)
       openTurn = turnId
-      const card = await deps.card(start.goalLine, step, visited)
+      let card = await deps.card(start.goalLine, step, visited)
       if (deps.superseded()) return end('superseded')
       if (visited.at(-1) !== card.page.url && card.page.url !== '') visited.push(card.page.url)
-      memory = withCard(memory, card.text)
       // The call's own cap, or what is left of the Errand's: whichever comes first is the call's end.
       const budget = AbortSignal.timeout(Math.max(1, clock.callBudget()))
-      const result = await planner.plan({
-        goalLine: start.goalLine,
-        memory: plannerMemoryOf(memory),
-        page: { url: card.page.url, title: card.page.title },
-        verbs: errandVerbs(card),
-        signal: AbortSignal.any([deps.signal, budget]),
-      })
-      deps.stepSpan(turnId, result.status === 'answered' ? plannerStepSpan(result, result.answer.next) : plannerStepSpan(result, 'unavailable', budget.aborted && result.reason === 'cancelled' ? 'timeout' : result.reason))
+      /** The step asked over a card (#501): never sent over the Card Budget, its cuts on the step's span. */
+      const ask = async (over: ErrandCard, retryOf?: PlannerStepDetail['retryOf']): Promise<{ result: PlannerResult; request: Omit<PlannerRequest, 'signal'> } | null> => {
+        const fit = { ...(over.cuts.length > 0 ? { cuts: over.cuts, ...(over.budget !== undefined ? { budget: over.budget } : {}) } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
+        if (over.over === true) {
+          reportFault('run.errand.unsent', `the step's card is ${over.size} characters after every cut, over the Card Budget's ${over.budget ?? 0}: not sent`)
+          deps.stepSpan(turnId, { durMs: 0, detail: { model: planner.model, thinking: planner.thinking, outcome: 'unavailable', waitedMs: 0, ...fit, unsent: true } })
+          return null
+        }
+        memory = withCard(memory, over.text)
+        const request = { goalLine: start.goalLine, memory: plannerMemoryOf(memory), page: { url: over.page.url, title: over.page.title }, verbs: errandVerbs(over) }
+        const result = await planner.plan({ ...request, signal: AbortSignal.any([deps.signal, budget]) })
+        const span = result.status === 'answered' ? plannerStepSpan(result, result.answer.next) : plannerStepSpan(result, 'unavailable', budget.aborted && result.reason === 'cancelled' ? 'timeout' : result.reason)
+        deps.stepSpan(turnId, { ...span, detail: { ...span.detail, ...fit } })
+        return { result, request }
+      }
+      let asked = await ask(card)
+      if (asked === null) return ending('unavailable', unavailableLine(memory), true)
+      const refusal = asked.result.status === 'unavailable' ? sizeRefusalOf(asked.result.httpStatus, asked.result.message) : null
+      if (refusal !== null && !deps.superseded()) {
+        // A host that refused the step for its size is asked once more (#495, #501), on the card cut by what the whole ask must lose at its own count; never a third time.
+        const { system, user } = plannerMessages(asked.request)
+        const whole = cardChars(system) + cardChars(user)
+        card = refitErrandCard(card, start.goalLine, Math.max(0, card.size - (whole - tighterBudget(whole, refusal))))
+        asked = await ask(card, { id: turnId, ...refusal })
+        if (asked === null) return ending('unavailable', unavailableLine(memory), true)
+      }
+      const { result } = asked
       if (deps.superseded()) return end('superseded')
       if (result.status === 'unavailable') {
         if (clock.spent()) return ending('cap', capLine(memory), true)

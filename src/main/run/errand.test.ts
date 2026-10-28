@@ -4,6 +4,8 @@ import type { ErrandRecord } from '../../core/command/decisionRecord'
 import { ERRAND_CAP_MS } from '../../core/errand/errandClock'
 import { errandCard } from '../../core/errand/plannerCommand'
 import type { PlannerAnswer, PlannerModel, PlannerRequest, PlannerResult } from '../../core/ports/plannerModel'
+import type { PlannerStepDetail } from '../../core/planner/plannerSpan'
+import { setFaultSink } from '../../core/trace/fault'
 import { runErrand, type ErrandDeps } from './errand'
 
 const GOAL = 'Comment "this is great" on this video.'
@@ -23,7 +25,7 @@ const typeComment = act({ next: 'act', action: { kind: 'type', ref: 1, text: 'th
 const clickComment = act({ next: 'act', action: { kind: 'click', ref: 2 }, class: 'stays', why: 'post the comment' })
 
 /** A world the loop runs in: a scripted Planner, a fake executor, the person's scripted replies, a clock moved by each call. */
-function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malformed')[], options: { replies?: (string | null)[]; callMs?: number } = {}) {
+function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malformed' | 'too-big')[], options: { replies?: (string | null)[]; callMs?: number; card?: ErrandDeps['card'] } = {}) {
   let now = 0
   const asked: PlannerRequest[] = []
   const fired: { command: Command; why: string }[] = []
@@ -34,6 +36,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
   const told: { words: string; action: string }[] = []
   const records: ErrandRecord[] = []
   const spans: Record<string, unknown>[] = []
+  const stepSpans: PlannerStepDetail[] = []
   const replies = [...(options.replies ?? [])]
   const controller = new AbortController()
   let call = 0
@@ -45,6 +48,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
       const next = answers[call++] ?? { next: 'done', sentence: 'out of script' }
       now += options.callMs ?? 1_000
       if (next === 'unavailable') return { ...facts, status: 'unavailable', reason: 'http', httpStatus: 429, message: 'rate limited' }
+      if (next === 'too-big') return { ...facts, status: 'unavailable', reason: 'http', httpStatus: 422, message: 'prompt has 21990 tokens, exceeding max_len 16384' }
       if (next === 'malformed') return { ...facts, status: 'unavailable', reason: 'malformed', message: 'click needs a ref number' }
       if (next === 'hang') {
         now += ERRAND_CAP_MS
@@ -60,7 +64,7 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
     mintTurnId: () => `turn-${call}`,
     superseded: () => controller.signal.aborted,
     signal: controller.signal,
-    card: async () => errandCard(GOAL, page, { hop: 1, visited: [], actions: [], links: [] }),
+    card: options.card ?? (async () => errandCard(GOAL, page, { hop: 1, visited: [], actions: [], links: [] })),
     planning: () => {},
     act: async (_turnId, why, command) => {
       fired.push({ command, why })
@@ -77,12 +81,53 @@ function world(answers: readonly (PlannerAnswer | 'unavailable' | 'hang' | 'malf
       return replies.shift() ?? null
     },
     say: (text, failure) => said.push({ text, failure }),
-    stepSpan: () => {},
+    stepSpan: (_turnId, span) => stepSpans.push(span.detail),
     span: (_ms, detail) => spans.push(detail),
     log: (record) => records.push(record),
   }
-  return { deps, asked, fired, said, spoken, dropped, settled, told, records, spans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
+  return { deps, asked, fired, said, spoken, dropped, settled, told, records, spans, stepSpans, controller, start: { id: 'cli-1-x', goalLine: GOAL, source: 'typed' as const } }
 }
+
+describe('runErrand (#501): every step is asked built to the Card Budget', () => {
+  const redirect = `https://search.example/y.js?ad_domain=hotels.example&click_metadata=${'Zq9'.repeat(500)}`
+  const ads: CommandPage = { ...page, refs: [...page.refs, ...Array.from({ length: 120 }, (_, index) => ({ ref: 10 + index, kind: 'link' as const, label: `Hotel deal ${index + 1}`, href: `${redirect}${index}`, inputType: null }))] }
+  const roomy = async () => errandCard(GOAL, ads, { hop: 1, visited: [], actions: [], links: [] }, { budgetChars: 40_000 })
+
+  it("names the card's cuts on the step's span", async () => {
+    const w = world([{ next: 'done', sentence: 'Nothing to do.' }], { card: roomy })
+    await runErrand(w.deps, w.start)
+    expect(w.stepSpans).toEqual([expect.objectContaining({ outcome: 'done', cuts: [{ kind: 'address', count: 120, chars: expect.any(Number) }], budget: 40_000 })])
+  })
+
+  it('never sends a card over the budget after every cut: the Errand ends unavailable, said, the span unsent', async () => {
+    setFaultSink(() => {})
+    try {
+      const w = world([{ next: 'done', sentence: 'never asked' }], { card: async () => errandCard(GOAL, ads, { hop: 1, visited: [], actions: [], links: [] }, { budgetChars: 600 }) })
+      expect(await runErrand(w.deps, w.start)).toBe('unavailable')
+      expect(w.asked).toEqual([])
+      expect(w.stepSpans).toEqual([expect.objectContaining({ outcome: 'unavailable', unsent: true, budget: 600 })])
+      expect(w.said).toHaveLength(1)
+      expect(w.said[0]!.failure).toBe(true)
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('a step its host refused for its size is asked once more on a tighter card, the retry named on its span', async () => {
+    const w = world(['too-big', { next: 'done', sentence: 'Done on the smaller card.' }], { card: roomy })
+    expect(await runErrand(w.deps, w.start)).toBe('done')
+    expect(w.asked).toHaveLength(2)
+    expect(w.asked[1]!.memory.card!.length).toBeLessThan(w.asked[0]!.memory.card!.length)
+    expect(w.stepSpans).toEqual([expect.objectContaining({ outcome: 'unavailable', httpStatus: 422 }), expect.objectContaining({ outcome: 'done', retryOf: { id: 'turn-0', tokens: 21990, maxLen: 16384 } })])
+    expect(w.stepSpans[1]!.cuts).toContainEqual({ kind: 'ref', count: expect.any(Number) })
+  })
+
+  it('never a third time: a retry refused too ends the Errand unavailable', async () => {
+    const w = world(['too-big', 'too-big', { next: 'done', sentence: 'never asked' }], { card: roomy })
+    expect(await runErrand(w.deps, w.start)).toBe('unavailable')
+    expect(w.asked).toHaveLength(2)
+  })
+})
 
 describe('runErrand (#467): the Errand loop', () => {
   it('a two-step goal whose send is said back and refused: nothing leaves, and the Planner ends it in its own sentence', async () => {

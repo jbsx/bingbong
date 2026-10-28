@@ -2,7 +2,7 @@ import type { BrowserController, FileChooser, PageLanding, VisualGroundingContro
 import type { ShelfFile } from '../../core/shelf/shelf'
 import type { KeepCapture } from '../shelf/keepCapture'
 import { captureFileName } from '../../core/command/captureOp'
-import { fitShelfAsk, readShelfAnswer } from '../../core/command/shelfAsk'
+import { fitShelfAsk, readShelfAnswer, SHELF_MAX_FILES, type ShelfAsk, type ShelfQuestions } from '../../core/command/shelfAsk'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import { askImageFile, type AskKind, type AskRecord } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
@@ -24,6 +24,10 @@ import { hostOf } from '../../core/pipeline/stageWords'
 import {
   commandQuestions,
   fitCard,
+  fitWhole,
+  addressesCut,
+  shownAddress,
+  type FittedCard,
   whereQuestions,
   markQuestions,
   textlessRefsOf,
@@ -875,14 +879,46 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /**
    * An ask built to the model's Card Budget (#406, ADR 0088, #495) and
-   * asked: what is further down yields until it fits, then the refs from
-   * the page's end; the record names each cut. A card over the budget
-   * after every cut is never sent, and reads as unavailable. A host that
-   * refuses the ask for its size is asked once more, on the card built to
-   * the budget its own count gives, the retry named in the record; never a
-   * third time — the line then ends as any unavailable ask does.
+   * asked, whatever its kind (#501): `fit` builds it to a budget, each cut
+   * it made named in the record. A card over the budget after every cut is
+   * never sent, and reads as unavailable. A host that refuses the ask for
+   * its size is asked once more, on the card built to the budget its own
+   * count gives, the retry named in the record; never a third time — the
+   * line then ends as any unavailable ask does.
    */
-  async function askBudgeted<Q extends CommandQuestions>(
+  async function askFitted<F extends FittedCard<DecisionQuestions>, Q extends DecisionQuestions = F['questions']>(
+    model: DecisionModel,
+    kind: AskKind,
+    turnId: string,
+    fit: (budget: number) => F,
+    options: { readonly ownId?: string; readonly images?: Readonly<Record<string, Uint8Array>> } = {},
+  ): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string; readonly fitted: F }> {
+    const ask = async (budget: number, retryOf?: AskRecord['retryOf']): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string; readonly fitted: F; readonly size: number }> => {
+      const fitted = fit(budget)
+      const askId = retryOf !== undefined ? `${retryOf.id}-retry` : (options.ownId ?? turnId)
+      const record = { ...(fitted.cuts.length > 0 ? { cuts: fitted.cuts, budget } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
+      const size = promptChars(fitted.state, fitted.questions)
+      if (fitted.over === true) {
+        const message = `the card is ${size} characters after every cut, over the Card Budget's ${budget}: not sent`
+        reportFault('run.commandRunner.jevUnavailable', message, { turnId })
+        try {
+          deps.askLog?.write({ type: 'ask', id: askId, turnId, at: at(), kind, model: model.model, state: fitted.state, questions: fitted.questions, ...record, unsent: true })
+        } catch (error) {
+          reportFault('run.commandRunner.askLog', error, { turnId })
+        }
+        return { status: 'unavailable', reason: 'failed', message, latencyMs: 0, model: model.model, askId, state: fitted.state, fitted, size }
+      }
+      const result = await askJev<Q>(model, kind, turnId, fitted.state, fitted.questions as Q, askId, options.images, record)
+      return { ...result, state: fitted.state, fitted, size }
+    }
+    const first = await ask(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS))
+    const refusal = first.status === 'unavailable' ? sizeRefusalOf(first.httpStatus, first.message) : null
+    if (refusal === null) return first
+    return ask(tighterBudget(first.size, refusal), { id: first.askId, ...refusal })
+  }
+
+  /** A page card's ask built to the Card Budget (#406, ADR 0088, #495): what is further down yields until it fits, then the refs from the page's end. */
+  function askBudgeted<Q extends CommandQuestions>(
     model: DecisionModel,
     kind: AskKind,
     turnId: string,
@@ -891,28 +927,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     stateOf: (page: CommandPage, questions: Q) => string,
     options: { readonly ownId?: string; readonly images?: Readonly<Record<string, Uint8Array>>; readonly links?: readonly { readonly href: string }[] } = {},
   ): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string }> {
-    const ask = async (budget: number, retryOf?: AskRecord['retryOf']): Promise<DecisionResult<Q> & { readonly askId: string; readonly state: string; readonly size: number }> => {
-      const fitted = fitCard(budget, page, build, stateOf, options.links)
-      const askId = retryOf !== undefined ? `${retryOf.id}-retry` : (options.ownId ?? turnId)
-      const fit = { ...(fitted.cuts.length > 0 ? { cuts: fitted.cuts, budget } : {}), ...(retryOf !== undefined ? { retryOf } : {}) }
-      const size = promptChars(fitted.state, fitted.questions)
-      if (fitted.over === true) {
-        const message = `the card is ${size} characters after every cut, over the Card Budget's ${budget}: not sent`
-        reportFault('run.commandRunner.jevUnavailable', message, { turnId })
-        try {
-          deps.askLog?.write({ type: 'ask', id: askId, turnId, at: at(), kind, model: model.model, state: fitted.state, questions: fitted.questions, ...fit, unsent: true })
-        } catch (error) {
-          reportFault('run.commandRunner.askLog', error, { turnId })
-        }
-        return { status: 'unavailable', reason: 'failed', message, latencyMs: 0, model: model.model, askId, state: fitted.state, size }
-      }
-      const result = await askJev(model, kind, turnId, fitted.state, fitted.questions, askId, options.images, fit)
-      return { ...result, state: fitted.state, size }
-    }
-    const first = await ask(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS))
-    const refusal = first.status === 'unavailable' ? sizeRefusalOf(first.httpStatus, first.message) : null
-    if (refusal === null) return first
-    return ask(tighterBudget(first.size, refusal), { id: first.askId, ...refusal })
+    return askFitted(model, kind, turnId, (budget) => fitCard(budget, page, build, stateOf, options.links), options)
   }
 
   /** An ask's images saved beside it (#382), each by the file the sink named; null when none was saved. */
@@ -1457,9 +1472,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const view = await applianceView(turnId, pending, options.running, options.ended, options.joins)
     // The Hearing reads the Page Terms of the page in hand, never waiting for one.
     const heard = hearingOf(text, (await pageInHand(pending)) ?? lastPageInHand() ?? blankPage(browser), spoken)
-    const questions = applianceQuestions(text, view, { steps: options.split, heard })
-    const state = applianceState(text, view, heard, options.step)
-    const result = await askJev(model, 'appliance', turnId, state, questions, `${options.askId ?? turnId}-appliance`)
+    const result = await askFitted(model, 'appliance', turnId, (budget) => fitAppliance(budget, text, view, heard, options), { ownId: `${options.askId ?? turnId}-appliance` })
+    const { state } = result
     if (result.status !== 'answered') return { appliance: { ask: result.askId, jev: jevUnavailableOf(result) }, failed: true }
     const answers = result.answers as unknown as CommandAnswers
     const jev = jevDetailOf(answers, result.latencyMs, result.model, result.inputTokens, result.attempts)
@@ -1473,6 +1487,21 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (read.kind === 'flag') return { reading: { ...own, command: UNREAD, flag: read.hint !== undefined ? { hint: read.hint } : {} } }
     const reading: Reading = { ...own, command: read.command }
     return { reading: isSettingsLine(read.command) ? await readSetting(turnId, text, state, reading, heard) : reading }
+  }
+
+  /**
+   * The Appliance Card built to the Card Budget (#501): nothing on it
+   * yields — no refs, nothing further down — but the addresses it shows,
+   * the page open's and the last page's, are shown cut past the bound as
+   * the page card's are (#495); the card read against is the view itself.
+   */
+  function fitAppliance(budget: number, text: string, view: ApplianceView, heard: readonly NameHearing[], options: ReadOptions): FittedCard<ReturnType<typeof applianceQuestions>> {
+    const lastPage = view.appliance?.lastPage
+    const shown: ApplianceView = { ...view, url: shownAddress(view.url), ...(view.appliance !== undefined && lastPage !== undefined ? { appliance: { ...view.appliance, lastPage: shownAddress(lastPage) } } : {}) }
+    // The questions read the page open's own address (its site, whether it is one); the last page is only a line on it.
+    const questions = applianceQuestions(text, { ...view, ...(shown.appliance !== undefined ? { appliance: shown.appliance } : {}) }, { steps: options.split, heard })
+    const cut = addressesCut([view.url, ...(lastPage !== undefined ? [lastPage] : [])])
+    return fitWhole(budget, { questions, state: applianceState(text, shown, heard, options.step) }, cut !== null ? [cut] : [])
   }
 
   /**
@@ -1508,7 +1537,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * The settings ask (#420): the card's one `settings` line chosen, which
    * setting the words change and to what is asked once more over the same
    * state, the settings' ops on its card — the words alone when the state
-   * would carry that card past the Card Budget. Its reading is the line's;
+   * would carry that card past the Card Budget (#501: that cut named in the
+   * record, a size refusal asked once more). Its reading is the line's;
    * `none`, or no answer, is no Command.
    */
   async function readSetting(turnId: string, text: string, state: string, first: Reading, heard: readonly NameHearing[]): Promise<Reading> {
@@ -1516,8 +1546,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const app = deps.app?.state()
     if (model === null || app === undefined) return { ...first, command: UNREAD }
     const questions = settingQuestions(text, app, heard)
-    const fits = promptChars(state, questions) <= cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS)
-    const result = await askJev(model, 'setting', turnId, fits ? state : commandState(text, { url: '', title: '', refs: [] }), questions, `${first.ask ?? turnId}-setting`)
+    // The page's state yields whole, the words alone asked: the card has no refs of its own to cut.
+    const fit = (budget: number): FittedCard<typeof questions> => {
+      const whole = fitWhole(budget, { questions, state })
+      return whole.over !== true ? whole : fitWhole(budget, { questions, state: commandState(text, { url: '', title: '', refs: [] }) }, [{ kind: 'page', count: 1 }])
+    }
+    const result = await askFitted(model, 'setting', turnId, fit, { ownId: `${first.ask ?? turnId}-setting` })
     if (result.status !== 'answered') return { ...first, command: UNREAD, jev: jevUnavailableOf(result), ask: result.askId }
     // The card's own pick stands as the reading's action: a settings ask that reads none never sends the line to the Where Ask, the app's line having been chosen.
     return { ...first, command: readSettingAnswers(result.answers, text, app), jev: jevDetailOf(result.answers, result.latencyMs, result.model, result.inputTokens, result.attempts), ask: result.askId }
@@ -2256,7 +2290,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /**
    * The Shelf ask (#424, ADR 0092): the action opened the page's file
    * chooser, intercepted, and Jev is asked which file on the Shelf the
-   * words mean — the Shelf cut to the Card Budget, the oldest first. Its
+   * words mean — the Shelf cut to the Card Budget, the oldest first, as
+   * every ask is built (#501). Its
    * pick is set on the field, and nothing is sent; an empty Shelf, no
    * model, no answer or `none` sets nothing.
    */
@@ -2269,8 +2304,17 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (files.length === 0) return { file: null, reason: 'empty', shelf: 0 }
     if (model === null) return { file: null, reason: 'unread', shelf: files.length }
     const state = browser.state()
-    const ask = fitShelfAsk(cardBudgetChars(model.cardBudget ?? DEFAULT_CARD_BUDGET_TOKENS), text, { url: state.url ?? '', title: state.title ?? '' }, chooser, files, at())
-    const result = await askJev(model, 'shelf', turnId, ask.state, ask.questions, `${turnId}-shelf`)
+    const url = state.url ?? ''
+    const now = at()
+    const address = addressesCut([url])
+    // The Shelf yields its oldest files first (ADR 0088); the cut and the address shown cut are named in the record (#501).
+    const fit = (budget: number): FittedCard<ShelfQuestions> & ShelfAsk => {
+      const fitted = fitShelfAsk(budget, text, { url: shownAddress(url), title: state.title ?? '' }, chooser, files, now)
+      const left = Math.min(files.length, SHELF_MAX_FILES) - fitted.files.length
+      return { ...fitWhole(budget, fitted, [...(address !== null ? [address] : []), ...(left > 0 ? [{ kind: 'file' as const, count: left }] : [])]), files: fitted.files }
+    }
+    const result = await askFitted(model, 'shelf', turnId, fit, { ownId: `${turnId}-shelf` })
+    const ask = result.fitted
     if (result.status !== 'answered') return { file: null, reason: 'unread', shelf: ask.files.length, ask: result.askId, jev: jevUnavailableOf(result) }
     const file = readShelfAnswer(result.answers.file, ask.files)
     const asked = { shelf: ask.files.length, ask: result.askId, jev: shelfJevDetailOf(result.answers.file, result.latencyMs, result.model, result.inputTokens, result.attempts) }
@@ -2356,7 +2400,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const exact = exactSiteAnswer(line)
     const model = exact === null ? deps.decisionModel() : null
     const ask = model === null ? null : siteQuestionAsk(question, siteRaisedBy, line)
-    const result = model === null || ask === null ? null : await askJev(model, 'site', turnId, ask.state, ask.questions)
+    // Nothing on it yields (#501): an ask still past the Card Budget is never sent, and the fallback refuses.
+    const result = model === null || ask === null ? null : await askFitted(model, 'site', turnId, (budget) => fitWhole(budget, ask))
     const read = result?.status === 'answered' ? readSiteAnswer(result.answers, DEFAULT_DECISION_THRESHOLDS.choice) : null
     const reply: SiteAnswer = exact ?? read ?? 'refuse'
     const reading: CommandReading = exact !== null ? 'local_match' : read !== null ? 'jev' : 'best_guess'

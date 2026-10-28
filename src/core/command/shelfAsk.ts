@@ -22,7 +22,7 @@ export interface ShelfAsk {
 }
 
 /** A Choice offers at most 255 options; one is `none`. */
-const MAX_FILES = 254
+export const SHELF_MAX_FILES = 254
 
 /** The file field as the state names it: its label, what it accepts and whether it takes several, as its ref line says them. */
 function fieldOf(chooser: FileChooser): string {
@@ -37,7 +37,7 @@ function fieldOf(chooser: FileChooser): string {
  * arms), so the arm cheapest to reverse stands.
  */
 export function shelfAsk(text: string, page: { readonly url: string; readonly title: string }, chooser: FileChooser, shelf: readonly ShelfFile[], nowMs: number): ShelfAsk {
-  const files = shelf.slice(0, MAX_FILES)
+  const files = shelf.slice(0, SHELF_MAX_FILES)
   const state = [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,

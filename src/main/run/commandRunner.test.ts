@@ -102,6 +102,11 @@ function choice(label: string, confidence = 0.9, probabilities: Record<string, n
   return { type: 'choice', choice: label, confidence, probabilities }
 }
 
+/** A results page's ad redirect (#495): a kilobyte of opaque query, the destination host named in it. */
+const KILOBYTE_REDIRECT = `https://search.example/y.js?ad_domain=hotels.example&click_metadata=${'Zq9'.repeat(500)}`
+/** A host's refusal of an ask for its size, in Baseten's words (#495). */
+const SIZE_REFUSAL = { unavailable: 'http' as const, httpStatus: 422, message: 'OneJev prompt has 16500 tokens, exceeding max_len 16384; prompts are never truncated' }
+
 /** A later hop whose Verdict is a sure yes (#369, #370): the Task ends done before any action fires. */
 const SURE_YES: { answers: Record<string, DecisionAnswer> } = { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } }
 
@@ -364,6 +369,44 @@ describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf 
     expect(decisions[0]).toMatchObject({ verb: 'click', target: 4, ended: 'terminal', upload: { file: 'invoice.pdf', shelf: 2, ask: asks[1]!.id } })
   })
 
+  it('builds the Shelf ask to the Card Budget (#501): the page\'s kilobyte address shown cut, the oldest files left off, both cuts named in the record', async () => {
+    const now = 1_700_000_000_000
+    const many = Array.from({ length: 200 }, (_, index) => ({ name: `download-${index + 1}.pdf`, path: `/dl/download-${index + 1}.pdf`, modifiedMs: now - (index + 1) * HOUR, size: 10_000 }))
+    const { browser, decision, asks, runner } = harness({ shelf: { files: async () => many } })
+    uploadPage(browser)
+    browser.snapshot = { ...browser.snapshot, url: KILOBYTE_REDIRECT }
+    decision.cardBudget = 1500
+    decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, { answers: { file: choice('file-1') } })
+    await runner.run('upload the newest download', { source: 'spoken' })
+    const shelf = asks.find((ask) => ask.kind === 'shelf')!
+    expect(shelf.cuts).toEqual([{ kind: 'address', count: 1, chars: expect.any(Number) }, { kind: 'file', count: expect.any(Number) }])
+    expect(shelf.state).toContain('Page: https://search.example/y.js?ad_domain=hotels.example…')
+    expect(promptChars(shelf.state, shelf.questions)).toBeLessThanOrEqual(cardBudgetChars(1500))
+    // The newest kept, each file's line whole.
+    expect((shelf.questions.file as DecisionChoiceQuestion).options['file-1']).toContain('"download-1.pdf"')
+    expect(browser.attached).toEqual([{ chooser: FIELD, paths: ['/dl/download-1.pdf'] }])
+  })
+
+  it('a size refusal of the Shelf ask is retried once on fewer files, never a third time (#501)', async () => {
+    setFaultSink(() => {})
+    try {
+      const now = 1_700_000_000_000
+      const many = Array.from({ length: 200 }, (_, index) => ({ name: `download-${index + 1}.pdf`, path: `/dl/download-${index + 1}.pdf`, modifiedMs: now - (index + 1) * HOUR, size: 10_000 }))
+      const { browser, decision, asks, runner } = harness({ shelf: { files: async () => many } })
+      uploadPage(browser)
+      decision.script.push({ answers: { action: choice('click-4'), slot: choice('none') } }, SIZE_REFUSAL, SIZE_REFUSAL)
+      await runner.run('upload the newest download', { source: 'spoken' })
+      const shelf = asks.filter((ask) => ask.kind === 'shelf')
+      expect(shelf.map((ask) => ask.id)).toEqual([shelf[0]!.id, `${shelf[0]!.id}-retry`])
+      expect(shelf[1]).toMatchObject({ retryOf: { id: shelf[0]!.id, tokens: 16500, maxLen: 16384 }, cuts: [{ kind: 'file', count: expect.any(Number) }] })
+      expect(Object.keys((shelf[1]!.questions.file as DecisionChoiceQuestion).options).length).toBeLessThan(Object.keys((shelf[0]!.questions.file as DecisionChoiceQuestion).options).length)
+      expect(decision.requests).toHaveLength(3)
+      expect(browser.attached).toEqual([])
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
   it('an empty Shelf sets nothing, asks nothing more, and says so', async () => {
     const { browser, decision, events, records, runner } = harness({ shelf: { files: async () => [] } })
     uploadPage(browser)
@@ -607,6 +650,42 @@ describe('the app itself on the card (#420, ADR 0091)', () => {
     expect(changes).toEqual([])
   })
 
+  it('builds the settings ask to the Card Budget (#501): the page state yields whole, the words alone asked, the cut named in the record', async () => {
+    const { app, changes } = fakeApp()
+    const { browser, decision, asks, runner } = harness({ app })
+    // The settings' own ops weigh about 6.1k characters: a budget that holds them, not with the page's state beside them.
+    decision.cardBudget = 2700
+    browser.snapshot = { ...browser.snapshot, refs: [...PAGE_REFS, ...Array.from({ length: 80 }, (_, index) => ref(10 + index, 'link', `Hotel deal ${index + 1}`, { href: `${KILOBYTE_REDIRECT}${index}` }))] }
+    decision.script.push({ answers: { action: choice('settings'), slot: choice('none') } }, { answers: { action: choice('set_adblock_enabled_off'), slot: choice('none'), amount: choice('to') } })
+    await runner.run('turn off the adblocker', { source: 'typed' })
+    const setting = asks.find((ask) => ask.kind === 'setting')!
+    expect(setting.cuts).toEqual([{ kind: 'page', count: 1 }])
+    expect(setting.budget).toBe(cardBudgetChars(2700))
+    expect(setting.state).not.toContain('Hotel deal')
+    expect(promptChars(setting.state, setting.questions)).toBeLessThanOrEqual(cardBudgetChars(2700))
+    expect(cardOf(decision.requests[1]!).options.set_adblock_enabled_off).toContain('ad blocking, now on — turn it off')
+    expect(changes).toEqual([{ kind: 'settings', settings: { ...defaultSettings(), adblockEnabled: false } }])
+  })
+
+  it('a size refusal of the settings ask is retried once at the tighter budget, the page state left off, never a third time (#501)', async () => {
+    setFaultSink(() => {})
+    try {
+      const { app, changes } = fakeApp()
+      const { decision, asks, records, runner } = harness({ app })
+      decision.script.push({ answers: { action: choice('settings'), slot: choice('none') } }, SIZE_REFUSAL, { answers: { action: choice('set_adblock_enabled_off'), slot: choice('none'), amount: choice('to') } })
+      await runner.run('turn off the adblocker', { source: 'typed' })
+      const setting = asks.filter((ask) => ask.kind === 'setting')
+      expect(setting.map((ask) => ask.id)).toEqual([setting[0]!.id, `${setting[0]!.id}-retry`])
+      // The tighter budget leaves the page's state off; the settings' ops alone are still past it, so the retry is never sent.
+      expect(setting[1]).toMatchObject({ retryOf: { id: setting[0]!.id, tokens: 16500, maxLen: 16384 }, cuts: [{ kind: 'page', count: 1 }], unsent: true })
+      expect(decision.requests).toHaveLength(2)
+      expect(changes).toEqual([])
+      expect(records.find((record) => record.type === 'decision')).toMatchObject({ verb: 'none' })
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
   it('offers no app op on the Where Ask', async () => {
     const { app } = fakeApp()
     const { decision, runner } = harness({ app })
@@ -686,6 +765,49 @@ describe('a Site Question (#423)', () => {
     expect(decision.requests[0]!.state).toContain('"Delete this video?"')
     expect(asks.at(-1)).toMatchObject({ kind: 'site' })
     expect(siteAnswers(records)[0]).toMatchObject({ answer: 'accept', reading: 'jev', jevAsked: true, ask: asks.at(-1)!.id })
+  })
+
+  it('builds its ask to the Card Budget (#501): a question past it is never sent, and the fallback refuses it aloud', async () => {
+    setFaultSink(() => {})
+    try {
+      const speech = new FakeSpeech()
+      const siteQuestions = createSiteQuestionDesk()
+      const { browser, asks, decision, runner } = harness({ siteQuestions, speech })
+      decision.cardBudget = 1000
+      const answered = confirmOnClick(browser, siteQuestions, `Leave this page? ${'Your changes will be lost. '.repeat(200)}`)
+      const { done: task } = await raise(runner, siteQuestions)
+      const before = decision.requests.length
+      await runner.run('yeah go ahead')
+      await task
+      expect(decision.requests).toHaveLength(before)
+      expect(asks.at(-1)).toMatchObject({ kind: 'site', unsent: true })
+      expect(answered).toEqual([false])
+      expect(speech.spoken.map((line) => line.text)).toContain("Refused the page's question.")
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('a size refusal of its ask is retried once at the tighter budget, never a third time (#501)', async () => {
+    setFaultSink(() => {})
+    try {
+      const siteQuestions = createSiteQuestionDesk()
+      const { browser, asks, decision, runner } = harness({ siteQuestions })
+      const answered = confirmOnClick(browser, siteQuestions)
+      const { done: task } = await raise(runner, siteQuestions)
+      const before = decision.requests.length
+      decision.script.push(SIZE_REFUSAL, { answers: { answer: choice('accept', 0.92) } })
+      await runner.run('yeah go ahead')
+      await task
+      // The Site Question's ask has nothing to yield: the retry is built, over its tighter budget, and never sent.
+      expect(decision.requests).toHaveLength(before + 1)
+      const site = asks.filter((ask) => ask.kind === 'site')
+      expect(site.map((ask) => ask.id)).toEqual([site[0]!.id, `${site[0]!.id}-retry`])
+      expect(site[1]).toMatchObject({ retryOf: { id: site[0]!.id, tokens: 16500, maxLen: 16384 }, unsent: true })
+      expect(answered).toEqual([false])
+    } finally {
+      setFaultSink(null)
+    }
   })
 
   it.each([
@@ -5511,6 +5633,39 @@ describe('the Appliance Card (#485)', () => {
     expect(asks[0]!.state).toContain('Playing: "Tum Se" playing 0:16/3:20 volume 50%')
     expect(asks[0]!.state).not.toContain('Refs')
     expect(records.find((record) => record.type === 'decision')).toMatchObject({ verb: 'media', reading: 'jev', card: 'appliance', ask: `${asks[0]!.turnId}-appliance`, ended: 'terminal' })
+  })
+
+  it('builds its card to the Card Budget (#501): a kilobyte address shown cut, the cut named in the record, the labels and numbers whole', async () => {
+    const { browser, decision, asks, runner } = harness({ applianceCard: CARD })
+    browser.snapshot = { ...browser.snapshot, url: KILOBYTE_REDIRECT }
+    playing(browser)
+    decision.script.push({ answers: { action: choice('media-volume'), slot: choice('none'), amount: choice('down-step') } })
+    await runner.run('lower the volume', { source: 'spoken' })
+    const ask = asks[0]!
+    expect(ask).toMatchObject({ kind: 'appliance', cuts: [{ kind: 'address', count: 1, chars: expect.any(Number) }], budget: cardBudgetChars(16_384) })
+    expect(ask.cuts![0]!.chars).toBeGreaterThan(1400)
+    expect(ask.state).toContain('Page open: https://search.example/y.js?ad_domain=hotels.example… — "Example"')
+    expect(ask.state).not.toContain('click_metadata')
+    expect(ask.state).toContain('Playing: "Tum Se" playing 0:16/3:20 volume 50%')
+    expect(promptChars(ask.state, ask.questions)).toBeLessThanOrEqual(cardBudgetChars(16_384))
+    expect(browser.applianceMediaOps).toEqual([{ op: 'volume', to: 40 }])
+  })
+
+  it('a size refusal of the Appliance Card is retried once at the tighter budget, never a third time (#501): with nothing to yield it is not sent, and the line goes on', async () => {
+    setFaultSink(() => {})
+    try {
+      const { decision, asks, runner } = harness({ applianceCard: CARD })
+      decision.script.push(SIZE_REFUSAL, { answers: { action: choice('click-2'), slot: choice('none') } }, SURE_YES)
+      await runner.run('sign in')
+      const own = asks.filter((ask) => ask.kind === 'appliance')
+      expect(own.map((ask) => ask.id)).toEqual([own[0]!.id, `${own[0]!.id}-retry`])
+      expect(own[1]).toMatchObject({ retryOf: { id: own[0]!.id, tokens: 16500, maxLen: 16384 }, unsent: true })
+      // One Appliance Card sent: the retry over its tighter budget is never sent; the page card reads the line.
+      expect(decision.requests.filter((request) => 'page' in cardOf(request).options)).toHaveLength(1)
+      expect(asks.map((ask) => ask.kind)).toEqual(['appliance', 'appliance', 'command', 'hop'])
+    } finally {
+      setFaultSink(null)
+    }
   })
 
   it("`page` goes on to today's page card, unchanged, and the record names the Appliance ask that sent it", async () => {

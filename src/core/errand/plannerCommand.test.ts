@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandPage } from '../command/command'
 import type { PlannerAction } from '../ports/plannerModel'
-import { errandCard, errandVerbs, resolveAction } from './plannerCommand'
+import { cardBudgetChars, promptChars } from '../decision/cardBudget'
+import { errandCard, errandVerbs, refitErrandCard, resolveAction } from './plannerCommand'
 
 const GOAL = 'Copy the Playwright install command to the clipboard.'
 const page: CommandPage = {
@@ -17,6 +18,35 @@ const page: CommandPage = {
 }
 const card = errandCard(GOAL, page, { hop: 1, visited: [page.url], actions: [], links: [] }, { appliance: { queued: false } })
 const resolve = (action: PlannerAction) => resolveAction(action, card)
+
+describe('errandCard (#501): built to the Card Budget as every ask is', () => {
+  const redirect = `https://search.example/y.js?ad_domain=hotels.example&click_metadata=${'Zq9'.repeat(500)}`
+  const ads: CommandPage = { ...page, refs: [...page.refs, ...Array.from({ length: 60 }, (_, index) => ({ ref: 10 + index, kind: 'link' as const, label: `Hotel deal ${index + 1}`, href: `${redirect}${index}`, inputType: null }))] }
+  const links = Array.from({ length: 200 }, (_, index) => ({ label: `A link further down, number ${index + 1}`, href: `${redirect}-${index}` }))
+
+  it('keeps its cuts: kilobyte addresses shown cut, what is further down left off, under the budget, labels and numbers whole', () => {
+    const budget = cardBudgetChars(4000)
+    const built = errandCard(GOAL, ads, { hop: 1, visited: [], actions: [], links }, { budgetChars: budget })
+    expect(built.over).toBeUndefined()
+    expect(built.budget).toBe(budget)
+    expect(built.size).toBeLessThanOrEqual(budget)
+    expect(built.size).toBe(promptChars(built.text.slice(0, built.text.indexOf('\nThe card offers')), built.questions))
+    expect(built.cuts).toEqual(expect.arrayContaining([{ kind: 'address', count: expect.any(Number), chars: expect.any(Number) }, { kind: 'further', count: expect.any(Number) }]))
+    expect(built.text).not.toContain('click_metadata')
+    expect(built.text).toContain('[10] link "Hotel deal 1" https://search.example/y.js?ad_domain=hotels.example…')
+  })
+
+  it('is over when nothing left to yield brings it under, and is built again tighter from itself', () => {
+    const built = errandCard(GOAL, ads, { hop: 1, visited: [], actions: [], links: [] }, { budgetChars: 600, appliance: { queued: false } })
+    expect(built.over).toBe(true)
+    expect(built.cuts).toContainEqual({ kind: 'ref', count: expect.any(Number) })
+    const roomy = errandCard(GOAL, ads, { hop: 1, visited: [], actions: [], links: [] }, { budgetChars: cardBudgetChars(16_384), appliance: { queued: false } })
+    const tighter = refitErrandCard(roomy, GOAL, Math.floor(roomy.size / 2))
+    expect(tighter.size).toBeLessThanOrEqual(Math.floor(roomy.size / 2))
+    expect(tighter.appliance).toEqual({ queued: false })
+    expect(tighter.cuts).toContainEqual({ kind: 'ref', count: expect.any(Number) })
+  })
+})
 
 describe('errandCard (#467): the card the Planner sees is the one Jev would, with its offers', () => {
   it('is the state Jev reads, with each line it offers by id', () => {

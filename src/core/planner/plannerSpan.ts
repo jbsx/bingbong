@@ -4,6 +4,7 @@
 // the call came to, its ms), and `errand`, one per Errand (its steps, its
 // outcome, its ms) — fired by the Errand loop (#467). Zero runtime imports.
 
+import type { CardCut } from '../decision/cardBudget'
 import type { PlannerCallFacts, PlannerUnavailableReason } from '../ports/plannerModel'
 
 export const PLANNER_STEP_STAGE = 'planner-step'
@@ -23,6 +24,13 @@ export interface PlannerStepDetail {
   readonly completionTokens?: number
   readonly reasoningTokens?: number
   readonly waitedMs: number
+  /** What the step's card gave up to fit the Card Budget (#501), and the budget it was built to. */
+  readonly cuts?: readonly CardCut[]
+  readonly budget?: number
+  /** The card was over the budget after every cut, and nothing was sent (#501). */
+  readonly unsent?: true
+  /** The call is the one retry of a step its host refused for its size (#501): the refused call's turn and the host's count. */
+  readonly retryOf?: { readonly id: string; readonly tokens: number; readonly maxLen: number }
 }
 
 /** One `planner-step` span: the call's own ms, and its detail. */

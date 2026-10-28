@@ -2,6 +2,7 @@ import { AMOUNT_RUNGS, LEVEL_RUNGS } from '../browser/mediaOp'
 import { JEV_VERBS, PRESS_KEYS, pressKeyOf, type Command, type CommandPage } from '../command/command'
 import { commandQuestions, commandState, fitCard, readCommandAnswers, type Appliance, type CommandAnswers, type CommandQuestions, type HopContext } from '../command/jevReading'
 import type { AppState } from '../command/appOp'
+import { promptChars, type CardCut } from '../decision/cardBudget'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { PlannerAction } from '../ports/plannerModel'
 import { parseDuration } from '../timer/duration'
@@ -23,6 +24,16 @@ export interface ErrandCard {
   readonly questions: CommandQuestions
   /** What the Planner reads: the state Jev reads, then each line the card offers by id, the Appliance Verbs apart. */
   readonly text: string
+  /** What the card gave up to fit the Card Budget (#501), as every ask's record names it. */
+  readonly cuts: readonly CardCut[]
+  /** The card is over the budget after every cut (#501): it is never sent. */
+  readonly over?: true
+  /** The budget it was built to, in characters; none when unbounded. */
+  readonly budget?: number
+  /** Its size as the budget reads it (`promptChars`): what a host's refusal is weighed against. */
+  readonly size: number
+  /** The appliance it was offered, so the card can be built again to a tighter budget. */
+  readonly appliance?: Appliance
 }
 
 /** The Timer as an Appliance Verb (#467): the CLI grammar's `timer`, set by a length. */
@@ -34,8 +45,14 @@ const WEB_SEARCH_LINE = 'search the web for the words given as the option\'s "te
 /** The browser's own verbs and the card's ref-bound lines: everything on the card that is not an Appliance Verb. */
 const isBrowserLine = (id: string): boolean => (JEV_VERBS as readonly string[]).includes(id) || /-\d+$/.test(id) || id === 'capture-page'
 
+/**
+ * The card one Errand step is planned over, built to the Card Budget as
+ * every ask is (#495, #501): what is further down yields, then the refs
+ * from the page's end, its cuts and whether it is still over kept for the
+ * step's record.
+ */
 export function errandCard(goalLine: string, page: CommandPage, context: HopContext, options: { readonly appliance?: Appliance; readonly budgetChars?: number } = {}): ErrandCard {
-  const { questions, state } = fitCard(
+  const { questions, state, cuts, over } = fitCard(
     options.budgetChars,
     page,
     (shown, further) => commandQuestions(goalLine, shown, context, { ...(options.appliance !== undefined ? { appliance: options.appliance } : {}), further }),
@@ -45,7 +62,22 @@ export function errandCard(goalLine: string, page: CommandPage, context: HopCont
   // The browser's ref-less verbs are the Planner's own action kinds, said in its instructions; their lines here are Jev's words for them. The web's search has no kind of its own.
   const offers = Object.entries(questions.action.options).filter(([id]) => isBrowserLine(id) && !(JEV_VERBS as readonly string[]).includes(id))
   const text = [state, 'The card offers (id: what it does):', ...offers.map(([id, line]) => `${id}: ${line}`), `search: ${WEB_SEARCH_LINE}`].join('\n')
-  return { page, context, questions, text }
+  return {
+    page,
+    context,
+    questions,
+    text,
+    cuts,
+    ...(over === true ? { over } : {}),
+    ...(options.budgetChars !== undefined ? { budget: options.budgetChars } : {}),
+    size: promptChars(state, questions),
+    ...(options.appliance !== undefined ? { appliance: options.appliance } : {}),
+  }
+}
+
+/** The same card built again to a tighter budget (#501): the one retry after a host refused the step's ask for its size. */
+export function refitErrandCard(card: ErrandCard, goalLine: string, budgetChars: number): ErrandCard {
+  return errandCard(goalLine, card.page, card.context, { ...(card.appliance !== undefined ? { appliance: card.appliance } : {}), budgetChars })
 }
 
 /** The Appliance Verbs the card offers, by name and line, with the Timer beside them. */

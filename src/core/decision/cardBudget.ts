@@ -85,8 +85,8 @@ export function promptChars(state: string, questions: DecisionQuestions): number
 
 /** What a card gave up to fit the Card Budget (#495): its kind and how many, and for addresses the characters cut. Named in the ask's record. */
 export interface CardCut {
-  /** `address`: addresses past the bound shown cut; `further`: options further down left off; `ref`: refs left off from the page's end; `popup-text`: the pop-up's own text left off. */
-  readonly kind: 'address' | 'further' | 'ref' | 'popup-text'
+  /** `address`: addresses past the bound shown cut; `further`: options further down left off; `ref`: refs left off from the page's end; `popup-text`: the pop-up's own text left off; `file`: the Shelf's oldest files left off (#501); `page`: the page's state left off, the words alone asked (#501, the settings ask). */
+  readonly kind: 'address' | 'further' | 'ref' | 'popup-text' | 'file' | 'page'
   readonly count: number
   readonly chars?: number
 }
