@@ -19,7 +19,7 @@
     "nothingElse": true
   },
   "evidence": [
-    "none yet"
+    "overlap:gate 2026-10-28 p1, arm duck, twice: 12 and 13 own captures dropped, nothing in the Feed (#490)"
   ],
-  "state": {"is": "red", "on": "unmeasured", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest", "decision-models/baseten-elephant-9b-latest"]}
+  "state": {"is": "green", "on": "a506ab9f", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }
