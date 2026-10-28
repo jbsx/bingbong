@@ -42,7 +42,17 @@
 // Usage:
 //   pnpm overlap:gate [--cases substr,…] [--models id,…] [--repeat N] [--seed N] [--points N]
 //                     [--keep dir] [--calibration dir] [--planner id] [--check-state] [--with-jev]
-//                     [--audio-only-music]
+//                     [--audio-only-music] [--resume]
+//
+// With `--keep`, every run is written as it ends and `summary.json` there
+// after every point (e2e/overlap/summary.ts): each point finished, its
+// verdict, and the point a host refused for credit. A refusal for credit
+// (a 402 or 403, or the host's words naming credit, billing or quota; never
+// a 429, which is run again) is neither red nor green: that run is kept as
+// `<point>-refused`, the gate stops, and exits 3 with the table so far.
+// `--resume` runs only what the summary is missing, on the same commit,
+// seed, points, repeat and arm, the refused point included, and reuses the
+// kept calibrations.
 //
 // `--audio-only-music` (#502) seeds the Settings toggle into each fresh
 // profile, so a song takes the audio road (yt-dlp on PATH, or
@@ -58,7 +68,7 @@
 // Node runs this .ts directly via type stripping (#36).
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -73,6 +83,8 @@ import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageO
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
 import { openSlowHost, SLOW_HOST_ENV_KEY, type SlowHost } from '../e2e/overlap/slowHost.ts'
+import { creditRefusal, logLines } from '../e2e/overlap/refusal.ts'
+import { finishedCell, readSummary, resumeFrom, withFinished, withRefused, writeSummary, SUMMARY_FILE, type Summary } from '../e2e/overlap/summary.ts'
 import { AUDIO_ONLY_MUSIC_SETTINGS, isAudioSurfaceUrl, SETTINGS_FILE, withRoad, type RoadRead } from '../e2e/overlap/audioRoad.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
@@ -140,6 +152,11 @@ const plannerModel = valueOf('--planner')
 const checkState = args.includes('--check-state')
 const withJev = args.includes('--with-jev')
 const audioOnlyMusic = args.includes('--audio-only-music')
+const resume = args.includes('--resume')
+if (resume && valueOf('--keep') === undefined) {
+  console.error('--resume reads the keep dir: pass --keep dir')
+  process.exit(2)
+}
 const models = [...list(valueOf('--models') ?? process.env[GATE_MODELS_ENV_KEY]), ...(withJev ? [JEV] : [])]
 if (models.length === 0) {
   console.error('overlap:gate needs its models: set BINGBONG_GATE_MODELS or pass --models a,b')
@@ -543,7 +560,12 @@ interface RunOutcome {
   readonly roomWav?: Buffer
   /** The ear's dumps, by file name, when the run dumped (#490). */
   readonly dumps?: Readonly<Record<string, Buffer>>
+  /** Why a host refused the run for credit: the run measured nothing, and the gate stops. */
+  readonly refused?: string
 }
+
+/** A host refused for credit: the gate stops, keeping what it finished. */
+class CreditRefused extends Error {}
 
 /**
  * One run: a fresh app and profile, the start, the lines at their times,
@@ -718,6 +740,9 @@ function limitedIn(ran: RunOutcome): number {
 async function run(sequence: SequenceCase, model: string, plan: Parameters<typeof runOnce>[2], judge: Parameters<typeof runOnce>[3]): Promise<RunOutcome> {
   let ran = await runBounded(sequence, model, plan, judge)
   for (let tries = 0; tries < RERUNS; tries += 1) {
+    // Refused for credit: never run again (the account is spent, not busy), never counted.
+    const refused = refusalOf(ran)
+    if (refused !== null) return { ...ran, refused }
     const unstarted = ran.cell.verdict === 'wall' && ran.cell.why.startsWith(START_NOT_REACHED)
     const limited = limitedIn(ran) > 0
     if (!unstarted && !limited) break
@@ -727,7 +752,12 @@ async function run(sequence: SequenceCase, model: string, plan: Parameters<typeo
     await sleep(limited ? 10_000 * (tries + 1) : 1_000)
     ran = await runBounded(sequence, model, plan, judge)
   }
-  return ran
+  const refused = refusalOf(ran)
+  return refused === null ? ran : { ...ran, refused }
+}
+
+function refusalOf(ran: RunOutcome): string | null {
+  return creditRefusal({ decision: logLines(ran.logs, 'decision-'), perf: logLines(ran.logs, 'perf-'), ...(ran.cell.verdict !== 'green' ? { why: ran.cell.why } : {}) })
 }
 
 interface Calibration {
@@ -767,7 +797,21 @@ const spanWords = (spans: Spans): string =>
 async function calibrate(sequence: SequenceCase, model: string, judge: Parameters<typeof runOnce>[3]): Promise<Calibration> {
   const kept = calibrationDir === undefined ? undefined : join(calibrationDir, sequence.id, slug(model), 'calibration.json')
   if (kept !== undefined && existsSync(kept)) return JSON.parse(readFileSync(kept, 'utf8')) as Calibration
+  // A resume reuses the calibration its keep dir holds, made on the same commit.
+  const resumed = resume && keep !== undefined ? join(keep, sequence.id, slug(model), 'calibration.json') : undefined
+  if (resumed !== undefined && existsSync(resumed)) {
+    const calibration = JSON.parse(readFileSync(resumed, 'utf8')) as Calibration
+    if (calibration.commit === commit) return calibration
+  }
   const ran = await run(sequence, model, { lines: 1, placed: [null], noise: [], spans: {}, wall: null, calibrating: true }, judge)
+  if (ran.refused !== undefined) {
+    if (keep !== undefined) {
+      mkdirSync(join(keep, sequence.id, slug(model)), { recursive: true })
+      keepRun(join(keep, sequence.id, slug(model)), 'calibration-refused', { case: sequence.id, model, commit, refused: ran.refused }, ran)
+    }
+    summary = summary === null ? null : withRefused(summary, { model, case: sequence.id, point: null, n: 1, why: ran.refused })
+    throw new CreditRefused(ran.refused)
+  }
   const spans = ran.lineAt === null ? {} : spansOf(ran.records, ran.lineAt)
   const wall = ran.cell.verdict === 'wall' ? ran.cell.why : wallBefore(ran.records.pane, Number.POSITIVE_INFINITY)
   const calibration: Calibration = { case: sequence.id, model, commit, date: new Date().toISOString().slice(0, 10), spans, wall }
@@ -813,6 +857,27 @@ if (typeof cases === 'string') {
 }
 const plannerName = `${plannerModel ?? process.env.BINGBONG_PLANNER_MODEL ?? `${PLANNER_DEFAULT_MODEL} (default)`}`
 const tables: CaseRow[][] = []
+/** The keep dir's summary, written after every point; null without --keep. */
+let summary: Summary | null = null
+if (keep !== undefined) {
+  const head = { commit, seed, points: pointCount, repeat, audioOnlyMusic }
+  const kept = readSummary(keep)
+  if (resume) {
+    const from = resumeFrom(kept, head)
+    if (typeof from === 'string') {
+      console.error(`--resume: ${from}`)
+      process.exit(2)
+    }
+    summary = from
+    console.error(`--resume: ${summary.finished.length} points kept in ${join(keep, SUMMARY_FILE)}`)
+  } else {
+    // A fresh run never writes over a kept summary: it is set aside, named by when.
+    if (kept !== null) renameSync(join(keep, SUMMARY_FILE), join(keep, `summary-${kept.updated.replace(/[:.]/g, '-')}.json`))
+    summary = resumeFrom(null, head) as Summary
+  }
+  writeSummary(keep, summary)
+}
+let stopped: string | null = null
 console.error(`overlap:gate at ${commit}: audio-only music ${audioOnlyMusic ? 'on (--audio-only-music)' : 'off'}`)
 for (const model of models) {
   const decisionName = model === JEV ? `Jev (${resolveDecisionRouting(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BINGBONG_DECISION_')))).configured ? 'default endpoint' : 'not configured'})` : model
@@ -820,18 +885,49 @@ for (const model of models) {
   const spans: Record<string, string> = {}
   rerun.start = 0
   rerun.limited = 0
-  for (const sequence of cases) {
+  cases: for (const sequence of cases) {
     const points = casePoints(sequence, { seed, points: pointCount })
+    const row: { label: string; runs: Cell[] }[] = []
+    const finishedAll = summary !== null && points.every((point) => Array.from({ length: repeat }, (_, i) => i + 1).every((n) => finishedCell(summary!, { model, case: sequence.id, point: point.index, n }) !== undefined))
     let calibration: Calibration | null = null
-    if (needsCalibration(sequence, points)) {
-      calibration = await calibrate(sequence, model, judgeMeaning)
+    if (needsCalibration(sequence, points) && !finishedAll) {
+      try {
+        calibration = await calibrate(sequence, model, judgeMeaning)
+      } catch (error) {
+        if (!(error instanceof CreditRefused)) throw error
+        stopped = `${sequence.id} on ${model}, calibrating: ${error.message}`
+        if (summary !== null) writeSummary(keep!, summary)
+        break cases
+      }
       spans[sequence.id] = spanWords(calibration.spans)
     }
-    const row: { label: string; runs: Cell[] }[] = []
     for (const point of points) {
       const runs: Cell[] = []
       for (let n = 1; n <= repeat; n++) {
+        const done = summary === null ? undefined : finishedCell(summary, { model, case: sequence.id, point: point.index, n })
+        if (done !== undefined) {
+          console.error(`${sequence.id} on ${model} at ${point.label}${repeat > 1 ? ` (${n}/${repeat})` : ''}: kept from the summary, ${done.verdict}`)
+          runs.push(done)
+          continue
+        }
         const ran = await run(sequence, model, { lines: sequence.lines.length, placed: point.lines, noise: point.noise, spans: calibration?.spans ?? {}, wall: calibration?.wall ?? null }, judgeMeaning)
+        if (ran.refused !== undefined) {
+          console.error(`${sequence.id} on ${model} at ${point.label}: refused for credit — ${ran.refused}; the gate stops`)
+          if (keep !== undefined) {
+            const dir = join(keep, sequence.id, slug(model))
+            mkdirSync(dir, { recursive: true })
+            keepRun(dir, `p${point.index}${repeat > 1 ? `-${n}` : ''}-refused`, { case: sequence.id, model, point: point.index, seed, commit, audioOnlyMusic, refused: ran.refused }, ran)
+          }
+          if (summary !== null) {
+            summary = withRefused(summary, { model, case: sequence.id, point: point.index, n, why: ran.refused })
+            writeSummary(keep!, summary)
+          }
+          stopped = `${sequence.id} on ${model} at ${point.label}: ${ran.refused}`
+          if (runs.length > 0) row.push({ label: point.label, runs })
+          // A case cut before any point finished has no row: an empty row would read as through.
+          if (row.length > 0) rows.push({ id: sequence.id, points: row })
+          break cases
+        }
         const cell = ran.cell
         console.error(`${sequence.id} on ${model} at ${point.label}${repeat > 1 ? ` (${n}/${repeat})` : ''}: ${cell.verdict === 'green' ? 'green' : `${cell.verdict} — ${cell.why}`}`)
         if (keep !== undefined) {
@@ -841,6 +937,10 @@ for (const model of models) {
           keepRun(dir, name, { case: sequence.id, model, point: { ...point, placed: point.lines.map((placed) => (placed === null ? null : describePlaced(placed))) }, seed, commit, audioOnlyMusic }, ran)
         }
         runs.push(cell)
+        if (summary !== null) {
+          summary = withFinished(summary, { model, case: sequence.id, point: point.index, n, label: point.label, cell })
+          writeSummary(keep!, summary)
+        }
       }
       row.push({ label: point.label, runs })
     }
@@ -851,6 +951,13 @@ for (const model of models) {
   console.log(formatTable(rows, { model: decisionName, planner: plannerName, seed, points: pointCount, repeat, commit, spans }))
   console.log(`runs made again: ${rerun.start} whose start was never reached, ${rerun.limited} that met a 429`)
   console.log('')
+  if (stopped !== null) break
+}
+if (stopped !== null) {
+  if (summary !== null && keep !== undefined) writeSummary(keep, summary)
+  console.log(`stopped, refused for credit: ${stopped}`)
+  console.log(`every finished point is kept${keep !== undefined ? ` in ${join(keep, SUMMARY_FILE)}; pnpm overlap:gate … --keep ${keep} --resume runs what is missing` : ' nowhere (no --keep)'}`)
+  process.exit(3)
 }
 if (checkState) {
   const disagreements = stateDisagreements(cases, tables)
