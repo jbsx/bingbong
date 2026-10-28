@@ -5582,6 +5582,8 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(doneOf(events, turnId)).toBe('cancelled')
     expect(asks[1]!.state).toContain('"open bbc.com, no, the news page"')
     expect(asks[1]!.state).not.toContain('Still running')
+    // One line, one step (T3 arm J1): never split back into the running line and a Step on the bare correction.
+    expect(Object.keys(asks[1]!.questions)).not.toContain('steps')
     expect(said(events)).toEqual(["It's 12:34 on Friday 23 October."])
   })
 

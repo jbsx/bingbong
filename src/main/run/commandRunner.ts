@@ -1006,7 +1006,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /**
    * The Fate acted on before the line fires (#489): `ends` ends the line
    * running, said; `joins` ends it unsaid and reads the two lines as one
-   * (T3 arm J1), on one more ask; `waits` holds this line until the running
+   * (T3 arm J1), on one more ask that takes one step; `waits` holds this line until the running
    * one has ended, however it ends, then reads it again against what is
    * there; `goes_on` leaves it to its own end. The reading to fire.
    */
@@ -1030,7 +1030,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const joined = `${running.words}, ${text}`
       publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: joined, at: at() })
       reading = { turnId, submission }
-      const again = await read(turnId, joined, null, spoken)
+      // One line, one step: never split back into the running line and a Step on the bare correction.
+      const again = await read(turnId, joined, null, spoken, { split: false })
       if (reading?.turnId === turnId) reading = null
       return { ...again, joined }
     }
