@@ -324,7 +324,9 @@ async function launch(sequence: SequenceCase, model: string, profile: string, wa
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
   if (audioOnlyMusic) writeFileSync(join(profile, SETTINGS_FILE), AUDIO_ONLY_MUSIC_SETTINGS)
-  const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
+  // Jev is the default endpoint: every BINGBONG_DECISION_* routing key unset, its key (TYPESAFE_API_KEY) kept — unsetting
+  // that too left Jev unconfigured, so a --with-jev run asked nothing and read every line by the Local Match's guess.
+  const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().filter((key) => key.startsWith('BINGBONG_DECISION_')).map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
   const routing = resolveDecisionRouting({ ...process.env, ...decision })
   const slow = slowHostOn && routing.configured ? await openSlowHost(routing.endpoint.baseUrl, sequence.lines.slice(1).map((line) => line.words)) : null
   // The stand-in is the only host: no fallback reads the held line instead.
@@ -853,6 +855,11 @@ async function judgeMeaning(means: string, said: readonly string[]): Promise<boo
 const cases = readCases()
 if (typeof cases === 'string') {
   console.error(`overlap:gate: ${cases}`)
+  process.exit(2)
+}
+// Jev unconfigured would read every line by the Local Match's guess and call it a measure: never run so.
+if (withJev && !resolveDecisionRouting(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BINGBONG_DECISION_')))).configured) {
+  console.error('--with-jev: Jev is not configured (no TYPESAFE_API_KEY in the env)')
   process.exit(2)
 }
 const plannerName = `${plannerModel ?? process.env.BINGBONG_PLANNER_MODEL ?? `${PLANNER_DEFAULT_MODEL} (default)`}`
