@@ -1644,6 +1644,21 @@ describe('voice session — speech over the app’s own voice, inside a listen (
     expect(harness.commands).toEqual(['move on'])
   })
 
+  it('duck: a stop word the app itself just said is its echo, not an abort; it goes to the runner and the listen stays open', async () => {
+    const { harness, speaking } = await overRead(['Cancel'], 'duck', { runState: { value: 'running' } })
+    speaking.text = 'To avoid this, cancel and sign in to YouTube on your computer.'
+    await harness.speakUtterance()
+    expect(harness.aborts).toEqual([])
+    expect(harness.submitted).toMatchObject([{ text: 'Cancel', overSpeech: true }])
+    expect(harness.session.getState()).toMatchObject({ listening: true })
+  })
+
+  it('duck: a stop word the app did not say is still the person’s abort', async () => {
+    const { harness } = await overRead(['stop'], 'duck', { runState: { value: 'running' } })
+    await harness.speakUtterance()
+    expect(harness.aborts).toHaveLength(1)
+  })
+
   it('stop: the app yields the floor at speech start, and the line is taken', async () => {
     const { harness } = await overRead(['move on'], 'stop')
     await harness.speakUtterance()

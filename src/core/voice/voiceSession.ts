@@ -10,7 +10,7 @@ import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
-import { isOwnVoice, ownShare, type OverSpeech } from './ownVoice'
+import { isOwnVoice, ownShare, OWN_VOICE_SHARE, type OverSpeech } from './ownVoice'
 import { createOverLevel, type LoudStretch, type OverLevel } from './overLevel'
 
 /**
@@ -760,7 +760,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
 
     const phrase = normalizedPhrase(text)
-    if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase)) {
+    // A stop word over the app's voice that is what the app said (its sentence sounding or just ended) is its echo, never the person's stop (#490): it goes to the runner as any line over the voice.
+    const echoedStop = heardOver !== null && ownShare(text, [...heardOver.said]) >= OWN_VOICE_SHARE
+    if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase) && !echoedStop) {
       if (heardOver?.ducked === true) deps.tts.duck?.(false)
       deps.onAbort()
       deps.onHeard({ text, routed: 'abort' })
