@@ -52,7 +52,7 @@ import { settingsToEnv } from '../core/settings/settings'
 import { layerEnv } from '../core/settings/dotEnv'
 import { loadEnvFile, resolveEnvFilePath, type EnvFileHome } from './envFile'
 import { resolveAppDirs } from './appDirs'
-import { checkThisHost } from './hostChecks'
+import { checkThisHost, checkYtDlp, findOnPath } from './hostChecks'
 import { registerHostChecksIpc } from './settings/attachHostChecks'
 import type { HostFinding } from '../core/settings/hostFindings'
 import { attachNightDim, type NightDimGlue } from './nightDim/attachNightDim'
@@ -321,6 +321,9 @@ const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('user
 // The cloud ear chosen with no key (#463): Parakeet hears, and Settings › Environment says why, as the host checks say theirs.
 const earFindings: HostFinding[] = voiceConfig.earUnarmed !== undefined ? [{ check: 'ear', message: voiceConfig.earUnarmed }] : []
 for (const finding of earFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
+// The audio road's yt-dlp (#502): missing, Settings says so beside the audio-only music toggle; the fault log only while it is on.
+const ytDlpFindings = checkYtDlp(audioRoadBinary(process.env), (bin) => findOnPath(bin, process.env.PATH ?? ''))
+if (settingsStore.get().audioOnlyMusic) for (const finding of ytDlpFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
 // openWakeWord ONNX stack; the Python sidecar is the config-only fallback
@@ -582,10 +585,11 @@ async function createWindow(): Promise<BrowserWindow> {
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
   const youtubeFixture = process.env[YOUTUBE_FIXTURE_ENV]
   if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
-  // The audio road (#502), behind its switch: a song Jev reads as music plays its bare stream outside the pane.
+  // The audio road (#502), behind the audio-only music setting, read at each song: a song Jev reads as music plays its
+  // bare stream outside the pane. The surface's window is made on the road's first song, so a road never taken costs nothing.
   const audioBinary = audioRoadBinary(process.env)
-  const audioSurface = audioBinary === null ? null : createAudioSurface()
-  if (audioSurface !== null) onWindowClosed(win, audioSurface.destroy)
+  const audioSurface = createAudioSurface()
+  onWindowClosed(win, audioSurface.destroy)
   // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {
     songs: rememberedSongs,
@@ -595,7 +599,7 @@ async function createWindow(): Promise<BrowserWindow> {
     propose: (term) => {
       learnedTermsStore.propose(term)
     },
-  }, paneCustody, perfTracer, audioBinary === null || audioSurface === null ? undefined : { surface: audioSurface, resolve: (id) => resolveAudioStream(audioBinary, id) })
+  }, paneCustody, perfTracer, { surface: audioSurface, resolve: (id) => resolveAudioStream(audioBinary, id), on: () => settingsStore.get().audioOnlyMusic })
   onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))
@@ -656,7 +660,7 @@ async function createWindow(): Promise<BrowserWindow> {
     // The Appliance Card (#485): on by default; BINGBONG_APPLIANCE_CARD=off is today's road, with no Settings line.
     ...(applianceCard !== null ? { applianceCard } : {}),
     // The Appliance Card's media follows the Player's song onto the audio road (#502).
-    browser: audioSurface === null ? controller : withAudioRoadMedia(controller, audioSurface, () => music.player.road() === 'audio'),
+    browser: withAudioRoadMedia(controller, audioSurface, () => music.player.road() === 'audio'),
     decisionModel,
     publish: (event) => {
       eventPublisher.publish({ source: 'run', event })
@@ -853,7 +857,7 @@ app.whenReady().then(async () => {
       envFileValues = values
     },
   })
-  registerHostChecksIpc([...hostFindings, ...earFindings])
+  registerHostChecksIpc([...hostFindings, ...earFindings, ...ytDlpFindings])
   nightDim = attachNightDim({ quitIsFromApp, settings: settingsStore, idleUp: () => [...idleWindows.values()].some((shown) => shown.up), userDataDir: app.getPath('userData'), env: process.env })
   registerUsageIpc(() => settingsStore.get().usageDashboard.url, (at) => earTally.day(at))
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })

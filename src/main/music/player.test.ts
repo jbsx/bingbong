@@ -1672,13 +1672,16 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
 // stream outside the pane; a video, or any failure of the road, opens the
 // watch page as before, shown.
 describe('the audio road', () => {
-  function withAudio() {
+  function withAudio(on?: () => boolean) {
     const pane = wired()
     const audio = scriptedAudio(pane.youtube.watches)
-    const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve: audio.resolve } })
+    const starts: PlayerStart[] = []
+    const waits: string[] = []
+    const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve: audio.resolve, ...(on !== undefined ? { on } : {}) }, onStart: (start) => starts.push(start) })
+    player.onWait((wait) => waits.push(`${wait.kind} ${wait.song.id}`))
     const always = (): boolean => true
     const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, always)
-    return { ...pane, audio, player, perform }
+    return { ...pane, audio, player, perform, starts, waits }
   }
 
   it('music plays the bare stream of the pick: the pane is never navigated', async () => {
@@ -1729,7 +1732,7 @@ describe('the audio road', () => {
     audio.fails.add('aaaaaaaaaaa')
     const played = await perform({ kind: 'search', place: 'now' }, 'song a')
     expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
-    expect(played).toMatchObject({ answer: 'Playing “Song A”.', shown: true })
+    expect(played).toMatchObject({ answer: 'Playing “Song A” on its watch page.', shown: true })
     expect(played.failure).toBeUndefined()
     expect(player.road()).toBe('page')
   })
@@ -1739,7 +1742,7 @@ describe('the audio road', () => {
     audio.youtube.starts = 'refuses'
     const played = await perform({ kind: 'search', place: 'now' }, 'song a')
     expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
-    expect(played).toMatchObject({ answer: 'Playing “Song A”.', shown: true })
+    expect(played).toMatchObject({ answer: 'Playing “Song A” on its watch page.', shown: true })
     expect(audio.stops).toBeGreaterThan(0)
   })
 
@@ -1844,6 +1847,75 @@ describe('the audio road', () => {
     await perform({ kind: 'search', place: 'now' }, 'song a')
     await player.duck(true)
     expect(audio.youtube.controls.some((op) => op.op === 'duck')).toBe(true)
+  })
+
+  it('the lookup is a wait told to the Command (#502, ui.md 2), and the road its start took is in the perf log', async () => {
+    const { starts, waits, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(waits).toEqual(['lookup aaaaaaaaaaa'])
+    expect(starts).toHaveLength(1)
+    expect(starts[0]).toMatchObject({ video: 'aaaaaaaaaaa', road: 'audio', fallback: false, started: true })
+    expect(typeof starts[0]!.lookup).toBe('number')
+  })
+
+  it('a failed lookup tells the fallback, and its start is the watch page’s, marked a fallback with no lookup time', async () => {
+    const { audio, starts, waits, perform } = withAudio()
+    audio.fails.add('aaaaaaaaaaa')
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(waits).toEqual(['lookup aaaaaaaaaaa', 'fallback aaaaaaaaaaa'])
+    expect(starts.at(-1)).toMatchObject({ video: 'aaaaaaaaaaa', road: 'page', lookup: null, fallback: true })
+  })
+
+  it('a video tells no wait, and its start is the page’s, no fallback', async () => {
+    const { starts, waits, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    expect(waits).toEqual([])
+    expect(starts.at(-1)).toMatchObject({ road: 'page', lookup: null, fallback: false })
+  })
+
+  it('a song the queue opens in the background tells no wait: no Command waits on it', async () => {
+    const { audio, waits, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    waits.length = 0
+    audio.youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(audio.loaded.map((load) => load.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb'])
+    expect(waits).toEqual([])
+  })
+
+  it('the setting off (#502): every play is the watch page, not shown, nothing looked up — exactly as with no road wired', async () => {
+    const { browser, audio, player, perform, waits } = withAudio(() => false)
+    expect(player.audioRoad).toBe(false)
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(audio.resolved).toEqual([])
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(played.shown).toBeUndefined()
+    expect(waits).toEqual([])
+    expect(player.road()).toBe('page')
+  })
+
+  it('the setting applies live: read at each song, so turned off the song on the road plays on and the next opens on the watch page', async () => {
+    let on = true
+    const { browser, audio, player, perform } = withAudio(() => on)
+    expect(player.audioRoad).toBe(true)
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(player.road()).toBe('audio')
+    on = false
+    expect(player.audioRoad).toBe(false)
+    // The song on the road plays on: its element is still the one the verbs reach.
+    await perform({ kind: 'pause' })
+    expect(audio.youtube.controls).toContainEqual({ op: 'pause' })
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    expect(audio.resolved).toEqual(['aaaaaaaaaaa'])
+    expect(browser.landings).toEqual([`${WATCH}bbbbbbbbbbb`])
+    expect(player.road()).toBe('page')
+    on = true
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(audio.resolved).toEqual(['aaaaaaaaaaa', 'aaaaaaaaaaa'])
+    expect(player.road()).toBe('audio')
   })
 
   it('with no audio road wired every play is the watch page, and the road reads page', async () => {

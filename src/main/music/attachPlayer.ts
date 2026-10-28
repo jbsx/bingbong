@@ -14,7 +14,7 @@ import { createPlayer, type AudioRoad, type Player, type SongMemory } from './pl
 /** How often the Player listens for the song's end. */
 const CHECK_MS = 1_000
 
-/** The pane's Player, its end-of-song poll running; the audio road (#502) where its switch is on; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488), an ad that held it a `media-start-ad` one (#497), and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
+/** The pane's Player, its end-of-song poll running; the audio road (#502) while audio-only music is on; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488), an ad that held it a `media-start-ad` one (#497), and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
 export function attachPlayer(
   browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'clearConsent' | 'onConsentDrawn' | 'state'>,
   session: Session,

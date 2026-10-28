@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { checkHost, findOnPath, type HostProbe } from './hostChecks'
+import { checkHost, checkYtDlp, findOnPath, type HostProbe } from './hostChecks'
 
 const ALL_THERE: HostProbe = {
   platform: 'linux',
@@ -60,5 +60,15 @@ describe('findOnPath', () => {
     expect(findOnPath('notes', PATH)).toBe(false)
     expect(findOnPath('piper', PATH)).toBe(false)
     expect(findOnPath(join(dir, 'bin', 'aplay'), '')).toBe(true)
+  })
+})
+
+describe('checkYtDlp (#502)', () => {
+  it('finds nothing when the audio road\'s yt-dlp runs, and names the one it looked for when it does not', () => {
+    expect(checkYtDlp('yt-dlp', () => true)).toEqual([])
+    const [finding] = checkYtDlp('/opt/yt-dlp', () => false)
+    expect(finding).toMatchObject({ check: 'yt-dlp' })
+    expect(finding!.message).toContain("no '/opt/yt-dlp' on PATH")
+    expect(finding!.message).toContain('audio-only music plays every song on its watch page instead')
   })
 })

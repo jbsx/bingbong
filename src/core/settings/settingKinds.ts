@@ -81,6 +81,7 @@ export const SETTING_KINDS: SettingKinds<AppSettings> = {
   webZoomPercent: { kind: 'amount', name: 'web page zoom', min: WEB_ZOOM_PERCENT_MIN, max: WEB_ZOOM_PERCENT_MAX, step: 10, unit: '%' },
   ttsVoice: { kind: 'voices', name: 'voice', hint: 'the voice the app speaks in' },
   adblockEnabled: { kind: 'switch', name: 'ad blocking' },
+  audioOnlyMusic: { kind: 'switch', name: 'audio-only music', hint: 'a song plays its sound alone, without the YouTube page' },
   shelfFolder: { kind: 'folder', name: 'upload folder', hint: 'the folder an upload may take a file from, beside the downloads' },
   appearance: choice({ name: 'appearance', hint: 'light or dark mode' }, [
     ['system', 'as this computer'],

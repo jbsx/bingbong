@@ -195,6 +195,8 @@ export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string)
   return {
     BINGBONG_PIPER_BIN: join(repoRoot, 'e2e/bin/fake-piper.mjs'),
     BINGBONG_APLAY_BIN: join(repoRoot, 'e2e/bin/fake-aplay.mjs'),
+    // The audio road's yt-dlp (#502): the scripted one, so no launch looks a stream up on YouTube.
+    BINGBONG_AUDIO_ROAD: join(repoRoot, 'e2e/bin/fake-yt-dlp.mjs'),
     BINGBONG_WAKE_ENGINE: 'off',
     BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
     BINGBONG_ADBLOCK_RESOURCES: '',

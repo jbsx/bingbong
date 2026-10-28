@@ -71,7 +71,7 @@ export interface PlayerOutcome {
   readonly superseded?: true
   /** For a search (#345): the video came from the Remembered Songs, or from YouTube's results. */
   readonly pick?: PickSource
-  /** With an audio road wired (#502), the song opened on the watch page — a video, or the road's fallback — so the dashboard shows it. */
+  /** With the audio road taken (#502), the song opened on the watch page — a video, or the road's fallback — so the dashboard shows it. */
   readonly shown?: true
 }
 
@@ -90,7 +90,20 @@ export interface AudioSurface {
 export interface AudioRoad {
   readonly surface: AudioSurface
   resolve(id: string): Promise<string>
+  /**
+   * Whether a song takes the road now: the `audioOnlyMusic` setting, read at
+   * each song, so it applies live. Absent, always. Off with a song on the
+   * road, that song plays on and the next opens on the watch page.
+   */
+  on?(): boolean
 }
+
+/**
+ * A wait the Player's song is in before it plays (#502), for the Command
+ * waiting on it to narrate (ui.md 2): its stream looked up on the audio
+ * road, or its watch page opened because the road could not play it.
+ */
+export type PlayerWait = { readonly kind: 'lookup'; readonly song: Song } | { readonly kind: 'fallback'; readonly song: Song }
 
 /** Where the Player's song plays (#502): the watch page in the pane, or the audio road. */
 export type Road = 'page' | 'audio'
@@ -110,6 +123,12 @@ export interface PlayerStart {
   readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time'> | null
   /** From the landing to the start, or to giving up on it (ms). */
   readonly ms: number
+  /** Where it played (#502): the watch page in the pane, or the audio road. */
+  readonly road: Road
+  /** How long the audio road's lookup of its stream took (#502) (ms); null on the watch page. */
+  readonly lookup: number | null
+  /** On the watch page because the audio road could not play it (#502): the lookup failed or ran out, or the stream would not start. */
+  readonly fallback: boolean
   /** Opened by the Queue moving on (an end, a failed landing), with no Command waiting on it. */
   readonly background: boolean
   /** From the landing to the consent wall cleared over the page before this was recorded (#492) (ms); null when none was. */
@@ -216,8 +235,10 @@ export interface Player {
   seekOverAd(action: MediaOpAction): Promise<PlayerOutcome | null>
   /** Where the song plays, or last played (#502): what the Appliance Card's media reads and its ops reach. */
   road(): Road
-  /** The audio road is wired (#502): a song not read as a video opens there, and leaves the pane alone. */
+  /** The audio road is taken now (#502), its setting read as this is: a song not read as a video opens there, and leaves the pane alone. */
   readonly audioRoad: boolean
+  /** Hears each wait a song opened for a Command is in before it plays (#502): the lookup, the fallback. The returned function stops it. */
+  onWait(listener: (wait: PlayerWait) => void): () => void
 }
 
 export interface PlayerDeps {
@@ -251,7 +272,7 @@ export interface PlayerDeps {
   onConsentTold?(told: PlayerConsentTold): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
-  /** The audio road (#502), behind its switch; absent, every song opens on the watch page as before. */
+  /** The audio road (#502), taken while its `on` says so; absent, every song opens on the watch page as before. */
   audio?: AudioRoad
 }
 
@@ -321,6 +342,9 @@ const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 
 const quoted = (title: string): string => `“${title}”`
 
+/** An Answer for a song the audio road could not play (#502): "Playing “X” on its watch page." */
+const onItsWatchPage = (answer: string): string => `${answer.replace(/\.$/, '')} on its watch page.`
+
 const NONE_HELD: HeldResumed = { held: 0, played: 0 }
 
 const isSongs = (read: readonly Song[] | PlayerOutcome): read is readonly Song[] => Array.isArray(read)
@@ -368,6 +392,18 @@ export function createPlayer(deps: PlayerDeps): Player {
   browser.onConsentDrawn?.((drawn) => consentDrawn(drawn))
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
   const shownListeners = new Set<() => void>()
+  const waitListeners = new Set<(wait: PlayerWait) => void>()
+  /** A wait told (#502): only a Command's song is narrated; one opened in the background has no line waiting on it. */
+  const waitFor = (wait: PlayerWait, background: boolean): void => {
+    if (background) return
+    for (const listener of [...waitListeners]) listener(wait)
+  }
+  /** The audio road is taken now (#502): wired, and its setting on. */
+  const roadOn = (): boolean => deps.audio !== undefined && (deps.audio.on?.() ?? true)
+  /** The last lookup on the audio road (#502): its song and how long it took, for that song's `media-start`. */
+  let lookedUp: { id: string; ms: number } | null = null
+  /** The song the road could not play, opened on its watch page instead (#502); null once another opens on its own road. */
+  let fellBack: string | null = null
   let published = 'null'
 
   function nowPlaying(): NowPlaying | null {
@@ -734,15 +770,18 @@ export function createPlayer(deps: PlayerDeps): Player {
    * is. A lookup that fails or runs out of time is a failed landing, which
    * the caller takes to the watch page.
    */
-  async function streamTo(song: Song, current: () => boolean): Promise<boolean | 'superseded'> {
+  async function streamTo(song: Song, current: () => boolean, background: boolean): Promise<boolean | 'superseded'> {
     const audio = deps.audio!
     let stream: string
+    waitFor({ kind: 'lookup', song }, background)
+    const from = now()
     try {
       stream = await audio.resolve(song.id)
     } catch (error) {
       reportFault('music.player.resolve', error)
       return current() ? false : 'superseded'
     }
+    lookedUp = { id: song.id, ms: Math.round(now() - from) }
     if (!current()) return 'superseded'
     await leaveRoad('audio')
     await audio.surface.load(song, stream)
@@ -767,8 +806,14 @@ export function createPlayer(deps: PlayerDeps): Player {
     road = to
   }
 
-  /** The road a song opens on (#502): the audio road where one is wired, unless Jev read the words as a video. */
-  const roadFor = (video: boolean): Road => (deps.audio !== undefined && !video ? 'audio' : 'page')
+  /** The road a song opens on (#502): the audio road while it is taken, unless Jev read the words as a video. */
+  const roadFor = (video: boolean): Road => (roadOn() && !video ? 'audio' : 'page')
+
+  /** The watch page opened for a song the audio road could not play (#502, owner's ruling 3): told, and its start marked so. */
+  function fallBack(song: Song): void {
+    fellBack = song.id
+    waitFor({ kind: 'fallback', song }, false)
+  }
 
   /**
    * Open a song on the road it asks for, leaving `leaving`; the queue moves
@@ -778,17 +823,21 @@ export function createPlayer(deps: PlayerDeps): Player {
    * page of the person's own, so the song fails there and is passed over.
    */
   async function open(song: Song, current: () => boolean, leaving: Song | null, video = false, background = false): Promise<'opened' | 'failed' | 'superseded'> {
-    const first = await openOn(song, current, leaving, roadFor(video))
-    return first === 'failed' && roadFor(video) === 'audio' && !background ? openOn(song, current, leaving, 'page') : first
+    const on = roadFor(video)
+    fellBack = null
+    const first = await openOn(song, current, leaving, on, undefined, background)
+    if (first !== 'failed' || on !== 'audio' || background) return first
+    fallBack(song)
+    return openOn(song, current, leaving, 'page')
   }
 
   /** Open a song on this road; `at` (s), on the watch page, where it starts. */
-  async function openOn(song: Song, current: () => boolean, leaving: Song | null, on: Road, at?: number): Promise<'opened' | 'failed' | 'superseded'> {
+  async function openOn(song: Song, current: () => boolean, leaving: Song | null, on: Road, at?: number, background = false): Promise<'opened' | 'failed' | 'superseded'> {
     let landed: boolean | 'elsewhere' | 'superseded'
     try {
       await readLeaving(leaving)
       carrying = null
-      if (on === 'audio') landed = await streamTo(song, current)
+      if (on === 'audio') landed = await streamTo(song, current, background)
       else {
         if (road !== 'page') await leaveRoad('page')
         landed = await goTo(song, current, at)
@@ -894,10 +943,12 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /** A start, decided: its page's watch told a wall cleared from here on comes after it, and the start recorded. */
-  function decided(start: Omit<PlayerStart, 'consent'>): PlayerStart {
+  function decided(start: Omit<PlayerStart, 'consent' | 'road' | 'lookup' | 'fallback'>): PlayerStart {
     const watch = watchOf(start.video)
     if (watch !== null) watch.started = true
-    return record({ ...start, consent: watch === null ? null : clearedMs(watch) })
+    // Which road it took (#502), the lookup's time on the audio road, and whether the watch page stood in for the road.
+    const lookup = road === 'audio' && lookedUp !== null && lookedUp.id === start.video ? lookedUp.ms : null
+    return record({ ...start, road, lookup, fallback: road === 'page' && fellBack === start.video, consent: watch === null ? null : clearedMs(watch) })
   }
 
   /** A start, as the perf log hears it. */
@@ -921,6 +972,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     // more — for a Command; in the background the pane is not the Player's to take, and the song is held unstarted.
     if (road === 'audio') {
       if (background) return first
+      fallBack(song)
       const opened = await openOn(song, current, song, 'page')
       if (opened !== 'opened') return opened === 'superseded' ? 'superseded' : first
       return startOf(song, current, background, true)
@@ -963,7 +1015,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         const opened = await open(next, current, was, next.video === true, true)
         if (opened === 'opened') {
           // A video queued by Jev's reading (#502) opens on the watch page, and is shown as a `play` of one is.
-          if (deps.audio !== undefined && next.video === true) for (const listener of shownListeners) listener()
+          if (roadOn() && next.video === true) for (const listener of shownListeners) listener()
           const start = await playOn(next, current, true)
           if (start !== 'superseded' && !start.started) holdUnstarted()
           return
@@ -988,9 +1040,12 @@ export function createPlayer(deps: PlayerDeps): Player {
    * opened or failed; one a later Command overtook leaves it as it was.
    */
   async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song), video = song.video === true): Promise<PlayerOutcome> {
+    // Read once for the song: the road it was asked on is the one its Answer tells it fell back from.
+    const taken = roadOn()
     const outcome = await playSongOn(song, current, answer, then, video)
-    // With the audio road wired, a song on the watch page is one to show (#502): a video, or the road's fallback.
-    return deps.audio !== undefined && road === 'page' && outcome.superseded !== true && outcome.failure !== true ? { ...outcome, shown: true } : outcome
+    if (!taken || road !== 'page' || outcome.superseded === true || outcome.failure === true) return outcome
+    // With the audio road taken, a song on the watch page is one to show (#502): a video, or the road's fallback — which its Answer says (ui.md 2).
+    return { ...outcome, shown: true, ...(fellBack === song.id ? { answer: onItsWatchPage(outcome.answer) } : {}) }
   }
 
   async function playSongOn(song: Song, current: () => boolean, answer: string, then: () => Queue, video: boolean): Promise<PlayerOutcome> {
@@ -1495,7 +1550,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       return { result: `${action.op} held over an ad: ${seek} once the song plays`, answer: `${adWait(over.ad)}: the song will ${seek} once it plays.`, video: over.song.id }
     },
     road: () => road,
-    audioRoad: deps.audio !== undefined,
+    get audioRoad() {
+      return roadOn()
+    },
+    onWait(listener) {
+      waitListeners.add(listener)
+      return () => waitListeners.delete(listener)
+    },
   }
   return player
 }

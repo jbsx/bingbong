@@ -106,6 +106,7 @@ import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import type { Player, PlayerOutcome } from '../music/player'
 import { adWait, type AdShowing } from '../../core/music/nowPlaying'
+import { watchUrl } from '../../core/music/youtubeSearch'
 import { isSeek, type MediaOpAction } from '../../core/browser/mediaOp'
 import type { PlannerCapture, PlannerModel } from '../../core/ports/plannerModel'
 import { HANDS_OFF, errandGoalOf } from '../../core/errand/errandLine'
@@ -301,7 +302,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad' | 'nowPlaying' | 'onChange' | 'seekOverAd'>>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad' | 'nowPlaying' | 'onChange' | 'seekOverAd' | 'onWait'>>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
@@ -1169,7 +1170,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /**
    * A Command that takes the one pane (the grill's Q8): it moves the page, so a line running in the pane ends. A song
-   * that plays on the audio road (#502) leaves the pane alone; a video, or any song with no audio road wired, opens there.
+   * that plays on the audio road (#502) leaves the pane alone; a video, or any song while the road is not taken (audio-only music off), opens there.
    */
   const takesPane = (command: Command): boolean =>
     command.verb === 'navigate' || command.verb === 'search' || command.verb === 'back' || command.verb === 'forward' || command.verb === 'reload' || command.verb === 'resume' ||
@@ -2060,8 +2061,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let loading = false
     // What it loads (#442): the address the action goes to, else the page the pane is on now.
     let loadingHost: string | undefined
-    const sayLoading = (detail: string | undefined): void => {
-      loadingHost = detail
+    const sayLoading = (detail: string | undefined, host = detail): void => {
+      loadingHost = host
       publish({ type: 'status', turnId, status: 'loading', hop: task.hop, ...(detail !== undefined ? { detail } : {}), at: at() })
     }
     const release = deps.onEffect?.((effect) => {
@@ -2088,6 +2089,17 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             if (ad === null || !current() || !performing) return
             loading = true
             sayLoading(adDetail(ad))
+          })
+        : undefined
+    // The audio road's wait (#502, ui.md 2): the stream's lookup names its song, its seconds its own; a road that could not
+    // play it says the watch page opens instead — that page's host already named, so its landing goes on in the same words.
+    const releaseWait =
+      command.verb === 'play'
+        ? deps.player?.onWait?.((wait) => {
+            if (!current() || !performing) return
+            loading = true
+            if (wait.kind === 'lookup') sayLoading(`finding the audio for “${wait.song.title}”`)
+            else sayLoading(`the watch page for “${wait.song.title}” instead`, loadingDetail(watchUrl(wait.song.id)))
           })
         : undefined
     let unchanged = false
@@ -2236,6 +2248,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       release?.()
       releaseLanding?.()
       releaseAd?.()
+      releaseWait?.()
       reacting.settled()
     }
   }

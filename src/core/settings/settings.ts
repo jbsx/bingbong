@@ -74,6 +74,13 @@ export interface AppSettings {
   sttEngine: SttModel
   /** Kill switch for the embedder-level adblocker (issue #21). */
   adblockEnabled: boolean
+  /**
+   * Audio-only music (#502, the audio road): a song Jev reads as music plays
+   * its bare audio stream through yt-dlp, outside the pane. Off by default —
+   * yt-dlp is acceptable on the owner's kiosk, not for distribution (owner's
+   * ruling 2) — and off, every play opens the watch page. Read at each song.
+   */
+  audioOnlyMusic: boolean
   /** The Shelf's second folder (#424): an upload may take a file from it, beside bingbong_downloads; '' for none. Read flat. */
   shelfFolder: string
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
@@ -129,6 +136,7 @@ export function defaultSettings(): AppSettings {
     ttsVoice: '',
     sttEngine: 'parakeet',
     adblockEnabled: true,
+    audioOnlyMusic: false,
     shelfFolder: '',
     appearance: 'system',
     timeFormat: 'system',
@@ -276,6 +284,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     sttEngine: savedSttEngine(record),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
+    // Only an explicit true takes the audio road — missing/garbage is the watch page.
+    audioOnlyMusic: record.audioOnlyMusic === true,
     shelfFolder: asString(record.shelfFolder, defaults.shelfFolder).trim(),
     appearance: asAppearance(record.appearance),
     timeFormat: asTimeFormat(record.timeFormat),

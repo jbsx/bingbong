@@ -484,7 +484,7 @@ function HostSection() {
     window.bingbong.settings
       .hostChecks()
       .then((found) => {
-        if (!cancelled) setFindings(found.filter((finding) => finding.check !== 'ear'))
+        if (!cancelled) setFindings(found.filter((finding) => finding.check !== 'ear' && finding.check !== 'yt-dlp'))
       })
       .catch((cause: unknown) => reportRendererFault('settings.hostChecks', cause))
     return () => {
@@ -814,6 +814,43 @@ function NightDimMonitorField({ value, onChange }: { value: NightDimMonitor | nu
   )
 }
 
+/**
+ * Audio-only music (#502, the audio road): a song Jev reads as music plays
+ * its sound alone through yt-dlp, outside the pane. Off by default; the boot
+ * check's finding is said beside it while it is on, as Environment says the
+ * ear's.
+ */
+function AudioOnlyMusicField({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const [missing, setMissing] = useState<readonly HostFinding[]>([])
+  useEffect(() => {
+    let cancelled = false
+    window.bingbong.settings
+      .hostChecks()
+      .then((found) => {
+        if (!cancelled) setMissing(found.filter((finding) => finding.check === 'yt-dlp'))
+      })
+      .catch((cause: unknown) => reportRendererFault('settings.hostChecks', cause))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return (
+    <>
+      <Field label="Audio-only music">
+        <input type="checkbox" checked={on} aria-label="Audio-only music" onChange={(event) => onChange(event.target.checked)} />
+      </Field>
+      <p className="settings-note">A song plays its sound alone, through yt-dlp, without opening its YouTube page; a video still opens the page. Takes effect from the next song.</p>
+      {on
+        ? missing.map((finding) => (
+            <p key={finding.check} className="settings-note settings-host-missing">
+              {finding.message}
+            </p>
+          ))
+        : null}
+    </>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -1010,7 +1047,7 @@ export function SettingsPage({
           </p>
         </Section>
 
-        <Section id="browsing" title="Browsing" hint={`Ad blocking ${draft.adblockEnabled ? 'on' : 'off'} · web zoom ${draft.webZoomPercent}%`}>
+        <Section id="browsing" title="Browsing" hint={`Ad blocking ${draft.adblockEnabled ? 'on' : 'off'} · web zoom ${draft.webZoomPercent}%${draft.audioOnlyMusic ? ' · audio-only music' : ''}`}>
           <Field label="Block ads, trackers and malware domains">
             <input
               type="checkbox"
@@ -1020,6 +1057,7 @@ export function SettingsPage({
             />
           </Field>
           <p className="settings-note">Kill switch for the built-in blocker — takes effect without a restart.</p>
+          <AudioOnlyMusicField on={draft.audioOnlyMusic} onChange={(on) => setDraft({ ...draft, audioOnlyMusic: on })} />
           <Field label={`Web zoom — ${draft.webZoomPercent}%`}>
             <input
               type="range"

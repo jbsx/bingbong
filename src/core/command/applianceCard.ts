@@ -84,7 +84,7 @@ export interface ApplianceAskOptions {
   readonly heard?: readonly NameHearing[]
 }
 
-/** The Appliance Card's questions: the action card and the Slot; the Amount beside a media op or an app amount; `where` beside `play` on a site; `kind` beside `play` while the audio road is wired (#502); `steps` at hop 0 on a line with a conjunction. */
+/** The Appliance Card's questions: the action card and the Slot; the Amount beside a media op or an app amount; `where` beside `play` on a site; `kind` beside `play` while the audio road is taken (#502); `steps` at hop 0 on a line with a conjunction. */
 export type ApplianceQuestions = {
   readonly action: DecisionChoiceQuestion
   readonly slot: DecisionChoiceQuestion

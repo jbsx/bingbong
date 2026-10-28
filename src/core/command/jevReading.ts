@@ -117,7 +117,7 @@ const SCROLL_DOWN_PAST_SHOWS = 'scroll the page down a screen, when no block fur
 /** What the appliance holds that its verbs act on: whether the Queue holds a current song (#374), absent when no Player is wired, and whether its audio road is (#502); what it knows, each fact an option on the card (#402); the Last Page's name, which `resume` reopens (#408); and the app itself — its panel, view and settings, each op an option (#420). */
 export interface Appliance {
   readonly queued?: boolean
-  /** The audio road is wired (#502): a `play` is read as music or a video, music playing its sound alone. Off, every play opens the watch page and the card asks nothing of it. */
+  /** The audio road is taken (#502), audio-only music on in Settings: a `play` is read as music or a video, music playing its sound alone. Off, every play opens the watch page and the card asks nothing of it. */
   readonly audioRoad?: boolean
   /** The search's pick a correction acts on (#498): held while it opens, after its line was cut off, and while it plays. */
   readonly picked?: PickedSong
@@ -1139,7 +1139,7 @@ export function readSteps(answers: CommandAnswers, text: string): StepBoundary |
 /**
  * The `kind` Choice (#502, owner's ruling 1): whether what a `play` plays is
  * music to hear or a video to watch, asked beside the card while the audio
- * road is wired. Measured on the gate against two Appliance Verbs (arm a)
+ * road is taken (audio-only music on). Measured on the gate against two Appliance Verbs (arm a)
  * on 2026-10-28: both read the 11 music and video cases right and lost
  * none of 186; this arm changes no label and so is the cheaper to reverse.
  */
@@ -1154,7 +1154,7 @@ export function kindQuestion(): DecisionChoiceQuestion {
   }
 }
 
-/** Whether a card asks `kind` (#502): beside an offered `play`, while the audio road is wired; off, every play is the watch page and nothing is asked. */
+/** Whether a card asks `kind` (#502): beside an offered `play`, while the audio road is taken (audio-only music on); off, every play is the watch page and nothing is asked. */
 export function asksKind(appliance: Appliance | undefined, playOffered: boolean): boolean {
   return playOffered && appliance?.audioRoad === true
 }

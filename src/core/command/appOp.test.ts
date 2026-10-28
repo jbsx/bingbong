@@ -27,6 +27,12 @@ describe('appOptions: the app on the card (#420, ADR 0091)', () => {
     expect(offered.set_adblock_enabled_off).toContain('turn it off')
   })
 
+  it('offers audio-only music on and off by its spoken name (#502, ui.md: Spoken handle)', () => {
+    const offered = lines(stateWith({ audioOnlyMusic: false }))
+    expect(offered.set_audio_only_music_on).toContain('app setting: audio-only music (a song plays its sound alone, without the YouTube page), now off — turn it on')
+    expect(offered.set_audio_only_music_off).toContain('turn it off')
+  })
+
   it('offers no op for a setting voice may not change, nor for a record (hard policy, ADR 0091)', () => {
     const labels = appOptions(stateWith()).map((option) => option.label)
     for (const kept of ['mic', 'wake_word', 'pause_cap', 'resumption_merge', 'hot_listen', 'stt_engine', 'usage_dashboard', 'news', 'weight_', 'scale', 'latitude', 'longitude']) {

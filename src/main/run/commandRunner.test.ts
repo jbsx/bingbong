@@ -951,18 +951,18 @@ describe('the Player (#343)', () => {
   const QUEEN = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
 
   /** A runner wired to a real Player over a scripted YouTube. */
-  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory; timer?: CommandRunnerDeps['timer']; audio?: true }) {
+  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory; timer?: CommandRunnerDeps['timer']; audio?: true; audioOn?: () => boolean }) {
     let youtube!: ScriptedYouTube
     let player!: Player
     let audio: ReturnType<typeof scriptedAudio> | undefined
-    const { songs, audio: withAudio, ...rest } = options ?? {}
+    const { songs, audio: withAudio, audioOn, ...rest } = options ?? {}
     const wired = harness({
       ...rest,
       player: (browser) => {
         youtube = new ScriptedYouTube(browser)
         // The audio road (#502): its scripted surface plays what the pane's watch pages would.
         audio = withAudio === true ? scriptedAudio(youtube.watches) : undefined
-        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}), ...(audio !== undefined ? { audio: { surface: audio.surface, resolve: audio.resolve } } : {}) })
+        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}), ...(audio !== undefined ? { audio: { surface: audio.surface, resolve: audio.resolve, ...(audioOn !== undefined ? { on: audioOn } : {}) } } : {}) })
         return player
       },
     })
@@ -1023,6 +1023,39 @@ describe('the Player (#343)', () => {
     const { decision, runner } = music()
     await runner.run('play bohemian rhapsody')
     expect(decision.requests.at(-1)?.questions).not.toHaveProperty('kind')
+  })
+
+  /** The Capsule's Loading details, in order (#428, #502). */
+  const loadingDetails = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'status' && event.status === 'loading' && event.detail !== undefined ? [event.detail] : []))
+
+  it('the audio road\'s lookup is a narrated wait (#502, ui.md 2): Loading names the song it finds the audio for, and Playing ends it', async () => {
+    const { events, runner } = music({ audio: true })
+    await runner.run('play bohemian rhapsody')
+    expect(loadingDetails(events)).toEqual([`finding the audio for “${QUEEN}”`])
+    const lookup = events.findIndex((event) => event.type === 'status' && event.status === 'loading')
+    const acting = events.findIndex((event) => event.type === 'status' && event.status === 'acting')
+    expect(acting).toBeGreaterThan(-1)
+    expect(lookup).toBeGreaterThan(acting)
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
+  })
+
+  it('a lookup that fails is narrated to its end: Loading says the watch page opens instead, and the Answer says where it plays (#502)', async () => {
+    const { audio, events, runner } = music({ audio: true })
+    audio!.fails.add('fJ9rUzIMcZQ')
+    await runner.run('play bohemian rhapsody')
+    expect(loadingDetails(events)).toEqual([`finding the audio for “${QUEEN}”`, `the watch page for “${QUEEN}” instead`])
+    expect(displays(events)).toEqual([`Playing “${QUEEN}” on its watch page.`])
+  })
+
+  it('audio-only music off (#502): the play is exactly today\'s — no kind asked, no lookup, no wait named, no `shown` wake', async () => {
+    const { browser, audio, events, decision, runner } = music({ audio: true, audioOn: () => false })
+    await runner.run('play bohemian rhapsody')
+    expect(decision.requests.at(-1)?.questions).not.toHaveProperty('kind')
+    expect(audio!.resolved).toEqual([])
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+    expect(loadingDetails(events).some((detail) => detail.startsWith('finding the audio'))).toBe(false)
+    expect(events.filter((event) => event.type === 'shown')).toEqual([])
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
   })
 
   it('a lookup the audio road fails opens the watch page and shows it (#502, owner\'s ruling 3): the line is still done', async () => {

@@ -96,6 +96,33 @@ describe('buildAppReport', () => {
   })
 })
 
+describe('songs by road (#502)', () => {
+  const start = (durMs: number, detail: Record<string, unknown>): PerfSpanRecord => ({ ...app('media-start', { video: 'v', started: true, ...detail }), durMs })
+
+  it("splits the Player's starts by road: the audio road's lookup times, and how often the watch page stood in for it", () => {
+    const report = buildAppReport([
+      start(900, { road: 'audio', lookup: 4_600, fallback: false }),
+      start(700, { road: 'audio', lookup: 5_100, fallback: false }),
+      start(3_000, { road: 'audio', lookup: 4_000, fallback: false, started: false }),
+      start(2_500, { road: 'page', lookup: null, fallback: true }),
+      // Before #502 a start named no road: the watch page's.
+      start(2_000, {}),
+    ])
+    expect(report.songs).toEqual({
+      page: { count: 2, started: 2, startP50: 2_000, startP95: 2_500 },
+      audio: { count: 3, started: 2, startP50: 700, startP95: 900 },
+      lookupP50: 4_600,
+      lookupP95: 5_100,
+      fallbacks: 1,
+    })
+    expect(formatAppReport(report).find((line) => line.startsWith('songs'))).toBe('songs by road: page 2 (2 started, start p50 2000ms p95 2500ms) | audio 3 (2 started, start p50 700ms p95 900ms) | lookup p50 4600ms p95 5100ms | fell back to the page 1')
+  })
+
+  it('has no line with no song started', () => {
+    expect(buildAppReport([]).songs).toBeNull()
+  })
+})
+
 describe('the reaction split', () => {
   it('splits each Reaction that says when it fired: the read and the ask, then the action\'s own wait', () => {
     const reaction = (durMs: number, firedMs?: number): PerfSpanRecord => ({ turnId: 't', stage: 'reaction', durMs, at: AT, t: 0, detail: { verb: 'media', ...(firedMs !== undefined ? { firedMs } : {}) } })

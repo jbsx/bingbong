@@ -66,6 +66,16 @@ export function findOnPath(bin: string, path: string): boolean {
   return path.split(delimiter).some((dir) => dir !== '' && isExecutableFile(join(dir, bin)))
 }
 
+/**
+ * The audio road's yt-dlp (#502), looked for once at boot: missing, a song
+ * the audio-only music setting sends there opens its watch page instead —
+ * a finding the Settings page shows beside the toggle while it is on.
+ */
+export function checkYtDlp(binary: string, onPath: (bin: string) => boolean): HostFinding[] {
+  if (onPath(binary)) return []
+  return [{ check: 'yt-dlp', message: `yt-dlp is not installed (no '${binary}' on PATH, or BINGBONG_AUDIO_ROAD's path): audio-only music plays every song on its watch page instead. Install yt-dlp, and keep it current.` }]
+}
+
 /** The checks against this machine. */
 export function checkThisHost(env: Record<string, string | undefined>, playerBin: string): HostFinding[] {
   return checkHost({

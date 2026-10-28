@@ -150,8 +150,32 @@ export interface AppReport {
     /** How many records named each codec, by its leading part (`vp09`, `av01`, `opus`, `unknown`). */
     codecs: Record<string, number>
   } | null
+  /** The Player's song starts by the road each took (#488, #502), from the `media-start` spans; null when none. */
+  songs: SongsReport | null
   /** Boot, model loads, quit and the steady state (#429). */
   lifecycle: LifecycleReport
+}
+
+/** One road's song starts (#502): how many, how many played, from landing to start. */
+export interface RoadStarts {
+  count: number
+  started: number
+  startP50: number | null
+  startP95: number | null
+}
+
+/**
+ * The Player's song starts by road (#502): the watch page's and the audio
+ * road's apart, the road's lookup times, and how often the watch page stood
+ * in for the road. A start logged before #502 carries no road: a page's.
+ */
+export interface SongsReport {
+  page: RoadStarts
+  audio: RoadStarts
+  lookupP50: number | null
+  lookupP95: number | null
+  /** Page starts that were the audio road's fallback. */
+  fallbacks: number
 }
 
 export function isAppRecord(record: PerfSpanRecord): boolean {
@@ -164,6 +188,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
   const byType = new Map<string, number[]>()
   const plays: PlaybackRecord[] = []
   const cpuCounts = new Set<number | null>()
+  const starts: { road: 'page' | 'audio'; started: boolean; ms: number; lookup: number | null; fallback: boolean }[] = []
   for (const record of records) {
     if (!isAppRecord(record) || record.detail === undefined) continue
     const detail = record.detail
@@ -189,9 +214,29 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
       }
     } else if (record.stage === 'playback') {
       plays.push(detail as unknown as PlaybackRecord)
+    } else if (record.stage === 'media-start') {
+      starts.push({ road: detail.road === 'audio' ? 'audio' : 'page', started: detail.started === true, ms: record.durMs, lookup: typeof detail.lookup === 'number' ? detail.lookup : null, fallback: detail.fallback === true })
     }
   }
-  return { runs: [...runs.values()], cpu: cpuReport(totals, byType, cpuCounts.size === 1 ? [...cpuCounts][0] : null), playback: playbackReport(plays), lifecycle: buildLifecycleReport(records) }
+  return { runs: [...runs.values()], cpu: cpuReport(totals, byType, cpuCounts.size === 1 ? [...cpuCounts][0] : null), playback: playbackReport(plays), songs: songsReport(starts), lifecycle: buildLifecycleReport(records) }
+}
+
+const percentileOf = (samples: readonly number[], p: number): number | null => (samples.length === 0 ? null : nearestRankPercentile([...samples].sort((a, b) => a - b), p))
+
+function songsReport(starts: readonly { road: 'page' | 'audio'; started: boolean; ms: number; lookup: number | null; fallback: boolean }[]): SongsReport | null {
+  if (starts.length === 0) return null
+  const onRoad = (road: 'page' | 'audio'): RoadStarts => {
+    const mine = starts.filter((start) => start.road === road)
+    const ms = mine.filter((start) => start.started).map((start) => start.ms)
+    return { count: mine.length, started: ms.length, startP50: percentileOf(ms, 50), startP95: percentileOf(ms, 95) }
+  }
+  const lookups = starts.flatMap((start) => (start.lookup === null ? [] : [start.lookup]))
+  return { page: onRoad('page'), audio: onRoad('audio'), lookupP50: percentileOf(lookups, 50), lookupP95: percentileOf(lookups, 95), fallbacks: starts.filter((start) => start.road === 'page' && start.fallback).length }
+}
+
+function formatRoadStarts(name: string, road: RoadStarts): string {
+  const start = road.startP50 === null || road.startP95 === null ? 'none started' : `start p50 ${formatMs(road.startP50)} p95 ${formatMs(road.startP95)}`
+  return `${name} ${road.count} (${road.started} started, ${start})`
 }
 
 function cpuReport(totals: number[], byType: Map<string, number[]>, cpus: number | null): AppReport['cpu'] {
@@ -251,6 +296,11 @@ export function formatAppReport(report: AppReport): string[] {
     const tally = Object.entries(p.codecs)
     const codecs = tally.length > 0 ? ` | codecs ${tally.map(([codec, count]) => `${codec} ×${count}`).join(', ')}` : ''
     lines.push(`playback: ${p.count} played (${p.neverPlayed} never started) | ${start} | stalls ${p.stalls} for ${formatMs(p.stallMs)}${frames}${codecs}`)
+  }
+  if (report.songs !== null) {
+    const s = report.songs
+    const lookup = s.lookupP50 === null || s.lookupP95 === null ? '' : ` | lookup p50 ${formatMs(s.lookupP50)} p95 ${formatMs(s.lookupP95)}`
+    lines.push(`songs by road: ${formatRoadStarts('page', s.page)} | ${formatRoadStarts('audio', s.audio)}${lookup} | fell back to the page ${s.fallbacks}`)
   }
   lines.push(...formatLifecycleReport(report.lifecycle))
   return lines

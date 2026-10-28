@@ -144,6 +144,13 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
   })
 
+  it('takes audio-only music only on an explicit true: off by default, so a fresh install plays the watch page (#502, owner\'s ruling 2)', () => {
+    expect(defaultSettings().audioOnlyMusic).toBe(false)
+    expect(sanitizeSettings({}).audioOnlyMusic).toBe(false)
+    expect(sanitizeSettings({ audioOnlyMusic: 'yes' }).audioOnlyMusic).toBe(false)
+    expect(sanitizeSettings({ audioOnlyMusic: true }).audioOnlyMusic).toBe(true)
+  })
+
   it('keeps a saved 12- or 24-hour clock and reads anything else as the locale\'s', () => {
     expect(sanitizeSettings({ timeFormat: '12' }).timeFormat).toBe('12')
     expect(sanitizeSettings({ timeFormat: '24' }).timeFormat).toBe('24')
