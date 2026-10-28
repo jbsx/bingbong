@@ -7,5 +7,7 @@
   "happened": "overlap:gate 4-skip-ahead-while-loading at p1 (media-not-started 43%) on baseten-mammoth-27b-latest at 9418b2af (impl-496's F3 run, kept in worktree impl-496 at logs/overlap/impl496-f3/4-skip-ahead-while-loading/decision-models_baseten-mammoth-27b-latest/p1.json): the consent sheet was cleared before the start, then `skip ahead a minute` (media-forward 60 s) said \"Skipped forward 60 s, to 0:06\" and the media went back to 0:00, ending at 2 s, not 60–150 s. The pane's end text reads \"Sponsored 2 of 2 … 0:02 / 0:15\": the seek fired on YouTube's 15 s pre-roll ad, clamped at its end, and the second ad began from 0:00. Again at f72ef1fc (logs/overlap/impl496-f2f4, same point): \"forward [0]: 0:02 → 0:06\" on an 8 s asos.com ad, \"Sponsored 2 of 2\". A third time at 48f14b2b (logs/overlap/impl496-final3, p2): \"forward [0]: 0:02 → 0:20\", the song then at 0:00 / 4:59. Seen again under the third #496 implementer (worktree impl-496, logs/overlap/): at a867abe7 (impl496c-f2-r3, p1 run 3) \"forward [0]: 0:02 → 0:14\"; at 6f1bbfbf = a9259f48 on main (impl496c-final) at p1, p2 and p3, \"0:02 → 0:06\", \"0:03 → 0:14\", \"0:09 → 0:14\"; at d00f69dc = 92f9590b on main (impl496c-pair-b, p3; and impl496c-pair-a, arm a, at p1–p3) \"0:03 → 0:06\" on an 8 s asos.com ad, \"Sponsored 2 of 2\". Not consent; #497's scenario (orchestrator, #496 note 4107749625)",
   "meant": "The song skips ahead a minute, to about 1:00 of Let Down",
   "log": "decision-1793184212219-1.jsonl",
-  "claimedBy": "#497"
+  "claimedBy": "#497",
+  "fixedBy": "15b18388",
+  "case": "src/main/music/player.test.ts (a seek that lands inside an ad); src/main/run/commandRunner.test.ts (an ad before the song, on the runner); jev turn-mvrzkyzj-2-ad-appliance"
 }
