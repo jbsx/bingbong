@@ -76,12 +76,13 @@ export class ScriptedYouTube {
   adShowing = false
   /**
    * A pre-roll ad the next watch page plays in its element before the song
-   * (#497), its length (s); null for none. Its time moves on the start's
-   * reads, and at its end the song plays from 0 by itself.
+   * (#497), its length (s) — or a pod of them, the marker off for one read
+   * between two; null for none. Its time moves on the start's reads, and at
+   * its end the song plays from 0 by itself.
    */
-  preRollS: number | null = null
-  /** The pre-roll playing now, and the song's length the element reports once it ends. */
-  private ad: { lengthS: number; song: number | null } | null = null
+  preRollS: number | readonly number[] | null = null
+  /** The pre-roll playing now, the pod's ads after it, the song's length the element reports once they end, and whether the marker is off between two. */
+  private ad: { lengthS: number; next: number[]; song: number | null; between: boolean } | null = null
   /** How the next watch page's element starts (#488). */
   starts: ScriptedStart = 'itself'
   /** The element's `readyState`: 4 holds enough to play through. */
@@ -187,7 +188,8 @@ export class ScriptedYouTube {
       this.pressed = false
       this.duckMark = null
       // The pre-roll (#497): the element plays the ad first, at its length, the page's ad marker on.
-      this.ad = this.preRollS === null ? null : { lengthS: this.preRollS, song: this.ad?.song ?? this.element.duration }
+      const pod = this.preRollS === null ? [] : typeof this.preRollS === 'number' ? [this.preRollS] : [...this.preRollS]
+      this.ad = pod.length === 0 ? null : { lengthS: pod[0]!, next: pod.slice(1), song: this.ad?.song ?? this.element.duration, between: false }
       this.preRollS = null
       if (this.ad !== null) {
         this.adShowing = true
@@ -233,13 +235,26 @@ export class ScriptedYouTube {
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return null
+    // Between two ads of a pod: the next one starts from 0, the marker on again.
+    if (this.ad !== null && this.ad.between) {
+      this.ad = { ...this.ad, between: false }
+      this.adShowing = true
+      this.element = { ...this.element, currentTime: 0, duration: this.ad.lengthS }
+    }
     // Time moves only on an element holding data to play.
     if (!this.element.paused && this.readyState > 2) {
       const time = this.element.currentTime + START_STEP_S
       const stalls = this.starts === 'stalls' && !this.pressed && time >= STALLS_AT_S
       this.element = { ...this.element, currentTime: stalls ? STALLS_AT_S : time, paused: stalls }
+      // An ad of a pod ran out with another after it: the marker is off for this one read.
+      if (this.ad !== null && time >= this.ad.lengthS && this.ad.next.length > 0) {
+        const [lengthS, ...next] = this.ad.next
+        this.ad = { ...this.ad, lengthS: lengthS!, next, between: true }
+        this.adShowing = false
+        this.element = { ...this.element, currentTime: 0 }
+      }
       // The ad ran out: the song plays in the same element from 0 by itself, the marker off.
-      if (this.ad !== null && time >= this.ad.lengthS) {
+      else if (this.ad !== null && !this.ad.between && time >= this.ad.lengthS) {
         this.element = { ...this.element, currentTime: 0, duration: this.ad.song, paused: false }
         this.ad = null
         this.adShowing = false

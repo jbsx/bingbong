@@ -751,7 +751,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       // A guess (#497 F2, the gate cannot force an ad): the line runs through the whole ad and says Playing once the song plays.
       // The kiosk's `media-start` records with `ad` settle it; saying "An ad first" at once instead is one line here.
       if (last !== null && last.ad) {
-        ad ??= { at: now(), read, ms: null }
+        // A pod of ads ("Sponsored 1 of 2") may drop the marker for a read between them: the hold runs on from the first.
+        if (ad === null) ad = { at: now(), read, ms: null }
+        else ad.ms = null
         showAd(song, last)
         if (!last.paused && (before === null || last.time > before.time)) phase = { ...phase, at: now(), read }
       } else if (ad !== null && ad.ms === null && last !== null) {
@@ -1172,9 +1174,10 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function readWatch(status: WatchStatus): Promise<void> {
     const song = state.current
     // An ad in the song's element (#497), mid-song too: Now Playing says it until the song itself plays again.
-    if (song !== null && status.id === song.id && status.hasVideo) showAd(song, status.ad ? { time: status.elapsed, duration: status.duration } : null)
+    // Off the song's page, or its element gone, no ad is counted: a count that stands still would read as frozen (ui.md 2).
+    if (song !== null) showAd(song, status.id === song.id && status.hasVideo && status.ad ? { time: status.elapsed, duration: status.duration } : null)
     if (song === null || !showsSong(status, song)) return
-    progress ={ id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
+    progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
     // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since.

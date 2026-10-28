@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { NowPlaying } from '../../core/music/nowPlaying'
+import { nowPlayingView, type NowPlaying } from '../../core/music/nowPlaying'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import { ChromeIcon } from './ChromeIcon'
@@ -67,14 +67,16 @@ function TimerWidget({ timer }: { timer: Exclude<TimerState, { status: 'off' }> 
 function SongWidget({ song }: { song: NowPlaying }) {
   const state = song.ended ? 'ended' : song.paused ? 'paused' : null
   const who = song.channel === '' ? '' : ` · ${song.channel}`
+  // Over an ad (#497) the title line is the wait's, never the song's: Now Playing's own words.
+  const title = nowPlayingView(song).title
   return (
     <span
       className={`toolbar-widget toolbar-song${state !== null ? ' toolbar-song--quiet' : ''}`}
-      aria-label={`Now playing: ${song.title}${who}${state !== null ? `, ${state}` : ''}`}
-      title={`${song.title}${who}${state !== null ? ` · ${state}` : ''}`}
+      aria-label={`Now playing: ${title}${who}${state !== null ? `, ${state}` : ''}`}
+      title={`${title}${who}${state !== null ? ` · ${state}` : ''}`}
     >
       <ChromeIcon name={state === 'ended' ? 'ended' : 'music'} size={22} />
-      <span className="toolbar-widget-text toolbar-song-title">{song.title}</span>
+      <span className="toolbar-widget-text toolbar-song-title">{title}</span>
     </span>
   )
 }

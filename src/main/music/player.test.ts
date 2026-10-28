@@ -1186,7 +1186,7 @@ describe("a song's start (#488): Playing only when the element plays", () => {
 })
 
 describe('a pre-roll ad before the song (#497): the start counts only the song’s own time', () => {
-  /** A 2:00 pre-roll, its Skip offered at 5 s and never pressed, then the song. */
+  /** A 2:00 pre-roll, then the song: the Player never presses anything over it (the page's Skip is Jev's, a click of its ref). */
   const PRE_ROLL_S = 120
   function prerolled() {
     const browser = new FakeBrowser()
@@ -1234,6 +1234,30 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
     expect(played).toMatchObject({ superseded: true, answer: '' })
     expect(youtube.adShowing).toBe(true)
     expect(starts).toEqual([])
+  })
+
+  it('a pod of two ads, the marker off for a read between them: one start, held through both, and no ad left on Now Playing', async () => {
+    const { youtube, player, starts } = prerolled()
+    youtube.preRollS = [15, 8]
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false })])
+    // Held from the first ad's first read to the song's: both ads' reads, 250 ms each.
+    expect(starts[0]!.ad).toBeGreaterThanOrEqual(22_000)
+    expect(player.nowPlaying()?.ad ?? null).toBeNull()
+  })
+
+  it('the poll off the song’s page, mid-ad: no ad is left counting on Now Playing', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: 9, duration: 30 }
+    await player.check()
+    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 9, durationS: 30 })
+    // The element is gone (no player video): the count does not stand frozen.
+    youtube.watches.delete('aaaaaaaaaaa')
+    await player.check()
+    expect(player.nowPlaying()?.ad ?? null).toBeNull()
   })
 
   it('a song with no ad records none', async () => {

@@ -38,7 +38,7 @@ export interface AdShowing {
   readonly durationS: number | null
 }
 
-/** What the card, the capsule and the card's line call the wait (#497): one word for it everywhere (ui.md 9). */
+/** What Now Playing calls the wait (#497), on the Idle Screen's card and the toolbar alike: one word for it everywhere (ui.md 9). */
 export const AD_FIRST = 'An ad first'
 
 /** The ad's wait in words: `An ad first, 0:05 of 2:00`; its length left off while unknown. */
