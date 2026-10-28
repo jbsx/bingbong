@@ -89,9 +89,12 @@ _Avoid_: cloud STT tier, hybrid ear, router
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
 speech. The Abort Head is the one bare-speech exception outside a listen.
 Inside an open listen, the person's speech over the app's voice cuts it too
-(#490): the voice ducks at speech start, the line is read, and the voice
-stops when the line is read as for the app, or comes back up when it was the
-app's own words or a line read as no Command.
+(#490): the voice ducks at speech start and the line is read; a stretch well
+above the ducked voice is cut out of its capture and read alone. The voice
+stops at the read when the line is for the app (an action, or a Fate that
+ends, joins or waits on the line running), and comes back up when it was the
+app's own words, or a line read as no Command that lets the running one go
+on.
 
 **Ducking**:
 The music dropping under the voice (#344): while the ear is open — from a
