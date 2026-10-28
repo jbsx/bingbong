@@ -27,5 +27,5 @@
   "evidence": [
     "turn-mvplpcok-v17"
   ],
-  "state": {"is": "red", "on": "b528610c", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"is": "red", "on": "6e0279eb", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }

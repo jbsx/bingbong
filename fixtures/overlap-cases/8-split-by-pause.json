@@ -31,5 +31,5 @@
   "evidence": [
     "turn-mvphypmf-vk"
   ],
-  "state": {"is": "green", "on": "6d4fce68", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"is": "green", "on": "6e0279eb", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }

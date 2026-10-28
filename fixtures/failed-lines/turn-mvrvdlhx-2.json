@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvrvdlhx-2",
+  "transcript": "play yellow, no, by coldplay",
+  "at": 1793177153681,
+  "source": "typed",
+  "stage": "player",
+  "happened": "overlap:gate 2-correct-by-coldplay at p2 (media-not-started 61%) on baseten-mammoth-27b-latest at 6e0279eb (run of record): the joined `no, by coldplay` played Coldplay - Yellow and said so, then YouTube's consent sheet (Before you continue) drew over the started song and it stopped at 0:05: nothing is playing at the end (#492's residue)",
+  "meant": "The song plays on once the consent sheet is cleared",
+  "log": "decision-1793177152574-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvrvrlao-1",
+  "transcript": "play let down by radiohead",
+  "at": 1793177805194,
+  "source": "typed",
+  "stage": "player",
+  "happened": "overlap:gate 4-skip-ahead-while-loading at p2 (media-not-started 44%) on baseten-mammoth-27b-latest at 6e0279eb (run of record): Let Down played and `skip ahead a minute` seeked it to 1:03, then YouTube's consent sheet drew over it and it stopped: nothing is playing at the end (#492's residue)",
+  "meant": "The song plays on from 1:03 once the consent sheet is cleared",
+  "log": "decision-1793177808184-1.jsonl"
+}

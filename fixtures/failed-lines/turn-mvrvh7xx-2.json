@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvrvh7xx-2",
+  "transcript": "play hurt, no, the other one",
+  "at": 1793177321454,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "overlap:gate 2-correct-the-other-one at p1–p3 on baseten-mammoth-27b-latest at 6e0279eb (run of record): `no, the other one` given while `play hurt` was opening joined it as `play hurt no the other one`, the correction's words searched as the song's, and played The Used - Hurt No One at all three points; p1 and p3 then stopped under YouTube's consent sheet (nothing is playing), p2 played on and nothing said meant another song called Hurt",
+  "meant": "Another song or version called Hurt than the one picked first plays, and is said",
+  "log": "decision-1793177320821-1.jsonl"
+}

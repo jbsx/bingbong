@@ -11,5 +11,5 @@
     "lines": ["cancelled", "done"]
   },
   "evidence": ["turn-mvr6e4ow-2"],
-  "state": {"is": "green", "on": "ccc83441", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"is": "red", "on": "6e0279eb", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }
