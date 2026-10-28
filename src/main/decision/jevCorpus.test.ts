@@ -301,7 +301,7 @@ describe('pnpm jev:replay over a corpus folder', () => {
 
   it('prints each case\'s size, marks one over the Card Budget, and the chars per token the hosts counted (#406, ADR 0088)', async () => {
     saveCase('a-small', 'state-a', [{ question: 'target', label: 'ref-21' }])
-    saveCase('b-large', `state-b ${'x'.repeat(400)}`, [{ question: 'target', label: 'ref-21' }])
+    saveCase('b-large', `state-b ${'x '.repeat(200)}`, [{ question: 'target', label: 'ref-21' }])
     const counted: DecisionModel = {
       model: 'host/mammoth',
       async ask(request) {
