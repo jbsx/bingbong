@@ -92,6 +92,8 @@ export class ScriptedYouTube {
   sheetsCleared = 0
   /** How many timer turns a clear of the drawn sheet takes (#492), the browser's collect and Jev's ask: past every read of a start whose waits take none. */
   sheetClearTurns = 0
+  /** YouTube's own player starts the song as the sheet leaves, whatever paused it before (#489, the kept runs at d9e84eec). */
+  sheetStartsOnClear = false
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
   /** How often the prompt was answered Yes. */
@@ -142,6 +144,7 @@ export class ScriptedYouTube {
     this.consented = true
     this.sheetsCleared += 1
     this.readyState = 4
+    if (this.sheetStartsOnClear) this.element = { ...this.element, paused: false }
     return SHEET_DISMISSAL
   }
 

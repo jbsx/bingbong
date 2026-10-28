@@ -114,6 +114,8 @@ interface ConsentWatch {
   honoured: boolean
   /** The song's start was decided: a wall cleared now came after it. */
   started: boolean
+  /** A pause ended the watch (#489): a clear already out when it came lets the page start the song, and the page is held paused. */
+  paused: boolean
 }
 
 /** From the landing to the clear (ms); null while none was. */
@@ -409,7 +411,7 @@ export function createPlayer(deps: PlayerDeps): Player {
    */
   function watchConsent(song: Song): void {
     if (browser.clearConsent === undefined) return
-    const mine: ConsentWatch = { video: song.id, from: now(), at: null, looking: null, honoured: false, started: false }
+    const mine: ConsentWatch = { video: song.id, from: now(), at: null, looking: null, honoured: false, started: false, paused: false }
     consentWatch = mine
     void (async () => {
       for (let look = 0; consentWatch === mine && Math.max(now() - mine.from, look * CONSENT_LOOK_MS) < CONSENT_WATCH_MS; look += 1) {
@@ -437,12 +439,30 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (line !== null) {
             mine.at = now()
             deps.onConsent?.({ video: song.id, ms: clearedMs(mine)!, afterStart: mine.started, line })
+            if (mine.paused) await holdPaused(song)
             return
           }
         }
         await sleep(CONSENT_LOOK_MS)
       }
     })()
+  }
+
+  /**
+   * A page whose wall was cleared after a pause ended its watch (#489, the
+   * overlap gate's 1-replace): the clear was out when the pause came, and
+   * the page starts its song as the sheet leaves. Held paused for a
+   * self-start's bound and a start's play past it — the window in which a
+   * song starts by itself — until the Player is asked anything, or the pane
+   * leaves the song's page.
+   */
+  async function holdPaused(song: Song): Promise<void> {
+    const mine = generation
+    for (let read = 0; read * START_READ_MS < SELF_START_MS + PLAYED_S * 1000; read += 1) {
+      if (generation !== mine || withheld !== null || videoIdOf(browser.state().url ?? '') !== song.id) return
+      await evaluate<PausedAll>(PAUSE_ALL_SCRIPT)
+      await sleep(START_READ_MS)
+    }
   }
 
   /**
@@ -1065,6 +1085,7 @@ export function createPlayer(deps: PlayerDeps): Player {
 
     async pauseAll() {
       // A pause ends the consent watch (#489): a wall cleared after it lets the page start the song it was told to stop.
+      if (consentWatch !== null) consentWatch.paused = true
       consentWatch = null
       // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
       const [stopped, framed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT), pauseFrames()])

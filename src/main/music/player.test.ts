@@ -6,7 +6,7 @@ import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
 import { createPlayer, type PlayerConsent, type PlayerStart, type SongMemory } from './player'
-import { SHEET_DISMISSAL, ScriptedYouTube, videoItem } from './scriptedYouTube'
+import { SHEET_DISMISSAL, SHEET_DRAWS_AT, ScriptedYouTube, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
 // page's video in the pane over CDP. Tested against a scripted YouTube:
@@ -1261,6 +1261,27 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     await played
     for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
     expect(youtube.sheetsCleared).toBe(0)
+  })
+
+  it('a clear already out when the pause came is held: the page that starts its song as the sheet leaves is paused again (#489)', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.starts = 'sheet'
+    youtube.sheetClearTurns = 20
+    youtube.sheetStartsOnClear = true
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: () => new Promise((resolve) => setTimeout(resolve, 0)) })
+    let live = true
+    const played = player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)
+    // The look that finds the sheet is out: the Command ends and the runner pauses the pane under it.
+    while (browser.consentLooks < SHEET_DRAWS_AT) await new Promise((resolve) => setTimeout(resolve, 0))
+    live = false
+    await player.pauseAll()
+    await played
+    while (youtube.sheetsCleared === 0) await new Promise((resolve) => setTimeout(resolve, 0))
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(youtube.element.paused).toBe(true)
   })
 
   it('a song the page pauses after its start is not pressed again: a pause is never overridden', async () => {
