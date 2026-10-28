@@ -59,7 +59,9 @@ export function spansOf(records: RunRecords, lineAt: number): Spans {
   const speak = after.find((record) => record.event.type === 'speak')
   if (speak !== undefined) {
     const spoken = after.find((record) => record.event.type === 'spoken' && record.t >= speak.t)
-    if (spoken !== undefined) spans.speaking = [at(speak.t), at(spoken.t)]
+    // A sentence still sounding when the run ended spans to its last record, as an unended loading does (#490: a read longer than the run).
+    const last = Math.max(after[after.length - 1]!.t, records.pane[records.pane.length - 1]?.t ?? 0)
+    spans.speaking = [at(speak.t), at(spoken?.t ?? last)]
   }
   const asked = after.find((record) => record.event.type === 'site_question')
   if (asked !== undefined) spans.asked = at(asked.t)
