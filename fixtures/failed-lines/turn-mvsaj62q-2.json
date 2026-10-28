@@ -7,5 +7,7 @@
   "happened": "overlap:gate 4-skip-ahead-while-loading at p2 (media-not-started 44%) on baseten-mammoth-27b-latest at 6588a8b1 (run of record 2026-10-28 afternoon, kept at logs/overlap/record-6588a8b1): the consent sheet was cleared before the start (told road, gone 839 ms), Let Down played from 0:00, skip ahead a minute read forward 60 s (Jev 593 ms) and said Skipped forward 60 s, to 1:07; from that seek on the element stayed paused at 1:07 to the end (no ad counted, ad null; no wall drawn after): nothing is playing",
   "meant": "the song plays on from 1:07 after the skip",
   "log": "decision-1793202604046-1.jsonl",
-  "claimedBy": "#505"
+  "claimedBy": "#505",
+  "fixedBy": "da72a1b5",
+  "case": "overlap 4-skip-ahead-while-loading + player.test.ts 'a seek that leaves the playing song paused (#505)'"
 }
