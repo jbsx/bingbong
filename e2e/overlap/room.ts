@@ -56,7 +56,9 @@ export async function openRoom(dir: string): Promise<Room> {
   const daemon = spawn(
     'pulseaudio',
     ['-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=no', '--system=no', '--disable-shm=yes', '--log-target=stderr', '-L', `module-native-protocol-unix socket=${socket} auth-anonymous=1`, '-L', `module-null-sink sink_name=${SINK} rate=16000 channels=1`, '-L', `module-remap-source master=${SINK}.monitor source_name=${MIC} rate=16000 channels=1`],
-    { env: { ...process.env, PULSE_RUNTIME_PATH: join(dir, 'run'), PULSE_STATE_PATH: join(dir, 'state') }, stdio: 'ignore' },
+    // Off the session bus: a room's daemon claims org.PulseAudio1 there, and a second room beside a live one (the
+    // capture slot is three runs) exits on the name already taken, so no two rooms could be up at once (#494).
+    { env: { ...process.env, PULSE_RUNTIME_PATH: join(dir, 'run'), PULSE_STATE_PATH: join(dir, 'state'), DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(dir, 'no-bus')}` }, stdio: 'ignore' },
   )
   const children: ChildProcess[] = []
   const pactl = (...args: string[]) => spawnSync('pactl', ['-s', server, ...args], { encoding: 'utf8' })
