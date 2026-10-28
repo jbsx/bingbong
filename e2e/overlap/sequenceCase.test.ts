@@ -28,6 +28,11 @@ describe('a Sequence Case read from its file', () => {
     expect(readSequenceCase(typed, '1-x.json')).toMatchObject({ echo: false })
   })
 
+  it('a start may play a song in a pane that was on a page first, so there is a page to go back to (#494)', () => {
+    const start = { url: 'https://duckduckgo.com/', playing: 'iraada niyam' }
+    expect(readSequenceCase({ ...typed, start }, '8-x.json')).toMatchObject({ start })
+  })
+
   it.each([
     ['a file name with no row', typed, 'replace.json', /row/],
     ['a start of no known kind', { ...typed, start: { song: 'x' } }, '1-a.json', /start/],

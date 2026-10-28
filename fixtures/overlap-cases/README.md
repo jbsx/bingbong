@@ -14,7 +14,7 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
 
 ```json
 {
-  "start": { "url": "…" } | { "playing": "…" } | { "asked": { "url": "…", "line": "…" } },
+  "start": { "url": "…" } | { "playing": "…" } | { "url": "…", "playing": "…" } | { "asked": { "url": "…", "line": "…" } },
   "input": "typed" | "spoken",
   "listen": "wake" | "hotkey",
   "echo": true,
@@ -38,7 +38,9 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
 ```
 
 - **start**: a page at a fixed URL; a song playing (`play <words>` given and
-  heard playing first); or a question the app has just asked (the URL
+  heard playing first); a song playing in a pane that
+  opened a page first (`url` then `playing`: one navigation behind the song,
+  a page to go back to, #494); or a question the app has just asked (the URL
   opened, the line given, and the app asking before line 1). The start is
   only the precondition, however it got there. A song on screen that has
   not started 10 s after its line is started with the media's own play, as

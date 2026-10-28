@@ -10,7 +10,12 @@ export type NamedAfter = 'shown' | 'changed' | 'asked'
 /** When a line arrives, counted from the first line: a fixed ms, a window sampled at seeded points, or a point a person could see or hear. */
 export type LineTime = { readonly ms: number } | { readonly ms: readonly [number, number] } | { readonly while: NamedWhile } | { readonly after: NamedAfter }
 
-export type CaseStart = { readonly url: string } | { readonly playing: string } | { readonly asked: { readonly url: string; readonly line: string } }
+export type CaseStart =
+  | { readonly url: string }
+  | { readonly playing: string }
+  /** A song playing in a pane that was on `url` first: one navigation behind it, a page to go back to (#494). */
+  | { readonly url: string; readonly playing: string }
+  | { readonly asked: { readonly url: string; readonly line: string } }
 
 export interface CaseLine {
   readonly words: string
@@ -94,11 +99,12 @@ function readTime(raw: unknown, what: string): LineTime | string {
 
 function readStart(raw: unknown): CaseStart | string {
   if (isObject(raw)) {
+    if (isString(raw.url) && isString(raw.playing)) return { url: raw.url, playing: raw.playing }
     if (isString(raw.url)) return { url: raw.url }
     if (isString(raw.playing)) return { playing: raw.playing }
     if (isObject(raw.asked) && isString(raw.asked.url) && isString(raw.asked.line)) return { asked: { url: raw.asked.url, line: raw.asked.line } }
   }
-  return 'start is { url }, { playing } or { asked: { url, line } }'
+  return 'start is { url }, { playing }, { url, playing } or { asked: { url, line } }'
 }
 
 function readExpect(raw: unknown): CaseExpect | string {

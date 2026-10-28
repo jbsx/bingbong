@@ -76,16 +76,30 @@ const SOURCES: readonly Source[] = [
     running: { words: 'Back to', stage: 'Speaking', done: [], sinceMs: 1730 },
     expect: [{ question: 'fate', label: 'joins', atLeast: 0.7 }],
   },
+  // #494 on the ruled start (a page to go back to): the second half read after the first had landed its back, the line still loading.
+  // Its start's own play is a line before it, so the running line is the live card's, given here.
+  {
+    name: '8-split-landed',
+    turnId: 'turn-mvrqdupo-v2',
+    from: '/tmp/impl494/f1',
+    run: `8-split-by-pause/${MAMMOTH}/p1`,
+    running: { words: 'Back to', stage: 'Loading', detail: 'duckduckgo.com', done: ['back (opened duckduckgo.com)'], sinceMs: 1500 },
+    expect: [{ question: 'fate', label: 'joins', atLeast: 0.7 }],
+  },
 ]
 
 /** A kept ask made with a line running already (#494): the card it was built from, the running lines and the Fate taken off. */
 function withoutRunning(ask: { state: string; questions: DecisionQuestions }): { state: string; questions: DecisionQuestions } {
-  const at = ask.state.indexOf("\nStill running, from the user's line before this one")
+  // The running lines sit right after the words since #494 (at the foot before): only they leave, the rest of the card stays.
+  const lines = ask.state.split('\n')
+  const at = lines.findIndex((line) => line.startsWith("Still running, from the user's line before this one"))
   if (at === -1) return ask
+  const ofRunning = (line: string) => /^(Its stage|Its done so far|It is opening): /.test(line)
+  const state = [...lines.slice(0, at), ...lines.slice(at + 1).filter((line, index) => !(ofRunning(line) && lines.slice(at + 1, at + 1 + index).every(ofRunning)))].join('\n')
   const { fate: _fate, ...questions } = ask.questions as Record<string, DecisionQuestions[string]>
   const action = questions.action
   const options = action !== undefined && action.type === 'choice' ? Object.fromEntries(Object.entries(action.options).filter(([label]) => label !== 'say_doing')) : undefined
-  return { state: ask.state.slice(0, at), questions: { ...questions, ...(action !== undefined && options !== undefined ? { action: { ...action, options } } : {}) } as DecisionQuestions }
+  return { state, questions: { ...questions, ...(action !== undefined && options !== undefined ? { action: { ...action, options } } : {}) } as DecisionQuestions }
 }
 
 interface Ask {
