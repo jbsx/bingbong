@@ -17,11 +17,12 @@
   "expect": {
     "media": {
       "playing": true,
-      "has": "radiohead"
+      "has": "let down"
     },
     "view": {
       "has": [
-        "Let Down"
+        "Let Down",
+        "Radiohead"
       ]
     }
   },
