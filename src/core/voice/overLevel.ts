@@ -45,7 +45,7 @@ export const OVER_LEVEL_LEAD_FRAMES = 10
 export interface LoudStretch {
   /** The first frame of the cut, counted from the capture's first frame. */
   readonly from: number
-  /** One past its last frame: the frame it was found at, so the quiet after the loud frames rides with it. */
+  /** One past its last frame: the quiet after the loud frames rides with it, up to one end's worth. */
   readonly to: number
 }
 
@@ -123,8 +123,10 @@ export function createOverLevel(tuning: OverLevelTuning = OVER_LEVEL_TUNING): Ov
       if (count < minFrames) return null
       reported = true
       // A stretch reaching back into the settle is a person who spoke first: it is cut from the capture's start.
-      // It runs to this frame: the quiet that ended it may still hold the line's softer last syllable ("Move" loud, "on" under it).
-      return { from: start <= settle ? 0 : Math.max(0, start - leadFrames), to: levels.length }
+      // It runs one quiet stretch past its last loud frame: that quiet may still hold the line's softer last syllable ("Move" loud,
+      // "on" under it), and no further, since a stretch found late (a person who spoke first, before the echo's level was known) is
+      // followed by echo.
+      return { from: start <= settle ? 0 : Math.max(0, start - leadFrames), to: Math.min(levels.length, end + 1 + endFrames) }
     },
   }
 }
