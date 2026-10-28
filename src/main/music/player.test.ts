@@ -5,8 +5,8 @@ import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
-import { createPlayer, type PlayerStart, type SongMemory } from './player'
-import { ScriptedYouTube, videoItem } from './scriptedYouTube'
+import { createPlayer, type PlayerConsent, type PlayerStart, type SongMemory } from './player'
+import { SHEET_DISMISSAL, ScriptedYouTube, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
 // page's video in the pane over CDP. Tested against a scripted YouTube:
@@ -720,10 +720,15 @@ describe('a browser custody withholds (#433)', () => {
     const guarded = {
       navigate: browser.navigate.bind(browser),
       land: browser.land.bind(browser),
+      state: browser.state.bind(browser),
       evaluateInFrames: browser.evaluateInFrames.bind(browser),
       evaluate: <T>(expression: string): Promise<T> => {
         asked += 1
         return refusing ? Promise.reject(new WithheldResourceError('evaluate')) : browser.evaluate<T>(expression)
+      },
+      clearConsent: (): Promise<string | null> => {
+        asked += 1
+        return refusing ? Promise.reject(new WithheldResourceError('clearConsent')) : browser.clearConsent()
       },
     }
     const custody = { settled: () => settledEdge }
@@ -768,6 +773,19 @@ describe('a browser custody withholds (#433)', () => {
     const resumed = wired.asked()
     await wired.player.check()
     expect(wired.asked()).toBeGreaterThan(resumed)
+  })
+
+  it('a hold over a page being watched for a consent wall is one fault, and the watch asks nothing until it settles (#492)', async () => {
+    const wired = custodyWired()
+    wired.withhold()
+    await wired.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const asked = wired.asked()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The look and the landing's read already in flight are refused together; nothing is asked after.
+    expect(asked).toBeLessThanOrEqual(2)
+    expect(wired.asked()).toBe(asked)
+    expect(wired.faults).toHaveLength(1)
   })
 
   it('a refusal that is not custody\'s is reported every time, as before', async () => {
@@ -1144,5 +1162,103 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)).toMatchObject({ superseded: true })
     expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
     expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+  })
+})
+
+describe("a consent wall over a page the Player opened (#492): the browser's own clear", () => {
+  function sheeted() {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
+    const starts: PlayerStart[] = []
+    const consents: PlayerConsent[] = []
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, onStart: (start) => starts.push(start), onConsent: (consent) => consents.push(consent) })
+    const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true)
+    const presses = (): number => youtube.controls.filter((op) => op.op === 'play').length
+    return { browser, youtube, player, perform, presses, starts, consents }
+  }
+
+  it('a sheet that draws over the watch page after the landing is cleared, and the song starts with no press; the clear is recorded on the start', async () => {
+    const { youtube, perform, presses, starts, consents } = sheeted()
+    youtube.starts = 'sheet'
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(played.failure).toBeUndefined()
+    expect(youtube.sheetsCleared).toBe(1)
+    expect(presses()).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, consent: expect.any(Number) })])
+    expect(consents).toEqual([expect.objectContaining({ video: 'aaaaaaaaaaa', afterStart: false, line: SHEET_DISMISSAL })])
+  })
+
+  it('a clear still running when the start would press waits it out: no press, no reopen, and the song plays once the sheet leaves', async () => {
+    const { youtube, perform, presses, starts } = sheeted()
+    youtube.starts = 'sheet'
+    youtube.sheetClearTurns = 5
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(youtube.sheetsCleared).toBe(1)
+    expect(presses()).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, consent: expect.any(Number) })])
+  })
+
+  it('a page with no wall is only looked at, a bounded number of times, and its start records no clear', async () => {
+    const { browser, perform, starts, consents } = sheeted()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentLooks).toBeGreaterThan(0)
+    expect(browser.consentLooks).toBeLessThanOrEqual(30)
+    expect(starts).toEqual([expect.objectContaining({ started: true, consent: null })])
+    expect(consents).toEqual([])
+  })
+
+  it('the watch stops at the first clear: one sheet, one clear', async () => {
+    const { browser, youtube, perform } = sheeted()
+    youtube.starts = 'sheet'
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const looks = browser.consentLooks
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(browser.consentLooks).toBe(looks)
+    expect(youtube.sheetsCleared).toBe(1)
+  })
+
+  it('a song the page pauses after its start is not pressed again: a pause is never overridden', async () => {
+    const { youtube, player, perform, presses } = sheeted()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    youtube.element = { ...youtube.element, paused: true }
+    await player.check()
+    await player.check()
+    expect(presses()).toBe(0)
+  })
+
+  it('the watch ends once the pane leaves the song\'s page: a Command\'s page is never looked at or cleared', async () => {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    // The watch's own waits held until released: the song starts, then the pane is taken elsewhere.
+    const held: (() => void)[] = []
+    const sleep = (ms: number): Promise<void> => (ms === 1_000 ? new Promise<void>((resolve) => held.push(resolve)) : Promise.resolve())
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep })
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    const looks = browser.consentLooks
+    expect(looks).toBeGreaterThan(0)
+    await browser.navigate('https://www.bbc.co.uk/news')
+    for (let turn = 0; turn < 5; turn += 1) {
+      held.splice(0).forEach((release) => release())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(browser.consentLooks).toBe(looks)
+    expect(held).toHaveLength(0)
+  })
+
+  it('a browser with no clear opens and plays as before', async () => {
+    const { browser, perform } = sheeted()
+    Object.defineProperty(browser, 'clearConsent', { value: undefined })
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(browser.consentLooks).toBe(0)
   })
 })

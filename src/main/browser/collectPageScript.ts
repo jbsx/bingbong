@@ -57,6 +57,44 @@ const SOURCE_FREE_TEXT_FN = `((tagOf) => {
   }
 })(${TAG_OF_FN})`
 
+/** The roots a page declares as dialogs: the collect's dialog layer, and the consent look's (#492). */
+const DIALOG_SELECTOR = 'dialog[open], tp-yt-paper-dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+/** The outermost fixed or sticky ancestor of an element, itself included; null for none: the layer a consent wall that declares no dialog is found by (ADR 0061). */
+const PINNED_ANCESTOR_FN = `(el) => {
+    let outermost = null
+    for (let node = el; node !== null && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+      const position = window.getComputedStyle(node).position
+      if (position === 'fixed' || position === 'sticky') outermost = node
+    }
+    return outermost
+  }`
+/** The controls a consent choice is read off (ADR 0061). */
+const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[type="button"], [role="button"], [role="link"]'
+
+/**
+ * Whether a consent wall may be up, looked at in place with no collect
+ * (#492): a control the collect's consent rule would take — a consent
+ * choice by the dialog policy's own pattern, with size, not inert — inside
+ * a declared dialog or a fixed or sticky layer, the two roads the collect
+ * finds a wall by. A sieve only: a yes is collected, and the collect's
+ * classifier decides. The top frame's alone; a framed wall is met by the
+ * next collect.
+ */
+export const CONSENT_SHOWN_SCRIPT = `(() => {
+  /* CONSENT_SHOWN */
+  const sourceFreeText = ${SOURCE_FREE_TEXT_FN}
+  const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
+  const pinnedAncestor = ${PINNED_ANCESTOR_FN}
+  for (const control of document.querySelectorAll(${JSON.stringify(CONSENT_CONTROL_SELECTOR)})) {
+    const text = [control.getAttribute('aria-label'), control.value, sourceFreeText(control)].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
+    if (!CONSENT_LABEL_RE.test(text) || control.closest('[inert]') !== null) continue
+    const rect = control.getBoundingClientRect()
+    if (rect.width < 1 || rect.height < 1) continue
+    if (control.closest(${JSON.stringify(DIALOG_SELECTOR)}) !== null || pinnedAncestor(control) !== null) return true
+  }
+  return false
+})()`
+
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
@@ -255,7 +293,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // walls, pop-ups). Its controls are listed even when they sit below the
   // fold inside the dialog's own scroller — the click path scrolls them into
   // view — so the model can target them without a scroll dance.
-  const DIALOG_SELECTOR = 'dialog[open], tp-yt-paper-dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+  const DIALOG_SELECTOR = ${JSON.stringify(DIALOG_SELECTOR)}
   // A consent wall that declares no dialog role (ADR 0061) is found by a
   // rule, never a vendor list: the outermost fixed or sticky ancestor of a
   // control whose label is a consent choice, meeting the viewport. The
@@ -263,15 +301,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // size, like any dialog ref. A static strip has no such ancestor and an
   // absolute-only wall is left out rather than guessed at by z-index.
   const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
-  const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[type="button"], [role="button"], [role="link"]'
-  const pinnedAncestor = (el) => {
-    let outermost = null
-    for (let node = el; node !== null && node !== document.body && node !== document.documentElement; node = node.parentElement) {
-      const position = window.getComputedStyle(node).position
-      if (position === 'fixed' || position === 'sticky') outermost = node
-    }
-    return outermost
-  }
+  const CONSENT_CONTROL_SELECTOR = ${JSON.stringify(CONSENT_CONTROL_SELECTOR)}
+  const pinnedAncestor = ${PINNED_ANCESTOR_FN}
   const consentWallRoot = () => {
     let last = null
     for (const control of document.querySelectorAll(CONSENT_CONTROL_SELECTOR)) {

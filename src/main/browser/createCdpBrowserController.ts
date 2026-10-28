@@ -84,6 +84,7 @@ import {
   frameBoxScript,
   OWN_SLOT_SCRIPT,
   TAG_OF_FN,
+  CONSENT_SHOWN_SCRIPT,
 } from './collectPageScript'
 import { readRefStates, type RefStatesTally } from './readRefStates'
 import { frameHostOfPage, mergeFrames, type CollectedFrame, type FrameAddress, type MergedPage } from '../../core/browser/frames'
@@ -1652,6 +1653,33 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /**
+   * The address where the consent look said yes and the collect it bought
+   * cleared nothing (#492): a dialog or pinned layer carrying a consent
+   * label that is no wall. One confirming collect per showing; it is not
+   * collected again until the look says no or the page changes.
+   */
+  let consentUnconfirmedAt: string | null = null
+
+  /** The landing's consent clear on the page as it stands (#492): a look in place first, so a page with no wall is never collected. */
+  async function clearConsent(): Promise<string | null> {
+    try {
+      if ((await evaluateInPage<unknown>(CONSENT_SHOWN_SCRIPT)) !== true) {
+        consentUnconfirmedAt = null
+        return null
+      }
+      const at = state().url
+      if (at !== null && at === consentUnconfirmedAt) return null
+      const walled = await recollection('landing-consent', () => collectSnapshot())
+      const line = await dismissConsentIfOpen(walled)
+      consentUnconfirmedAt = line === null ? at : null
+      return line
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.clearConsent', error)
+      return null
+    }
+  }
+
+  /**
    * A region Look's clip (#195): the fractions resolved against the visual
    * viewport, offset by its page position because a capture clip is in
    * page coordinates — both in the same device-independent pixels, so page
@@ -2941,6 +2969,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   return {
     navigate,
     land,
+    clearConsent,
     readPage,
     pageReadParts,
     click,

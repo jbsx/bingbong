@@ -185,6 +185,14 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     this.landings.push(url)
     await this.navigate(url)
   }
+  /** How many times the landing's consent clear looked (#492). */
+  consentLooks = 0
+  /** The landing's consent clear: the dismissal line it reports, null for no wall. */
+  consentClear: () => string | null | Promise<string | null> = () => null
+  async clearConsent(): Promise<string | null> {
+    this.consentLooks += 1
+    return this.consentClear()
+  }
   /** The part of every Page Read, in order (ADR 0047). */
   readonly pageReads: number[] = []
   /** How many parts the fake page's text reads in. */

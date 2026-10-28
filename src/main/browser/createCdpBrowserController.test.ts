@@ -124,6 +124,8 @@ class FakeCdp implements CdpDebugger {
   collectValues: unknown[] = []
   /** What the in-place dialog-open probe answers, in turn; empty answers false (no dialog). */
   dialogOpenValues: boolean[] = []
+  /** What the landing's in-place consent look answers (#492). */
+  consentShown = false
   /**
    * The page's two registries (ADR 0033), modelled by object identity over
    * the fixture's elements: what the last collect left in the page, and the
@@ -243,6 +245,7 @@ class FakeCdp implements CdpDebugger {
       }
       if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
       if (expression.includes('/* FRAME_BOX */')) return { result: { value: this.frameBox } } as T
+      if (expression.includes('/* CONSENT_SHOWN */')) return { result: { value: this.consentShown } } as T
       if (expression.includes('__bingbongDialogOpen')) return { result: { value: this.dialogOpenValues.length > 0 ? this.dialogOpenValues.shift() : false } } as T
       if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
       if (expression.includes('/* SELECT_FIELD */')) return { result: { value: true } } as T
@@ -2076,6 +2079,53 @@ describe('createCdpBrowserController dialog tiers', () => {
       `navigated: url=https://www.youtube.com/ title="YouTube"\ndismissed consent dialog: clicked [2] "Reject all"\n${PAGE_NOT_READ}`,
     )
     expect(cdp.collectCalls()).toHaveLength(3)
+  })
+
+  it("the landing's consent clear on a page with no consent choice shown is one look in place: no collect, nothing clicked (#492)", async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.clearConsent!()).toBeNull()
+
+    expect(cdp.collectCalls()).toHaveLength(0)
+    expect(cdp.calls.some((call) => typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))).toBe(false)
+  })
+
+  it("the landing's consent clear collects a page showing one and clears a Tier-1 wall as a navigate's landing does (#492, ADR 0061)", async () => {
+    const cdp = new FakeCdp(consentWallPage())
+    cdp.consentShown = true
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.clearConsent!()).toBe('dismissed consent dialog: clicked [2] "Reject all"')
+
+    expect(cdp.collectCalls()).toHaveLength(1)
+    const domClick = cdp.calls.find((call) => typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))
+    expect(domClick?.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
+  })
+
+  it("the landing's consent clear leaves a Tier-2 dialog the look let through open (#492)", async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    cdp.consentShown = true
+    const { controller } = makeController({ cdp })
+
+    expect(await controller.clearConsent!()).toBeNull()
+
+    expect(cdp.calls.some((call) => typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))).toBe(false)
+  })
+
+  it("the landing's consent clear collects a look that holds no wall once per showing: later looks on that page collect nothing until the look says no (#492)", async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    cdp.consentShown = true
+    const { controller } = makeController({ cdp })
+
+    for (let look = 0; look < 5; look += 1) expect(await controller.clearConsent!()).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(1)
+
+    cdp.consentShown = false
+    expect(await controller.clearConsent!()).toBeNull()
+    cdp.consentShown = true
+    expect(await controller.clearConsent!()).toBeNull()
+    expect(cdp.collectCalls()).toHaveLength(2)
   })
 
   it('leaves a Tier-2 dialog met on navigate open and listed', async () => {

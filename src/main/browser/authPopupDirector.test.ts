@@ -38,6 +38,7 @@ function fakeController(name: string): DrivenController & { calls: string[]; scr
     refAtPoint: record('refAtPoint', 1),
     applianceMedia: record('applianceMedia', { title: `song of ${name}`, facts: {} }),
     applianceMediaOp: record('applianceMediaOp', `pause [0]: paused`),
+    clearConsent: record('clearConsent', `dismissed consent dialog on ${name}`),
     snapshotInHand: () => ({ url: `https://${name}.example/`, title: name, refs: [] }),
   } as unknown as DrivenController & { calls: string[]; screenshotOptions: unknown[] }
 }
@@ -117,6 +118,14 @@ describe('createAuthPopupDirector', () => {
     expect(await routed.applianceMedia!()).toEqual({ title: 'song of pane', facts: {} })
     expect(await routed.applianceMediaOp!({ op: 'pause' })).toBe('pause [0]: paused')
     expect(routed.snapshotInHand!()?.url).toBe('https://popup.example/')
+  })
+
+  it("keeps the Player's consent clear on the pane, popup or not (#492)", async () => {
+    const { pane, popup, director, openPopup } = harness()
+    const routed = director.route(pane)
+    await openPopup('https://accounts.google.com/signin')
+    expect(await routed.clearConsent!()).toBe('dismissed consent dialog on pane')
+    expect(popup.calls).not.toContain('clearConsent')
   })
 
   it('routes page actions to the popup while one is open, marking readPage', async () => {

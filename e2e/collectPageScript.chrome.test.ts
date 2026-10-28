@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
-import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
+import { COLLECT_PAGE_SCRIPT, CONSENT_SHOWN_SCRIPT } from '../src/main/browser/collectPageScript.ts'
+import { isConsentDialog } from '../src/core/browser/dialogPolicy.ts'
 import { buildPageSnapshot, parseCollectedPage } from '../src/core/browser/snapshot.ts'
 import { commandPageOf } from '../src/core/command/command.ts'
 import { commandQuestions, commandState } from '../src/core/command/jevReading.ts'
@@ -73,6 +74,15 @@ const PAGES: Record<string, string> = {
         <h2>Don’t miss what’s happening</h2><p>People on X are the first to know.</p>
         <a href="/login">Log in</a><a href="/signup">Sign up</a>
       </div>
+    </div></body>`,
+  // A consent sheet over a playing page (#492), shaped as YouTube's watch page served it on a fresh profile: a modal at the
+  // foot, its choices named at length by aria-label and shortly by their text, the page's own player and controls behind.
+  '/consent-sheet': `<body>${SEARCH_BOX}<video width="320" height="180"></video><button>Subscribe</button><button>Share</button>
+    <div role="dialog" aria-modal="true" style="position:fixed;left:20%;right:20%;bottom:0;background:#fff">
+      <h2>Before you continue</h2><p>We use cookies and data to deliver and maintain our services.</p>
+      <button aria-label="Reject the use of cookies and other data for the purposes described">Reject all</button>
+      <button aria-label="Accept the use of cookies and other data for the purposes described">Accept all</button>
+      <a href="/options">More options</a>
     </div></body>`,
   // An app whose fixed shell holds the whole page: the page itself, never a pop-up over it.
   '/app-shell': `<body><div style="position:fixed;inset:0;overflow:auto">${SEARCH_BOX}${BODY_TEXT}<a href="/one">One</a><a href="/two">Two</a><button>Three</button></div></body>`,
@@ -200,6 +210,37 @@ const PROSE_PAGES: Record<string, string> = {
     '<body><header><a href="/">Fixture Museums</a></header><main></main><div class="notice">The search service is currently unavailable. Please try again later.</div><footer><a href="/contact">Contact us</a></footer></body>',
   '/outside-main': '<body><main><p>Inside the landmark.</p></main><div class="notice">A sentence outside the main landmark, long enough to be a run.</div></body>',
 }
+
+describe.skipIf(!canDriveChrome)("the landing's consent look lets through every page the collect clears a wall on (#492)", () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(PAGES, 'bingbong-consent-look-chrome-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  /** What the look says of a page, and whether its collect holds a Tier-1 consent wall. */
+  const read = async (path: string): Promise<{ look: boolean; wall: boolean }> => {
+    await fixtures.open(path)
+    const look = await fixtures.chrome.evaluate<boolean>(CONSENT_SHOWN_SCRIPT)
+    const page = await fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+    const labels = page.elements.filter((element) => element.layer === 'dialog').map((element) => element.label)
+    return { look, wall: page.dialogOpen && isConsentDialog(page.dialogText, labels) }
+  }
+
+  it('a consent sheet over a playing page, a modal at the foot: the look lets it through and the collect holds it as a Tier-1 wall', async () => {
+    expect(await read('/consent-sheet')).toEqual({ look: true, wall: true })
+  })
+
+  it.each(['/cookiebot', '/sticky', '/two-fixed'])('%s: a wall the collect holds, the look lets through', async (path) => {
+    expect(await read(path)).toEqual({ look: true, wall: true })
+  })
+
+  it.each(['/strip', '/absolute', '/modal-sheet', '/cover-sheet', '/app-shell', '/foot-bar'])('%s: no consent wall, and the look stops it before any collect', async (path) => {
+    expect(await read(path)).toEqual({ look: false, wall: false })
+  })
+})
 
 describe.skipIf(!canDriveChrome)("the collector reads a container's own prose as a run (#265)", () => {
   let fixtures: FixtureChrome

@@ -130,6 +130,15 @@ export interface BrowserController {
    */
   land?(url: string): Promise<void>
   /**
+   * The landing's consent clear, on the page as it stands (#492, ADR 0061):
+   * one small look in place, no collect, for a consent choice on a dialog
+   * or a pinned layer; only then the page is collected and a Tier-1 wall
+   * cleared exactly as a navigate's landing clears it. The dismissal line,
+   * null when none was cleared. For a caller that watches a page it landed
+   * (the Player), where a wall draws after the landing has settled.
+   */
+  clearConsent?(): Promise<string | null>
+  /**
    * A Page Read (ADR 0047): the page's refs and one part of its whole text,
    * part 1 — from the top — when none is named. Rejects for a part the
    * page does not have.

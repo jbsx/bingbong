@@ -14,9 +14,9 @@ import { createPlayer, type Player, type SongMemory } from './player'
 /** How often the Player listens for the song's end. */
 const CHECK_MS = 1_000
 
-/** The pane's Player, its end-of-song poll running; a withheld browser is waited out on custody's settling (#433), and each song's start is a `media-start` span (#488). The returned stop ends the poll. */
+/** The pane's Player, its end-of-song poll running; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488) and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
 export function attachPlayer(
-  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate'>,
+  browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'clearConsent' | 'state'>,
   session: Session,
   memory: { songs: SongMemory; learn(term: string): void; propose(term: string): void },
   custody: Pick<BrowserCustody<BrowserController>, 'settled'>,
@@ -33,6 +33,13 @@ export function attachPlayer(
         tracer.span(APP_TURN_ID, 'media-start', ms, { ...start })
       } catch (error) {
         reportFault('music.attachPlayer.mediaStart', error)
+      }
+    },
+    onConsent: ({ ms, ...consent }) => {
+      try {
+        tracer.span(APP_TURN_ID, 'media-consent', ms, { ...consent })
+      } catch (error) {
+        reportFault('music.attachPlayer.mediaConsent', error)
       }
     },
     fetchResults: async (url) => {

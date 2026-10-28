@@ -34,10 +34,19 @@ export interface ScriptedWatch {
 /**
  * How a new watch page's element starts (#488): by itself; only once
  * pressed; playing {@link STALLS_AT_S} and pausing until pressed;
- * never, its press refused with `NotAllowedError`; or, `reopen`, holding
- * no data however pressed until its page is loaded again, then by itself.
+ * never, its press refused with `NotAllowedError`; `reopen`, holding
+ * no data however pressed until its page is loaded again, then by itself;
+ * or, `sheet` (#492), under a consent sheet that draws on the
+ * {@link SHEET_DRAWS_AT}th consent look and holds the element unfed
+ * however pressed, until it is cleared — then by itself, and no page of
+ * the profile shows it again.
  */
-export type ScriptedStart = 'itself' | 'press' | 'stalls' | 'refuses' | 'reopen'
+export type ScriptedStart = 'itself' | 'press' | 'stalls' | 'refuses' | 'reopen' | 'sheet'
+
+/** Which consent look first finds the sheet drawn (#492): a sheet draws after the landing settled. */
+export const SHEET_DRAWS_AT = 3
+/** The browser's dismissal line for the sheet. */
+export const SHEET_DISMISSAL = 'dismissed consent dialog: clicked [5] "Reject the use of cookies and other data for the purposes d…"'
 
 /** Where a stalling element pauses by itself (s): a moment of play, as on a fresh profile under Xvfb (#488). */
 export const STALLS_AT_S = 0.6
@@ -75,6 +84,14 @@ export class ScriptedYouTube {
   private refused: string | null = null
   /** A stalling element was pressed: it plays on. */
   private pressed = false
+  /** The consent sheet over this page (#492), and how often it was looked for; null with none. */
+  private sheet: { looks: number } | null = null
+  /** The sheet was cleared once: the profile has consented. */
+  private consented = false
+  /** How often the browser's clear cleared the sheet. */
+  sheetsCleared = 0
+  /** How many timer turns a clear of the drawn sheet takes (#492), the browser's collect and Jev's ask: past every read of a start whose waits take none. */
+  sheetClearTurns = 0
   /** YouTube's "Continue watching?" prompt is up. */
   continuePrompt = false
   /** How often the prompt was answered Yes. */
@@ -83,6 +100,7 @@ export class ScriptedYouTube {
 
   constructor(private readonly browser: FakeBrowser) {
     browser.evaluator = (expression) => this.evaluate(expression)
+    browser.consentClear = () => this.clearSheet()
   }
 
   /** The results for these words: these items, in order. */
@@ -113,7 +131,27 @@ export class ScriptedYouTube {
   /** Loads of a `reopen` page: its first holds no data. */
   private reopenLoads = 0
 
+  /** The browser's consent clear (#492): the sheet, once drawn, is cleared — after {@link sheetClearTurns} timer turns — and the element fed. */
+  private async clearSheet(): Promise<string | null> {
+    this.onPage()
+    if (this.sheet === null) return null
+    this.sheet.looks += 1
+    if (this.sheet.looks < SHEET_DRAWS_AT) return null
+    for (let turn = 0; turn < this.sheetClearTurns; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    this.sheet = null
+    this.consented = true
+    this.sheetsCleared += 1
+    this.readyState = 4
+    return SHEET_DISMISSAL
+  }
+
   private evaluate(expression: string): unknown {
+    this.onPage()
+    return this.answer(expression)
+  }
+
+  /** A page loaded since the last look starts afresh. */
+  private onPage(): void {
     const url = this.browser.state().url ?? ''
     const loads = this.browser.navigations.length
     if (url !== this.shownUrl || loads !== this.shownLoads) {
@@ -122,6 +160,10 @@ export class ScriptedYouTube {
       if (this.starts === 'reopen') {
         this.reopenLoads += 1
         this.readyState = this.reopenLoads === 1 ? 0 : 4
+      }
+      if (this.starts === 'sheet') {
+        this.sheet = this.consented ? null : { looks: 0 }
+        this.readyState = this.consented ? 4 : 0
       }
       this.element = { ...this.element, paused: this.starts === 'press' || this.starts === 'refuses', loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
       this.refused = null
@@ -133,6 +175,10 @@ export class ScriptedYouTube {
         this.element = { ...this.element, volume: Math.round(this.element.volume * this.paneDuck) }
       }
     }
+  }
+
+  private answer(expression: string): unknown {
+    const url = this.browser.state().url ?? ''
     if (expression.includes('/* YT_RESULTS */')) {
       const data = URL.canParse(url) ? this.results.get(new URL(url).searchParams.get('search_query') ?? '') : undefined
       return data === undefined ? null : JSON.stringify(data)
