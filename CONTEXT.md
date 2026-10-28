@@ -103,7 +103,9 @@ never silent, and puts it back when the last of them lets go. YouTube's
 own remembered volume is never told the floor, and a `volume` spoken meanwhile, by the Player's verb or a Media Op, sets the
 volume put back. The card shows the level the duck will put back, never
 the floor (#459). The system's volume is never touched, and the music is
-never paused for it.
+never paused for it. The app's own voice ducks too, to the same floor, when
+speech starts over it inside an open listen (#490); it comes back up when
+the line was its own words, or when the Task the line became has settled.
 _Avoid_: muting, auto-pause
 
 **Abort Head**:
