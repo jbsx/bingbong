@@ -209,21 +209,28 @@ export interface StartRead {
   readonly ready: number
   /** `currentTime` (s): moving between reads is what tells a song playing from one that only looks it. */
   readonly time: number
+  /** The element's length (s), null while unknown: an ad's while one plays in it (#497). */
+  readonly duration: number | null
   /** The rejection name of the last press's `play()` (`NotAllowedError`, `AbortError`); null while none was refused. */
   readonly refused: string | null
+  /** The engine says an ad plays in the element now (#497): its time is the ad's, not the song's. */
+  readonly ad: boolean
 }
 
 /**
  * Reads `#movie_player video`'s own playback (#488): whether a song just
  * opened is playing, by kind — its pause, end, readiness and time, never
- * YouTube's player state. Null with no such element.
+ * YouTube's player state. Null with no such element. Beside it the one
+ * fact the element cannot give, the engine's own (#497): whether an ad
+ * plays in it, by `#movie_player`'s `ad-showing` as the watch script reads
+ * it. The audio road's `#movie_player` never carries it: no ad there.
  */
 export const START_SCRIPT = `(() => {
   /* YT_START */
   const player = document.querySelector('#movie_player')
   const video = player ? player.querySelector(${SONG_ELEMENT}) : null
   if (!video) return null
-  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, refused: video.${REFUSED_MARK} || null }
+  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad: player.classList.contains('ad-showing') }
 })()`
 
 /** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */

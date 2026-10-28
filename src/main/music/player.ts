@@ -2,7 +2,7 @@ import type { BrowserController, ConsentCleared, ConsentDrawn } from '../../core
 import type { MusicAction } from '../../core/music/musicWords'
 import type { PickSource } from '../../core/command/decisionRecord'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
-import { QUEUED_SHOWN, type NowPlaying } from '../../core/music/nowPlaying'
+import { QUEUED_SHOWN, type AdShowing, type NowPlaying } from '../../core/music/nowPlaying'
 import { initialDataOf, plainVideos, resultsUrl, videoIdOf, watchUrl } from '../../core/music/youtubeSearch'
 import { heldThroughChain, songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
@@ -111,6 +111,8 @@ export interface PlayerStart {
   readonly background: boolean
   /** From the landing to the consent wall cleared over the page before this was recorded (#492) (ms); null when none was. */
   readonly consent: number | null
+  /** How long an ad in the element held the start (#497) (ms), by the engine's own fact; null when none played. */
+  readonly ad: number | null
 }
 
 /** A consent wall the browser cleared for the Player (#492, #496): what the perf log keeps of each. */
@@ -317,6 +319,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let ownPause = false
   /** What the poll last read of the song playing: its channel and progress. */
   let progress: { id: string; channel: string; elapsed: number; duration: number | null } | null = null
+  /** An ad playing in the song's element (#497), as its start or the poll last read it; null while the song itself plays. */
+  let adOver: { id: string; ad: AdShowing } | null = null
   /** The element's volume as last read while not ducked. */
   let knownVolume: number | null = null
   /** Whether the element was muted when last read or set (#365). */
@@ -347,6 +351,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const song = state.current ?? ended
     if (song === null) return null
     const read = progress !== null && progress.id === song.id ? progress : null
+    const ad = state.current !== null && adOver !== null && adOver.id === song.id ? adOver.ad : null
     return {
       id: song.id,
       title: song.title,
@@ -358,7 +363,17 @@ export function createPlayer(deps: PlayerDeps): Player {
       muted,
       ended: state.current === null,
       queued: state.upNext.slice(0, QUEUED_SHOWN).map((song) => song.title),
+      ...(ad !== null ? { ad } : {}),
     }
+  }
+
+  /**
+   * An ad in the song's element, read off it (#497) — its seconds and
+   * length, whole — or none: Now Playing says it, and the card hears it.
+   */
+  function showAd(song: Song, read: Pick<StartRead, 'time' | 'duration'> | null): void {
+    adOver = read === null ? null : { id: song.id, ad: { elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration) } }
+    publish()
   }
 
   /** Tells the card what changed, if anything did. */
@@ -722,14 +737,29 @@ export function createPlayer(deps: PlayerDeps): Player {
     /** Where the element's time stood when this run of play began; null while it is not playing. */
     let since: number | null = null
     let last: StartRead | null = null
+    /** The ad that held the start (#497): when it was first read, and how long it held it (ms) once the song's own read came. */
+    let ad: { at: number; read: number; ms: number | null } | null = null
+    const adMs = (read: number): number | null => (ad === null ? null : (ad.ms ?? Math.round(Math.max(now() - ad.at, (read - ad.read) * START_READ_MS))))
     for (let read = 0; ; read += 1) {
       if (!current()) return 'superseded'
       const before = last
       last = await evaluate<StartRead>(START_SCRIPT)
       // Custody withholds the page (#433): the start goes unread, and is taken as it was before #488 — playing.
-      if (last === null && withheld !== null) return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: null, ms: Math.round(now() - from), background })
+      if (last === null && withheld !== null) return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: null, ms: Math.round(now() - from), background, ad: adMs(read) })
+      // An ad in the element, by the engine's own fact (#497): its time is the ad's, never the song's start. While it plays the
+      // bound holds — no press, no reopen — and Now Playing counts it off the element; the line waits through it, narrated.
+      // A guess (#497 F2, the gate cannot force an ad): the line runs through the whole ad and says Playing once the song plays.
+      // The kiosk's `media-start` records with `ad` settle it; saying "An ad first" at once instead is one line here.
+      if (last !== null && last.ad) {
+        ad ??= { at: now(), read, ms: null }
+        showAd(song, last)
+        if (!last.paused && (before === null || last.time > before.time)) phase = { ...phase, at: now(), read }
+      } else if (ad !== null && ad.ms === null && last !== null) {
+        ad.ms = adMs(read)
+        showAd(song, null)
+      }
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
-      const playing = last !== null && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
+      const playing = last !== null && !last.ad && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
       since = playing ? (since ?? last!.time) : null
       const started = playing && last!.time - since! >= PLAYED_S
       // Playing at the bound, it has a start's play longer to show it is one.
@@ -743,7 +773,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       }
       if (started || (due && pressed)) {
         const element = last === null ? null : { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }
-        return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background })
+        return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background, ad: adMs(read) })
       }
       if (due) {
         // The Command may have ended during the read (#489): its pane was paused under it, and a press would start the song.
@@ -1141,8 +1171,10 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** The poll's read of the song playing: its progress for the card, a new page's volume ducked, YouTube's own pause answered. */
   async function readWatch(status: WatchStatus): Promise<void> {
     const song = state.current
+    // An ad in the song's element (#497), mid-song too: Now Playing says it until the song itself plays again.
+    if (song !== null && status.id === song.id && status.hasVideo) showAd(song, status.ad ? { time: status.elapsed, duration: status.duration } : null)
     if (song === null || !showsSong(status, song)) return
-    progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
+    progress ={ id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
     // YouTube may put its own level back as the song starts (#460): carried again over that, never over a level set since.

@@ -21,6 +21,7 @@ describe('nowPlayingView', () => {
   it('playing: NOW PLAYING, the bar as far as the song has run, both times, pause as the toggle, the queue after it', () => {
     expect(nowPlayingView(SONG)).toEqual({
       kicker: 'Now playing',
+      title: 'Bohemian Rhapsody',
       flags: [],
       fraction: 159 / 369,
       elapsed: '2:39',
@@ -67,5 +68,30 @@ describe('nowPlayingView', () => {
     expect(nowPlayingView({ ...SONG, loop: true }).flags).toEqual(['Loop'])
     expect(nowPlayingView({ ...SONG, muted: true }).flags).toEqual(['Muted'])
     expect(nowPlayingView({ ...SONG, loop: true, muted: true }).flags).toEqual(['Loop', 'Muted'])
+  })
+})
+
+describe('nowPlayingView over an ad (#497)', () => {
+  it('an ad before the song: STARTING, "An ad first" in the title’s place, the bar and times the ad’s, the song’s title kept off the card', () => {
+    const view = nowPlayingView({ ...SONG, elapsedS: 0, durationS: null, ad: { elapsedS: 5, durationS: 120 } })
+    expect(view).toMatchObject({
+      kicker: 'Starting',
+      title: 'An ad first',
+      state: 'starting',
+      cover: null,
+      fraction: 5 / 120,
+      elapsed: '0:05',
+      length: '2:00',
+      label: 'An ad first, 0:05 of 2:00',
+    })
+    expect(JSON.stringify(view)).not.toContain('Bohemian Rhapsody')
+  })
+
+  it('an ad whose length is not known yet: a dash for it', () => {
+    expect(nowPlayingView({ ...SONG, ad: { elapsedS: 3, durationS: null } })).toMatchObject({ fraction: 0, elapsed: '0:03', length: '–:––', label: 'An ad first, 0:03' })
+  })
+
+  it('no ad: the song’s own title', () => {
+    expect(nowPlayingView({ ...SONG, ad: null }).title).toBe('Bohemian Rhapsody')
   })
 })

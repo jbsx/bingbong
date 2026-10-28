@@ -74,6 +74,14 @@ export class ScriptedYouTube {
   /** The pane's duck (#461), its floor's share while it holds: it reaches a new page's element before the Player does. */
   paneDuck: number | null = null
   adShowing = false
+  /**
+   * A pre-roll ad the next watch page plays in its element before the song
+   * (#497), its length (s); null for none. Its time moves on the start's
+   * reads, and at its end the song plays from 0 by itself.
+   */
+  preRollS: number | null = null
+  /** The pre-roll playing now, and the song's length the element reports once it ends. */
+  private ad: { lengthS: number; song: number | null } | null = null
   /** How the next watch page's element starts (#488). */
   starts: ScriptedStart = 'itself'
   /** The element's `readyState`: 4 holds enough to play through. */
@@ -178,6 +186,13 @@ export class ScriptedYouTube {
       this.refused = null
       this.pressed = false
       this.duckMark = null
+      // The pre-roll (#497): the element plays the ad first, at its length, the page's ad marker on.
+      this.ad = this.preRollS === null ? null : { lengthS: this.preRollS, song: this.ad?.song ?? this.element.duration }
+      this.preRollS = null
+      if (this.ad !== null) {
+        this.adShowing = true
+        this.element = { ...this.element, paused: false, duration: this.ad.lengthS }
+      }
       // The pane's duck holds (#461): a new page's element is marked at the level it opened at before the Player reads it.
       if (this.paneDuck !== null) {
         this.duckMark = { restore: this.element.volume, share: this.paneDuck }
@@ -223,9 +238,15 @@ export class ScriptedYouTube {
       const time = this.element.currentTime + START_STEP_S
       const stalls = this.starts === 'stalls' && !this.pressed && time >= STALLS_AT_S
       this.element = { ...this.element, currentTime: stalls ? STALLS_AT_S : time, paused: stalls }
+      // The ad ran out: the song plays in the same element from 0 by itself, the marker off.
+      if (this.ad !== null && time >= this.ad.lengthS) {
+        this.element = { ...this.element, currentTime: 0, duration: this.ad.song, paused: false }
+        this.ad = null
+        this.adShowing = false
+      }
     }
-    const { paused, currentTime } = this.element
-    return { paused, ended: false, ready: this.readyState, time: currentTime, refused: this.refused }
+    const { paused, currentTime, duration } = this.element
+    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing }
   }
 
   private watchStatus(): WatchStatus {

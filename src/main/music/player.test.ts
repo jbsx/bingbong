@@ -3,6 +3,7 @@ import { WithheldResourceError } from '../../core/browser/unsettledAction'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
+import type { NowPlaying } from '../../core/music/nowPlaying'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
 import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerStart, type SongMemory } from './player'
@@ -596,12 +597,11 @@ describe('the level heard carries into the next song (#460)', () => {
     await perform({ kind: 'search', place: 'now' }, 'song a')
     mediaOp(youtube, 20)
     await player.check()
-    // The next page opens on an ad (the scripted page shows it from the leaving read on, so the poll's read is the one carried).
-    youtube.adShowing = true
+    // The next page opens on an ad: the level is not carried over it as the page opens.
+    youtube.preRollS = 5
     await perform({ kind: 'search', place: 'now' }, 'song b')
     expect(youtube.element.volume).toBeCloseTo(100 * BF, 1)
-    youtube.adShowing = false
-    // The ad played through the start's reads (#488); the song itself begins at 0 s.
+    // The ad played through the start's reads (#488, #497); the song itself begins at 0 s.
     youtube.element = { ...youtube.element, volume: 100 * BF, currentTime: 0 }
     await player.check()
     expect(youtube.element.volume).toBeCloseTo(19.93, 1)
@@ -625,10 +625,9 @@ describe('the level heard carries into the next song (#460)', () => {
     await player.duck(true)
     // The pane's duck reaches the new page first: its element marked with the level YouTube opened it at, an ad's.
     youtube.paneDuck = 0.15
-    youtube.adShowing = true
+    youtube.preRollS = 5
     await perform({ kind: 'search', place: 'now' }, 'song b')
     expect(youtube.heard()).toBeCloseTo(100 * BF, 1)
-    youtube.adShowing = false
     await player.check()
     expect(youtube.heard()).toBeCloseTo(19.93, 1)
     expect(youtube.element.volume).toBe(3)
@@ -1183,6 +1182,77 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {} })
     expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)).toMatchObject({ superseded: true })
     expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+  })
+})
+
+describe('a pre-roll ad before the song (#497): the start counts only the song’s own time', () => {
+  /** A 2:00 pre-roll, its Skip offered at 5 s and never pressed, then the song. */
+  const PRE_ROLL_S = 120
+  function prerolled() {
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    const starts: PlayerStart[] = []
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, onStart: (start) => starts.push(start) })
+    const shown: (NowPlaying | null)[] = []
+    player.onChange((nowPlaying) => shown.push(nowPlaying))
+    return { youtube, player, starts, shown }
+  }
+
+  it('the ad plays out unpressed and unreopened, and the start is decided on the song: Playing once the song plays, the ad’s hold recorded', async () => {
+    const { youtube, player, starts } = prerolled()
+    youtube.preRollS = PRE_ROLL_S
+    const played = await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
+    expect(played.failure).toBeUndefined()
+    // The song itself was playing when the answer came: the ad had ended.
+    expect(youtube.adShowing).toBe(false)
+    expect(youtube.controls.filter((op) => op.op === 'play')).toEqual([])
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, ad: expect.any(Number) })])
+    // The start's element read is the song's: its time from 0, not the ad's 2:00.
+    expect(starts[0]!.element!.time).toBeLessThan(5)
+  })
+
+  it('while the ad plays, Now Playing carries it — its seconds and length off the element — and drops it once the song plays', async () => {
+    const { youtube, player, shown } = prerolled()
+    youtube.preRollS = PRE_ROLL_S
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    const ads = shown.flatMap((nowPlaying) => (nowPlaying?.ad ? [nowPlaying.ad] : []))
+    expect(ads).toContainEqual({ elapsedS: 5, durationS: PRE_ROLL_S })
+    // Counted from the element, each second once.
+    expect(ads.map((ad) => ad.elapsedS)).toEqual([...new Set(ads.map((ad) => ad.elapsedS))].sort((a, b) => a - b))
+    expect(player.nowPlaying()?.ad ?? null).toBeNull()
+  })
+
+  it('a line given during the ad finds the play still running: superseded there, it answers nothing and says no Playing', async () => {
+    const { youtube, player, starts } = prerolled()
+    youtube.preRollS = PRE_ROLL_S
+    let reads = 0
+    const live = (): boolean => (youtube.adShowing ? (reads += 1) < 40 : true)
+    const played = await player.perform({ kind: 'search', place: 'now' }, 'song a', live)
+    expect(played).toMatchObject({ superseded: true, answer: '' })
+    expect(youtube.adShowing).toBe(true)
+    expect(starts).toEqual([])
+  })
+
+  it('a song with no ad records none', async () => {
+    const { player, starts } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(starts).toEqual([expect.objectContaining({ started: true, ad: null })])
+  })
+
+  it('the poll over an ad in the song’s element: Now Playing says the ad, then the song once it plays', async () => {
+    const { youtube, player } = prerolled()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: 7.4, duration: 15 }
+    await player.check()
+    expect(player.nowPlaying()?.ad).toEqual({ elapsedS: 7, durationS: 15 })
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 2, duration: 180 }
+    await player.check()
+    expect(player.nowPlaying()?.ad ?? null).toBeNull()
   })
 })
 

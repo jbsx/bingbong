@@ -23,6 +23,27 @@ export interface NowPlaying {
   readonly ended: boolean
   /** The next queued titles, at most {@link QUEUED_SHOWN}. Not the Calendar's Up Next. */
   readonly queued: readonly string[]
+  /**
+   * An ad plays in the song's element before it (#497), by the engine's own
+   * fact: its time and length off the element (the length null while
+   * unknown). Null or absent while the song itself plays, and for a song
+   * on an engine that states no ads.
+   */
+  readonly ad?: AdShowing | null
+}
+
+/** An ad playing where the song will (#497): its seconds in, and its length (null while unknown). */
+export interface AdShowing {
+  readonly elapsedS: number
+  readonly durationS: number | null
+}
+
+/** What the card, the capsule and the card's line call the wait (#497): one word for it everywhere (ui.md 9). */
+export const AD_FIRST = 'An ad first'
+
+/** The ad's wait in words: `An ad first, 0:05 of 2:00`; its length left off while unknown. */
+export function adWait(ad: AdShowing): string {
+  return `${AD_FIRST}, ${clockTime(ad.elapsedS)}${ad.durationS === null ? '' : ` of ${clockTime(ad.durationS)}`}`
 }
 
 /** `i.ytimg.com`'s medium thumbnail for a video. */
@@ -42,6 +63,8 @@ export function clockTime(seconds: number): string {
 /** What the Now Playing card (#365) says of a song. */
 export interface NowPlayingView {
   readonly kicker: 'Now playing' | 'Paused' | 'Ended' | 'Starting'
+  /** The title line: the song's, or {@link AD_FIRST} while an ad plays before it (#497). */
+  readonly title: string
   /** What is on beside the kicker. */
   readonly flags: readonly ('Loop' | 'Muted')[]
   /** How far the bar is filled, 0–1. */
@@ -62,15 +85,20 @@ export interface NowPlayingView {
   readonly label: string
 }
 
-/** The card's words, bar and toggle for a song: playing, paused, ended, or starting while its length is unknown. */
+/** The card's words, bar and toggle for a song: playing, paused, ended, or starting while its length is unknown — or while an ad plays before it (#497), its title kept off the card until the song itself plays. */
 export function nowPlayingView(nowPlaying: NowPlaying): NowPlayingView {
-  const { title, channel, elapsedS, durationS, paused, loop, muted, ended, queued } = nowPlaying
-  const kicker = ended ? 'Ended' : paused ? 'Paused' : durationS === null ? 'Starting' : 'Now playing'
+  const { channel, paused, loop, muted, ended, queued } = nowPlaying
+  const ad = ended ? null : (nowPlaying.ad ?? null)
+  // Over an ad the bar and times are the ad's, off its element: the wait is counted by the work itself (ui.md 2).
+  const { elapsedS, durationS } = ad ?? nowPlaying
+  const title = ad === null ? nowPlaying.title : AD_FIRST
+  const kicker = ended ? 'Ended' : paused ? 'Paused' : ad !== null || durationS === null ? 'Starting' : 'Now playing'
   const flags: ('Loop' | 'Muted')[] = []
   if (loop) flags.push('Loop')
   if (muted) flags.push('Muted')
   return {
     kicker,
+    title,
     flags,
     fraction: ended ? 1 : durationS !== null && durationS > 0 ? Math.min(1, elapsedS / durationS) : 0,
     elapsed: clockTime(ended && durationS !== null ? durationS : elapsedS),
@@ -78,8 +106,8 @@ export function nowPlayingView(nowPlaying: NowPlaying): NowPlayingView {
     toggle: paused || ended ? 'play' : 'pause',
     glyph: ended ? 'replay' : paused ? 'play' : 'pause',
     next: ended ? [] : queued,
-    state: ended ? 'ended' : paused ? 'paused' : durationS === null ? 'starting' : 'playing',
+    state: ended ? 'ended' : paused ? 'paused' : ad !== null || durationS === null ? 'starting' : 'playing',
     cover: ended ? 'replay' : paused ? 'pause' : null,
-    label: `${kicker}: ${title}${channel !== '' ? ` by ${channel}` : ''}`,
+    label: ad !== null ? adWait(ad) : `${kicker}: ${title}${channel !== '' ? ` by ${channel}` : ''}`,
   }
 }
