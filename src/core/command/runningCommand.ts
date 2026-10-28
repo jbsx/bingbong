@@ -1,5 +1,6 @@
 import { DEFAULT_DECISION_THRESHOLDS, choiceProbability, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionQuestions } from '../ports/decisionModel'
 import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
+import { headsAVerb } from './localMatch'
 
 // The Overlap (#489, CONTEXT.md Overlap, Fate): a line given while another
 // is still running is read against it, never instead of it. The Appliance
@@ -177,6 +178,21 @@ export function readFate(answer: DecisionChoiceAnswer | undefined): Fate {
   const fate = FATES.find((each) => each === answer.choice)
   if (fate === undefined || choiceProbability(answer) < DEFAULT_DECISION_THRESHOLDS.choice) return 'goes_on'
   return fate
+}
+
+/**
+ * The Fate of a line no host read over a running Command (#504, the
+ * orchestrator's rulings 1 and 3 on 2026-10-28): the Local Match's own
+ * read, never a silent `goes_on` — a line the grammar's verb heads is a
+ * new goal and ends it (`replace`); any other line goes on (`add-on`).
+ */
+export function fateUnread(words: string): Fate {
+  return headsAVerb(words) ? 'ends' : 'goes_on'
+}
+
+/** What is said as a line no host read is handed to the Planner (#504, ruling 2): never silently. `Taking that as a new goal: open the weather.` */
+export function newGoalLine(words: string): string {
+  return `Taking that as a new goal: ${words.trim().replace(/[.!?…]+$/, '')}.`
 }
 
 /** What an ended Command says (the grill's Q11), its object the Acting stage it reached (`Playing let down by radiohead`): `Stopped playing let down by radiohead.` */

@@ -262,3 +262,107 @@ describe('the Errand through the runner (#467, ADR 0095)', () => {
   })
 })
 
+describe('a timed-out reading over a running Command (#504): never a silent handoff', () => {
+  const TIMED_OUT = { status: 'unavailable', reason: 'timeout', message: 'timed out', latencyMs: 3_000 } as const
+  /** A Planner that thinks forever on `play radiohead` (its Errand the line running) and answers every other goal at once. */
+  function plannerHolding(sentence: string) {
+    const asked: string[] = []
+    const planner: PlannerModel = {
+      model: 'glm-5.3-flash',
+      thinking: false,
+      plan: (request) => {
+        asked.push(request.goalLine)
+        // Its Planner call ends as a real one does when the Errand is ended: on the signal.
+        if (request.goalLine === 'play radiohead') return new Promise((resolve) => request.signal?.addEventListener('abort', () => resolve({ status: 'unavailable', reason: 'cancelled', message: 'aborted', model: 'glm-5.3-flash', latencyMs: 0, waitedMs: 0 } as never)))
+        return Promise.resolve({ status: 'answered', answer: { next: 'done', sentence }, model: 'glm-5.3-flash', thinking: false, latencyMs: 900, waitedMs: 0 })
+      },
+    }
+    return { planner, asked }
+  }
+  /** Every host times out; `play radiohead` was handed to its Errand, still thinking: the line running (ruling 4). */
+  async function playHanded(sentence: string) {
+    const { planner, asked } = plannerHolding(sentence)
+    const made = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 }, card: true })
+    made.jev.ask = async () => ({ ...TIMED_OUT, model: made.jev.model }) as never
+    void made.runner.run('play radiohead', { turnId: 'line-1' })
+    await until(() => asked.length === 1)
+    return { ...made, asked }
+  }
+  const errands = (records: readonly CommandLogRecord[]) => records.filter((record) => record.type === 'errand') as { turnId: string; outcome: string }[]
+
+  it('a line with its own verb ends the play, its Errand too, and the stop and the handoff are said as one', async () => {
+    const { runner, spoken, records, asked, events } = await playHanded('It is 14 degrees and cloudy.')
+    await runner.run('open the weather', { turnId: 'line-2' })
+    expect(asked).toEqual(['play radiohead', 'open the weather'])
+    expect(spoken).toEqual(['Stopped “play radiohead”. Taking that as a new goal: open the weather.', 'It is 14 degrees and cloudy.'])
+    expect(events.some((event) => event.type === 'display' && event.turnId === 'line-2' && event.text === 'Stopped “play radiohead”. Taking that as a new goal: open the weather.')).toBe(true)
+    await until(() => errands(records).length === 2)
+    expect(errands(records).map((record) => [record.turnId, record.outcome])).toEqual(expect.arrayContaining([['line-1', 'superseded'], ['line-2', 'done']]))
+  })
+
+  it('the line asks the Appliance Card once and never the page card: that ask was the reading (rulings 2, 3)', async () => {
+    const { runner, jev } = await playHanded('Done.')
+    let asks = 0
+    const timedOut = jev.ask.bind(jev)
+    jev.ask = async (request) => ((asks += 1), timedOut(request))
+    await runner.run('open the weather', { turnId: 'line-2' })
+    expect(asks).toBe(1)
+  })
+
+  it('a later Errand never runs beside the first: handed a line with no verb of its own, it ends the first, said', async () => {
+    const { runner, spoken, records } = await playHanded('Here is the other one.')
+    await runner.run('no, the other one', { turnId: 'line-2' })
+    expect(spoken).toEqual(['Stopped “play radiohead”. Taking that as a new goal: no, the other one.', 'Here is the other one.'])
+    await until(() => errands(records).length === 2)
+    expect(errands(records).find((record) => record.turnId === 'line-1')?.outcome).toBe('superseded')
+  })
+
+  /** `open bbc.com` held mid-navigation, a Task of its own: the line running. */
+  function opening(errand?: CommandRunnerDeps['errand']) {
+    const made = harness({ ...(errand !== undefined ? { errand } : {}), card: true })
+    let land: () => void = () => {}
+    const navigate = made.browser.navigate.bind(made.browser)
+    made.browser.navigate = (url) => new Promise((resolve) => (land = () => void navigate(url).then(resolve)))
+    made.jev.ask = async () => ({ ...TIMED_OUT, model: made.jev.model }) as never
+    const first = made.runner.run('open bbc.com', { turnId: 'line-1' })
+    return { ...made, first, land: () => land() }
+  }
+  const outcomeOf = (events: readonly PipelineEvent[], turnId: string) => events.flatMap((event) => (event.type === 'done' && event.turnId === turnId ? [event.outcome] : [])).at(-1)
+
+  it('a line with no verb of its own leaves the running line going on, and says so before the handoff', async () => {
+    const { planner } = plannerHolding('Opened the other one.')
+    const { runner, spoken, events, first, land, browser } = opening({ planner: () => planner, answerWindowMs: () => 0 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await runner.run('no, the other one', { turnId: 'line-2' })
+    expect(spoken).toEqual(['Still on “open bbc.com”: opening bbc.com. Taking that as a new goal: no, the other one.', 'Opened the other one.'])
+    land()
+    await first
+    expect(outcomeOf(events, 'line-1')).toBe('done')
+    expect(browser.navigations).toEqual(['https://bbc.com'])
+  })
+
+  it('with no Planner: a new goal ends the running line, said; any other line leaves it going on, said', async () => {
+    const ends = opening()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await ends.runner.run('open the weather', { turnId: 'line-2' })
+    ends.land()
+    await ends.first
+    expect(outcomeOf(ends.events, 'line-1')).toBe('cancelled')
+    expect(ends.spoken).toEqual(['Stopped opening bbc.com.'])
+    const goes = opening()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await goes.runner.run('a bit louder please', { turnId: 'line-2' })
+    goes.land()
+    await goes.first
+    expect(outcomeOf(goes.events, 'line-1')).toBe('done')
+    expect(goes.spoken).toEqual(['Still on “open bbc.com”: opening bbc.com.'])
+  })
+
+  it('a line given with nothing running is the idle road, untouched: handed over as before, nothing more said', async () => {
+    const { planner } = plannerHolding('Opened the weather.')
+    const { runner, spoken, jev } = harness({ errand: { planner: () => planner, answerWindowMs: () => 0 }, card: true })
+    jev.ask = async () => ({ ...TIMED_OUT, model: jev.model }) as never
+    await runner.run('open the weather')
+    expect(spoken).toEqual(['Opened the weather.'])
+  })
+})

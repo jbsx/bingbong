@@ -128,6 +128,20 @@ function headsAClause(tokens: readonly Token[]): boolean {
   return BARE_WORDS[clean] !== undefined || CLAUSE_HEADS.some((phrase) => clean === phrase || clean.startsWith(`${phrase} `))
 }
 
+/** The Player's verb head (ADR 0079): `play <words>` is Jev's to read, its head the Player's. */
+const PLAYER_HEAD = 'play'
+
+/**
+ * Whether a line opens with one of the grammar's verb heads (#504, the
+ * orchestrator's ruling 1): a verb or search phrase the Local Match reads
+ * a line by, or the Player's `play`. A line given over a running Command
+ * that no host read is a new goal by this alone.
+ */
+export function headsAVerb(text: string): boolean {
+  const tokens = tokenize(text)
+  return headsAClause(tokens) || tokens[0]?.clean === PLAYER_HEAD
+}
+
 /** The words between the text to type and the field it goes in. */
 const TYPE_SEPARATORS: readonly string[] = ['into the', 'into', 'in the', 'in', 'on the', 'on', 'to the', 'to']
 
