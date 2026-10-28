@@ -93,6 +93,9 @@ import { createMuteSwitch } from '../core/sound/soundMute'
 import { registerSoundMuteIpc } from './sound/attachSoundMute'
 import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
+import { createAudioSurface, withAudioRoadMedia } from './music/audioSurface'
+import { resolveAudioStream } from './music/ytDlp'
+import { audioRoadBinary } from '../core/music/audioRoad'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
 import { createDucking, duckInTurn } from '../core/music/ducking'
@@ -579,6 +582,10 @@ async function createWindow(): Promise<BrowserWindow> {
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
   const youtubeFixture = process.env[YOUTUBE_FIXTURE_ENV]
   if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
+  // The audio road (#502), behind its switch: a song Jev reads as music plays its bare stream outside the pane.
+  const audioBinary = audioRoadBinary(process.env)
+  const audioSurface = audioBinary === null ? null : createAudioSurface()
+  if (audioSurface !== null) onWindowClosed(win, audioSurface.destroy)
   // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {
     songs: rememberedSongs,
@@ -588,7 +595,7 @@ async function createWindow(): Promise<BrowserWindow> {
     propose: (term) => {
       learnedTermsStore.propose(term)
     },
-  }, paneCustody, perfTracer)
+  }, paneCustody, perfTracer, audioBinary === null || audioSurface === null ? undefined : { surface: audioSurface, resolve: (id) => resolveAudioStream(audioBinary, id) })
   onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))
@@ -646,7 +653,8 @@ async function createWindow(): Promise<BrowserWindow> {
   const commandRunner = createCommandRunner({
     // The Appliance Card (#485): on by default; BINGBONG_APPLIANCE_CARD=off is today's road, with no Settings line.
     ...(applianceCard !== null ? { applianceCard } : {}),
-    browser: controller,
+    // The Appliance Card's media follows the Player's song onto the audio road (#502).
+    browser: audioSurface === null ? controller : withAudioRoadMedia(controller, audioSurface, () => music.player.road() === 'audio'),
     decisionModel,
     publish: (event) => {
       eventPublisher.publish({ source: 'run', event })

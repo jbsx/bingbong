@@ -10,7 +10,12 @@
 /** What a music line asks of the Player. A search's words ride beside it as the Command's Slot. */
 export type MusicAction =
   /** Search YouTube and play the first video now (`now`), or queue it next (`front`) or last (`end`). */
-  | { readonly kind: 'search'; readonly place: 'now' | 'front' | 'end' }
+  /**
+   * `video` (#502): Jev read the words as a video — a creator, a video, or
+   * music asked for with its video — so it opens on the watch page, shown;
+   * without it a song plays on the audio road where one is wired.
+   */
+  | { readonly kind: 'search'; readonly place: 'now' | 'front' | 'end'; readonly video?: true }
   | { readonly kind: 'pause' }
   | { readonly kind: 'unpause' }
   | { readonly kind: 'skip' }

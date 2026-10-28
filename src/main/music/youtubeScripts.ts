@@ -11,6 +11,17 @@
 
 import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
+// The audio road's surface (#502, audioSurface.ts) answers the same
+// scripts: its page holds the bare stream's `<audio>` in a `#movie_player`
+// and names its song in `window.__bingbongAudio`, which stands in for the
+// watch page's address.
+
+/** The song's element inside `#movie_player`: YouTube's video, or the audio road's element. */
+const SONG_ELEMENT = `'video, audio'`
+
+/** The song's video id: the audio road's song, else the watch page's address. */
+const SONG_ID = `(window.__bingbongAudio ? window.__bingbongAudio.id : new URLSearchParams(location.search).get('v'))`
+
 /** What the results script yields: the page's `ytInitialData` as JSON, or null when it carries none. */
 export const RESULTS_SCRIPT = `(() => {
   /* YT_RESULTS */
@@ -80,11 +91,11 @@ export type LevelRead = Pick<WatchStatus, 'id' | 'ad' | 'volume' | 'loudnessDb' 
 export const LEVEL_SCRIPT = `(() => {
   /* YT_LEVEL */
   const player = document.querySelector('#movie_player')
-  const video = player ? player.querySelector('video') : null
+  const video = player ? player.querySelector(${SONG_ELEMENT}) : null
   if (!video) return null
   ${LOUDNESS_READER}
   const mark = video.${DUCK_MARK}
-  return { id: new URLSearchParams(location.search).get('v'), ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player), playerVolume: playerVolumeOf(player), restore: mark ? mark.restore * 100 : null }
+  return { id: ${SONG_ID}, ad: player.classList.contains('ad-showing'), volume: video.volume * 100, loudnessDb: loudnessOf(player), playerVolume: playerVolumeOf(player), restore: mark ? mark.restore * 100 : null }
 })()`
 
 /** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
@@ -108,8 +119,8 @@ export const END_LEAD_S = 1
 export const WATCH_SCRIPT = `(() => {
   /* YT_WATCH */
   const player = document.querySelector('#movie_player')
-  const video = player ? player.querySelector('video') : null
-  const videoId = () => new URLSearchParams(location.search).get('v')
+  const video = player ? player.querySelector(${SONG_ELEMENT}) : null
+  const videoId = () => ${SONG_ID}
   if (!window.__bingbongPlayer) {
     const state = { ended: null, endedId: null }
     window.__bingbongPlayer = state
@@ -146,7 +157,7 @@ export const WATCH_SCRIPT = `(() => {
   ${PROMPT_FINDER}
   ${LOUDNESS_READER}
   return {
-    watch: location.pathname === '/watch',
+    watch: Boolean(window.__bingbongAudio) || location.pathname === '/watch',
     id: videoId(),
     title: (data && data.title) || document.title.replace(/ - YouTube$/, ''),
     hasVideo: video !== null,
@@ -181,7 +192,8 @@ export const CONTINUE_SCRIPT = `(() => {
   if (prompt === null) return false
   const yes = prompt.querySelector('#confirm-button button, #confirm-button')
   if (yes) yes.click()
-  const video = document.querySelector('#movie_player video')
+  const holder = document.querySelector('#movie_player')
+  const video = holder ? holder.querySelector(${SONG_ELEMENT}) : null
   if (video && video.paused) video.play().catch(() => {})
   return true
 })()`
@@ -209,7 +221,7 @@ export interface StartRead {
 export const START_SCRIPT = `(() => {
   /* YT_START */
   const player = document.querySelector('#movie_player')
-  const video = player ? player.querySelector('video') : null
+  const video = player ? player.querySelector(${SONG_ELEMENT}) : null
   if (!video) return null
   return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, refused: video.${REFUSED_MARK} || null }
 })()`
@@ -279,7 +291,7 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   return `((op) => {
   /* YT_CONTROL */
   const player = document.querySelector('#movie_player')
-  const video = (player ? player.querySelector('video') : null) || ${reach === 'page' ? PAGE_MEDIA_JS : 'null'}
+  const video = (player ? player.querySelector(${SONG_ELEMENT}) : null) || ${reach === 'page' ? PAGE_MEDIA_JS : 'null'}
   if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false, ducked: false }
   let changed = op.op !== 'read'
   const heard = ${HEARD_VOLUME_FN}
@@ -351,7 +363,7 @@ export interface PausedAll {
 export const PAUSE_ALL_SCRIPT = `(() => {
   /* PAGE_PAUSE_ALL */
   const player = document.querySelector('#movie_player')
-  const own = player ? player.querySelector('video') : null
+  const own = player ? player.querySelector(${SONG_ELEMENT}) : null
   const paused = ${PAUSE_PLAYING_JS}
   return { paused: paused.length, youtube: own !== null && paused.includes(own) }
 })()`

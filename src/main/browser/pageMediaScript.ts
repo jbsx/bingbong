@@ -157,3 +157,39 @@ export const FRAME_PAUSE_ALL_JS = `(() => {
   /* FRAME_PAUSE_ALL */
   return ${PAUSE_PLAYING_JS}.length
 })()`
+
+/**
+ * A JS function source `(el, op) => { before, after }` (#372, ADR 0080): a Media Op applied to one
+ * element, its facts read before and after in the same tick. Shared by the op on a ref, the
+ * Appliance Card's op on the appliance's element by kind (#485), and that op on the audio road's element (#502).
+ */
+export const APPLY_MEDIA_OP_FN = `((el, op) => {
+  const facts = ${MEDIA_FACTS_FN}
+  const before = facts(el)
+  // The seeks are offered only with a seekable range (ADR 0080): the bounds are the facts' own.
+  const start = before.seekable ? before.seekable.start : 0
+  const end = before.seekable ? before.seekable.end : el.currentTime
+  const tracks = el.textTracks ? Array.from(el.textTracks) : []
+  switch (op.op) {
+    case 'play': el.play().catch(() => {}); break
+    case 'pause': el.pause(); break
+    case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
+    case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
+    case 'restart': el.currentTime = start; el.play().catch(() => {}); break
+    // Under a duck (#459) the level put back is set, the element left at its floor until the duck lets go.
+    case 'volume': ${SET_HEARD_VOLUME_FN}(el, Math.max(0, Math.min(100, Math.round(op.to || 0))) / 100); break
+    case 'mute':
+    case 'unmute': el.muted = op.op === 'mute'; break
+    case 'loop':
+    case 'unloop': el.loop = op.op === 'loop'; break
+    case 'rate': el.playbackRate = op.to || 1; break
+    case 'captions': {
+      const track = tracks.find((t) => t.kind === 'subtitles' || t.kind === 'captions') || tracks[0]
+      for (const t of tracks) t.mode = t === track ? 'showing' : 'disabled'
+      break
+    }
+    case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
+  }
+  // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
+  return { before, after: facts(el) }
+})`

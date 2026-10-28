@@ -4,7 +4,7 @@ import type { BrowserCustody } from '../../core/browser/unsettledAction'
 import { reportFault } from '../../core/trace/fault'
 import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { createPlayer, type Player, type SongMemory } from './player'
+import { createPlayer, type AudioRoad, type Player, type SongMemory } from './player'
 
 // The Player's wiring (#343): one per pane, driving it through the same
 // custody-held controller every pane user goes through. A queued search
@@ -14,16 +14,18 @@ import { createPlayer, type Player, type SongMemory } from './player'
 /** How often the Player listens for the song's end. */
 const CHECK_MS = 1_000
 
-/** The pane's Player, its end-of-song poll running; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488) and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
+/** The pane's Player, its end-of-song poll running; the audio road (#502) where its switch is on; a withheld browser is waited out on custody's settling (#433), each song's start is a `media-start` span (#488) and each consent wall cleared over its page a `media-consent` one (#492). The returned stop ends the poll. */
 export function attachPlayer(
   browser: Pick<BrowserController, 'navigate' | 'land' | 'evaluate' | 'clearConsent' | 'state'>,
   session: Session,
   memory: { songs: SongMemory; learn(term: string): void; propose(term: string): void },
   custody: Pick<BrowserCustody<BrowserController>, 'settled'>,
   tracer: Pick<PerfTracer, 'span'>,
+  audio?: AudioRoad,
 ): { player: Player; stop: () => void } {
   const player = createPlayer({
     browser,
+    ...(audio !== undefined ? { audio } : {}),
     custody,
     songs: memory.songs,
     learn: memory.learn,

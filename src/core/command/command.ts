@@ -270,6 +270,7 @@ export function verbOpensPage(verb: CommandVerb): boolean {
 /**
  * Whether this Command leaves the Idle Screen up: its verb does, unless it
  * is "show the video", which wakes the dashboard on the watch page (#344),
+ * a `play` Jev read as a video (#502), which opens there to be watched,
  * or an app op on the panel or a view (#420), which shows on the dashboard;
  * the Idle Screen's own op (#458) brings it up, so keeps it.
  * On a blank pane every Command does but one that opens a page (#361): the
@@ -277,6 +278,7 @@ export function verbOpensPage(verb: CommandVerb): boolean {
  * over the Idle Screen.
  */
 export function commandKeepsIdle(command: Command, paneHasPage = true): boolean {
+  if (opensAVideo(command)) return false
   if (!paneHasPage && !verbOpensPage(command.verb)) return true
   if (command.verb === 'app') {
     const op = command.app
@@ -285,6 +287,9 @@ export function commandKeepsIdle(command: Command, paneHasPage = true): boolean 
   }
   return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
+
+/** A `play` Jev read as a video (#502): it opens the watch page and shows it, where a song plays on the audio road. */
+export const opensAVideo = (command: Command): boolean => command.music?.kind === 'search' && command.music.video === true
 
 /** A value with its object keys in order, so two readings of one Command compare equal however their fields were set. */
 function ordered(value: unknown): unknown {

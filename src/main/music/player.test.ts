@@ -6,7 +6,7 @@ import type { MusicAction } from '../../core/music/musicWords'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
 import { createPlayer, type PlayerConsent, type PlayerStart, type SongMemory } from './player'
-import { SHEET_DISMISSAL, SHEET_DRAWS_AT, ScriptedYouTube, videoItem } from './scriptedYouTube'
+import { SHEET_DISMISSAL, SHEET_DRAWS_AT, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
 // page's video in the pane over CDP. Tested against a scripted YouTube:
@@ -756,6 +756,8 @@ describe('a browser custody withholds (#433)', () => {
   it('one refused evaluate and one fault for the spell, however long it lasts, and one read of the song on settling', async () => {
     const wired = custodyWired()
     await wired.player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    // The page's consent watch (#492) looks on in the background, its waits instant here: done before the spell, as it is long before a real one.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     wired.withhold()
     const before = wired.asked()
     // A minute of the 1 s poll, the duck a spoken line sets beside it.
@@ -1319,5 +1321,148 @@ describe("a consent wall over a page the Player opened (#492): the browser's own
     Object.defineProperty(browser, 'clearConsent', { value: undefined })
     expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.' })
     expect(browser.consentLooks).toBe(0)
+  })
+})
+
+// The audio road (#502): a song Jev read as music plays its bare audio
+// stream outside the pane; a video, or any failure of the road, opens the
+// watch page as before, shown.
+describe('the audio road', () => {
+  function withAudio() {
+    const pane = wired()
+    const audio = scriptedAudio(pane.youtube.watches)
+    const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve: audio.resolve } })
+    const always = (): boolean => true
+    const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, always)
+    return { ...pane, audio, player, perform }
+  }
+
+  it('music plays the bare stream of the pick: the pane is never navigated', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(audio.resolved).toEqual(['aaaaaaaaaaa'])
+    expect(audio.loaded).toEqual([{ id: 'aaaaaaaaaaa', stream: 'https://stream.example/aaaaaaaaaaa' }])
+    expect(browser.navigations).toEqual([])
+    expect(browser.landings).toEqual([])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
+    expect(played.failure).toBeUndefined()
+    expect(played.shown).toBeUndefined()
+    expect(player.road()).toBe('audio')
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', title: 'Song A' })
+  })
+
+  it('a video opens the watch page as before, shown, and never looks the stream up', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    const played = await perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    expect(audio.resolved).toEqual([])
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa', shown: true })
+    expect(player.road()).toBe('page')
+  })
+
+  it('a lookup that fails falls back to the watch page, shown: the line is still done', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    audio.fails.add('aaaaaaaaaaa')
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', shown: true })
+    expect(played.failure).toBeUndefined()
+    expect(player.road()).toBe('page')
+  })
+
+  it('a stream that will not start falls back to the watch page, shown, the stream stopped', async () => {
+    const { browser, audio, perform } = withAudio()
+    audio.youtube.starts = 'refuses'
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', shown: true })
+    expect(audio.stops).toBeGreaterThan(0)
+  })
+
+  it('a verb on a song on the audio road reaches the stream\'s element, never the pane', async () => {
+    const { youtube, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(await perform({ kind: 'pause' })).toMatchObject({ answer: 'Paused.' })
+    expect(audio.youtube.controls).toContainEqual({ op: 'pause' })
+    expect(youtube.controls).toEqual([])
+    expect(player.queue().paused).toBe(true)
+  })
+
+  it('the poll hears the stream\'s end and opens the next queued song on the same road', async () => {
+    const { audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    audio.youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(audio.loaded.map((load) => load.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb'])
+    expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+  })
+
+  it('a queued song the road cannot play is passed over in the background: the pane, perhaps on a page of its own, is never taken', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await perform({ kind: 'search', place: 'end' }, 'song c')
+    audio.fails.add('bbbbbbbbbbb')
+    audio.youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(browser.navigations).toEqual([])
+    expect(browser.landings).toEqual([])
+    expect(player.queue().current?.id).toBe('ccccccccccc')
+    expect(player.road()).toBe('audio')
+  })
+
+  it('a song on the page, then music: the page\'s video is paused as the stream takes over', async () => {
+    const { youtube, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    expect(youtube.controls).toContainEqual({ op: 'pause' })
+    expect(audio.loaded.map((load) => load.id)).toEqual(['bbbbbbbbbbb'])
+    expect(player.road()).toBe('audio')
+  })
+
+  it('music, then a video: the stream stops as the watch page opens', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'now', video: true }, 'song b')
+    expect(audio.stops).toBe(1)
+    expect(browser.landings).toEqual([`${WATCH}bbbbbbbbbbb`])
+    expect(player.road()).toBe('page')
+  })
+
+  it('`show` on the audio road opens the song\'s watch page where the stream stood, the stream stopped', async () => {
+    const { browser, audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    audio.youtube.element = { ...audio.youtube.element, currentTime: 42 }
+    const shown = await perform({ kind: 'show' })
+    expect(shown).toMatchObject({ answer: 'Showing “Song A”.' })
+    expect(audio.stops).toBe(1)
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa&t=42s`])
+    expect(player.road()).toBe('page')
+  })
+
+  it('an idle `stop` pauses the stream too', async () => {
+    const { audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(await player.pauseAll()).toBe(true)
+    expect(audio.youtube.element.paused).toBe(true)
+    expect(player.queue().paused).toBe(true)
+  })
+
+  it('the duck lowers the stream\'s element', async () => {
+    const { audio, player, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await player.duck(true)
+    expect(audio.youtube.controls.some((op) => op.op === 'duck')).toBe(true)
+  })
+
+  it('with no audio road wired every play is the watch page, and the road reads page', async () => {
+    const { browser, player, perform } = wired()
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played.shown).toBeUndefined()
+    expect(player.road()).toBe('page')
   })
 })

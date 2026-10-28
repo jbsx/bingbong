@@ -298,7 +298,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'> & Partial<Pick<Player, 'audioRoad'>>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
@@ -1119,9 +1119,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     unread?: true
   }
 
-  /** A Command that takes the one pane (the grill's Q8): it moves the page, so a line running in the pane ends. */
+  /**
+   * A Command that takes the one pane (the grill's Q8): it moves the page, so a line running in the pane ends. A song
+   * that plays on the audio road (#502) leaves the pane alone; a video, or any song with no audio road wired, opens there.
+   */
   const takesPane = (command: Command): boolean =>
-    command.verb === 'navigate' || command.verb === 'search' || command.verb === 'back' || command.verb === 'forward' || command.verb === 'reload' || command.verb === 'resume' || (command.verb === 'play' && command.music?.kind === 'search' && command.music.place === 'now')
+    command.verb === 'navigate' || command.verb === 'search' || command.verb === 'back' || command.verb === 'forward' || command.verb === 'reload' || command.verb === 'resume' ||
+    (command.verb === 'play' && command.music?.kind === 'search' && command.music.place === 'now' && (command.music.video === true || deps.player?.audioRoad !== true))
 
   /** A Command on the media itself (a Media Op, the Player's own controls): with its element still being opened, it waits for it (the grill's Q8). */
   const actsOnMedia = (command: Command): boolean => command.verb === 'media' || (command.verb === 'play' && command.music !== undefined && command.music.kind !== 'search')
@@ -2053,6 +2057,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           answerFailure(turnId, outcomeOfPlay.answer, { command })
           outcome = 'wall'
         } else {
+          // A song the audio road could not play opened on the watch page instead (#502, owner's ruling 3): shown, as a video is.
+          if (outcomeOfPlay.shown === true && commandKeepsIdle(command)) publish({ type: 'command', turnId, text, action: 'show the video', task, at: at() })
           answer(turnId, outcomeOfPlay.answer)
           if (reacting.says === true && deps.speech !== undefined) void say(deps.speech, turnId, outcomeOfPlay.answer)
         }

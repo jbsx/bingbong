@@ -67,7 +67,29 @@ export interface PlayerOutcome {
   readonly superseded?: true
   /** For a search (#345): the video came from the Remembered Songs, or from YouTube's results. */
   readonly pick?: PickSource
+  /** With an audio road wired (#502), the song opened on the watch page — a video, or the road's fallback — so the dashboard shows it. */
+  readonly shown?: true
 }
+
+/**
+ * Where the audio road plays (#502): a surface outside the pane holding one
+ * bare media element, which answers the Player's scripts as a watch page's
+ * player does. `load` puts a song's stream on it; `stop` empties it.
+ */
+export interface AudioSurface {
+  evaluate<T>(script: string): Promise<T | undefined>
+  load(song: Song, stream: string): Promise<void>
+  stop(): Promise<void>
+}
+
+/** The audio road (#502): its surface, and the lookup of a video's audio stream, which rejects on any failure or its time running out. */
+export interface AudioRoad {
+  readonly surface: AudioSurface
+  resolve(id: string): Promise<string>
+}
+
+/** Where the Player's song plays (#502): the watch page in the pane, or the audio road. */
+export type Road = 'page' | 'audio'
 
 /** How a song opened came to play (#488): what the perf log keeps of each start. */
 export interface PlayerStart {
@@ -149,6 +171,10 @@ export interface Player {
   onChange(listener: (nowPlaying: NowPlaying | null) => void): () => void
   /** Ducks the music (on) or puts its volume back (off) (#344). Resolves when the element has it. */
   duck(on: boolean): Promise<void>
+  /** Where the song plays, or last played (#502): what the Appliance Card's media reads and its ops reach. */
+  road(): Road
+  /** The audio road is wired (#502): a song not read as a video opens there, and leaves the pane alone. */
+  readonly audioRoad: boolean
 }
 
 export interface PlayerDeps {
@@ -180,6 +206,8 @@ export interface PlayerDeps {
   onConsent?(consent: PlayerConsent): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
+  /** The audio road (#502), behind its switch; absent, every song opens on the watch page as before. */
+  audio?: AudioRoad
 }
 
 /**
@@ -193,6 +221,8 @@ interface SearchPick {
   readonly index: number
   readonly song: Song
   readonly remembered: boolean
+  /** Jev read the words as a video (#502): its corrections open on the watch page too. */
+  readonly video: boolean
   staying: boolean
 }
 
@@ -285,6 +315,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let ducking: Promise<void> = Promise.resolve()
   /** The consent watch on the page the Player opened last (#492); a page opened after it ends it. */
   let consentWatch: ConsentWatch | null = null
+  /** Where the song plays (#502): every read and control of it goes there. */
+  let road: Road = 'page'
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
   let published = 'null'
 
@@ -344,7 +376,16 @@ export function createPlayer(deps: PlayerDeps): Player {
     withheld = custody.settled().then(resume, resume)
   }
 
-  async function evaluate<T>(script: string): Promise<T | null> {
+  /** A script on the song's surface — the audio road's while the song plays there (#502) — or, `on` 'pane', on the pane whatever plays. */
+  async function evaluate<T>(script: string, on: 'song' | 'pane' = 'song'): Promise<T | null> {
+    if (on === 'song' && road === 'audio' && deps.audio !== undefined) {
+      try {
+        return (await deps.audio.surface.evaluate<T>(script)) ?? null
+      } catch (error) {
+        reportFault('music.player.evaluateAudio', error)
+        return null
+      }
+    }
     if (withheld !== null) return null
     try {
       return (await browser.evaluate<T>(script)) ?? null
@@ -385,8 +426,9 @@ export function createPlayer(deps: PlayerDeps): Player {
    * starts the video. A landing off the watch page (a consent wall) is
    * navigated again in full, which dismisses what it can.
    */
-  async function goTo(song: Song, current: () => boolean): Promise<boolean | 'elsewhere' | 'superseded'> {
-    const url = watchUrl(song.id)
+  async function goTo(song: Song, current: () => boolean, at?: number): Promise<boolean | 'elsewhere' | 'superseded'> {
+    // A song shown from the audio road (#502) opens where the stream stood.
+    const url = at === undefined ? watchUrl(song.id) : `${watchUrl(song.id)}&t=${Math.floor(at)}s`
     if (browser.land === undefined) {
       await browser.navigate(url)
       watchConsent(song)
@@ -460,7 +502,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const mine = generation
     for (let read = 0; read * START_READ_MS < SELF_START_MS + PLAYED_S * 1000; read += 1) {
       if (generation !== mine || withheld !== null || videoIdOf(browser.state().url ?? '') !== song.id) return
-      await evaluate<PausedAll>(PAUSE_ALL_SCRIPT)
+      await evaluate<PausedAll>(PAUSE_ALL_SCRIPT, 'pane')
       await sleep(START_READ_MS)
     }
   }
@@ -512,13 +554,71 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (!carried && ducked !== null) await duckElement()
   }
 
-  /** Open a song's watch page, leaving `leaving`; the queue moves on to it only when it landed. */
-  async function open(song: Song, current: () => boolean, leaving: Song | null): Promise<'opened' | 'failed' | 'superseded'> {
+  /**
+   * The song's stream on the audio road (#502): looked up, then loaded on
+   * the surface and read until its element holds the song, as a watch page
+   * is. A lookup that fails or runs out of time is a failed landing, which
+   * the caller takes to the watch page.
+   */
+  async function streamTo(song: Song, current: () => boolean): Promise<boolean | 'superseded'> {
+    const audio = deps.audio!
+    let stream: string
+    try {
+      stream = await audio.resolve(song.id)
+    } catch (error) {
+      reportFault('music.player.resolve', error)
+      return current() ? false : 'superseded'
+    }
+    if (!current()) return 'superseded'
+    await leaveRoad('audio')
+    await audio.surface.load(song, stream)
+    road = 'audio'
+    const landed = await landedOn(song, current)
+    return landed === 'elsewhere' ? false : landed
+  }
+
+  /**
+   * The song moves to `to` (#502): what plays on the road it leaves is
+   * silenced — the stream emptied, or the pane's song paused, since the
+   * pane stays on its page — and the page's consent watch ends.
+   */
+  async function leaveRoad(to: Road): Promise<void> {
+    if (road === to) return
+    if (road === 'audio') {
+      await deps.audio!.surface.stop()
+    } else if (state.current !== null || ended !== null) {
+      consentWatch = null
+      await evaluate<ElementState>(controlScript({ op: 'pause' }, 'youtube'), 'pane')
+    }
+    road = to
+  }
+
+  /** The road a song opens on (#502): the audio road where one is wired, unless Jev read the words as a video. */
+  const roadFor = (video: boolean): Road => (deps.audio !== undefined && !video ? 'audio' : 'page')
+
+  /**
+   * Open a song on the road it asks for, leaving `leaving`; the queue moves
+   * on to it only when it landed. A failed lookup or landing on the audio
+   * road opens the watch page instead (#502, owner's ruling 3) — for a
+   * Command; in the `background`, with none waiting, the pane may hold a
+   * page of the person's own, so the song fails there and is passed over.
+   */
+  async function open(song: Song, current: () => boolean, leaving: Song | null, video = false, background = false): Promise<'opened' | 'failed' | 'superseded'> {
+    const first = await openOn(song, current, leaving, roadFor(video))
+    return first === 'failed' && roadFor(video) === 'audio' && !background ? openOn(song, current, leaving, 'page') : first
+  }
+
+  /** Open a song on this road; `at` (s), on the watch page, where it starts. */
+  async function openOn(song: Song, current: () => boolean, leaving: Song | null, on: Road, at?: number): Promise<'opened' | 'failed' | 'superseded'> {
     let landed: boolean | 'elsewhere' | 'superseded'
     try {
       await readLeaving(leaving)
       carrying = null
-      landed = await goTo(song, current)
+      if (on === 'audio') landed = await streamTo(song, current)
+      else {
+        if (road !== 'page') await leaveRoad('page')
+        landed = await goTo(song, current, at)
+      }
     } catch (error) {
       reportFault('music.player.open', error)
       return current() ? 'failed' : 'superseded'
@@ -624,6 +724,14 @@ export function createPlayer(deps: PlayerDeps): Player {
     const first = await startOf(song, current, background, false)
     if (first === 'superseded' || first.started) return first
     if (!current()) return 'superseded'
+    // A stream that would not start is opened again as its watch page (#502, owner's ruling 3), read and pressed once
+    // more — for a Command; in the background the pane is not the Player's to take, and the song is held unstarted.
+    if (road === 'audio') {
+      if (background) return first
+      const opened = await openOn(song, current, song, 'page')
+      if (opened !== 'opened') return opened === 'superseded' ? 'superseded' : first
+      return startOf(song, current, background, true)
+    }
     try {
       await browser.navigate(watchUrl(song.id))
     } catch (error) {
@@ -659,7 +767,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         }
         publish()
         if (next === null || !current()) return
-        const opened = await open(next, current, was)
+        const opened = await open(next, current, was, false, true)
         if (opened === 'opened') {
           const start = await playOn(next, current, true)
           if (start !== 'superseded' && !start.started) holdUnstarted()
@@ -684,8 +792,14 @@ export function createPlayer(deps: PlayerDeps): Player {
    * otherwise (`skip`, `previous`). The Queue moves to `then` once the page
    * opened or failed; one a later Command overtook leaves it as it was.
    */
-  async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song)): Promise<PlayerOutcome> {
-    const opened = await open(song, current, state.current)
+  async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song), video = false): Promise<PlayerOutcome> {
+    const outcome = await playSongOn(song, current, answer, then, video)
+    // With the audio road wired, a song on the watch page is one to show (#502): a video, or the road's fallback.
+    return deps.audio !== undefined && road === 'page' && outcome.superseded !== true && outcome.failure !== true ? { ...outcome, shown: true } : outcome
+  }
+
+  async function playSongOn(song: Song, current: () => boolean, answer: string, then: () => Queue, video: boolean): Promise<PlayerOutcome> {
+    const opened = await open(song, current, state.current, video)
     if (opened === 'superseded') return superseded
     state = then()
     if (opened === 'failed') return failedToOpen(song)
@@ -746,7 +860,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function openPick(next: Omit<SearchPick, 'staying'>, current: () => boolean, answer: string, then?: () => Queue): Promise<PlayerOutcome> {
     const opening: SearchPick = { ...next, staying: false }
     pick = opening
-    const outcome = await playSong(next.song, current, answer, then)
+    const outcome = await playSong(next.song, current, answer, then, next.video)
     if (outcome.superseded === true) return outcome
     if (outcome.failure !== true && pick === opening) opening.staying = true
     return { ...outcome, pick: next.remembered ? 'remembered' : 'searched' }
@@ -757,11 +871,11 @@ export function createPlayer(deps: PlayerDeps): Player {
    * results page in the pane and its first plain video. A remembered video
    * that no longer opens is forgotten, so the next `play` searches.
    */
-  async function searchNow(words: string, current: () => boolean): Promise<PlayerOutcome> {
+  async function searchNow(words: string, current: () => boolean, video: boolean): Promise<PlayerOutcome> {
     pick = null
     const known = deps.songs?.recall(words) ?? null
     if (known !== null) {
-      const outcome = await openPick({ words, results: [], index: -1, song: known, remembered: true }, current, `Playing ${quoted(known.title)}.`)
+      const outcome = await openPick({ words, results: [], index: -1, song: known, remembered: true, video }, current, `Playing ${quoted(known.title)}.`)
       // A song that opened and did not start is still the song (#488): its words stay.
       if (outcome.failure === true && outcome.unstarted !== true) deps.songs?.forgetWords(words)
       return outcome
@@ -769,7 +883,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const songs = await readResults(words, current)
     if (!isSongs(songs)) return songs
     const song = songs[0]!
-    return openPick({ words, results: songs, index: 0, song, remembered: false }, current, `Playing ${quoted(song.title)}.`)
+    return openPick({ words, results: songs, index: 0, song, remembered: false, video }, current, `Playing ${quoted(song.title)}.`)
   }
 
   /**
@@ -1009,10 +1123,27 @@ export function createPlayer(deps: PlayerDeps): Player {
     return true
   }
 
+  /**
+   * `show` while the song plays on the audio road (#502): its watch page
+   * opens where the stream stood, the stream stopped, and the song plays on
+   * there — held paused if it was. The Command's own event wakes the
+   * dashboard over it.
+   */
+  async function showFromAudio(song: Song, current: () => boolean): Promise<PlayerOutcome> {
+    const at = (await evaluate<WatchStatus>(WATCH_SCRIPT))?.elapsed
+    const wasPaused = state.current === null || state.paused
+    const opened = await openOn(song, current, song, 'page', at)
+    if (opened === 'superseded') return superseded
+    if (opened === 'failed') return { result: `not a watch page: ${watchUrl(song.id)}`, answer: `${quoted(song.title)} can't be shown.`, failure: true, video: song.id }
+    if (wasPaused) await control({ op: 'pause' })
+    else if ((await playOn(song, current, false)) === 'superseded') return superseded
+    return { result: `showing: id=${song.id}`, answer: `Showing ${quoted(song.title)}.`, video: song.id }
+  }
+
   async function performNow(music: MusicAction, words: string | null, current: () => boolean): Promise<PlayerOutcome> {
     switch (music.kind) {
       case 'search':
-        return music.place === 'now' ? searchNow(words ?? '', current) : searchQueued(words ?? '', music.place, current)
+        return music.place === 'now' ? searchNow(words ?? '', current, music.video === true) : searchQueued(words ?? '', music.place, current)
       case 'correct':
         return correct(music.step, current)
       case 'forget':
@@ -1064,6 +1195,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       case 'show': {
         // The pane is on the watch page already — a song ended there too: the Command's own event wakes the dashboard over it.
         const shown = state.current ?? ended
+        if (shown !== null && road === 'audio') return showFromAudio(shown, current)
         if (shown !== null) return { result: `showing: id=${shown.id}`, answer: `Showing ${quoted(shown.title)}.` }
         // No song held: the page's own video, one the Player never started (#362).
         const element = await control({ op: 'read' })
@@ -1088,9 +1220,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (consentWatch !== null) consentWatch.paused = true
       consentWatch = null
       // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
-      const [stopped, framed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT), pauseFrames()])
-      if ((stopped?.paused ?? 0) + framed === 0) return false
-      if (stopped?.youtube === true) {
+      // The stream on the audio road pauses beside the pane's media (#502): its element is the song's own.
+      const streamPaused = road === 'audio' ? evaluate<PausedAll>(PAUSE_ALL_SCRIPT) : Promise.resolve(null)
+      const [panePaused, framed, streamed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT, 'pane'), pauseFrames(), streamPaused])
+      if ((panePaused?.paused ?? 0) + framed + (streamed?.paused ?? 0) === 0) return false
+      if ((road === 'audio' ? streamed : panePaused)?.youtube === true) {
         ownPause = true
         state = pause(state)
         publish()
@@ -1131,6 +1265,8 @@ export function createPlayer(deps: PlayerDeps): Player {
       ducking = ducking.then(() => setDuck(on)).catch((error: unknown) => reportFault('music.player.duck', error))
       return ducking
     },
+    road: () => road,
+    audioRoad: deps.audio !== undefined,
   }
   return player
 }

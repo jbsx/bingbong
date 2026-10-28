@@ -86,6 +86,13 @@ describe('commandKeepsIdle on a blank pane (#361)', () => {
     for (const verb of ['navigate', 'search', 'resume'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(false)
   })
 
+  it('wakes for a `play` Jev read as a video, blank pane or not (#502): it opens the watch page to be watched', () => {
+    const video: Command = { verb: 'play', target: null, slot: 'mkbhd', music: { kind: 'search', place: 'now', video: true } }
+    expect(commandKeepsIdle(video, false)).toBe(false)
+    expect(commandKeepsIdle(video, true)).toBe(false)
+    expect(commandKeepsIdle({ ...video, music: { kind: 'search', place: 'now' } }, true)).toBe(true)
+  })
+
   it('wakes for a pane Command with a page in the pane, as before', () => {
     expect(commandKeepsIdle(command('scroll_down'), true)).toBe(false)
     expect(commandKeepsIdle(command('timer'), true)).toBe(true)

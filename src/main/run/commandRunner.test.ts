@@ -20,7 +20,7 @@ import type { AppChange, AppState } from '../../core/command/appOp'
 import type { UpdateCheck } from '../../core/update/updateCheck'
 import { defaultSettings } from '../../core/settings/settings'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
-import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
+import { ScriptedYouTube, scriptedAudio, videoItem } from '../music/scriptedYouTube'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { cardBudgetChars, promptChars } from '../../core/decision/cardBudget'
 import { createSiteQuestionDesk, type SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
@@ -951,15 +951,18 @@ describe('the Player (#343)', () => {
   const QUEEN = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
 
   /** A runner wired to a real Player over a scripted YouTube. */
-  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory; timer?: CommandRunnerDeps['timer'] }) {
+  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory; timer?: CommandRunnerDeps['timer']; audio?: true }) {
     let youtube!: ScriptedYouTube
     let player!: Player
-    const { songs, ...rest } = options ?? {}
+    let audio: ReturnType<typeof scriptedAudio> | undefined
+    const { songs, audio: withAudio, ...rest } = options ?? {}
     const wired = harness({
       ...rest,
       player: (browser) => {
         youtube = new ScriptedYouTube(browser)
-        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}) })
+        // The audio road (#502): its scripted surface plays what the pane's watch pages would.
+        audio = withAudio === true ? scriptedAudio(youtube.watches) : undefined
+        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}), ...(audio !== undefined ? { audio: { surface: audio.surface, resolve: audio.resolve } } : {}) })
         return player
       },
     })
@@ -978,7 +981,7 @@ describe('the Player (#343)', () => {
       if (head !== null && !exact) wired.decision.script.push({ answers: { action: choice(head[1]!.toLowerCase()), slot: choice(`s1-${line.trim().split(/\s+/).length - 1}`) } })
       return wired.runner.run(line, runOptions)
     }
-    return { ...wired, youtube, player, runner: { ...wired.runner, run } }
+    return { ...wired, youtube, player, audio, runner: { ...wired.runner, run } }
   }
 
   it('`play <words>` is Jev\'s (ADR 0079): its `play` reading fetches the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
@@ -991,6 +994,27 @@ describe('the Player (#343)', () => {
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', music: { kind: 'search', place: 'now' }, slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', pick: 'searched', reading: 'jev', jevAsked: true, ended: 'terminal' })])
+  })
+
+  it('on the audio road (#502) a song plays its stream: the pane is not navigated and the Idle Screen stays up', async () => {
+    const { browser, audio, events, runner } = music({ audio: true })
+    await runner.run('play bohemian rhapsody')
+    expect(audio!.loaded.map((load) => load.id)).toEqual(['fJ9rUzIMcZQ'])
+    expect(browser.navigations).toEqual([])
+    expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody', keepsIdle: true })])
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('a lookup the audio road fails opens the watch page and shows it (#502, owner\'s ruling 3): the line is still done', async () => {
+    const { browser, audio, events, runner } = music({ audio: true })
+    audio!.fails.add('fJ9rUzIMcZQ')
+    await runner.run('play bohemian rhapsody')
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+    const commands = events.filter((event) => event.type === 'command')
+    expect(commands.at(-1)).toMatchObject({ action: 'show the video' })
+    expect(commands.at(-1)).not.toHaveProperty('keepsIdle')
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
   it("with nothing queued the ask offers a song to play and not the Queue's walk; with a song current, skip, previous and show too; never a song op of the Player's own (#374)", async () => {

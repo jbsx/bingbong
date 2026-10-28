@@ -1,5 +1,5 @@
-import type { FakeBrowser } from '../../core/testing/doubles'
-import { videoIdOf } from '../../core/music/youtubeSearch'
+import { FakeBrowser } from '../../core/testing/doubles'
+import { videoIdOf, watchUrl } from '../../core/music/youtubeSearch'
 import { loudnessFactor } from '../../core/music/loudness'
 import type { ElementOp, ElementState, LevelRead, PausedAll, StartRead, WatchStatus } from './youtubeScripts'
 
@@ -56,8 +56,6 @@ export const START_STEP_S = 0.25
 export class ScriptedYouTube {
   /** Search words → the results' data. */
   readonly results = new Map<string, unknown>()
-  /** Video id → its watch page. */
-  readonly watches = new Map<string, ScriptedWatch>()
   /** Every control the element took, in order. */
   readonly controls: ElementOp[] = []
   readonly fetched: string[] = []
@@ -100,7 +98,11 @@ export class ScriptedYouTube {
   continued = 0
   private ended: { id: string | null; ad: boolean } | null = null
 
-  constructor(private readonly browser: FakeBrowser) {
+  constructor(
+    private readonly browser: FakeBrowser,
+    /** Video id → its watch page; the audio road's stand-in shares the pane's (#502). */
+    readonly watches: Map<string, ScriptedWatch> = new Map(),
+  ) {
     browser.evaluator = (expression) => this.evaluate(expression)
     browser.consentClear = () => this.clearSheet()
   }
@@ -323,4 +325,44 @@ export class ScriptedYouTube {
     this.duckMark.restore = level
     this.element = { ...this.element, volume: Math.round(level * this.duckMark.share) }
   }
+}
+
+/**
+ * A scripted audio road (#502): the bare stream's element answers the
+ * Player's scripts as a watch page's does — the real surface's page names
+ * its song the way the scripts read a watch page — so a ScriptedYouTube on
+ * its own FakeBrowser stands in for it, sharing the pane's watch pages.
+ * `fails` says which lookups fail.
+ */
+export function scriptedAudio(watches: Map<string, ScriptedWatch>) {
+  const browser = new FakeBrowser()
+  const youtube = new ScriptedYouTube(browser, watches)
+  const road = {
+    browser,
+    youtube,
+    /** Every video id looked up, in order. */
+    resolved: [] as string[],
+    /** Every stream loaded: the song's id and the stream's address. */
+    loaded: [] as { id: string; stream: string }[],
+    stops: 0,
+    /** A lookup that fails, by video id; every other resolves to a stream named after it. */
+    fails: new Set<string>(),
+    resolve: async (id: string): Promise<string> => {
+      road.resolved.push(id)
+      if (road.fails.has(id)) throw new Error(`yt-dlp: no stream for ${id}`)
+      return `https://stream.example/${id}`
+    },
+    surface: {
+      evaluate: <T>(script: string) => browser.evaluate<T>(script),
+      load: async (song: { id: string }, stream: string): Promise<void> => {
+        road.loaded.push({ id: song.id, stream })
+        await browser.navigate(watchUrl(song.id))
+      },
+      stop: async (): Promise<void> => {
+        road.stops += 1
+        await browser.navigate('about:blank')
+      },
+    },
+  }
+  return road
 }
