@@ -29,5 +29,5 @@
     "the orchestrator's ruling on #490's eighth-pass fork: a person's stop over a read whose text holds Stop is heard (arm (i) dropped it: the case-10 reads hold 'Stop Crying Your Heart Out')",
     "the orchestrator's ruling on #490's eighth-pass note (4105662279): 'The new stop case (a person's \"stop\" over a read whose text holds \"Stop\" later) expects the stop to FIRE by either road, the direct abort or the runner's read; a stop that stopped the read is green.' The Feed's lines differ by road (cancelled by the abort; cancelled, done by the runner's read), so the case checks only that it stopped and said so"
   ],
-  "state": {"is": "red", "on": "b528610c", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"is": "green", "on": "6f2bce23", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
 }
