@@ -42,9 +42,9 @@ const cellText = (cell: Cell): string => (cell.verdict === 'green' ? 'green' : `
 export function formatTable(rows: readonly CaseRow[], footer: TableFooter): string {
   const lines = [`### Decision Model ${footer.model}, Planner ${footer.planner}, ${footer.road} road`, '', '| case | point | result | through |', '|---|---|---|---|']
   for (const row of rows) {
+    const measured = measuredOn(row)
     row.points.forEach((point, index) => {
       const first = index === 0
-      const measured = measuredOn(row)
       const cells = [first ? row.id : '', point.label, point.runs.map(cellText).join(', '), first ? (measured === 'start not met' ? measured : measured === 'green' ? 'yes' : 'no') : '']
       lines.push(`|${cells.map((cell) => (cell === '' ? ' ' : ` ${cell} `)).join('|')}|`)
     })

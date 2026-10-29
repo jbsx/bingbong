@@ -51,7 +51,7 @@
 // a 429, which is run again) is neither red nor green: that run is kept as
 // `<point>-refused`, the gate stops, and exits 3 with the table so far.
 // `--resume` runs only what the summary is missing, on the same commit,
-// seed, points, repeat and arm, the refused point included, and reuses the
+// seed, points, repeat and roads, the refused point included, and reuses the
 // kept calibrations.
 //
 // `--road` (#509) is where a song plays: `audio` (the default, as shipped),
@@ -60,7 +60,8 @@
 // (e2e/overlap/audioRoad.ts). Whichever the road, every read takes the road's
 // hidden window beside the pane, its <audio> named by the song, and the
 // dashboard's Now Playing title in view. Each road has its own tables, kept
-// runs (`<keep>/<road>/<case>/<model>/`) and calibrations.
+// runs (`<keep>/<road>/<case>/<model>/`) and calibrations: `--calibration dir`
+// reads `<dir>/<road>/…`, so one kept before #509 is not found and is made again.
 //
 // The start is checked before line 1 (e2e/overlap/start.ts): the page shown,
 // how many pages are behind it, a song heard on the pane or the road. A start
@@ -85,7 +86,7 @@ import { checkEnd, firstMediaFrom, lineOutcomes, saidFrom, type EndState } from 
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
 import { formatTable, measuredOn, stateDisagreements, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
-import { pagesBehind, startSteps, startUnmet } from '../e2e/overlap/start.ts'
+import { pagesBehind, startSteps, startUnmet, type SeenStart } from '../e2e/overlap/start.ts'
 import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
@@ -239,14 +240,18 @@ function targetsOf(cdp: CdpClient) {
           ? target.type === 'page' && isAudioSurfaceUrl(target.url)
           : target.type === 'page' && !target.url.includes('out/renderer') && !target.url.startsWith('devtools://') && !isAudioSurfaceUrl(target.url),
     )
-  async function evaluate<T>(kind: Kind, expression: string): Promise<T | undefined> {
-    const target = await find(kind)
-    if (target === undefined) return undefined
+  async function sessionFor(target: TargetInfo): Promise<string> {
     let sessionId = sessions.get(target.targetId)
     if (sessionId === undefined) {
       sessionId = (await bounded(cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true }), CDP_BOUND_MS, 'attaching')).sessionId
       sessions.set(target.targetId, sessionId)
     }
+    return sessionId
+  }
+  async function evaluate<T>(kind: Kind, expression: string): Promise<T | undefined> {
+    const target = await find(kind)
+    if (target === undefined) return undefined
+    const sessionId = await sessionFor(target)
     try {
       const response = await bounded(cdp.send<{ result?: { value?: T }; exceptionDetails?: { text: string } }>('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId), CDP_BOUND_MS, `reading the ${kind}`)
       if (response.exceptionDetails !== undefined) throw new Error(response.exceptionDetails.text)
@@ -260,12 +265,7 @@ function targetsOf(cdp: CdpClient) {
   async function history(): Promise<{ currentIndex: number; entries: { url: string }[] } | undefined> {
     const target = await find('pane')
     if (target === undefined) return undefined
-    let sessionId = sessions.get(target.targetId)
-    if (sessionId === undefined) {
-      sessionId = (await bounded(cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true }), CDP_BOUND_MS, 'attaching')).sessionId
-      sessions.set(target.targetId, sessionId)
-    }
-    return bounded(cdp.send<{ currentIndex: number; entries: { url: string }[] }>('Page.getNavigationHistory', {}, sessionId), CDP_BOUND_MS, 'reading the history')
+    return bounded(cdp.send<{ currentIndex: number; entries: { url: string }[] }>('Page.getNavigationHistory', {}, await sessionFor(target)), CDP_BOUND_MS, 'reading the history')
   }
   return { evaluate, activate, history }
 }
@@ -494,7 +494,7 @@ interface Unmet {
 }
 
 /** What is in front of the person now: the page shown, the pages behind it, and whether a song is heard. */
-async function seenStart(live: Live): Promise<{ url: string; behind: string[]; heard: boolean }> {
+async function seenStart(live: Live): Promise<SeenStart> {
   const history = await live.targets.history().catch(() => undefined)
   return { url: lastOf(live.pane)?.url ?? '(no pane)', behind: history === undefined ? [] : pagesBehind(history.entries, history.currentIndex), heard: playingNow(live) }
 }
@@ -820,7 +820,7 @@ interface Calibration {
   readonly spans: Spans
   readonly wall: string | null
   /** Line 1's start was not met: every point of the case is `start not met` without a run (#509). */
-  readonly unmet?: string | null
+  readonly unmet: string | null
 }
 
 /** One kept run: `<name>.json` (what the gate saw) and `<name>-logs/` (the app's own perf, decision and ask logs, for `pnpm perf:report` and `pnpm bugs:add --logs`). */
@@ -850,11 +850,12 @@ const spanWords = (spans: Spans): string =>
 
 async function calibrate(sequence: SequenceCase, model: string, judge: Parameters<typeof runOnce>[3]): Promise<Calibration> {
   const kept = calibrationDir === undefined ? undefined : join(calibrationDir, road, sequence.id, slug(model), 'calibration.json')
-  if (kept !== undefined && existsSync(kept)) return JSON.parse(readFileSync(kept, 'utf8')) as Calibration
+  // One kept before #509 names no `unmet`: its start was met.
+  if (kept !== undefined && existsSync(kept)) return { unmet: null, ...(JSON.parse(readFileSync(kept, 'utf8')) as Omit<Calibration, 'unmet'>) }
   // A resume reuses the calibration its keep dir holds, made on the same commit.
   const resumed = resume && keep !== undefined ? join(keep, road, sequence.id, slug(model), 'calibration.json') : undefined
   if (resumed !== undefined && existsSync(resumed)) {
-    const calibration = JSON.parse(readFileSync(resumed, 'utf8')) as Calibration
+    const calibration = { unmet: null, ...(JSON.parse(readFileSync(resumed, 'utf8')) as Omit<Calibration, 'unmet'>) }
     if (calibration.commit === commit) return calibration
   }
   const ran = await run(sequence, model, { lines: 1, placed: [null], noise: [], spans: {}, wall: null, calibrating: true }, judge)
@@ -961,7 +962,7 @@ roads: for (const each of roads) {
           if (summary !== null) writeSummary(keep!, summary)
           break cases
         }
-        spans[sequence.id] = calibration.unmet != null ? `start not met: ${calibration.unmet}` : spanWords(calibration.spans)
+        spans[sequence.id] = calibration.unmet !== null ? `start not met: ${calibration.unmet}` : spanWords(calibration.spans)
       }
       const dir = keep === undefined ? undefined : join(keep, road, sequence.id, slug(model))
       for (const point of points) {
@@ -976,7 +977,7 @@ roads: for (const each of roads) {
           }
           // Line 1's start could not be put in its calibration: no point of the case can be (#509).
           const ran: RunOutcome =
-            calibration?.unmet != null
+            calibration !== null && calibration.unmet !== null
               ? { cell: { verdict: 'start not met', why: calibration.unmet }, lineAt: null, sentMs: [], end: null, records: { events: [], voice: [], pane: [] }, stderr: '' }
               : await run(sequence, model, { lines: sequence.lines.length, placed: point.lines, noise: point.noise, spans: calibration?.spans ?? {}, wall: calibration?.wall ?? null }, judgeMeaning)
           if (ran.refused !== undefined) {

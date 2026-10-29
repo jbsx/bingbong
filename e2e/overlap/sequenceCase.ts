@@ -4,6 +4,9 @@
 // observe. The shape is the grill's (note 4102094313 on #486); this reads it
 // and refuses a file that is not in it, saying why.
 
+import type { Road } from './audioRoad.ts'
+import type { Measured } from './report.ts'
+
 export type NamedWhile = 'loading' | 'speaking' | 'media-not-started'
 export type NamedAfter = 'shown' | 'changed' | 'asked'
 
@@ -69,14 +72,14 @@ export interface CaseExpect {
 
 /** What one full gate run measured on one road: the result, the commit, the date and the models. */
 export interface CaseState {
-  readonly is: 'red' | 'green' | 'start not met'
+  readonly is: Measured
   readonly on: string
   readonly date: string
   readonly models: readonly string[]
 }
 
 /** A result for each road the case was run on (#509): a case is through when green on every road that can hold its start. */
-export type CaseStates = Partial<Record<'pane' | 'audio', CaseState>>
+export type CaseStates = Partial<Record<Road, CaseState>>
 
 export interface SequenceCase {
   /** The file name without `.json`: `<row>-<slug>`. */
@@ -178,15 +181,15 @@ function readExpect(raw: unknown): CaseExpect | string {
   return Object.keys(out).length === 0 ? 'expect names at least one thing a person could see or hear' : out
 }
 
-const RESULTS: readonly string[] = ['red', 'green', 'start not met']
+const RESULTS: readonly Measured[] = ['red', 'green', 'start not met']
 
 function readStates(raw: unknown): CaseStates | string {
   const shape = 'state is { pane?, audio? }, each { is: red | green | start not met, on: <commit>, date, models: [...] }'
   if (!isObject(raw) || Object.keys(raw).length === 0 || Object.keys(raw).some((road) => road !== 'pane' && road !== 'audio')) return shape
   const out: { -readonly [K in keyof CaseStates]: CaseStates[K] } = {}
   for (const [road, state] of Object.entries(raw)) {
-    if (!isObject(state) || !RESULTS.includes(state.is as string) || !isString(state.on) || !isString(state.date) || !Array.isArray(state.models) || !state.models.every(isString)) return shape
-    out[road as 'pane' | 'audio'] = { is: state.is as CaseState['is'], on: state.on, date: state.date, models: state.models as string[] }
+    if (!isObject(state) || !RESULTS.includes(state.is as Measured) || !isString(state.on) || !isString(state.date) || !Array.isArray(state.models) || !state.models.every(isString)) return shape
+    out[road as Road] = { is: state.is as Measured, on: state.on, date: state.date, models: state.models as string[] }
   }
   return out
 }
