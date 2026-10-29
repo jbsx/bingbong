@@ -1034,3 +1034,6 @@ if (checkState) {
   // A start not met measured nothing: only a red fails the gate.
   process.exitCode = tables.every((table) => table.rows.every((row) => measuredOn(row) !== 'red')) ? 0 : 1
 }
+// The gate ends here, whatever a run left open (a CDP socket, an app slow to quit, a timer): waiting on the event loop
+// to drain once held two finished runs alive for 7 hours and the run queued behind them never started (#509 measure).
+process.stdout.write('', () => process.exit())
