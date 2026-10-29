@@ -6217,6 +6217,27 @@ describe('a line split by a pause (#494): the join J1 reaches a first half that 
   const facts = () => ({ now: Date.UTC(2026, 9, 23, 11, 34), timeZone: 'Europe/London', weather: null, nowPlaying: null, timer: { status: 'off' as const } })
   const said = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'speak' ? [event.text] : []))
   const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  /** The outcome each `done` published, in order: every turn's, or one turn's. */
+  const outcomesOf = (events: PipelineEvent[], turnId?: string) => events.flatMap((event) => (event.type === 'done' && (turnId === undefined || event.turnId === turnId) ? [event.outcome] : []))
+  /** The Appliance Card's reading of a second half that joins the line running. */
+  const JOINS = { answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }
+  /** The Appliance Card sending "back to" on to the page card, which reads it `back`. */
+  const ON_TO_PAGE = { answers: { action: choice('page'), slot: choice('none') } }
+  const BACK = { answers: { action: choice('back'), slot: choice('none') } }
+  /** "Back to" read as `back`, whose navigation holds until `land()`: a first half that fired and has not settled (#510). */
+  function heldBack() {
+    const made = harness({ applianceCard: CARD, facts })
+    let backs = 0
+    const landing: (() => void)[] = []
+    made.browser.back = () => {
+      backs += 1
+      return new Promise((resolve) => landing.push(() => resolve('went back')))
+    }
+    const land = (): void => {
+      for (const one of landing.splice(0)) one()
+    }
+    return { ...made, backs: () => backs, land }
+  }
   /** "what's the time?" fired and over, its sentence still sounding: the first half, already fired. */
   async function firedFirst() {
     const speech = new FakeSpeech()
@@ -6276,6 +6297,89 @@ describe('a line split by a pause (#494): the join J1 reaches a first half that 
     decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none') } })
     await runner.run('is it working')
     expect(said(events).at(-1)).toMatch(/^Done, \d+ seconds? ago: It's 12:34 on Friday 23 October\.$/)
+  })
+
+  it('a first half that fired and has not settled, its `back` still loading, and a joined `back` (#510): the joined line stands on it, the navigation is not cut, and both end done', async () => {
+    const { decision, events, runner, backs, land } = heldBack()
+    decision.script.push(ON_TO_PAGE, BACK)
+    const first = runner.run('back to', { source: 'spoken' })
+    await flushMicrotasks()
+    expect(backs()).toBe(1)
+    const firstId = commands(events)[0]!.turnId
+    decision.script.push(JOINS, ON_TO_PAGE, BACK)
+    const second = runner.run('page', { source: 'spoken' })
+    await flushMicrotasks()
+    land()
+    await Promise.all([first, second])
+    expect(backs()).toBe(1)
+    expect(commands(events).map((event) => event.turnId)).toEqual([firstId])
+    expect(outcomesOf(events)).toEqual(['done', 'done'])
+    expect(events.some((event) => event.type === 'status' && event.status === 'cancelled')).toBe(false)
+  })
+
+  it('a first half whose `back` landed, its Task\'s next hop still read, and a joined `back` (#510): the joined line stands on it, and nothing goes back again', async () => {
+    const { decision, events, runner, backs, land } = heldBack()
+    // Asks 0 and 1 read "back to"; ask 2 is its Task's hop 1 on the landing, still out when "page" arrives.
+    const release = decision.hold(2)
+    decision.script.push(ON_TO_PAGE, BACK)
+    const first = runner.run('back to', { source: 'spoken' })
+    await flushMicrotasks()
+    land()
+    await flushMicrotasks()
+    expect(decision.requests).toHaveLength(3)
+    const firstId = commands(events)[0]!.turnId
+    decision.script.push(JOINS, ON_TO_PAGE, BACK, BACK)
+    const second = runner.run('page', { source: 'spoken' })
+    await flushMicrotasks()
+    release()
+    await flushMicrotasks()
+    land()
+    await Promise.all([first, second])
+    expect(backs()).toBe(1)
+    expect(commands(events).filter((event) => event.dropped !== true).map((event) => event.task)).toEqual([{ id: firstId, hop: 0 }])
+    const secondId = events.flatMap((event) => (event.type === 'status' && event.detail === 'page' ? [event.turnId] : []))[0]!
+    expect(outcomesOf(events, firstId)).toEqual(['done'])
+    expect(outcomesOf(events, secondId)).toEqual(['done'])
+  })
+
+  it('a first half whose `back` still loads, and a joined reading of another Command (#510): the `back` in flight is cut then, and the joined line fires', async () => {
+    const { decision, events, runner, backs, land } = heldBack()
+    decision.script.push(ON_TO_PAGE, BACK)
+    const first = runner.run('back to', { source: 'spoken' })
+    await flushMicrotasks()
+    const firstId = commands(events)[0]!.turnId
+    decision.script.push(JOINS, { answers: { action: choice('say_time'), slot: choice('none') } })
+    await runner.run('the time', { source: 'spoken' })
+    land()
+    await first
+    expect(backs()).toBe(1)
+    expect(outcomesOf(events, firstId)).toEqual(['cancelled'])
+    expect(commands(events).at(-1)).toMatchObject({ task: { id: firstId, hop: 1 } })
+    expect(events.filter((event) => event.type === 'display').at(-1)).toMatchObject({ text: "It's 12:34 on Friday 23 October." })
+  })
+
+  it('a line that fired while the joined line was read, and a joined reading of another Command (#510): only the first half\'s action is cut, the later line\'s goes on', async () => {
+    const { browser, decision, events, runner, land } = heldBack()
+    let scrolled: () => void = () => {}
+    browser.scroll = () => new Promise((resolve) => (scrolled = () => resolve('scrolled down: x=0 y=0')))
+    decision.script.push(ON_TO_PAGE, BACK)
+    const first = runner.run('back to', { source: 'spoken' })
+    await flushMicrotasks()
+    // Ask 3 is the joined line's read, still out when "scroll down" fires on its words.
+    const release = decision.hold(3)
+    decision.script.push(JOINS, { answers: { action: choice('say_time'), slot: choice('none') } })
+    const second = runner.run('the time', { source: 'spoken' })
+    await flushMicrotasks()
+    const third = runner.run('scroll down', { source: 'spoken' })
+    await flushMicrotasks()
+    expect(commands(events).at(-1)).toMatchObject({ text: 'scroll down' })
+    const scrollId = commands(events).at(-1)!.turnId
+    release()
+    await second
+    scrolled()
+    land()
+    await Promise.all([first, third])
+    expect(outcomesOf(events, scrollId)).toEqual(['done'])
   })
 })
 

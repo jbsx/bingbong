@@ -991,11 +991,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * End the Command in flight: its turn ends cancelled now, answered as a
    * Stop ended it or as a later Command did (#333) unless it already has
    * its Answer, and whatever its action answers later reaches nothing.
+   * With a Task, only that line's own turns end (#510): a later line's action goes on.
    */
-  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS, said?: string): boolean {
-    if (inFlight.size === 0) return false
-    const cancelled = [...inFlight.values()]
-    inFlight.clear()
+  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS, said?: string, taskId?: string): boolean {
+    const cancelled: { turnId: string }[] = []
+    for (const [key, entry] of inFlight) {
+      if (taskId !== undefined && (lineOfTurn.get(entry.turnId) ?? entry.turnId) !== taskId) continue
+      inFlight.delete(key)
+      cancelled.push(entry)
+    }
+    if (cancelled.length === 0) return false
     for (const { turnId } of cancelled) {
       publish({ type: 'status', turnId, status: 'cancelled', at: at() })
       answer(turnId, said ?? STOPPED_ANSWERS[by], 'muted')
@@ -1028,16 +1033,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(acting) : undefined
-    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read. A join on a line whose Task is
-    // over leaves its sentence to the joined line's reading (#494): one that stands on it lets it finish, one that fires cuts it.
-    if (running !== null && running.sounding > 0 && !(how === 'joins' && running.settled)) silence()
+    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read. A join on a line that fired, or
+    // whose Task is over, leaves it to the joined line's reading (#494, #510): one that stands on it lets it finish, one that fires cuts it.
+    const leftToJoined = how === 'joins' && running !== null && (running.settled || running.fired !== undefined)
+    if (running !== null && running.sounding > 0 && !leftToJoined) silence()
+    // Its action still in flight is left to that reading too (#510): one that stands on it lets it land, one that fires cuts it then.
+    const actionLeft = leftToJoined && !running.settled
     // A line still being read that a later one joins gives way into it (#494): its own reading shows nothing, and its stage ends now.
     if (how === 'joins' && running !== null && running.fired === undefined && !running.settled) {
       givenWay.add(running.submission)
       running.end.gaveWay = true
       publish({ type: 'done', turnId: running.turnId, outcome: 'cancelled', at: at() })
     }
-    cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
+    if (!actionLeft) cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
     if (said !== undefined) stopSaid = { text: said, by }
     // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
     // loading under a line that keeps the pane, would land and play. The pane stops where it stands and pauses.
@@ -1187,8 +1195,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** The words read as one line when this one joined the line running (#489, T3 arm J1): the running line's, then this one's. */
     joined?: string
     /**
-     * The line it joined (#494), whose Task the joined line is: the hop it takes there, and, when that line's Task was already
-     * over, the Command it had fired, which a joined reading of the same stands on.
+     * The line it joined (#494), whose Task the joined line is: the hop it takes there, and the Command that line had fired,
+     * settled or not (#510), which a joined reading of the same stands on.
      */
     into?: { readonly taskId: string; readonly hop: number; readonly stands?: Command }
     /** Read no further than its Fate (#489): a line that joins or waits, whose words are read again as the Fate says. */
@@ -1253,8 +1261,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return heard.unread === true ? read(turnId, text, null, spoken) : heard
     }
     if (fate === 'joins') {
-      // The joined line is the line it joins (#494): that line's Task, and the Command it fired once its Task was over.
-      const into = { taskId: running.turnId, hop: running.hops, ...(running.settled && running.fired !== undefined ? { stands: running.fired } : {}) }
+      // The joined line is the line it joins (#494): that line's Task, and the Command it fired, settled or not (#510): its effect is on screen.
+      const into = { taskId: running.turnId, hop: running.hops, ...(running.fired !== undefined ? { stands: running.fired } : {}) }
       endRunning(submission, 'joins', turnId)
       const joined = `${running.words}, ${text}`
       publish({ type: 'status', turnId, status: 'thinking', hop: 0, detail: joined, at: at() })
@@ -3937,6 +3945,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           publish({ type: 'done', turnId, outcome: 'done', at: at() })
           return
         }
+        // A joined line that does not stand on the line it joined cuts that line's action still in flight now (#510), its join having left it running.
+        if (into !== undefined && !isEnded(submission)) cancelInFlight('superseded', undefined, into.taskId)
         // No host read it over a running Command and the Local Match has no action for it (#504, ruling 2): it is an Errand's Goal Line,
         // as `errand <words>` is, handed over aloud. What came of the running line goes ahead of it: its stop, or its doing sentence.
         if (heard.overTimeout === true && heard.command.verb === 'none' && heard.steps === undefined && !isEnded(submission) && handsOff('unavailable') && !quietOver(turnId, [])) {
