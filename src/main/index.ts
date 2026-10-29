@@ -94,8 +94,8 @@ import { registerSoundMuteIpc } from './sound/attachSoundMute'
 import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { createAudioSurface, withAudioRoadMedia } from './music/audioSurface'
-import { resolveAudioStream } from './music/ytDlp'
-import { appYtDlpKept, audioRoadBinary } from '../core/music/audioRoad'
+import { resolveAudioStream, ytDlpVersion } from './music/ytDlp'
+import { appYtDlpKept, audioRoadBinary, YT_DLP } from '../core/music/audioRoad'
 import { createYtDlpUpdater, startYtDlpUpkeep } from './music/ytDlpUpdater'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
@@ -323,9 +323,9 @@ const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('user
 const earFindings: HostFinding[] = voiceConfig.earUnarmed !== undefined ? [{ check: 'ear', message: voiceConfig.earUnarmed }] : []
 for (const finding of earFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 // The app's own yt-dlp (#503), kept in userData behind the road's own setting: off, nothing is downloaded or run. A build
-// the env names is the owner's pin and is never replaced. Each song takes the copy that last passed the self-check, else PATH's.
+// the env names is the owner's pin and is never replaced. Each song takes PATH's while it is the latest release and passes, else the app's copy that passed, else PATH's.
 const ytDlpUpdater = appYtDlpKept(process.env)
-  ? createYtDlpUpdater({ dir: join(app.getPath('userData'), 'yt-dlp'), on: () => settingsStore.get().audioOnlyMusic, fetch: (url, init) => fetch(url, init), lookup: resolveAudioStream })
+  ? createYtDlpUpdater({ dir: join(app.getPath('userData'), 'yt-dlp'), on: () => settingsStore.get().audioOnlyMusic, fetch: (url, init) => fetch(url, init), lookup: resolveAudioStream, path: { binary: YT_DLP, version: () => ytDlpVersion(YT_DLP) } })
   : null
 const audioRoadYtDlp = (): string => ytDlpUpdater?.binary() ?? audioRoadBinary(process.env)
 // The audio road's yt-dlp (#502): missing, Settings says so beside the audio-only music toggle; the fault log only while it is on.

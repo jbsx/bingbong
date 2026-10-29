@@ -51,3 +51,13 @@ export function resolveAudioStream(binary: string, id: string, timeoutMs = RESOL
     })
   })
 }
+
+/** A yt-dlp build's version (`2026.10.26`), as `--version` prints it; rejects when it cannot be run. */
+export function ytDlpVersion(binary: string, timeoutMs = 5_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(binary, ['--version'], { timeout: timeoutMs }, (error, stdout) => {
+      if (error !== null) reject(error)
+      else resolve(stdout.trim())
+    })
+  })
+}

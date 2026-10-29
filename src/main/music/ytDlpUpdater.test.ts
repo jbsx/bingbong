@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -192,6 +192,52 @@ describe("the app's own yt-dlp (#503)", () => {
     expect(looked).toEqual([])
     await updater.update('failure')
     expect(looked).toHaveLength(1)
+  })
+
+  /** The yt-dlp on PATH, as a file whose contents name its version: the fake lookup reads it as it reads the app's copies. */
+  function onPath(version: string) {
+    const binary = join(dir, `path-yt-dlp`)
+    writeFileSync(binary, `#!fake yt-dlp ${version}`)
+    return { binary, version: async () => readFileSync(binary, 'utf8').split(' ').at(-1)! }
+  }
+
+  it("PATH's yt-dlp is kept while it is the latest release and passes the self-check: nothing is downloaded", async () => {
+    const { fetch, fetched } = world('2026.10.26')
+    const looked: string[] = []
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked), path: onPath('2026.10.26') })
+    expect(await updater.update('boot')).toEqual({ kind: 'path', version: '2026.10.26' })
+    expect(updater.binary()).toBeNull()
+    expect(looked).toEqual([`#!fake yt-dlp 2026.10.26 ${SELF_CHECK_VIDEO}`])
+    expect(fetched.filter((url) => url.startsWith('https://github.com/'))).toEqual([LATEST])
+  })
+
+  it("PATH's yt-dlp older than the latest release gives way to the app's copy, unchecked", async () => {
+    const { fetch } = world('2026.11.02')
+    const looked: string[] = []
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked), path: onPath('2026.10.26') })
+    expect(await updater.update('daily')).toEqual({ kind: 'updated', version: '2026.11.02' })
+    expect(updater.binary()).toBe(join(dir, 'yt-dlp'))
+    expect(looked).toEqual([`#!fake yt-dlp 2026.11.02 ${SELF_CHECK_VIDEO}`])
+  })
+
+  it("PATH's latest yt-dlp failing the self-check gives way to the app's copy; once it passes again, it is used again", async () => {
+    const { fetch, state } = world('2026.10.26', '#!fake yt-dlp app 2026.10.26')
+    const path = onPath('2026.10.26')
+    state.cut.add('#!fake yt-dlp 2026.10.26')
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]), path })
+    expect(await updater.update('boot')).toEqual({ kind: 'updated', version: '2026.10.26' })
+    expect(updater.binary()).toBe(join(dir, 'yt-dlp'))
+    state.cut.clear()
+    expect(await updater.update('daily')).toEqual({ kind: 'path', version: '2026.10.26' })
+    expect(updater.binary()).toBeNull()
+  })
+
+  it("the choice of PATH's yt-dlp outlives a restart, until the next run", async () => {
+    const { fetch } = world('2026.10.26')
+    await createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]), path: onPath('2026.10.20') }).update('boot')
+    const path = onPath('2026.10.26')
+    await createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]), path }).update('daily')
+    expect(createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]), path }).binary()).toBeNull()
   })
 
   it('a resolve failure during a run is not lost: the copy in use is checked once that run ends', async () => {

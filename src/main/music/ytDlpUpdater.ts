@@ -12,7 +12,11 @@ import type { AudioStream } from './ytDlp'
 // SHA2-256SUMS is checked before it is ever run, and a copy is used only
 // once it has passed the self-check; until then the yt-dlp on PATH is. The
 // previous copy is kept, and a copy that fails the self-check is never
-// switched to, or is switched back from (ruling 4). Everything here runs
+// switched to, or is switched back from (ruling 4). PATH's yt-dlp is still
+// preferred while it is the latest release and passes the self-check: it
+// starts fastest (pipx 182 ms vs the onefile release's 606 ms on dev,
+// 2026-10-29), so the app's copy is the net for a PATH gone stale, and is
+// downloaded only then (ruling of 11:35). Everything here runs
 // in the background, behind the road's own switch: never on a Command's path.
 
 /** Where releases come from: the public yt-dlp/yt-dlp GitHub releases, nowhere else. */
@@ -56,6 +60,13 @@ export interface YtDlpUpdaterDeps {
   readonly fetch: UpdaterFetch
   /** The road's lookup, run on a given binary: `resolveAudioStream`. */
   lookup(binary: string, id: string, timeoutMs: number): Promise<AudioStream>
+  /**
+   * The yt-dlp on PATH and how to read its version. It is kept while it is
+   * the latest release and passes the self-check, since it starts fastest
+   * (the orchestrator's ruling of 11:35 on #503); otherwise the app's copy
+   * is used. Absent, only the app's copy is considered.
+   */
+  readonly path?: { readonly binary: string; version(): Promise<string> }
   /** The release binary's name; `releaseAsset()` by default. */
   readonly asset?: string | null
   now?(): number
@@ -66,6 +77,8 @@ export type UpdateReason = 'boot' | 'daily' | 'failure'
 
 export type UpdateOutcome =
   | { readonly kind: 'off' }
+  /** PATH's yt-dlp is the latest release and passed the self-check: it is used, and nothing is downloaded. */
+  | { readonly kind: 'path'; readonly version: string }
   /** The copy in use is the latest release. */
   | { readonly kind: 'current'; readonly version: string }
   | { readonly kind: 'updated'; readonly version: string }
@@ -85,6 +98,8 @@ export interface YtDlpUpdater {
 
 /** What the dir holds besides the binaries: which version each is, and the last release rejected. */
 interface UpdaterState {
+  /** The last run found PATH's yt-dlp current and passing: songs take it over the app's copy. */
+  onPath?: boolean
   current?: string
   previous?: string
   rejected?: { version: string; at: number }
@@ -93,6 +108,16 @@ interface UpdaterState {
 /** The version a release URL names: `…/releases/download/<tag>/…`. */
 export function releaseTag(url: string): string | null {
   return /\/releases\/download\/([^/]+)\//.exec(url)?.[1] ?? null
+}
+
+/** Whether a yt-dlp version (`2026.10.26`, `2026.10.26.1`) is older than another; an unreadable one is older than any. */
+export function olderRelease(version: string, than: string): boolean {
+  const parts = (v: string): number[] | null => (/^\d{4}\.\d{2}\.\d{2}(\.\d+)?$/.test(v.trim()) ? v.trim().split('.').map(Number) : null)
+  const [a, b] = [parts(version), parts(than)]
+  if (a === null) return true
+  if (b === null) return false
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0)
+  return false
 }
 
 /** The checksum SHA2-256SUMS gives a file. */
@@ -239,7 +264,6 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     if (!deps.on()) return { kind: 'off' }
     if (asset === null) return { kind: 'unavailable', why: `yt-dlp ships no standalone binary for ${process.arch}` }
     mkdirSync(deps.dir, { recursive: true })
-    const state = readState()
     // The latest's version is in GitHub's first redirect, to the tag's own checksums; the next one goes to an asset host that names none.
     let version: string | null
     try {
@@ -249,7 +273,17 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     } catch (error) {
       return unavailable(error)
     }
+    // PATH's yt-dlp first: the latest release and passing, it is kept and nothing is downloaded. Older, it is not run at all.
+    if (deps.path !== undefined) {
+      const onPath = await deps.path.version().then((found) => (olderRelease(found, version) ? null : found), () => null)
+      if (onPath !== null && (await selfCheck(deps.path.binary)) === null) {
+        if (held.onPath !== true) writeState({ ...held, onPath: true })
+        return { kind: 'path', version: onPath }
+      }
+      if (held.onPath === true) writeState({ ...held, onPath: false })
+    }
     const recheck = async (outcome: UpdateOutcome): Promise<UpdateOutcome> => (reason === 'failure' ? ((await recheckCurrent(readState())) ?? outcome) : outcome)
+    const state = readState()
     if (state.current === version && existsSync(current)) return recheck({ kind: 'current', version })
     if (state.rejected?.version === version && now() - state.rejected.at < REJECTED_FOR_MS) return recheck({ kind: 'rejected', version, why: 'it failed the self-check within the day' })
     let sums: string
@@ -288,7 +322,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
 
   const updater: YtDlpUpdater = {
     binary() {
-      return held.current !== undefined ? current : null
+      return held.onPath !== true && held.current !== undefined ? current : null
     },
     update(reason) {
       if (running === null) {
