@@ -25,5 +25,5 @@
   "evidence": [
     "turn-mvjuc5n4-3"
   ],
-  "state": {"pane": {"is": "green", "on": "d6fae94a", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "red", "on": "d6fae94a", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
+  "state": {"pane": {"is": "green", "on": "34adc568", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "green", "on": "34adc568", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
 }
