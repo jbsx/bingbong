@@ -7,5 +7,7 @@
   "happened": "overlap:gate 8-split-by-pause at p1 (1291 ms) on the audio road on Jev at 2ceeb9d8 (#509 measure, job c063a328, 2026-10-29): 'Back to' alone read back 0.71 and went Wikipedia → DuckDuckGo, done; a second read of 'Back to' (turn-mvsxf3ya-2, back 0.65) was still running when 'Page' joined it; the joined 'Back to, Page' read back 0.76 and fired again from DuckDuckGo: 'There's no page to go back to.', failed. The line joined had fired nothing itself, so the stands-on check had no Command to compare",
   "meant": "One back, to DuckDuckGo, done; the joined half stands on the first half's back and fires nothing",
   "log": "decision-1793241037793-1.jsonl",
-  "claimedBy": "#510"
+  "claimedBy": "#510",
+  "fixedBy": "fe329f72",
+  "case": "8-split-by-pause"
 }
