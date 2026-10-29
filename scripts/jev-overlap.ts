@@ -33,8 +33,8 @@ type EndedCommand = import('../src/core/command/runningCommand').EndedCommand
 type DecisionQuestions = import('../src/core/ports/decisionModel').DecisionQuestions
 type PickedSong = import('../src/core/command/jevReading').PickedSong
 type JoinedLine = import('../src/core/command/jevReading').JoinedLine
-/** A joined line's ask (#498): the pick the line it joined had made, and that line, its Slot kept beside the correction's words. */
-type Joined = { readonly picked: PickedSong; readonly joins: JoinedLine }
+/** A joined line's ask (#498): the pick the line it joined had made, and that line, its Slot kept beside the correction's words; no pick while its play was still being looked up (#511), the words it was opening on the line. */
+type Joined = { readonly picked?: PickedSong; readonly joins: JoinedLine }
 
 /** A claimed line (#489's table), the run that kept its ask, and the answer the owner's row names. */
 interface Source {
@@ -128,6 +128,41 @@ const SOURCES: readonly Source[] = [
       { question: 'slot', label: 's1-2_4-5' },
     ],
   },
+  // #511: the joined reading made before the first half's search picked anything (its play fired, nothing on the card named the song), on
+  // the audio road (the run that filed #511, 0% point) and on the pane road (#502's road-off runs, Mammoth and Elephant).
+  {
+    name: '2-correct-by-coldplay-joined-pending',
+    turnId: 'turn-mvtgpman-2',
+    from: '/tmp/502-gate/keep/audio',
+    run: '2-correct-by-coldplay/jev/p1',
+    joined: { joins: { words: 'play yellow', slot: 'yellow', opening: 'yellow' } },
+    expect: [
+      { question: 'action', label: 'play' },
+      { question: 'slot', label: 's1-1_3-4' },
+    ],
+  },
+  {
+    name: '2-correct-by-coldplay-joined-pending-pane',
+    turnId: 'turn-mvsbxqp1-2',
+    from: '/tmp/og502/off/keep',
+    run: `2-correct-by-coldplay/${MAMMOTH}/p1`,
+    joined: { joins: { words: 'play yellow', slot: 'yellow', opening: 'yellow' } },
+    expect: [
+      { question: 'action', label: 'play' },
+      { question: 'slot', label: 's1-1_3-4' },
+    ],
+  },
+  {
+    name: '2-correct-by-radiohead-joined-pending-pane',
+    turnId: 'turn-mvsit9eq-2',
+    from: '/tmp/og502/el-off/keep',
+    run: '2-correct-by-radiohead/decision-models_baseten-elephant-9b-latest/p3',
+    joined: { joins: { words: 'play let down', slot: 'let down', opening: 'let down' } },
+    expect: [
+      { question: 'action', label: 'play' },
+      { question: 'slot', label: 's1-2_4-5' },
+    ],
+  },
   {
     name: '7-is-it-working-after-end',
     turnId: 'turn-mvrw2gvr-2',
@@ -136,6 +171,14 @@ const SOURCES: readonly Source[] = [
     expect: [{ question: 'action', label: 'say_doing', atLeast: 0.7 }],
   },
 ]
+
+/** A kept joined ask made with its Slot joined already (#498, F2): the Slot's instructions as the card it was built from had them. */
+function withoutJoined(ask: { state: string; questions: DecisionQuestions }): { state: string; questions: DecisionQuestions } {
+  const slot = ask.questions.slot
+  if (slot === undefined || slot.type !== 'choice') return ask
+  const instructions = slot.instructions.replace(/ The words are the user's line and then their correction of it, read as one: .*$/, '')
+  return { ...ask, questions: { ...ask.questions, slot: { ...slot, instructions } } as DecisionQuestions }
+}
 
 /** A kept ask made with a line running already (#494): the card it was built from, the running lines and the Fate taken off. */
 function withoutRunning(ask: { state: string; questions: DecisionQuestions }): { state: string; questions: DecisionQuestions } {
@@ -211,7 +254,7 @@ function caseOf(source: Source, base: { state: string; questions: DecisionQuesti
     transcript,
     note:
       'joined' in beside
-        ? `An Overlap case (#498): the joined reading's ask as its kept run recorded it, on the Appliance Card with the first half's pick held and its Slot kept; built by \`pnpm jev:overlap\`. Expects the correction's own reading (row ${source.name.split('-')[0]}, #486).`
+        ? `An Overlap case (${beside.joined.picked !== undefined ? '#498' : '#511'}): the joined reading's ask as its kept run recorded it, on the Appliance Card with the first half's ${beside.joined.picked !== undefined ? 'pick held' : 'play still being looked up'} and its Slot kept; built by \`pnpm jev:overlap\`. Expects the correction's own reading (row ${source.name.split('-')[0]}, #486).`
         : 'ended' in beside
         ? `An Overlap case (#499): the line's ask as its kept run recorded it, on the Appliance Card with the line just ended then; built by \`pnpm jev:overlap\`. Expects the doing fact, which says its end (row ${source.name.split('-')[0]}, #486).`
         : `An Overlap case (#489): the line's ask as its kept run recorded it, on the Appliance Card with the line running then; built by \`pnpm jev:overlap\`. Expects the Fate the owner's row ${source.name.split('-')[0]} names (#486).`,
@@ -250,7 +293,7 @@ if (mode === 'grow') {
       if (running === null && source.ended === undefined && source.joined === undefined) throw new Error(`${source.name}: nothing was running at ${source.turnId}`)
       const beside: Beside = source.joined !== undefined ? { joined: source.joined } : source.ended !== undefined ? { ended: source.ended } : { running: running! }
       const transcript = /: ("(?:[^"\\]|\\.)*")/.exec(ask.state.split('\n')[0]!)?.[1]
-      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutRunning({ state: ask.state, questions: ask.questions }), beside, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
+      writeFileSync(join(out, `overlap-${source.name}.json`), `${JSON.stringify(caseOf(source, withoutJoined(withoutRunning({ state: ask.state, questions: ask.questions })), beside, transcript !== undefined ? (JSON.parse(transcript) as string) : '', ask.model, ask.at), null, 2)}\n`)
     } else if (source.kiosk !== undefined) {
       if (kiosk === undefined || !existsSync(kiosk)) {
         console.log(`${source.name}: no kiosk logs given, skipped`)
@@ -270,7 +313,12 @@ if (mode === 'grow') {
   let rebuilt = 0
   for (const file of readdirSync(dir).filter((each) => each.startsWith('overlap-') && each.endsWith('.json'))) {
     const path = join(dir, file)
-    const kept = JSON.parse(readFileSync(path, 'utf8')) as { overlap: Beside & { base: { state: string; questions: DecisionQuestions } } }
+    const kept = JSON.parse(readFileSync(path, 'utf8')) as { overlap?: Beside & { base: { state: string; questions: DecisionQuestions } } }
+    // A case grown by another builder keeps no card to rebuild from (#508's overlap-4-resume-at-2200ms): left as it is.
+    if (kept.overlap === undefined) {
+      console.log(`${file}: no card kept, left as it is`)
+      continue
+    }
     writeFileSync(path, `${JSON.stringify({ ...kept, ask: askWith(kept.overlap.base, kept.overlap), overlap: kept.overlap }, null, 2)}\n`)
     rebuilt += 1
   }

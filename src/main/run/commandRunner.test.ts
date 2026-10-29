@@ -6085,6 +6085,38 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(said(made.events)).toEqual(['Playing “Nine Inch Nails - Hurt” instead.'])
   })
 
+  it('joins (#511): `no, by coldplay` before the search picks anything reads on a card carrying the play being looked up', async () => {
+    let youtube!: ScriptedYouTube
+    // The first line's search has not answered when the correction comes.
+    let answer: () => void = () => {}
+    const made = harness({
+      applianceCard: CARD,
+      facts,
+      speech: new FakeSpeech(),
+      player: (browser) => {
+        youtube = new ScriptedYouTube(browser)
+        const fetchResults: typeof youtube.fetchResults = (...args) => (args[0].includes('coldplay') ? youtube.fetchResults(...args) : new Promise((resolve) => (answer = () => void youtube.fetchResults(...args).then(resolve))))
+        return createPlayer({ browser, fetchResults, sleep: async () => {} })
+      },
+    })
+    youtube.search('yellow', videoItem('aaaaaaaaaaa', 'Yellow Submarine'))
+    youtube.search('yellow by coldplay', videoItem('yKNxeF4KMsY', 'Coldplay - Yellow (Official Video)'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Yellow Submarine' })
+    youtube.watches.set('yKNxeF4KMsY', { title: 'Coldplay - Yellow (Official Video)' })
+    made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-1') } })
+    const first = made.runner.run('play yellow')
+    await flushMicrotasks()
+    made.decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('joins') } }, { answers: { action: choice('play'), slot: choice('s1-1_3-4') } })
+    await made.runner.run('no, by coldplay')
+    answer()
+    await first
+    const joined = made.asks.at(-1)!
+    expect(joined.state.split('\n')[1]).toBe('Music being looked up: a search for "yellow", nothing picked or playing yet')
+    // No pick to correct: the correction refines the words.
+    expect(Object.keys((joined.questions.action as DecisionChoiceQuestion).options)).not.toContain('correct')
+    expect(said(made.events)).toEqual(['Playing “Coldplay - Yellow (Official Video)”.'])
+  })
+
   it('waits: the line is held until the running one lands, then read again against what is there', async () => {
     const { decision, asks, events, runner, first, turnId, land } = await running()
     decision.script.push({ answers: { action: choice('say_time'), slot: choice('none'), fate: choice('waits') } }, { answers: { action: choice('say_time'), slot: choice('none') } })

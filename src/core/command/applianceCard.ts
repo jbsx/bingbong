@@ -164,8 +164,19 @@ const INSTRUCTIONS =
  * A, this line and the corrections offered, 18/19; arm C, A with the
  * `correct` line naming the pick, 18/19, a tie, which goes to A.
  */
-export function pickLines(picked: PickedSong | undefined): string[] {
-  return picked === undefined || picked.playing ? [] : [`Music picked: ${JSON.stringify(picked.title)}, the result of a search for ${JSON.stringify(picked.words)}`]
+export function pickLines(picked: PickedSong | undefined, joins?: JoinedLine): string[] {
+  if (picked === undefined) return pendingLines(joins)
+  return picked.playing ? [] : [`Music picked: ${JSON.stringify(picked.title)}, the result of a search for ${JSON.stringify(picked.words)}`]
+}
+
+/**
+ * The play a correction joined before its search picked anything (#511):
+ * the words still being looked up, in the pick's place, so the card holds
+ * what the correction refines (the audio road leaves the pane where it
+ * was; nothing else on the card names the song).
+ */
+function pendingLines(joins: JoinedLine | undefined): string[] {
+  return joins?.opening === undefined ? [] : [`Music being looked up: a search for ${JSON.stringify(joins.opening)}, nothing picked or playing yet`]
 }
 
 /** The Music verbs, in the order the card offers them: the corrections go after the last of them a card carries. */
@@ -177,7 +188,7 @@ const MUSIC_BEFORE_CORRECTIONS = ['play', 'play_next', 'queue', 'skip', 'previou
  * offers, and the joined Slot. What the corpus rebuilds a kept joined ask
  * with; the live card builds the same from what the Player holds.
  */
-export function withPicked<Q extends { readonly action?: unknown; readonly slot?: unknown }>(state: string, questions: Q, picked: PickedSong, text: string, joins?: JoinedLine): { state: string; questions: Q } {
+export function withPicked<Q extends { readonly action?: unknown; readonly slot?: unknown }>(state: string, questions: Q, picked: PickedSong | undefined, text: string, joins?: JoinedLine): { state: string; questions: Q } {
   const [words, ...rest] = state.split('\n')
   const action = questions.action as DecisionChoiceQuestion | undefined
   const slot = questions.slot as DecisionChoiceQuestion | undefined
@@ -187,9 +198,10 @@ export function withPicked<Q extends { readonly action?: unknown; readonly slot?
     ['correct', applianceVerbLine('correct')],
     ['correct_back', applianceVerbLine('correct_back')],
   ]
-  const options = Object.hasOwn(action?.options ?? {}, 'correct') ? entries : [...entries.slice(0, after + 1), ...corrections, ...entries.slice(after + 1)]
+  // A play still being looked up has no pick to correct (#511): its corrections stay off, as on the live card.
+  const options = picked === undefined || Object.hasOwn(action?.options ?? {}, 'correct') ? entries : [...entries.slice(0, after + 1), ...corrections, ...entries.slice(after + 1)]
   return {
-    state: [words, ...pickLines(picked), ...rest].join('\n'),
+    state: [words, ...pickLines(picked, joins), ...rest].join('\n'),
     questions: {
       ...questions,
       ...(action !== undefined ? { action: { ...action, options: Object.fromEntries(options) } } : {}),
@@ -233,7 +245,7 @@ export function applianceState(text: string, view: ApplianceView, heard?: readon
     `The user spoke to the appliance, a voice-driven web browser: ${JSON.stringify(text)}`,
     // The line still running, right after the words (#494, measured on the Overlap Jev cases): a split line's second half reads as its rest.
     ...(view.running !== undefined ? runningLines(view.running) : []),
-    ...pickLines(view.appliance?.picked),
+    ...pickLines(view.appliance?.picked, view.joins),
     ...heardLine(heard),
     ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(step !== undefined && step.done.length > 0 ? [`Done so far: ${step.done.join('; ')}`] : []),

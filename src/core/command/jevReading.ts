@@ -226,6 +226,8 @@ export function slotSpans(text: string): SlotSpan[] {
 export interface JoinedLine {
   readonly words: string
   readonly slot?: string
+  /** The words its `play` was opening when the line joined it (#511): the pending play, which the card says while the Player holds no pick for it. */
+  readonly opening?: string
 }
 
 /** The longest span of a correction's words a joined Slot keeps beside the line's own (#498). */

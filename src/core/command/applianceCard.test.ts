@@ -285,6 +285,30 @@ describe('the pick a correction acts on (#498)', () => {
     expect(kept.questions).toEqual(applianceQuestions(JOINED, live))
   })
 
+  it('a play joined while still looked up, nothing picked, is on the state right after the words, and no correction is offered (#511)', () => {
+    const text = 'play yellow, no, by coldplay'
+    const view: ApplianceView = { ...OPENING, joins: { words: 'play yellow', slot: 'yellow', opening: 'yellow' } }
+    expect(applianceState(text, view).split('\n').slice(0, 2)).toEqual([
+      'The user spoke to the appliance, a voice-driven web browser: "play yellow, no, by coldplay"',
+      'Music being looked up: a search for "yellow", nothing picked or playing yet',
+    ])
+    expect(Object.keys(applianceQuestions(text, view).action.options)).not.toContain('correct')
+    // A pick held says what the search found: the pick's line, never both.
+    const picked = applianceState(text, { ...withPick(OPENING, { ...PICKED, words: 'yellow' }), joins: view.joins })
+    expect(picked).toContain('Music picked:')
+    expect(picked).not.toContain('Music being looked up')
+    // A line that joined no play, or one that is not looking anything up, is unchanged.
+    expect(applianceState(text, { ...OPENING, joins: { words: 'play yellow', slot: 'yellow' } })).toBe(applianceState(text, OPENING))
+  })
+
+  it('a kept card with a pending play put on it is the card the runner builds for that join (#511)', () => {
+    const text = 'play yellow, no, by coldplay'
+    const joins = { words: 'play yellow', slot: 'yellow', opening: 'yellow' }
+    const kept = withPicked(applianceState(text, OPENING), applianceQuestions(text, OPENING), undefined, text, joins)
+    expect(kept.state).toBe(applianceState(text, { ...OPENING, joins }))
+    expect(kept.questions).toEqual(applianceQuestions(text, { ...OPENING, joins }))
+  })
+
   it("a joined Slot keeps the line's own beside the correction's words, never only the verbatim join (F2)", () => {
     const text = 'play yellow, no, by coldplay'
     const view: ApplianceView = { ...OPENING, joins: { words: 'play yellow', slot: 'yellow' } }

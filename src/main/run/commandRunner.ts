@@ -1269,7 +1269,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading = { turnId, submission }
       // One line, one step: never split back into the running line and a Step on the bare correction. Its Slot may keep the running line's beside the correction's words (#498, F2).
       const slot = running.fired?.slot ?? undefined
-      const again = await read(turnId, joined, null, spoken, { split: false, joins: { words: running.words, ...(slot !== undefined ? { slot } : {}) } })
+      // A play still in flight is pending (#511): the card says what it was looking up while the Player holds no pick for it.
+      const opening = running.verb === 'play' && running.opening !== undefined && !running.settled ? { opening: running.opening } : {}
+      const again = await read(turnId, joined, null, spoken, { split: false, joins: { words: running.words, ...(slot !== undefined ? { slot } : {}), ...opening } })
       if (reading?.turnId === turnId) reading = null
       return { ...again, joined, into }
     }
