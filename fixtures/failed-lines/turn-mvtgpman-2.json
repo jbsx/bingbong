@@ -8,5 +8,6 @@
   "meant": "Yellow by Coldplay plays: the correction keeps the song line 1 asked for",
   "log": "decision-1793273450785-1.jsonl",
   "claimedBy": "#511",
-  "case": "2-correct-by-coldplay"
+  "fixedBy": "088674ea",
+  "case": "overlap-2-correct-by-coldplay-joined-pending"
 }
