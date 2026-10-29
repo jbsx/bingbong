@@ -8,7 +8,7 @@ import type { AudioStream } from './ytDlp'
 // The app's own yt-dlp (#503): YouTube changes its scheme often and a stale
 // yt-dlp fails quietly — on 2026-10-28 a 2026.07.04 build's streams were
 // refused (403) past their first 512 KB, a song that starts and then stops.
-// So the app keeps a copy of yt-dlp's standalone release binary in userData,
+// So the app keeps a copy of yt-dlp's own release build in userData,
 // where it can replace it without sudo (ruling 1 on #503): the release's
 // SHA2-256SUMS is checked before it is ever run, and a copy is used only
 // once it has passed the self-check; until then the yt-dlp on PATH is. The
@@ -19,7 +19,7 @@ import type { AudioStream } from './ytDlp'
 // previous directory is kept, and a copy that fails the self-check is never
 // switched to, or is switched back from (ruling 4). PATH's yt-dlp is still
 // preferred while it is the latest release and passes the self-check: it
-// starts fastest (pipx 182 ms vs the onefile release's 606 ms on dev,
+// starts fastest (pipx 182 ms vs the onedir release's 313 ms on dev,
 // 2026-10-29), so the app's copy is the net for a PATH gone stale, and is
 // downloaded only then (ruling of 11:35). Everything here runs
 // in the background, behind the road's own switch: never on a Command's path.
@@ -39,11 +39,15 @@ export const executableOf = (asset: string): string => asset.replace(/\.zip$/, '
 
 /** A release's version as yt-dlp tags it; anything else is not a release, and never names a directory. */
 const VERSION = /^\d{4}\.\d{2}\.\d{2}(\.\d+)?$/
+/** The longest an unpack may take: about 100 MB onto the kiosk's disk. */
+const UNPACK_MS = 120_000
 
 /**
  * Unpacks a zip into an empty directory with the system's `unzip`, else
- * `bsdtar` (the kiosk has both, dev only `unzip`). Both refuse a member that
- * climbs out of the directory, and the zip's checksum is checked before.
+ * `bsdtar` (the kiosk has both, dev only `unzip`). The zip's checksum is
+ * checked before; any exit but 0 is a refusal, warnings too (unzip's 1 for
+ * a member it stripped of `../`), so a zip unpacked other than whole is
+ * never run.
  */
 export async function extractZip(zip: string, into: string): Promise<void> {
   const tools: ReadonlyArray<readonly [string, readonly string[]]> = [
@@ -52,9 +56,9 @@ export async function extractZip(zip: string, into: string): Promise<void> {
   ]
   let missing: unknown = null
   for (const [tool, args] of tools) {
-    const [error, stderr] = await new Promise<[ExecFileException | null, string]>((resolve) => execFile(tool, args, { timeout: 120_000 }, (failed, _out, err) => resolve([failed, String(err)])))
+    const [error, stderr] = await new Promise<[ExecFileException | null, string]>((resolve) => execFile(tool, args, { timeout: UNPACK_MS }, (failed, _out, err) => resolve([failed, String(err)])))
     if (error === null) return
-    // The tool's own first word on it, not the whole of its output.
+    // The tool's own first line on it, not the whole of its output; unzip opens with `[zipfile]`, which says nothing.
     const why = stderr.split('\n').map((line) => line.trim()).find((line) => line !== '' && !line.startsWith('[')) ?? error.message
     if (error.code !== 'ENOENT') throw new Error(`${tool} could not unpack ${zip}: ${why}`)
     missing = error
@@ -147,7 +151,7 @@ export function releaseTag(url: string): string | null {
 
 /** Whether a yt-dlp version (`2026.10.26`, `2026.10.26.1`) is older than another; an unreadable one is older than any. */
 export function olderRelease(version: string, than: string): boolean {
-  const parts = (v: string): number[] | null => (/^\d{4}\.\d{2}\.\d{2}(\.\d+)?$/.test(v.trim()) ? v.trim().split('.').map(Number) : null)
+  const parts = (v: string): number[] | null => (VERSION.test(v.trim()) ? v.trim().split('.').map(Number) : null)
   const [a, b] = [parts(version), parts(than)]
   if (a === null) return true
   if (b === null) return false
@@ -231,8 +235,8 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
   // Read once and held: each song asks for the binary, and no song reads a file for it.
   // A copy named whose directory is gone (or the first layout's single file) is no copy.
   let held = loadState()
-  if (held.current !== undefined && !has(held.current)) held = { ...(held.onPath === undefined ? {} : { onPath: held.onPath }), ...(held.rejected === undefined ? {} : { rejected: held.rejected }) }
-  else if (held.previous !== undefined && !has(held.previous)) held = { ...held, previous: undefined }
+  if (!has(held.current)) held = { ...held, current: undefined }
+  if (!has(held.previous)) held = { ...held, previous: undefined }
   const readState = (): UpdaterState => held
   /** Written whole or not at all: a crash mid-write leaves the last state, not a torn one. */
   function writeState(state: UpdaterState): void {
@@ -302,8 +306,10 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
 
   async function run(reason: UpdateReason): Promise<UpdateOutcome> {
     if (!deps.on()) return { kind: 'off' }
-    if (asset === null) return { kind: 'unavailable', why: `yt-dlp ships no standalone binary for ${process.arch}` }
+    if (asset === null) return { kind: 'unavailable', why: `yt-dlp ships no release build for ${process.arch}` }
     mkdirSync(deps.dir, { recursive: true })
+    // What a crash or the first layout left goes on every run, whichever copy wins it.
+    prune()
     // The latest's version is in GitHub's first redirect, to the tag's own checksums; the next one goes to an asset host that names none.
     let version: string | null
     try {
@@ -368,7 +374,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     // Passed: the copy in use becomes the previous one, kept for a rollback; the one before it goes.
     rmSync(home(version), { recursive: true, force: true })
     renameSync(candidate, home(version))
-    writeState({ current: version, ...(has(state.current) ? { previous: state.current } : {}) })
+    writeState({ current: version, ...(has(state.current) && state.current !== version ? { previous: state.current } : {}) })
     prune()
     return { kind: 'updated', version }
   }
