@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readSequenceCase } from './sequenceCase'
 
 const typed = {
-  start: { url: 'https://duckduckgo.com/' },
+  start: { page: { url: 'https://duckduckgo.com/' } },
   input: 'typed',
   lines: [{ words: 'play radiohead' }, { words: 'open the weather', at: { while: 'media-not-started' } }],
   expect: { media: { playing: false }, lines: ['cancelled', 'done'] },
@@ -28,14 +28,21 @@ describe('a Sequence Case read from its file', () => {
     expect(readSequenceCase(typed, '1-x.json')).toMatchObject({ echo: false })
   })
 
-  it('a start may play a song in a pane that was on a page first, so there is a page to go back to (#494)', () => {
-    const start = { url: 'https://duckduckgo.com/', playing: 'iraada niyam' }
+  it('a start gives the page shown, the pages behind it and the song heard apart (#509)', () => {
+    const start = { page: { url: 'https://en.wikipedia.org/wiki/Radiohead', behind: ['https://duckduckgo.com/'] }, music: 'iraada niyam' }
     expect(readSequenceCase({ ...typed, start }, '8-x.json')).toMatchObject({ start })
+    expect(readSequenceCase({ ...typed, start: { music: 'let down' } }, '9-x.json')).toMatchObject({ start: { music: 'let down' } })
+    expect(readSequenceCase({ ...typed, start: { page: { url: 'https://duckduckgo.com/' }, asked: 'errand open it' } }, '11-x.json')).toMatchObject({ start: { asked: 'errand open it' } })
   })
 
   it.each([
     ['a file name with no row', typed, 'replace.json', /row/],
     ['a start of no known kind', { ...typed, start: { song: 'x' } }, '1-a.json', /start/],
+    ['a start in the old shape', { ...typed, start: { url: 'https://duckduckgo.com/', playing: 'x' } }, '1-a.json', /start/],
+    ['an empty start', { ...typed, start: {} }, '1-a.json', /at least one/],
+    ['a page with no address', { ...typed, start: { page: { url: 'duckduckgo' } } }, '1-a.json', /start.page/],
+    ['pages behind that are not a list of addresses', { ...typed, start: { page: { url: 'https://b.example/', behind: 'https://a.example/' } } }, '1-a.json', /behind/],
+    ['a line asked with no page', { ...typed, start: { asked: 'errand open it' } }, '1-a.json', /asked/],
     ['a later line with no time', { ...typed, lines: [{ words: 'a' }, { words: 'b' }] }, '1-a.json', /line 2.*at/],
     ['a window the wrong way round', { ...typed, lines: [{ words: 'a' }, { words: 'b', at: { ms: [900, 300] } }] }, '1-a.json', /window/],
     ['a named point no person could see', { ...typed, lines: [{ words: 'a' }, { words: 'b', at: { while: 'thinking' } }] }, '1-a.json', /while/],

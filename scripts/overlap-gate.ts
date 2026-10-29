@@ -79,6 +79,7 @@ import { checkEnd, firstMediaFrom, lineOutcomes, saidFrom, type EndState } from 
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
 import { formatTable, stateDisagreements, through, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
+import { startSteps } from '../e2e/overlap/start.ts'
 import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
@@ -462,36 +463,34 @@ async function quiet(live: Live, from: number, notBefore: number, boundMs: numbe
   }, boundMs)
 }
 
-/** Puts the start in front of the person; null when it is, else why not. */
+/** Puts the start in front of the person, step by step (e2e/overlap/start.ts); null when it is, else why not. */
 async function setUp(live: Live, sequence: SequenceCase): Promise<string | null> {
-  const start = sequence.start
-  const url = 'url' in start ? start.url : 'asked' in start ? start.asked.url : null
-  if (url !== null) {
-    await live.targets.evaluate('dashboard', `window.bingbong.browser.navigate(${JSON.stringify(url)})`)
-    const host = new URL(url).hostname
-    const landed = await waitUntil(async () => {
-      const sample = lastOf(live.pane)
-      return sample !== undefined && URL.canParse(sample.url) && new URL(sample.url).hostname === host && (await live.targets.evaluate<string>('pane', 'document.readyState')) === 'complete'
-    }, SETUP_BOUND_MS)
-    if (!landed) return `the start page ${url} never loaded`
-  }
-  if ('playing' in start) {
-    await submit(live, `play ${start.playing}`)
-    // The start is a song playing, however it got there: a song on screen that never started (YouTube's own autoplay
-    // sometimes never fires on a fresh profile, 2026-10-27) is started as a person would, with the media's own play.
-    if (!(await waitUntil(async () => playingNow(live), UNSTARTED_MS))) {
-      console.error(`"play ${start.playing}" unstarted after ${UNSTARTED_MS / 1000} s: the start presses play`)
-      const press = `(() => { for (const media of document.querySelectorAll('video, audio')) if (media.paused && media.currentTime < 0.5) media.play().catch(() => {}); return true })()`
-      await live.targets.evaluate('pane', press).catch(() => {})
-      if (audioOnlyMusic) await live.targets.evaluate('audio', press).catch(() => {})
-      if (!(await waitUntil(async () => playingNow(live), SETUP_BOUND_MS))) return `"play ${start.playing}" never played`
+  for (const step of startSteps(sequence.start)) {
+    if ('open' in step) {
+      await live.targets.evaluate('dashboard', `window.bingbong.browser.navigate(${JSON.stringify(step.open)})`)
+      const host = new URL(step.open).hostname
+      const landed = await waitUntil(async () => {
+        const sample = lastOf(live.pane)
+        return sample !== undefined && URL.canParse(sample.url) && new URL(sample.url).hostname === host && (await live.targets.evaluate<string>('pane', 'document.readyState')) === 'complete'
+      }, SETUP_BOUND_MS)
+      if (!landed) return `the start page ${step.open} never loaded`
+    } else if ('play' in step) {
+      await submit(live, `play ${step.play}`)
+      // The start is a song playing, however it got there: a song that never started (YouTube's own autoplay
+      // sometimes never fires on a fresh profile, 2026-10-27) is started as a person would, with the media's own play.
+      if (!(await waitUntil(async () => playingNow(live), UNSTARTED_MS))) {
+        console.error(`"play ${step.play}" unstarted after ${UNSTARTED_MS / 1000} s: the start presses play`)
+        const press = `(() => { for (const media of document.querySelectorAll('video, audio')) if (media.paused && media.currentTime < 0.5) media.play().catch(() => {}); return true })()`
+        await live.targets.evaluate('pane', press).catch(() => {})
+        if (audioOnlyMusic) await live.targets.evaluate('audio', press).catch(() => {})
+        if (!(await waitUntil(async () => playingNow(live), SETUP_BOUND_MS))) return `"play ${step.play}" never played`
+      }
+    } else {
+      const from = Date.now()
+      await submit(live, step.ask)
+      const asked = await waitUntil(async () => (await live.records()).events.some((record) => record.t >= from && record.event.type === 'site_question'), RUN_BOUND_MS)
+      if (!asked) return `"${step.ask}" never came to a question`
     }
-  }
-  if ('asked' in start) {
-    const from = Date.now()
-    await submit(live, start.asked.line)
-    const asked = await waitUntil(async () => (await live.records()).events.some((record) => record.t >= from && record.event.type === 'site_question'), RUN_BOUND_MS)
-    if (!asked) return `"${start.asked.line}" never came to a question`
   }
   await quiet(live, 0, Date.now() + SETTLE_MS, SETUP_BOUND_MS)
   return null

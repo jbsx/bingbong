@@ -1,5 +1,9 @@
 {
-  "start": { "url": "https://duckduckgo.com/" },
+  "start": {
+    "page": {
+      "url": "https://duckduckgo.com/"
+    }
+  },
   "input": "typed",
   "lines": [
     { "words": "play hurt" },

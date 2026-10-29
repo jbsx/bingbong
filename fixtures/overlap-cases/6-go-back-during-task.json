@@ -1,6 +1,8 @@
 {
   "start": {
-    "url": "https://en.wikipedia.org/wiki/Radiohead"
+    "page": {
+      "url": "https://en.wikipedia.org/wiki/Radiohead"
+    }
   },
   "input": "typed",
   "lines": [

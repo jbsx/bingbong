@@ -1,5 +1,9 @@
 {
-  "start": { "url": "https://duckduckgo.com/" },
+  "start": {
+    "page": {
+      "url": "https://duckduckgo.com/"
+    }
+  },
   "input": "spoken",
   "listen": "wake",
   "lines": [{ "words": "Find the Wikipedia page for Radiohead.", "audio": "find-wikipedia-radiohead.wav" }],

@@ -1,5 +1,10 @@
 {
-  "start": { "asked": { "url": "https://duckduckgo.com/?q=radiohead+albums", "line": "errand open the album I am thinking of" } },
+  "start": {
+    "page": {
+      "url": "https://duckduckgo.com/?q=radiohead+albums"
+    },
+    "asked": "errand open the album I am thinking of"
+  },
   "input": "typed",
   "lines": [{ "words": "the second" }],
   "expect": {

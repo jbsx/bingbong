@@ -14,7 +14,7 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
 
 ```json
 {
-  "start": { "url": "…" } | { "playing": "…" } | { "url": "…", "playing": "…" } | { "asked": { "url": "…", "line": "…" } },
+  "start": { "page": { "url": "…", "behind": ["…"] }, "music": "…", "asked": "…" },
   "input": "typed" | "spoken",
   "listen": "wake" | "hotkey",
   "echo": true,
@@ -37,12 +37,18 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
 }
 ```
 
-- **start**: a page at a fixed URL; a song playing (`play <words>` given and
-  heard playing first); a song playing in a pane that
-  opened a page first (`url` then `playing`: one navigation behind the song,
-  a page to go back to, #494); or a question the app has just asked (the URL
-  opened, the line given, and the app asking before line 1). The start is
-  only the precondition, however it got there. A song on screen that has
+- **start**: what is in front of the person before line 1 (CONTEXT.md
+  **Sequence Case**, #509), each part given apart, at least one of them:
+  - `page`: the page shown, `url`, and the pages behind it, `behind`,
+    nearest first: the pages `back` steps through. The gate opens the pages
+    behind, oldest first, then the page shown.
+  - `music`: a song heard, wherever it plays: `play <music>` given after the
+    pages and heard playing first. On the pane road the song takes the pane;
+    on the audio road it leaves the pane alone.
+  - `asked` (with a `page`): a line the app has just asked a question about,
+    given last; the app asking before line 1.
+
+  The start is only the precondition, however it got there. A song that has
   not started 10 s after its line is started with the media's own play, as
   a person would press it: YouTube's autoplay sometimes never fires on a
   fresh profile. A start that still never comes, or one whose run met a 429

@@ -1,7 +1,9 @@
 {
   "start": {
-    "url": "https://duckduckgo.com/",
-    "playing": "iraada niyam"
+    "page": {
+      "url": "https://duckduckgo.com/"
+    },
+    "music": "iraada niyam"
   },
   "input": "spoken",
   "listen": "wake",

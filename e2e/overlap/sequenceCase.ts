@@ -10,12 +10,18 @@ export type NamedAfter = 'shown' | 'changed' | 'asked'
 /** When a line arrives, counted from the first line: a fixed ms, a window sampled at seeded points, or a point a person could see or hear. */
 export type LineTime = { readonly ms: number } | { readonly ms: readonly [number, number] } | { readonly while: NamedWhile } | { readonly after: NamedAfter }
 
-export type CaseStart =
-  | { readonly url: string }
-  | { readonly playing: string }
-  /** A song playing in a pane that was on `url` first: one navigation behind it, a page to go back to (#494). */
-  | { readonly url: string; readonly playing: string }
-  | { readonly asked: { readonly url: string; readonly line: string } }
+/**
+ * What is in front of the person before line 1 (#509): the page shown, with
+ * the pages behind it (nearest first), and the song heard, wherever it plays;
+ * with `asked`, a line the app has just asked a question about. The page and
+ * the song are given apart, since on the audio road a song leaves the pane
+ * alone. At least one is given.
+ */
+export interface CaseStart {
+  readonly page?: { readonly url: string; readonly behind?: readonly string[] }
+  readonly music?: string
+  readonly asked?: string
+}
 
 export interface CaseLine {
   readonly words: string
@@ -105,13 +111,24 @@ function readTime(raw: unknown, what: string): LineTime | string {
 }
 
 function readStart(raw: unknown): CaseStart | string {
-  if (isObject(raw)) {
-    if (isString(raw.url) && isString(raw.playing)) return { url: raw.url, playing: raw.playing }
-    if (isString(raw.url)) return { url: raw.url }
-    if (isString(raw.playing)) return { playing: raw.playing }
-    if (isObject(raw.asked) && isString(raw.asked.url) && isString(raw.asked.line)) return { asked: { url: raw.asked.url, line: raw.asked.line } }
+  const shape = 'start is { page?: { url, behind?: [url, …] }, music?: song, asked?: line }, with at least one'
+  if (!isObject(raw) || Object.keys(raw).some((key) => !['page', 'music', 'asked'].includes(key))) return shape
+  const out: { -readonly [K in keyof CaseStart]: CaseStart[K] } = {}
+  if (raw.page !== undefined) {
+    const page = raw.page
+    if (!isObject(page) || !isString(page.url) || !URL.canParse(page.url)) return 'start.page is { url, behind?: [url, …] }'
+    if (page.behind !== undefined && (!Array.isArray(page.behind) || page.behind.length === 0 || !page.behind.every((url) => isString(url) && URL.canParse(url)))) return 'start.page.behind is the pages behind the page shown, nearest first'
+    out.page = { url: page.url, ...(page.behind !== undefined ? { behind: page.behind as string[] } : {}) }
   }
-  return 'start is { url }, { playing }, { url, playing } or { asked: { url, line } }'
+  if (raw.music !== undefined) {
+    if (!isString(raw.music)) return 'start.music is the song heard'
+    out.music = raw.music
+  }
+  if (raw.asked !== undefined) {
+    if (!isString(raw.asked) || out.page === undefined) return 'start.asked is the line the app asks about, on a start.page'
+    out.asked = raw.asked
+  }
+  return Object.keys(out).length === 0 ? shape : out
 }
 
 function readExpect(raw: unknown): CaseExpect | string {

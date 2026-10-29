@@ -1,6 +1,8 @@
 {
   "start": {
-    "url": "https://en.wikipedia.org/wiki/Stop_the_Clocks"
+    "page": {
+      "url": "https://en.wikipedia.org/wiki/Stop_the_Clocks"
+    }
   },
   "input": "spoken",
   "listen": "wake",
