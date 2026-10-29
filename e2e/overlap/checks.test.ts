@@ -84,6 +84,27 @@ describe('the end state checked against a case’s expect', () => {
   })
 })
 
+describe('a sentence said against the media heard (#508)', () => {
+  const playing = (title: string, said: readonly string[]): EndState => ({ ...end, title, said })
+
+  it('fails a run that said it stopped what still plays, on any expect', async () => {
+    const stoppedYetPlaying = playing('Kanye West - Highs and Lows - YouTube', ['Stopped playing highs and lows by Kanye West.'])
+    expect(await checkEnd({ media: { playing: true, has: 'highs and lows' } }, stoppedYetPlaying, neverJudged)).toBe(
+      'said "Stopped playing highs and lows by Kanye West." while it plays (Kanye West - Highs and Lows - YouTube)',
+    )
+    expect(await checkEnd({}, stoppedYetPlaying, neverJudged)).not.toBeNull()
+    // The artist renamed: half the stop's words are still the title's.
+    expect(await checkEnd({}, playing('YE - HIGHS AND LOWS - YouTube', ['Stopped playing highs and lows by Kanye West.']), neverJudged)).not.toBeNull()
+  })
+
+  it('passes a bare stop, a stop of something else, one with nothing playing, and a stop a later Playing follows', async () => {
+    expect(await checkEnd({}, playing('Radiohead - Let Down - YouTube', ['Stopped.']), neverJudged)).toBeNull()
+    expect(await checkEnd({}, playing('Radiohead - Let Down - YouTube', ['Stopped reading alan turing.']), neverJudged)).toBeNull()
+    expect(await checkEnd({}, { ...playing('Kanye West - Highs and Lows - YouTube', ['Stopped playing highs and lows by Kanye West.']), media: [] }, neverJudged)).toBeNull()
+    expect(await checkEnd({}, playing('Radiohead - Creep - YouTube', ['Stopped playing radiohead.', 'Playing “Creep”.']), neverJudged)).toBeNull()
+  })
+})
+
 describe('the first media a person saw opened', () => {
   it('is the first page from line 1 with a media source on it', () => {
     const sample = (t: number, title: string, src: string) => ({ t, url: '', title, text: '', media: src === '' ? [] : [{ playing: false, src, position: 0, volume: 1, loop: false }] })

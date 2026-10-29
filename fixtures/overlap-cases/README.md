@@ -140,6 +140,12 @@ last line.
   first). A `means` goes to a judge (GLM-5.3-flash, as `goal:gate`'s) that
   reads every sentence said. It is the one check that is not exact: a
   sentence whose words the app writes itself is checked on its shape.
+- On every case, whatever its `expect`: a stop said of what still plays is
+  red (#508). The last "Stopped <what it was doing>." said, with no "Playing
+  …" after it, whose words (the doing word and "by" aside) are at least half
+  in the title of media playing at the end, is the app saying it stopped a
+  song a person still hears. A bare "Stopped." names nothing and is never
+  held against the media.
 - `speech`: `whole` says no sentence the app began was cut: none ended
   sooner than nine tenths of the time it takes said whole (the app's own
   voice, rendered once to time it). A sentence still sounding when the run

@@ -66,6 +66,9 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
       if (wanted.loop !== undefined && media.loop !== wanted.loop) return wanted.loop ? 'the media is not on loop' : 'the media is on loop'
     }
   }
+  // What was said against what is heard, on every case (#508): a stop that names what still plays is a false green.
+  const contradicted = stoppedYetPlaying(end)
+  if (contradicted !== null) return contradicted
   // Each sentence in order, an exact one or a shape after the one before it; a meaning, among all said.
   let from = 0
   let last = ''
@@ -95,6 +98,27 @@ export async function checkEnd(expected: CaseExpect, end: EndState, judge: Meani
     if (wanted.length !== shown.length || wanted.some((outcome, index) => outcome !== shown[index])) {
       return `the lines came to ${end.lines.length === 0 ? 'no Command' : end.lines.join(', ')}, not ${wanted.join(', ')}`
     }
+  }
+  return null
+}
+
+const wordsOf = (text: string): string[] => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word !== '')
+
+/**
+ * A stop said of the media that still plays (#508): "Stopped playing highs and lows by Kanye West." while that song is heard.
+ * The stop's object, its Acting word and "by" aside, is at least half in the playing media's title (an artist renamed: "YE - HIGHS AND LOWS");
+ * a later "Playing …" is a new song, said.
+ */
+function stoppedYetPlaying(end: EndState): string | null {
+  const stop = end.said.findLastIndex((sentence) => /^Stopped \S/.test(sentence.trim()))
+  if (stop === -1 || end.said.slice(stop + 1).some((sentence) => sentence.trim().startsWith('Playing'))) return null
+  const said = end.said[stop]!.trim()
+  const object = wordsOf(said).slice(2).filter((word) => word !== 'by')
+  if (object.length === 0) return null
+  for (const media of end.media.filter((item) => item.playing)) {
+    const title = media.title ?? end.title
+    const heard = new Set(wordsOf(`${title} ${media.src}`))
+    if (object.filter((word) => heard.has(word)).length * 2 >= object.length) return `said "${said}" while it plays (${title})`
   }
   return null
 }
