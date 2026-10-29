@@ -5893,6 +5893,64 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(taken.youtube().pauseAlls).toBe(0)
   })
 
+  describe('a `resume` over a `play` still opening (#508)', () => {
+    const SONG = 'YE - HIGHS AND LOWS'
+    /** `play highs and lows by kanye west`, its watch page still landing, the pane on a page: the line running. */
+    async function opening(shown = true) {
+      let youtube!: ScriptedYouTube
+      const speech = new FakeSpeech()
+      const made = harness({
+        applianceCard: CARD,
+        facts,
+        speech,
+        lastPage: () => ({ url: 'https://duckduckgo.com/', title: 'DuckDuckGo', at: 1 }),
+        player: (browser) => {
+          youtube = new ScriptedYouTube(browser)
+          return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+        },
+      })
+      youtube.search('highs and lows by kanye west', videoItem('hL0wS0000aa', SONG))
+      youtube.watches.set('hL0wS0000aa', { title: SONG })
+      if (shown) await made.browser.navigate('https://duckduckgo.com/')
+      let land: () => void = () => {}
+      const navigate = made.browser.navigate.bind(made.browser)
+      made.browser.navigate = (url) => new Promise((resolve) => (land = () => void navigate(url).then(resolve)))
+      made.decision.script.push({ answers: { action: choice('play'), slot: choice('s1-6') } })
+      const first = made.runner.run('play highs and lows by kanye west')
+      await flushMicrotasks()
+      const turnId = (made.events.find((event) => event.type === 'command') as { turnId: string }).turnId
+      made.asks.length = 0
+      return { ...made, speech, first, turnId, land: () => land() }
+    }
+
+    it('reopens nothing on a page shown, so it is no exact line: it is read on the card against the play, which goes on unstopped', async () => {
+      const { decision, asks, events, runner, first, turnId, land } = await opening()
+      decision.script.push({ answers: { action: choice('say_doing'), slot: choice('none'), fate: choice('goes_on') } })
+      await runner.run('resume')
+      expect(asks).toHaveLength(1)
+      expect(asks[0]!.state).toContain('Still running, from the user\'s line before this one')
+      expect(asks[0]!.state).toContain('It is opening: "highs and lows by kanye west", not playing yet')
+      land()
+      await first
+      expect(doneOf(events, turnId)).toBe('done')
+      expect(said(events).some((sentence) => sentence.startsWith('Stopped'))).toBe(false)
+      expect(said(events)[0]).toMatch(/^Still opening “highs and lows by kanye west”/)
+    })
+
+    it('on a blank pane it still reopens the Last Page on its words, with no ask', async () => {
+      const { asks, records, runner, browser, land } = await opening(false)
+      browser.snapshot = { ...browser.snapshot, url: 'about:blank', title: '' }
+      const resumed = runner.run('resume')
+      await flushMicrotasks()
+      // The resume's own navigate to the Last Page is the one held now.
+      land()
+      await resumed
+      expect(asks).toHaveLength(0)
+      expect(browser.navigations).toContain('https://duckduckgo.com/')
+      expect(records.find((record) => record.type === 'decision' && record.transcript === 'resume')).toMatchObject({ reading: 'local_match', verb: 'resume', jevAsked: false })
+    })
+  })
+
   describe('the line just ended (#499)', () => {
     const SONG = 'Let Down (Remastered)'
     /** `play let down by radiohead`, played to its end: "Playing “Let Down (Remastered)”." shown. */

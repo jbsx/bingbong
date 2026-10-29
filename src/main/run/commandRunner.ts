@@ -1362,7 +1362,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Match can read it against the Page Terms.
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions = { split: true }): Promise<Reading> {
-    const quick = localMatch(text, [], knownAddress)
+    const quick = exactOf(text, [], options.running !== undefined)
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
     if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
@@ -1374,7 +1374,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // speech-start collect once it has settled, else the last one while the pane is on its address — and never waits for one.
       const inHand = dismissed ?? (await pageInHand(pending)) ?? lastPageInHand()
       if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-      const local = localMatch(text, inHand.refs, knownAddress)
+      const local = exactOf(text, inHand.refs, options.running !== undefined)
       if (local !== null) return { command: local, page: inHand, reading: 'local_match', jevAsked: false }
     }
     const model = deps.decisionModel()
@@ -1395,6 +1395,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (reading?.turnId === turnId && !isEnded(reading.submission)) publish({ type: 'status', turnId, status: 'thinking', hop: 0, word: PAGE_CARD_WORD, detail: pageObject(), at: at() })
     const onward = await (beside ?? readPageCard(turnId, text, pending, spoken, options, quick, dismissed))
     return { ...onward, appliance: first.appliance, ...(first.fate !== undefined ? { fate: first.fate } : {}) }
+  }
+
+  /**
+   * The Local Match's exact line, but for a `resume` over a running line with a page shown (#508): that `resume` reopens nothing
+   * (resumePlan), so its one exact reading is moot and the words are read against the line running on the card. "Resume" over a
+   * song still opening means start it, never a new goal that ends it; Jev reads which. Off the card, or on a blank pane, it is exact.
+   */
+  function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean): Command | null {
+    const local = localMatch(text, refs, knownAddress)
+    return local?.verb === 'resume' && running && deps.applianceCard !== undefined && isRealPage(browser.state().url) ? null : local
   }
 
   /** The page card's object on the Status Capsule (#485): the host of the page open, or "the page". */
@@ -1541,7 +1551,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function readPageCard(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions, quick: Command | null, dismissed: CommandPage | null): Promise<Reading> {
     const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
-    const local = localMatch(text, page.refs, knownAddress)
+    const local = exactOf(text, page.refs, options.running !== undefined)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
@@ -3234,6 +3244,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (headsFlagLine(words)) return null
     // An exact Player line (#343) is the grammar's: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
+    // A `resume` that reopens nothing over a running line (#508) is read against it at its Endpoint, on the card.
+    if (quick !== null && exactOf(words, [], runningBefore(submitted + 1) !== null) === null) return null
     const dismissed = await dismissPage(words, quick, prepared)
     if (stale()) return null
     // A dismiss phrase over a pop-up waits for its Endpoint, where the Dismissal Ladder is read with Jev's choice on it and walked rung by rung.
