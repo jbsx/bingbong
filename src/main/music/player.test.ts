@@ -1852,6 +1852,68 @@ describe('the audio road', () => {
     expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', title: 'Song A' })
   })
 
+  /** A road on a wall clock that only its sleeps move: each lookup's stream served `servedInMs` after it. */
+  function withServedAudio(servedInMs: number) {
+    const pane = wired()
+    const audio = scriptedAudio(pane.youtube.watches)
+    let wall = 1_793_237_540_000
+    const loadedAt: number[] = []
+    audio.servedAt = () => wall + servedInMs
+    const load = audio.surface.load
+    audio.surface.load = async (song, stream) => {
+      loadedAt.push(wall)
+      await load(song, stream)
+    }
+    const starts: PlayerStart[] = []
+    const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async (ms) => void (wall += ms), now: () => wall, wallNow: () => wall, audio: { surface: audio.surface, resolve: audio.resolve }, onStart: (start) => starts.push(start) })
+    return { ...pane, audio, player, loadedAt, starts, perform: (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true) }
+  }
+
+  it('the stream is handed to the element only once YouTube serves it: never refused for being early', async () => {
+    const { audio, player, loadedAt, starts, perform } = withServedAudio(2_700)
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    // Its `available_at` and the margin past it: whole seconds on YouTube's clock.
+    expect(loadedAt).toEqual([1_793_237_540_000 + 2_700 + 250])
+    expect(starts[0]).toMatchObject({ road: 'audio', lookup: 0, served: 2_950, fallback: false })
+    expect(audio.loaded.map((load) => load.id)).toEqual(['aaaaaaaaaaa'])
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(player.road()).toBe('audio')
+  })
+
+  it('a stream served only past the bound takes the watch page, shown: the line is still done', async () => {
+    const { browser, audio, starts, perform } = withServedAudio(30_000)
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(audio.loaded).toEqual([])
+    // The wait it would have had is logged on the fallback's start: what settles the bound.
+    expect(starts[0]).toMatchObject({ road: 'page', lookup: 0, served: 30_250, fallback: true })
+    expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+    expect(played).toMatchObject({ answer: 'Playing “Song A” on its watch page.', shown: true })
+  })
+
+  it('the first song on the road opens at the level YouTube plays a typical track at, not the bare element\'s full volume', async () => {
+    const { audio, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(audio.youtube.element.volume).toBeCloseTo(53.46, 1)
+  })
+
+  it('a song on the road carries the level heard on the watch page before it, matched to a typical track', async () => {
+    const { youtube, audio, perform } = withAudio()
+    youtube.loudness.set('aaaaaaaaaaa', 6.02)
+    await perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    expect(youtube.element.volume).toBeCloseTo(50, 0)
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    // 50 on a +6.02 dB track is YouTube's 100; a typical road track plays that at 53.5.
+    expect(audio.youtube.element.volume).toBeCloseTo(53.46, 0)
+  })
+
+  it('a level set on the road carries into the next song on the road', async () => {
+    const { audio, perform } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'volume', to: 30 })
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    expect(audio.youtube.element.volume).toBeCloseTo(30, 0)
+  })
+
   it('a video opens the watch page as before, shown, and never looks the stream up', async () => {
     const { browser, audio, player, perform } = withAudio()
     const played = await perform({ kind: 'search', place: 'now', video: true }, 'song a')
@@ -1889,6 +1951,14 @@ describe('the audio road', () => {
     expect(played).toMatchObject({ answer: 'Playing “Song A” on its watch page.', shown: true })
     expect(played.failure).toBeUndefined()
     expect(player.road()).toBe('page')
+  })
+
+  it('a lookup that fails after one of the same song that played logs no lookup on its fallback', async () => {
+    const { audio, perform, starts } = withAudio()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    audio.fails.add('aaaaaaaaaaa')
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(starts.at(-1)).toMatchObject({ road: 'page', lookup: null, served: null, fallback: true })
   })
 
   it('a stream that will not start falls back to the watch page, shown, the stream stopped', async () => {

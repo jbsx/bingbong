@@ -18,3 +18,16 @@ export function loudnessFactor(loudnessDb: number | null): number {
 export function matchedLevel(level: number, fromDb: number | null, toDb: number | null): number {
   return Math.max(0, Math.min(100, (level / loudnessFactor(fromDb)) * loudnessFactor(toDb)))
 }
+
+/**
+ * The loudness (dB) a track on the audio road is taken to have (#502): the
+ * bare stream carries no `loudnessDb`, and is not normalised, so the road
+ * plays it as YouTube would a typical track. Measured: the median level 51
+ * songs opened at on the watch page from YouTube's default of 100 in the
+ * overlap gate's kept OFF runs (2026-10-28, job 2820345c) was 53.5 —
+ * factor 0.5346, so 20·log10(1/0.5346) ≈ 5.44 dB.
+ */
+export const ROAD_LOUDNESS_DB = 5.44
+
+/** The level YouTube's player remembers on a fresh profile (0–100): a song on the road with none heard before it is carried from it (#502). */
+export const YOUTUBE_DEFAULT_LEVEL = 100

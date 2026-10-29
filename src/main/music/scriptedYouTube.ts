@@ -2,6 +2,7 @@ import { FakeBrowser } from '../../core/testing/doubles'
 import { videoIdOf, watchUrl } from '../../core/music/youtubeSearch'
 import { loudnessFactor } from '../../core/music/loudness'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
+import type { AudioStream } from './ytDlp'
 import { SEEK_SETTLE_MS, type ElementOp, type ElementState, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
 // A scripted YouTube for the tests (#343): it answers the Player's tagged
@@ -70,6 +71,8 @@ export class ScriptedYouTube {
   playerVolume = 100
   /** Video id → its response's `loudnessDb` (#460): a page opens at `playerVolume` × its loudness factor; none is a factor of 1. */
   readonly loudness = new Map<string, number>()
+  /** The audio road's bare element (#502): it opens at full volume, its stream naming no loudness and no player remembering a level. */
+  bare = false
   /** The duck's mark on the element (#459): the volume (0–100) it puts back and the floor's share; a new page's element has none. */
   duckMark: { restore: number; share: number } | null = null
   /** The pane's duck (#461), its floor's share while it holds: it reaches a new page's element before the Player does. */
@@ -192,7 +195,7 @@ export class ScriptedYouTube {
         this.sheet = this.consented ? null : { reads: 0, drawn: false }
         this.readyState = this.consented ? 4 : 0
       }
-      this.element = { ...this.element, paused: this.starts === 'press' || this.starts === 'refuses', loop: false, currentTime: 0, volume: this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
+      this.element = { ...this.element, paused: this.starts === 'press' || this.starts === 'refuses', loop: false, currentTime: 0, volume: this.bare ? 100 : this.playerVolume * loudnessFactor(this.loudnessDb(this.currentId())) }
       this.refused = null
       this.pressed = false
       this.duckMark = null
@@ -228,14 +231,19 @@ export class ScriptedYouTube {
   }
 
   private loudnessDb(id: string | null): number | null {
-    return id === null ? null : (this.loudness.get(id) ?? null)
+    return id === null || this.bare ? null : (this.loudness.get(id) ?? null)
+  }
+
+  /** The level YouTube's player remembers, as a read hears it: none on the bare element. */
+  private remembered(): number | null {
+    return this.bare ? null : this.playerVolume
   }
 
   private level(): LevelRead | null {
     const id = this.currentId()
     const watch = id === null ? undefined : this.watches.get(id)
     if (watch === undefined || watch.fails !== undefined) return null
-    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume, restore: this.duckMark?.restore ?? null }
+    return { id, ad: this.adShowing, volume: this.element.volume, loudnessDb: this.loudnessDb(id), playerVolume: this.remembered(), restore: this.duckMark?.restore ?? null }
   }
 
   /** The element read for its start (#488): while it plays, its time moves a read's step — a stalling one pausing at its moment. */
@@ -289,7 +297,7 @@ export class ScriptedYouTube {
     this.ended = null
     const element = this.element
     const seeked = id === null ? null : this.takeSeeked()
-    const playing = { seekAgeMs: seeked, elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.playerVolume }
+    const playing = { seekAgeMs: seeked, elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, ducked: this.duckMark !== null, restore: this.duckMark?.restore ?? null, prompt: this.continuePrompt, loudnessDb: this.loudnessDb(id), playerVolume: this.remembered() }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, skippable: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, skippable: this.skippable(), ended, channel: watch?.channel ?? '', ...playing }
   }
@@ -455,6 +463,7 @@ export class ScriptedYouTube {
 export function scriptedAudio(watches: Map<string, ScriptedWatch>) {
   const browser = new FakeBrowser()
   const youtube = new ScriptedYouTube(browser, watches)
+  youtube.bare = true
   const road = {
     browser,
     youtube,
@@ -465,10 +474,12 @@ export function scriptedAudio(watches: Map<string, ScriptedWatch>) {
     stops: 0,
     /** A lookup that fails, by video id; every other resolves to a stream named after it. */
     fails: new Set<string>(),
-    resolve: async (id: string): Promise<string> => {
+    /** When each lookup's stream is served (epoch ms), from the wall clock the test gives the Player; null for at once. */
+    servedAt: null as (() => number) | null,
+    resolve: async (id: string): Promise<AudioStream> => {
       road.resolved.push(id)
       if (road.fails.has(id)) throw new Error(`yt-dlp: no stream for ${id}`)
-      return `https://stream.example/${id}`
+      return { stream: `https://stream.example/${id}`, availableAt: road.servedAt?.() ?? null }
     },
     surface: {
       evaluate: <T>(script: string) => browser.evaluate<T>(script),

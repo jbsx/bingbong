@@ -14,8 +14,9 @@ import { WithheldResourceError, type BrowserCustody } from '../../core/browser/u
 import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { CONSENT_PLAYED_MS } from '../browser/collectPageScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
-import { loudnessFactor, matchedLevel } from '../../core/music/loudness'
+import { ROAD_LOUDNESS_DB, YOUTUBE_DEFAULT_LEVEL, loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
+import type { AudioStream } from './ytDlp'
 import { CONTINUE_SCRIPT, END_LEAD_S, HELD_RESUME_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, START_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type HeldResumed, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
@@ -89,7 +90,8 @@ export interface AudioSurface {
 /** The audio road (#502): its surface, and the lookup of a video's audio stream, which rejects on any failure or its time running out. */
 export interface AudioRoad {
   readonly surface: AudioSurface
-  resolve(id: string): Promise<string>
+  /** The stream, and when YouTube serves it: the element is handed it only then. */
+  resolve(id: string): Promise<AudioStream>
   /**
    * Whether a song takes the road now: the `audioOnlyMusic` setting, read at
    * each song, so it applies live. Absent, always. Off with a song on the
@@ -127,6 +129,8 @@ export interface PlayerStart {
   readonly road: Road
   /** How long the audio road's lookup of its stream took (#502) (ms); null on the watch page. */
   readonly lookup: number | null
+  /** How long its stream waited after the lookup to be served (#502) (ms), the margin in it; past the bound, the wait it would have had; null on the watch page. */
+  readonly served: number | null
   /** On the watch page because the audio road could not play it (#502): the lookup failed or ran out, or the stream would not start. */
   readonly fallback: boolean
   /** Opened by the Queue moving on (an end, a failed landing), with no Command waiting on it. */
@@ -284,6 +288,8 @@ export interface PlayerDeps {
   onSeekResume?(seek: PlayerSeekResume): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
+  /** Wall-clock ms, for when the audio road's stream is served (#502); `Date.now()` when absent. */
+  wallNow?(): number
   /** The audio road (#502), taken while its `on` says so; absent, every song opens on the watch page as before. */
   audio?: AudioRoad
 }
@@ -312,6 +318,16 @@ const RESULTS_READS = 8
 const RESULTS_READ_MS = 250
 /** How often a song just opened is read for its start (#488). */
 const START_READ_MS = 250
+/**
+ * The longest the audio road waits for its stream to be served (#502) before
+ * the song takes the watch page: about twice the longest wait measured
+ * (2026-10-29, dev, live: 4.0 s and 4.8 s after the lookup; 2.5–2.9 s over
+ * 18 probes the night before) — a guess past that; the `media-start`
+ * `served` of the road's songs settles it, a wait past it logged too.
+ */
+const SERVED_WAIT_MS = 10_000
+/** Past `available_at` before the element is handed the stream: the margin the measured arm played 54 of 54 with (2026-10-28), `available_at` being whole seconds. */
+const SERVED_MARGIN_MS = 250
 /**
  * How long a song just opened may take to play by itself before it is
  * pressed (#488): measured — in #486's kept runs at 919f058f (fresh profile,
@@ -368,6 +384,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   const { browser } = deps
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const now = deps.now ?? (() => performance.now())
+  const wallNow = deps.wallNow ?? (() => Date.now())
   let state: Queue = EMPTY_QUEUE
   /** Bumped by every verb and every background open: an open a later one overtook stops where it stands. */
   let generation = 0
@@ -415,8 +432,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
   /** The audio road is taken now (#502): wired, and its setting on. */
   const roadOn = (): boolean => deps.audio !== undefined && (deps.audio.on?.() ?? true)
-  /** The last lookup on the audio road (#502): its song and how long it took, for that song's `media-start`. */
-  let lookedUp: { id: string; ms: number } | null = null
+  /** The last lookup on the audio road (#502): its song, how long it took and how long its stream then waited to be served, for that song's `media-start`. */
+  let lookedUp: { id: string; ms: number; served: number } | null = null
   /** The song the road could not play, opened on its watch page instead (#502); null once another opens on its own road. */
   let fellBack: string | null = null
   let published = 'null'
@@ -745,7 +762,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (read === null || read.id !== leaving.id || read.ad) return
     if (carrying?.id === leaving.id && ducked === null && youTubesOwn(read)) return
     // Under a duck, the level its mark puts back — a Media Op's set meanwhile too (#459) — else the one held.
-    heard = { volume: read.restore ?? ducked?.restore ?? read.volume, loudnessDb: read.loudnessDb }
+    heard = { volume: read.restore ?? ducked?.restore ?? read.volume, loudnessDb: loudnessOn(read.loudnessDb) }
   }
 
   /**
@@ -757,7 +774,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function carry(read: Pick<LevelRead, 'id' | 'ad' | 'volume' | 'loudnessDb'> | null): Promise<boolean> {
     const to = carrying
     if (to === null || read === null || read.id !== to.id || read.ad) return false
-    const level = matchedLevel(to.from.volume, to.from.loudnessDb, read.loudnessDb)
+    const level = matchedLevel(to.from.volume, to.from.loudnessDb, loudnessOn(read.loudnessDb))
     knownVolume = level
     if (ducked === null) {
       if (Math.abs(read.volume - level) > LEVEL_TOLERANCE) await control({ op: 'level', to: level })
@@ -787,8 +804,10 @@ export function createPlayer(deps: PlayerDeps): Player {
    */
   async function streamTo(song: Song, current: () => boolean, background: boolean): Promise<boolean | 'superseded'> {
     const audio = deps.audio!
-    let stream: string
+    let stream: AudioStream
     waitFor({ kind: 'lookup', song }, background)
+    // A lookup that fails counts none: the last one's, of this same song perhaps, is not its own.
+    lookedUp = null
     const from = now()
     try {
       stream = await audio.resolve(song.id)
@@ -796,10 +815,26 @@ export function createPlayer(deps: PlayerDeps): Player {
       reportFault('music.player.resolve', error)
       return current() ? false : 'superseded'
     }
-    lookedUp = { id: song.id, ms: Math.round(now() - from) }
+    const ms = Math.round(now() - from)
     if (!current()) return 'superseded'
+    // The stream answers 403 until YouTube serves it: waited out, still the lookup's narrated wait, or the watch page past the bound.
+    const servedAt = stream.availableAt === null ? null : stream.availableAt + SERVED_MARGIN_MS
+    const servedInMs = servedAt === null ? 0 : Math.max(0, servedAt - wallNow())
+    if (servedInMs > SERVED_WAIT_MS) {
+      // Its fallback's `media-start` still counts the lookup, with the wait it would have had: what settles the bound.
+      lookedUp = { id: song.id, ms, served: Math.round(servedInMs) }
+      reportFault('music.player.served', new Error(`the stream for ${song.id} is served only in ${Math.round(servedInMs)} ms`))
+      return false
+    }
+    // Bound on the monotonic clock too: a wall clock stepped back must not stretch the wait.
+    const waited = now()
+    while (servedAt !== null && wallNow() < servedAt && now() - waited < SERVED_WAIT_MS) {
+      await sleep(Math.min(START_READ_MS, servedAt - wallNow()))
+      if (!current()) return 'superseded'
+    }
+    lookedUp = { id: song.id, ms, served: Math.round(now() - waited) }
     await leaveRoad('audio')
-    await audio.surface.load(song, stream)
+    await audio.surface.load(song, stream.stream)
     road = 'audio'
     const landed = await landedOn(song, current)
     return landed === 'elsewhere' ? false : landed
@@ -820,6 +855,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
     road = to
   }
+
+  /** A track's loudness as read, or on the audio road, whose bare stream names none, a typical track's (#502). */
+  const loudnessOn = (db: number | null): number | null => db ?? (road === 'audio' ? ROAD_LOUDNESS_DB : null)
 
   /** The road a song opens on (#502): the audio road while it is taken, unless Jev read the words as a video. */
   const roadFor = (video: boolean): Road => (roadOn() && !video ? 'audio' : 'page')
@@ -861,7 +899,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       reportFault('music.player.open', error)
       return current() ? 'failed' : 'superseded'
     }
-    if (landed === true && heard !== null) carrying = { id: song.id, from: heard }
+    // A song on the road with none heard before it is carried from YouTube's own default, as a watch page opens (#502).
+    const from = heard ?? (road === 'audio' ? { volume: YOUTUBE_DEFAULT_LEVEL, loudnessDb: null } : null)
+    if (landed === true && from !== null) carrying = { id: song.id, from }
     if (landed === true) await levelOpened()
     return landed === 'superseded' ? 'superseded' : landed === true ? 'opened' : 'failed'
   }
@@ -958,12 +998,14 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /** A start, decided: its page's watch told a wall cleared from here on comes after it, and the start recorded. */
-  function decided(start: Omit<PlayerStart, 'consent' | 'road' | 'lookup' | 'fallback'>): PlayerStart {
+  function decided(start: Omit<PlayerStart, 'consent' | 'road' | 'lookup' | 'served' | 'fallback'>): PlayerStart {
     const watch = watchOf(start.video)
     if (watch !== null) watch.started = true
-    // Which road it took (#502), the lookup's time on the audio road, and whether the watch page stood in for the road.
-    const lookup = road === 'audio' && lookedUp !== null && lookedUp.id === start.video ? lookedUp.ms : null
-    return record({ ...start, road, lookup, fallback: road === 'page' && fellBack === start.video, consent: watch === null ? null : clearedMs(watch) })
+    // Which road it took (#502), the lookup's time and its stream's wait to be served — on the audio road, or the fallback
+    // it stood in for — and whether the watch page stood in for the road.
+    const fallback = road === 'page' && fellBack === start.video
+    const looked = lookedUp !== null && lookedUp.id === start.video && (road === 'audio' || fallback) ? lookedUp : null
+    return record({ ...start, road, lookup: looked?.ms ?? null, served: looked?.served ?? null, fallback, consent: watch === null ? null : clearedMs(watch) })
   }
 
   /** A start, as the perf log hears it. */
@@ -1340,7 +1382,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       // The pane's duck may hold the song while the Player holds none (#461): the level heard is its mark's, never the floor.
       const volume = status.restore ?? status.volume
       knownVolume = volume
-      heard = { volume, loudnessDb: status.loudnessDb }
+      heard = { volume, loudnessDb: loudnessOn(status.loudnessDb) }
     } else if (!status.ducked || status.volume > floorOf(ducked.restore)) await duckElement()
     if (opening && status.elapsed >= CARRIED_S) carrying = null
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes — asked

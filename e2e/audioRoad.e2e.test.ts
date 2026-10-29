@@ -9,8 +9,9 @@ import { feedText } from './feed'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
-// The audio road behind its Settings toggle (#502): audio-only music is off
-// at first, and a play is today's watch page with nothing looked up; turned
+// The audio road behind its Settings toggle (#502): audio-only music is on
+// by default since 78aed4f0, so the profile is saved with it off; off, a
+// play is today's watch page with nothing looked up; turned
 // on in Settings and saved, with no restart, the next play's stream is
 // looked up by the scripted yt-dlp (e2e/bin/fake-yt-dlp.mjs, no network),
 // and the wait is narrated on the Status Capsule — "finding the audio for
@@ -21,6 +22,8 @@ import { waitFor } from './waitFor'
 const PLAY = 'play fixture song'
 /** How long the scripted lookup takes: long enough for the Capsule to be read counting its seconds. */
 const LOOKUP_MS = 2_500
+/** How long after the lookup the scripted stream is served (its `available_at`): the road waits it out before the element is handed it. */
+const SERVED_MS = 1_000
 
 /** Every face the Status Capsule shows, as one text each, in order. */
 const WATCH_CAPSULE = `(() => {
@@ -49,7 +52,7 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as T)
   }
   const looked = async (): Promise<string[]> => (await readFile(lookups, 'utf8').catch(() => '')).split('\n').filter((line) => line !== '')
-  const mediaStarts = async (): Promise<{ road?: string; lookup?: number | null; fallback?: boolean; started?: boolean }[]> =>
+  const mediaStarts = async (): Promise<{ road?: string; lookup?: number | null; served?: number | null; fallback?: boolean; started?: boolean }[]> =>
     (await logLines<{ stage: string; detail?: Record<string, unknown> }>('perf-')).filter((record) => record.stage === 'media-start').map((record) => record.detail ?? {})
   const faces = (): Promise<string[]> => harness.dashboardEval<string[]>('window.__capsuleSeen')
 
@@ -57,6 +60,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-road-'))
     lookups = join(userDataDir, 'yt-dlp.log')
     refuse = join(userDataDir, 'yt-dlp.refuse')
+    // Saved off: only an explicit false keeps the watch page.
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: false }))
     fixture = await startFixtureServer()
     harness = await startHarness({
       userDataDir,
@@ -68,6 +73,7 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
         // The stream is the fixture's own sound, served from the fixture server: the hidden window's `<audio>` plays it.
         BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav'),
         BINGBONG_FAKE_YTDLP_MS: String(LOOKUP_MS),
+        BINGBONG_FAKE_YTDLP_SERVED_MS: String(SERVED_MS),
         BINGBONG_FAKE_YTDLP_LOG: lookups,
         BINGBONG_FAKE_YTDLP_FAIL: refuse,
         ...decisionScript(readingOf(PLAY), readingOf(PLAY), readingOf(PLAY)),
@@ -82,7 +88,7 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('off by default: a play opens its watch page in the pane, nothing looked up, no lookup named', async () => {
+  it('saved off: a play opens its watch page in the pane, nothing looked up, no lookup named', async () => {
     await harness.dashboardEval<string>(WATCH_CAPSULE)
     const line = await cli(harness, PLAY, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
     expect(line).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
@@ -118,6 +124,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     const line = await cli(harness, PLAY, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
     expect(line).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
     expect(await looked()).toHaveLength(1)
+    // Asked for when the stream is served, beside its address.
+    expect((await looked())[0]).toContain('%(available_at)s %(url)s')
     // The pane is not the song's: it stays on the page it was on.
     expect(await harness.paneUrl()).toBe(paneBefore)
     const seen = await faces()
@@ -133,6 +141,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     const start = await waitFor(async () => (await mediaStarts()).find((each) => each.road === 'audio'), { timeoutMs: 10_000, intervalMs: 250 })
     expect(start).toMatchObject({ road: 'audio', fallback: false, started: true })
     expect(start.lookup).toBeGreaterThanOrEqual(LOOKUP_MS - 100)
+    // The stream waited until it was served: the element is never handed it early.
+    expect(start.served).toBeGreaterThanOrEqual(SERVED_MS - 100)
   }, 90_000)
 
   it('a refused lookup is narrated to its end: the watch page instead, on the Capsule, and the Answer says the song plays on its watch page', async () => {
