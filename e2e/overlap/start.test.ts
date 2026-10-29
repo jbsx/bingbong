@@ -32,6 +32,9 @@ describe('a start not met', () => {
     expect(startUnmet({ page: { url: 'https://b.example/', behind: ['https://a.example/'] }, music: 'x' }, seen)).toBeNull()
     // The pane’s own trailing slash and fragment are the same page.
     expect(startUnmet({ page: { url: 'https://b.example' } }, { ...seen, url: 'https://b.example/#top' })).toBeNull()
+    // A site's own parameters added on arrival are the same page: DuckDuckGo's `ia=web` (#509 measure, 11-answer-which-one).
+    expect(startUnmet({ page: { url: 'https://duckduckgo.com/?q=radiohead+albums' } }, { ...seen, url: 'https://duckduckgo.com/?q=radiohead+albums&ia=web' })).toBeNull()
+    expect(startUnmet({ page: { url: 'https://duckduckgo.com/?q=radiohead+albums' } }, { ...seen, url: 'https://duckduckgo.com/?q=coldplay&ia=web' })).toBe('the page shown is https://duckduckgo.com/?q=coldplay&ia=web, not https://duckduckgo.com/?q=radiohead+albums')
   })
 
   it('names what is missing: another page shown, fewer pages behind, no song heard', () => {

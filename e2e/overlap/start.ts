@@ -37,10 +37,16 @@ export interface SeenStart {
   readonly heard: boolean
 }
 
-/** The same page, a trailing slash and a fragment aside. */
-const samePage = (a: string, b: string): boolean => {
-  const bare = (url: string): string => (URL.canParse(url) ? ((u) => `${u.origin}${u.pathname.replace(/\/$/, '')}${u.search}`)(new URL(url)) : url)
-  return bare(a) === bare(b)
+/**
+ * The page the start names: the same address, a trailing slash and a
+ * fragment aside, carrying every parameter the start gives; a parameter the
+ * site adds on arrival (DuckDuckGo's `ia=web`) leaves it the same page.
+ */
+const samePage = (shown: string, wanted: string): boolean => {
+  if (!URL.canParse(shown) || !URL.canParse(wanted)) return shown === wanted
+  const [a, b] = [new URL(shown), new URL(wanted)]
+  const path = (u: URL): string => `${u.origin}${u.pathname.replace(/\/$/, '')}`
+  return path(a) === path(b) && [...b.searchParams].every(([key, value]) => a.searchParams.getAll(key).includes(value))
 }
 
 /** Why the start is not in front of the person, or null when it is. A page or a song the start leaves out is not checked. */
