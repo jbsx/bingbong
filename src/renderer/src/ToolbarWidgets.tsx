@@ -80,7 +80,7 @@ function SongWidget({ song }: { song: NowPlaying }) {
     >
       <ChromeIcon name={state === 'ended' ? 'ended' : 'music'} size={22} />
       <span className="toolbar-widget-text toolbar-song-text">
-        <SongLine song={view} form="row" name="toolbar-song" />
+        <SongLine song={view} form="row" classPrefix="toolbar-song" />
       </span>
     </span>
   )

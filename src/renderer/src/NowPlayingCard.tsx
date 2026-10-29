@@ -132,7 +132,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
           {thumbnail}
           <span className="idle-music-info">
             {head}
-            <SongLine song={view} form="row" name="idle-music" />
+            <SongLine song={view} form="row" classPrefix="idle-music" />
             {bar}
           </span>
           {controls}
@@ -143,7 +143,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
             {thumbnail}
             <span className="idle-music-info">
               {head}
-              <SongLine song={view} form="stack" name="idle-music" />
+              <SongLine song={view} form="stack" classPrefix="idle-music" />
               {state === 'ended' ? (
                 <span className="idle-music-next">Say “play” or tap to hear it again</span>
               ) : view.next.length > 0 ? (

@@ -63,7 +63,7 @@ export function clockTime(seconds: number): string {
 }
 
 /** A song as the screen names it (#502): its title and its channel, as one line wherever the song is shown. */
-export interface SongLine {
+export interface NamedSong {
   readonly title: string
   /** The channel, '' when none is read or the title already holds it. */
   readonly channel: string
@@ -72,14 +72,20 @@ export interface SongLine {
 /** Case and spacing set aside: how a name is looked for in a title. */
 const folded = (text: string): string => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
+/** The title holds the name as whole words: "Air" is in "Air - Sexy Boy", not in "Fair Weather". */
+function holds(title: string, name: string): boolean {
+  const escaped = folded(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'u').test(folded(title))
+}
+
 /**
  * The song named by its title and its channel (#502, the orchestrator's
  * ruling 4115625006): the artist on screen on either road, as the watch
  * page named it, and a channel the title already holds not repeated.
  */
-export function songLine(song: { readonly title: string; readonly channel: string }): SongLine {
+export function songLine(song: NamedSong): NamedSong {
   const channel = song.channel.trim()
-  return { title: song.title, channel: channel === '' || folded(song.title).includes(folded(channel)) ? '' : channel }
+  return { title: song.title, channel: channel === '' || holds(song.title, channel) ? '' : channel }
 }
 
 /** What the Now Playing card (#365) says of a song. */

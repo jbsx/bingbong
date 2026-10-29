@@ -114,6 +114,12 @@ describe('songLine (#502): the song named by its title and its channel', () => {
     expect(songLine({ title: 'radiohead  -  creep', channel: ' Radiohead ' }).channel).toBe('')
   })
 
+  it('a channel found only inside a longer word is still named', () => {
+    expect(songLine({ title: 'Fair Weather', channel: 'Air' }).channel).toBe('Air')
+    expect(songLine({ title: 'Joey', channel: 'Joe' }).channel).toBe('Joe')
+    expect(songLine({ title: 'Air - Sexy Boy', channel: 'Air' }).channel).toBe('')
+  })
+
   it('a channel that only holds the title is still named', () => {
     expect(songLine({ title: 'Yellow', channel: 'Yellow Magic Orchestra' }).channel).toBe('Yellow Magic Orchestra')
   })

@@ -601,8 +601,8 @@ body {
 
 /* A song named by its title and its channel (#502, SongLine.tsx), wherever
    a song is shown. A stack leaves its parts to the surface's own column; a
-   row sets them on one line, the title ellipsizing first and the channel
-   kept whole up to twelve of its letters' widths. */
+   row sets them on one line, the title ellipsizing first down to a few
+   letters, then the channel, which is held to twelve letters' widths. */
 .song-line--stack {
   display: contents;
 }
@@ -615,8 +615,9 @@ body {
 }
 
 .song-line--row .song-line-title {
-  flex: 0 1 auto;
-  min-width: 0;
+  /* Gives way long before the channel does, but keeps a few letters. */
+  flex: 0 1000 auto;
+  min-width: 4em;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -627,8 +628,9 @@ body {
 }
 
 .song-line--row .song-line-channel {
-  flex: none;
-  /* In em: a percentage resolves against a row sized by its own content and cuts a short channel. */
+  flex: 0 1 auto;
+  min-width: 0;
+  /* In em: a percentage resolves against a row sized by its own content and cuts a short channel. 12 is a guess (a "Radiohead - Topic" whole); a kiosk shot of a long channel would settle it. */
   max-width: 12em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3257,8 +3259,8 @@ button.idle-line {
 
 .idle-music-card--small .idle-music-channel,
 .idle-music-card--small .idle-music-line .song-line-dot {
-  font-size: var(--type-m);
-  line-height: 32px;
+  font-size: inherit;
+  line-height: inherit;
   color: var(--fg2);
 }
 
