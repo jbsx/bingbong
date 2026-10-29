@@ -25,7 +25,7 @@ registerHooks({
   },
 })
 const { withEnded, withRunning } = (await import('../src/core/command/runningCommand.ts')) as typeof import('../src/core/command/runningCommand')
-const { withPicked } = (await import('../src/core/command/applianceCard.ts')) as typeof import('../src/core/command/applianceCard')
+const { JOINED_SLOT_INSTRUCTIONS, withPicked } = (await import('../src/core/command/applianceCard.ts')) as typeof import('../src/core/command/applianceCard')
 const { companionCase } = (await import('../src/core/decision/applianceCompanion.ts')) as typeof import('../src/core/decision/applianceCompanion')
 const { JEV_CORPUS_DIR } = (await import('../src/main/decision/jevCorpus.ts')) as typeof import('../src/main/decision/jevCorpus')
 type RunningCommand = import('../src/core/command/runningCommand').RunningCommand
@@ -176,7 +176,7 @@ const SOURCES: readonly Source[] = [
 function withoutJoined(ask: { state: string; questions: DecisionQuestions }): { state: string; questions: DecisionQuestions } {
   const slot = ask.questions.slot
   if (slot === undefined || slot.type !== 'choice') return ask
-  const instructions = slot.instructions.replace(/ The words are the user's line and then their correction of it, read as one: .*$/, '')
+  const instructions = slot.instructions.endsWith(JOINED_SLOT_INSTRUCTIONS) ? slot.instructions.slice(0, -JOINED_SLOT_INSTRUCTIONS.length) : slot.instructions
   return { ...ask, questions: { ...ask.questions, slot: { ...slot, instructions } } as DecisionQuestions }
 }
 

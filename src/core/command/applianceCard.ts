@@ -213,7 +213,8 @@ export function withPicked<Q extends { readonly action?: unknown; readonly slot?
 /** The most options a Choice carries (DecisionChoiceQuestion: at most 255). */
 const SLOT_OPTIONS_CAP = 255
 
-const JOINED_SLOT_INSTRUCTIONS = " The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects."
+/** What a joined Slot's instructions add (#498, F2): the kept-ask converter strips it to rebuild. */
+export const JOINED_SLOT_INSTRUCTIONS = " The words are the user's line and then their correction of it, read as one: carry the line's words as the correction leaves them, never the words that only say it corrects."
 
 /**
  * The Slot of a line that joined one with a Slot (#498, F2): no span runs

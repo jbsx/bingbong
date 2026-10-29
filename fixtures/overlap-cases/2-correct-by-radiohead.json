@@ -31,5 +31,5 @@
   "evidence": [
     "none yet"
   ],
-  "state": {"pane": {"is": "red", "on": "0042b090", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "green", "on": "9edadc12", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
+  "state": {"pane": {"is": "red", "on": "0042b090", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "green", "on": "1a836648", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
 }
