@@ -1,5 +1,8 @@
 {
   "start": {
+    "page": {
+      "url": "https://en.wikipedia.org/wiki/Alan_Turing"
+    },
     "music": "let down by radiohead"
   },
   "input": "spoken",
@@ -16,10 +19,15 @@
     "lines": [
       "running"
     ],
-    "nothingElse": true
+    "nothingElse": true,
+    "media": {
+      "playing": true
+    }
   },
   "evidence": [
-    "overlap:gate 2026-10-28 p1, arm duck, twice: 12 and 13 own captures dropped, nothing in the Feed (#490)"
+    "overlap:gate 2026-10-28 p1, arm duck, twice: 12 and 13 own captures dropped, nothing in the Feed (#490)",
+    "#509: the start's page to read came free while the song took the pane; the page and the music are given apart, and the music plays on through the read",
+    "the read page (#509 guard: from a real line): cli-10-mvjkuljs, 2026-10-22, a read of https://en.wikipedia.org/wiki/Alan_Turing in the asks log (.claude/jobs/537b836c/tmp/bb-live-UoSumb/logs), the one read of a prose article in any asks log; the owner's own reads with music in the room (kiosk, 2026-10-26: turn-mvp2yn8g-vg, turn-mvplpj0i-v1a) were all of the song's watch page, which the audio road does not show"
   ],
   "state": {"pane": {"is": "green", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
 }

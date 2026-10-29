@@ -7,7 +7,10 @@ import { startSteps, type StartStep } from './start'
 // The cases in fixtures/overlap-cases/ (#509): each moved to the start that
 // gives the page and the song apart, and each means the start it meant
 // before — the same pages opened, the same song played, the same line asked,
-// in the same order.
+// in the same order. The three whose start assumed the song took the pane
+// were then given their page: their start only gains steps, and their
+// expect only gains checks (the issue's guard: the measure is only
+// tightened).
 
 const DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'overlap-cases')
 
@@ -42,6 +45,20 @@ const BEFORE: Record<string, OldStart> = {
   '9-pause-said-again': { playing: 'let down by radiohead' },
 }
 
+/** Edited after the move (#509), each with its expect as it stood before: a start that gains steps, an expect that gains checks. */
+const EDITED: Record<string, object> = {
+  '8-split-by-pause': { lines: ['done', 'none'] },
+  '10-own-voice-not-taken': { speech: 'whole', lines: ['running'], nothingElse: true },
+  '10-move-on-while-speaking': { lines: ['cancelled', 'done'] },
+}
+
+/** Whether `part` holds in order inside `whole`. */
+function inOrder(part: readonly StartStep[], whole: readonly StartStep[]): boolean {
+  let at = 0
+  for (const step of whole) if (at < part.length && JSON.stringify(step) === JSON.stringify(part[at])) at += 1
+  return at === part.length
+}
+
 /** What the gate did for an old start (scripts/overlap-gate.ts setUp at a2307806): the URL, then `play`, then the asked line. */
 function stepsBefore(start: OldStart): StartStep[] {
   if ('asked' in start) return [{ open: start.asked.url }, { ask: start.asked.line }]
@@ -61,8 +78,21 @@ describe('the Sequence Cases', () => {
     expect(cases.map((sequence) => sequence.id).sort()).toEqual(Object.keys(BEFORE).sort())
   })
 
-  it.each(Object.keys(BEFORE))('%s means the start it meant before', (id) => {
+  it.each(Object.keys(BEFORE).filter((id) => !(id in EDITED)))('%s means the start it meant before', (id) => {
     const sequence = cases.find((item) => item.id === id)!
     expect(startSteps(sequence.start)).toEqual(stepsBefore(BEFORE[id]!))
+  })
+
+  it.each(Object.keys(EDITED))('%s gained its page: every step it took before, in order, and more', (id) => {
+    const sequence = cases.find((item) => item.id === id)!
+    const steps = startSteps(sequence.start)
+    expect(inOrder(stepsBefore(BEFORE[id]!), steps)).toBe(true)
+    expect(steps.length).toBeGreaterThan(stepsBefore(BEFORE[id]!).length)
+  })
+
+  it.each(Object.keys(EDITED))('%s only gained checks', (id) => {
+    const sequence = cases.find((item) => item.id === id)!
+    expect(sequence.expect).toMatchObject(EDITED[id]!)
+    expect(Object.keys(sequence.expect).length).toBeGreaterThan(Object.keys(EDITED[id]!).length)
   })
 })

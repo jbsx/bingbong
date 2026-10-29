@@ -1,5 +1,8 @@
 {
   "start": {
+    "page": {
+      "url": "https://en.wikipedia.org/wiki/Alan_Turing"
+    },
     "music": "let down by radiohead"
   },
   "input": "spoken",
@@ -22,10 +25,21 @@
     "lines": [
       "cancelled",
       "done"
+    ],
+    "media": {
+      "playing": true,
+      "has": "let down"
+    },
+    "said": [
+      {
+        "is": "Stopped."
+      }
     ]
   },
   "evidence": [
-    "turn-mvplpcok-v17"
+    "turn-mvplpcok-v17",
+    "owner's ruling, #509 grill (note 4112916965): 'Move on.' over a read with music playing ends the read; the song plays on, and the app says it stopped",
+    "the read page (#509 guard: from a real line): cli-10-mvjkuljs, 2026-10-22, a read of https://en.wikipedia.org/wiki/Alan_Turing in the asks log (.claude/jobs/537b836c/tmp/bb-live-UoSumb/logs), the one read of a prose article in any asks log; the owner's own reads with music in the room (kiosk, 2026-10-26: turn-mvp2yn8g-vg, turn-mvplpj0i-v1a) were all of the song's watch page, which the audio road does not show"
   ],
   "state": {"pane": {"is": "red", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
 }

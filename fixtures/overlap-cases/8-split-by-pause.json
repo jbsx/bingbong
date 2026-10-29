@@ -1,7 +1,10 @@
 {
   "start": {
     "page": {
-      "url": "https://duckduckgo.com/"
+      "url": "https://en.wikipedia.org/wiki/Radiohead",
+      "behind": [
+        "https://duckduckgo.com/"
+      ]
     },
     "music": "iraada niyam"
   },
@@ -28,10 +31,14 @@
     "lines": [
       "done",
       "none"
-    ]
+    ],
+    "url": {
+      "is": "https://duckduckgo.com/"
+    }
   },
   "evidence": [
-    "turn-mvphypmf-vk"
+    "turn-mvphypmf-vk",
+    "#509: the start's page to go back to came free while the song took the pane; on the audio road it is given (page A duckduckgo.com behind page B), and 'Back to page.' taken as one Command goes back to A"
   ],
   "state": {"pane": {"is": "green", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
 }
