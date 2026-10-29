@@ -8,6 +8,5 @@
   "meant": "Most likely: start or resume the song; the line should at least not be read as reopening the page",
   "log": "decision-1792691664816-1.jsonl",
   "claimedBy": "#508",
-  "fixedBy": "34adc568",
   "case": "overlap-4-resume-at-2200ms"
 }

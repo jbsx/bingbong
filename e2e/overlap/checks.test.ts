@@ -102,6 +102,13 @@ describe('a sentence said against the media heard (#508)', () => {
     expect(await checkEnd({}, playing('Radiohead - Let Down - YouTube', ['Stopped reading alan turing.']), neverJudged)).toBeNull()
     expect(await checkEnd({}, { ...playing('Kanye West - Highs and Lows - YouTube', ['Stopped playing highs and lows by Kanye West.']), media: [] }, neverJudged)).toBeNull()
     expect(await checkEnd({}, playing('Radiohead - Creep - YouTube', ['Stopped playing radiohead.', 'Playing “Creep”.']), neverJudged)).toBeNull()
+    // A stop of a page names a host or a search, never what plays.
+    expect(await checkEnd({}, playing('YE - HIGHS AND LOWS - YouTube', ['Stopped opening youtube.com.']), neverJudged)).toBeNull()
+    expect(await checkEnd({}, playing('Back in Black - YouTube', ['Stopped going back.']), neverJudged)).toBeNull()
+  })
+
+  it('a bare stop after a play’s stop does not hide it', async () => {
+    expect(await checkEnd({}, playing('YE - HIGHS AND LOWS - YouTube', ['Stopped playing highs and lows by Kanye West.', 'Stopped.']), neverJudged)).not.toBeNull()
   })
 })
 

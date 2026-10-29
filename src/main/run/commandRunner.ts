@@ -1404,8 +1404,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean): Command | null {
     const local = localMatch(text, refs, knownAddress)
-    return local?.verb === 'resume' && running && deps.applianceCard !== undefined && isRealPage(browser.state().url) ? null : local
+    return mootResume(local, running) ? null : local
   }
+
+  /** A `resume` that reopens nothing, given over a running line with the card on (#508): no exact line, the card's to read. */
+  const mootResume = (command: Command | null, running: boolean): boolean => command?.verb === 'resume' && running && deps.applianceCard !== undefined && !resumeReopens()
+
+  /** Whether `resume` reopens the Last Page (CONTEXT.md): only a pane on no page, after a restart, has one to reopen. */
+  const resumeReopens = (): boolean => !isRealPage(browser.state().url)
 
   /** The page card's object on the Status Capsule (#485): the host of the page open, or "the page". */
   function pageObject(): string {
@@ -3245,7 +3251,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // An exact Player line (#343) is the grammar's: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
     // A `resume` that reopens nothing over a running line (#508) is read against it at its Endpoint, on the card.
-    if (quick !== null && exactOf(words, [], runningBefore(submitted + 1) !== null) === null) return null
+    if (mootResume(quick, runningBefore(submitted + 1) !== null)) return null
     const dismissed = await dismissPage(words, quick, prepared)
     if (stale()) return null
     // A dismiss phrase over a pop-up waits for its Endpoint, where the Dismissal Ladder is read with Jev's choice on it and walked rung by rung.

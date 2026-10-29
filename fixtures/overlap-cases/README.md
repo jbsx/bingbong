@@ -141,10 +141,11 @@ last line.
   reads every sentence said. It is the one check that is not exact: a
   sentence whose words the app writes itself is checked on its shape.
 - On every case, whatever its `expect`: a stop said of what still plays is
-  red (#508). The last "Stopped <what it was doing>." said, with no "Playing
-  …" after it, whose words (the doing word and "by" aside) are at least half
-  in the title of media playing at the end, is the app saying it stopped a
-  song a person still hears. A bare "Stopped." names nothing and is never
+  red (#508). A play's stop, "Stopped playing …" or "Stopped queueing …",
+  with no "Playing …" after it, whose words (the doing word and "by" aside)
+  are at least half in the title of media playing at the end, is the app
+  saying it stopped a song a person still hears. A bare "Stopped." and the
+  stop of a page ("Stopped opening youtube.com.") name no song and are never
   held against the media.
 - `speech`: `whole` says no sentence the app began was cut: none ended
   sooner than nine tenths of the time it takes said whole (the app's own

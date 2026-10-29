@@ -106,19 +106,20 @@ const wordsOf = (text: string): string[] => text.toLowerCase().split(/[^\p{L}\p{
 
 /**
  * A stop said of the media that still plays (#508): "Stopped playing highs and lows by Kanye West." while that song is heard.
- * The stop's object, its Acting word and "by" aside, is at least half in the playing media's title (an artist renamed: "YE - HIGHS AND LOWS");
- * a later "Playing …" is a new song, said.
+ * A play's stop (its stage Playing or Queueing) whose object, the stage word and "by" aside, is at least half in a playing media's
+ * title (an artist renamed: "YE - HIGHS AND LOWS"); a later "Playing …" is a new song, said. Any such stop counts, not only the last.
  */
 function stoppedYetPlaying(end: EndState): string | null {
-  const stop = end.said.findLastIndex((sentence) => /^Stopped \S/.test(sentence.trim()))
-  if (stop === -1 || end.said.slice(stop + 1).some((sentence) => sentence.trim().startsWith('Playing'))) return null
-  const said = end.said[stop]!.trim()
-  const object = wordsOf(said).slice(2).filter((word) => word !== 'by')
-  if (object.length === 0) return null
-  for (const media of end.media.filter((item) => item.playing)) {
-    const title = media.title ?? end.title
-    const heard = new Set(wordsOf(`${title} ${media.src}`))
-    if (object.filter((word) => heard.has(word)).length * 2 >= object.length) return `said "${said}" while it plays (${title})`
+  for (const [index, sentence] of end.said.entries()) {
+    const said = sentence.trim()
+    // Only a play's stage names a song (Playing, Queueing): "Stopped opening youtube.com." names a host, never what plays.
+    if (!/^Stopped (playing|queueing) \S/i.test(said) || end.said.slice(index + 1).some((later) => later.trim().startsWith('Playing'))) continue
+    const object = wordsOf(said).slice(2).filter((word) => word !== 'by')
+    for (const media of end.media.filter((item) => item.playing)) {
+      const title = media.title ?? end.title
+      const heard = new Set(wordsOf(title))
+      if (object.filter((word) => heard.has(word)).length * 2 >= object.length) return `said "${said}" while it plays (${title})`
+    }
   }
   return null
 }
