@@ -1587,8 +1587,9 @@ _Avoid_: music app, media player (for the page's own controls), playlist (for th
 **Audio road**:
 Where a song Jev reads as music plays: its bare audio stream, looked up by
 yt-dlp, in an `<audio>` outside the pane, so the pane stays free and the
-Idle Screen up. Taken while **audio-only music** is on in Settings (off
-by default), read at each song; off, every play opens the watch page. A
+Idle Screen up. Taken while **audio-only music** is on in Settings (on
+by default; only an explicit off keeps it off), read at each song; off,
+every play opens the watch page. A
 video, or a road that fails, opens the watch page, shown.
 `BINGBONG_AUDIO_ROAD` names only which yt-dlp runs.
 
