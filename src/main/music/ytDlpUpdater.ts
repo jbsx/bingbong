@@ -1,5 +1,6 @@
+import { execFile, type ExecFileException } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { reportFault } from '../../core/trace/fault'
 import type { AudioStream } from './ytDlp'
@@ -11,7 +12,11 @@ import type { AudioStream } from './ytDlp'
 // where it can replace it without sudo (ruling 1 on #503): the release's
 // SHA2-256SUMS is checked before it is ever run, and a copy is used only
 // once it has passed the self-check; until then the yt-dlp on PATH is. The
-// previous copy is kept, and a copy that fails the self-check is never
+// copy is the release's onedir zip (`yt-dlp_linux.zip`), unpacked into a
+// directory per version: it starts in 617 ms on the kiosk against the
+// onefile binary's 1185 ms, and its lookups are the fastest measured
+// (median 4480 ms vs 5180 ms; the kiosk measure on #503, 2026-10-29). The
+// previous directory is kept, and a copy that fails the self-check is never
 // switched to, or is switched back from (ruling 4). PATH's yt-dlp is still
 // preferred while it is the latest release and passes the self-check: it
 // starts fastest (pipx 182 ms vs the onefile release's 606 ms on dev,
@@ -24,9 +29,37 @@ const RELEASES = 'https://github.com/yt-dlp/yt-dlp/releases'
 /** The latest release's checksums: GitHub redirects to the tag's own, which names the version. */
 const LATEST_SUMS = `${RELEASES}/latest/download/SHA2-256SUMS`
 
-/** The standalone release binary for this machine's architecture; null where yt-dlp ships none, and PATH's is used. */
+/** The release's onedir zip for this machine's architecture; null where yt-dlp ships none, and PATH's is used. */
 export function releaseAsset(arch: string = process.arch): string | null {
-  return arch === 'x64' ? 'yt-dlp_linux' : arch === 'arm64' ? 'yt-dlp_linux_aarch64' : null
+  return arch === 'x64' ? 'yt-dlp_linux.zip' : arch === 'arm64' ? 'yt-dlp_linux_aarch64.zip' : null
+}
+
+/** The executable at the zip's root, beside its `_internal/`: the zip's name without `.zip`. */
+export const executableOf = (asset: string): string => asset.replace(/\.zip$/, '')
+
+/** A release's version as yt-dlp tags it; anything else is not a release, and never names a directory. */
+const VERSION = /^\d{4}\.\d{2}\.\d{2}(\.\d+)?$/
+
+/**
+ * Unpacks a zip into an empty directory with the system's `unzip`, else
+ * `bsdtar` (the kiosk has both, dev only `unzip`). Both refuse a member that
+ * climbs out of the directory, and the zip's checksum is checked before.
+ */
+export async function extractZip(zip: string, into: string): Promise<void> {
+  const tools: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['unzip', ['-q', '-o', zip, '-d', into]],
+    ['bsdtar', ['-xf', zip, '-C', into]],
+  ]
+  let missing: unknown = null
+  for (const [tool, args] of tools) {
+    const [error, stderr] = await new Promise<[ExecFileException | null, string]>((resolve) => execFile(tool, args, { timeout: 120_000 }, (failed, _out, err) => resolve([failed, String(err)])))
+    if (error === null) return
+    // The tool's own first word on it, not the whole of its output.
+    const why = stderr.split('\n').map((line) => line.trim()).find((line) => line !== '' && !line.startsWith('[')) ?? error.message
+    if (error.code !== 'ENOENT') throw new Error(`${tool} could not unpack ${zip}: ${why}`)
+    missing = error
+  }
+  throw new Error(`neither unzip nor bsdtar is installed (${missing instanceof Error ? missing.message : String(missing)})`)
 }
 
 /**
@@ -67,8 +100,10 @@ export interface YtDlpUpdaterDeps {
    * is used. Absent, only the app's copy is considered.
    */
   readonly path?: { readonly binary: string; version(): Promise<string> }
-  /** The release binary's name; `releaseAsset()` by default. */
+  /** The release's zip; `releaseAsset()` by default. */
   readonly asset?: string | null
+  /** Unpacks the checked zip into an empty directory; `extractZip` by default. */
+  extract?(zip: string, into: string): Promise<void>
   now?(): number
   sleep?(ms: number): Promise<void>
 }
@@ -96,7 +131,7 @@ export interface YtDlpUpdater {
   update(reason: UpdateReason): Promise<UpdateOutcome>
 }
 
-/** What the dir holds besides the binaries: which version each is, and the last release rejected. */
+/** What the dir holds besides the copies' directories, each named by its version: which is in use, which is kept, and the last release rejected. */
 interface UpdaterState {
   /** The last run found PATH's yt-dlp current and passing: songs take it over the app's copy. */
   onPath?: boolean
@@ -174,10 +209,12 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
   const asset = deps.asset === undefined ? releaseAsset() : deps.asset
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
-  const current = join(deps.dir, 'yt-dlp')
-  const previous = join(deps.dir, 'yt-dlp.previous')
-  const candidate = join(deps.dir, 'yt-dlp.candidate')
+  const extract = deps.extract ?? extractZip
   const stateFile = join(deps.dir, 'state.json')
+  /** A copy's directory, and the executable in it. */
+  const home = (version: string): string => join(deps.dir, version)
+  const executable = (version: string): string => join(home(version), executableOf(asset ?? ''))
+  const has = (version: string | undefined): version is string => version !== undefined && existsSync(executable(version))
   let running: Promise<UpdateOutcome> | null = null
   let queuedFailure: Promise<UpdateOutcome> | null = null
 
@@ -192,13 +229,21 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     }
   }
   // Read once and held: each song asks for the binary, and no song reads a file for it.
+  // A copy named whose directory is gone (or the first layout's single file) is no copy.
   let held = loadState()
+  if (held.current !== undefined && !has(held.current)) held = { ...(held.onPath === undefined ? {} : { onPath: held.onPath }), ...(held.rejected === undefined ? {} : { rejected: held.rejected }) }
+  else if (held.previous !== undefined && !has(held.previous)) held = { ...held, previous: undefined }
   const readState = (): UpdaterState => held
   /** Written whole or not at all: a crash mid-write leaves the last state, not a torn one. */
   function writeState(state: UpdaterState): void {
     writeFileSync(`${stateFile}.tmp`, `${JSON.stringify(state)}\n`)
     renameSync(`${stateFile}.tmp`, stateFile)
     held = state
+  }
+  /** Everything but the state and the two copies it names goes: a candidate a crash left, a copy rolled back from, the first layout's files. */
+  function prune(): void {
+    const keep = new Set(['state.json', held.current, held.previous])
+    for (const entry of readdirSync(deps.dir)) if (!keep.has(entry)) rmSync(join(deps.dir, entry), { recursive: true, force: true })
   }
   const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
   /** A release that could not be read or fetched: the copy in use stays, and the fault log says why. */
@@ -244,18 +289,13 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
   /** The copy in use, checked again on a resolve failure: failing (or gone), the previous copy if it passes, else PATH's. */
   async function recheckCurrent(state: UpdaterState): Promise<UpdateOutcome | null> {
     if (state.current === undefined) return null
-    const why = await selfCheck(current)
+    const why = await selfCheck(executable(state.current))
     if (why === null) return null
     const from = state.current
-    let to: string | null = null
-    if (state.previous !== undefined && existsSync(previous) && (await selfCheck(previous)) === null) {
-      renameSync(previous, current)
-      to = state.previous
-    } else {
-      rmSync(current, { force: true })
-      rmSync(previous, { force: true })
-    }
+    // Switched back by directory: the previous one becomes the one in use, and the failing one goes.
+    const to = has(state.previous) && (await selfCheck(executable(state.previous))) === null ? state.previous : null
     writeState({ ...(to === null ? {} : { current: to }), rejected: { version: from, at: now() } })
+    prune()
     reportFault('music.player.ytdlp', new Error(`yt-dlp ${from} failed the self-check (${why}): switched back to ${to === null ? "the yt-dlp on PATH" : `yt-dlp ${to}`}`))
     return { kind: 'rolled-back', from, to }
   }
@@ -269,7 +309,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     try {
       const latest = await deps.fetch(LATEST_SUMS, { redirect: 'manual', signal: AbortSignal.timeout(DOWNLOAD_MS) })
       version = releaseTag(latest.headers.get('location') ?? '')
-      if (version === null) throw new Error(`the latest release names no version (${latest.status} from ${LATEST_SUMS})`)
+      if (version === null || !VERSION.test(version)) throw new Error(`the latest release names no version (${latest.status} from ${LATEST_SUMS})`)
     } catch (error) {
       return unavailable(error)
     }
@@ -284,7 +324,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     }
     const recheck = async (outcome: UpdateOutcome): Promise<UpdateOutcome> => (reason === 'failure' ? ((await recheckCurrent(readState())) ?? outcome) : outcome)
     const state = readState()
-    if (state.current === version && existsSync(current)) return recheck({ kind: 'current', version })
+    if (state.current === version && has(version)) return recheck({ kind: 'current', version })
     if (state.rejected?.version === version && now() - state.rejected.at < REJECTED_FOR_MS) return recheck({ kind: 'rejected', version, why: 'it failed the self-check within the day' })
     let sums: string
     try {
@@ -293,9 +333,12 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       return unavailable(error)
     }
 
+    const zip = join(deps.dir, `${version}.zip.part`)
+    const candidate = join(deps.dir, `${version}.candidate`)
     /** Not switched to. A release that failed the self-check is not tried again within the day; a bad download is tried by the next run. */
     const reject = (why: string, remembered = true): Promise<UpdateOutcome> => {
-      rmSync(candidate, { force: true })
+      rmSync(zip, { force: true })
+      rmSync(candidate, { recursive: true, force: true })
       if (remembered) writeState({ ...readState(), rejected: { version, at: now() } })
       reportFault('music.player.ytdlp', new Error(`yt-dlp ${version} is not used: ${why}`))
       return recheck({ kind: 'rejected', version, why })
@@ -309,20 +352,30 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       return unavailable(error)
     }
     if (createHash('sha256').update(bytes).digest('hex') !== expected) return reject(`${asset} does not match its SHA2-256SUMS`, false)
-    writeFileSync(candidate, bytes)
-    chmodSync(candidate, 0o755)
-    const why = await selfCheck(candidate)
+    rmSync(candidate, { recursive: true, force: true })
+    mkdirSync(candidate)
+    writeFileSync(zip, bytes)
+    try {
+      await extract(zip, candidate)
+      chmodSync(join(candidate, executableOf(asset)), 0o755)
+    } catch (error) {
+      return reject(`it could not be unpacked (${message(error)})`, false)
+    } finally {
+      rmSync(zip, { force: true })
+    }
+    const why = await selfCheck(join(candidate, executableOf(asset)))
     if (why !== null) return reject(`it failed the self-check (${why})`)
-    // Passed: the copy in use becomes the previous one, kept for a rollback.
-    if (state.current !== undefined && existsSync(current)) renameSync(current, previous)
-    renameSync(candidate, current)
-    writeState({ current: version, ...(state.current !== undefined ? { previous: state.current } : {}) })
+    // Passed: the copy in use becomes the previous one, kept for a rollback; the one before it goes.
+    rmSync(home(version), { recursive: true, force: true })
+    renameSync(candidate, home(version))
+    writeState({ current: version, ...(has(state.current) ? { previous: state.current } : {}) })
+    prune()
     return { kind: 'updated', version }
   }
 
   const updater: YtDlpUpdater = {
     binary() {
-      return held.onPath !== true && held.current !== undefined ? current : null
+      return held.onPath !== true && held.current !== undefined ? executable(held.current) : null
     },
     update(reason) {
       if (running === null) {

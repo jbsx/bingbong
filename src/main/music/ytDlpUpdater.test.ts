@@ -1,10 +1,11 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
-import { createYtDlpUpdater, SELF_CHECK_RANGE, SELF_CHECK_VIDEO, startYtDlpUpkeep, type UpdateReason, type UpdaterFetch } from './ytDlpUpdater'
+import { createYtDlpUpdater as createUpdater, extractZip, SELF_CHECK_RANGE, SELF_CHECK_VIDEO, startYtDlpUpkeep, type UpdateReason, type UpdaterFetch, type YtDlpUpdaterDeps } from './ytDlpUpdater'
 
 let dir: string
 let faults: FaultReport[]
@@ -16,11 +17,20 @@ beforeEach(() => {
 afterEach(() => {
   setFaultSink(null)
   rmSync(dir, { recursive: true, force: true })
+  rmSync(`${dir}.path`, { recursive: true, force: true })
 })
 
 const sha = (bytes: string): string => createHash('sha256').update(bytes).digest('hex')
 
 const LATEST = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'
+
+/** The fake release's zip holds the executable's contents: unpacking it writes them where the onedir's executable sits. */
+const unpackFake = async (zip: string, into: string): Promise<void> => copyFileSync(zip, join(into, 'yt-dlp_linux'))
+const createYtDlpUpdater = (deps: YtDlpUpdaterDeps) => createUpdater({ asset: 'yt-dlp_linux.zip', extract: unpackFake, ...deps })
+/** The executable of the copy of a version. */
+const copyOf = (version: string): string => join(dir, version, 'yt-dlp_linux')
+/** What the dir holds: the state and one directory per copy kept. */
+const held = (): string[] => readdirSync(dir).sort()
 
 /**
  * GitHub's yt-dlp releases with one latest tag, as GitHub serves them: the
@@ -46,8 +56,8 @@ function world(tag: string, binary = `#!fake yt-dlp ${tag}`) {
     if (url === LATEST) {
       return init?.redirect === 'manual' ? reply(url, 302, '', { location: `${release}/SHA2-256SUMS` }) : reply(asset, 200, '')
     }
-    if (url === `${release}/SHA2-256SUMS`) return reply(asset, 200, state.sums || `${sha(state.binary)}  yt-dlp_linux\n${sha('other')}  yt-dlp.exe\n`)
-    if (url === `${release}/yt-dlp_linux`) return reply(asset, 200, state.binary)
+    if (url === `${release}/SHA2-256SUMS`) return reply(asset, 200, state.sums || `${sha(state.binary)}  yt-dlp_linux.zip\n${sha('other')}  yt-dlp_linux\n`)
+    if (url === `${release}/yt-dlp_linux.zip`) return reply(asset, 200, state.binary)
     if (url.startsWith('https://stream.example/')) {
       const [from, to] = SELF_CHECK_RANGE
       if (state.cut.has(decodeURIComponent(url.slice('https://stream.example/'.length))) || init?.headers?.Range !== `bytes=${from}-${to}`) return reply(url, 403, '')
@@ -116,9 +126,9 @@ describe("the app's own yt-dlp (#503)", () => {
     expect(updater.binary()).toBeNull()
     expect(await updater.update('boot')).toEqual({ kind: 'updated', version: '2026.10.26' })
     expect(looked).toEqual([`#!fake yt-dlp 2026.10.26 ${SELF_CHECK_VIDEO}`])
-    expect(updater.binary()).toBe(join(dir, 'yt-dlp'))
-    expect(readFileSync(join(dir, 'yt-dlp'), 'utf8')).toBe('#!fake yt-dlp 2026.10.26')
-    expect(existsSync(join(dir, 'yt-dlp.candidate'))).toBe(false)
+    expect(updater.binary()).toBe(copyOf('2026.10.26'))
+    expect(readFileSync(copyOf('2026.10.26'), 'utf8')).toBe('#!fake yt-dlp 2026.10.26')
+    expect(held()).toEqual(['2026.10.26', 'state.json'])
   })
 
   it('a release whose stream is cut past 512 KB is never switched to, and the fault log names it', async () => {
@@ -140,13 +150,13 @@ describe("the app's own yt-dlp (#503)", () => {
 
   it('a download that does not match its SHA2-256SUMS is never run', async () => {
     const { fetch, state } = world('2026.10.26')
-    state.sums = `${sha('something else')}  yt-dlp_linux\n`
+    state.sums = `${sha('something else')}  yt-dlp_linux.zip\n`
     const looked: string[] = []
     const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked) })
-    expect(await updater.update('boot')).toMatchObject({ kind: 'rejected', why: 'yt-dlp_linux does not match its SHA2-256SUMS' })
+    expect(await updater.update('boot')).toMatchObject({ kind: 'rejected', why: 'yt-dlp_linux.zip does not match its SHA2-256SUMS' })
     expect(looked).toEqual([])
     expect(updater.binary()).toBeNull()
-    expect(existsSync(join(dir, 'yt-dlp.candidate'))).toBe(false)
+    expect(held()).toEqual([])
   })
 
   it('the latest release already in use is not downloaded again', async () => {
@@ -170,6 +180,7 @@ describe("the app's own yt-dlp (#503)", () => {
     state.cut.add('#!fake yt-dlp 2026.11.02')
     expect(await updater.update('failure')).toEqual({ kind: 'rolled-back', from: '2026.11.02', to: '2026.10.26' })
     expect(readFileSync(updater.binary()!, 'utf8')).toBe('#!fake yt-dlp 2026.10.26')
+    expect(held()).toEqual(['2026.10.26', 'state.json'])
     expect(faults).toEqual([expect.objectContaining({ site: 'music.player.ytdlp', message: expect.stringMatching(/yt-dlp 2026\.11\.02 failed the self-check .*switched back to yt-dlp 2026\.10\.26/) })])
   })
 
@@ -180,6 +191,7 @@ describe("the app's own yt-dlp (#503)", () => {
     state.cut.add('#!fake yt-dlp 2026.10.26')
     expect(await updater.update('failure')).toEqual({ kind: 'rolled-back', from: '2026.10.26', to: null })
     expect(updater.binary()).toBeNull()
+    expect(held()).toEqual(['state.json'])
   })
 
   it('a daily run does not self-check the copy in use: only a resolve failure does', async () => {
@@ -196,7 +208,9 @@ describe("the app's own yt-dlp (#503)", () => {
 
   /** The yt-dlp on PATH, as a file whose contents name its version: the fake lookup reads it as it reads the app's copies. */
   function onPath(version: string) {
-    const binary = join(dir, `path-yt-dlp`)
+    // Outside the updater's dir, as PATH's is: the dir holds only what the updater keeps.
+    mkdirSync(`${dir}.path`, { recursive: true })
+    const binary = join(`${dir}.path`, 'yt-dlp')
     writeFileSync(binary, `#!fake yt-dlp ${version}`)
     return { binary, version: async () => readFileSync(binary, 'utf8').split(' ').at(-1)! }
   }
@@ -216,7 +230,7 @@ describe("the app's own yt-dlp (#503)", () => {
     const looked: string[] = []
     const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked), path: onPath('2026.10.26') })
     expect(await updater.update('daily')).toEqual({ kind: 'updated', version: '2026.11.02' })
-    expect(updater.binary()).toBe(join(dir, 'yt-dlp'))
+    expect(updater.binary()).toBe(copyOf('2026.11.02'))
     expect(looked).toEqual([`#!fake yt-dlp 2026.11.02 ${SELF_CHECK_VIDEO}`])
   })
 
@@ -226,7 +240,7 @@ describe("the app's own yt-dlp (#503)", () => {
     state.cut.add('#!fake yt-dlp 2026.10.26')
     const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]), path })
     expect(await updater.update('boot')).toEqual({ kind: 'updated', version: '2026.10.26' })
-    expect(updater.binary()).toBe(join(dir, 'yt-dlp'))
+    expect(updater.binary()).toBe(copyOf('2026.10.26'))
     state.cut.clear()
     expect(await updater.update('daily')).toEqual({ kind: 'path', version: '2026.10.26' })
     expect(updater.binary()).toBeNull()
@@ -254,7 +268,7 @@ describe("the app's own yt-dlp (#503)", () => {
 
   it('a download that failed its checksum is downloaded again by the next run: a bad download is not a bad release', async () => {
     const { fetch, state, fetched } = world('2026.10.26')
-    state.sums = `${sha('something else')}  yt-dlp_linux\n`
+    state.sums = `${sha('something else')}  yt-dlp_linux.zip\n`
     const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]) })
     await updater.update('boot')
     state.sums = ''
@@ -292,6 +306,52 @@ describe("the app's own yt-dlp (#503)", () => {
     expect(slept).toEqual([3_200])
   })
 
+  it('keeps two directories, the copy in use and the previous one: the one before goes', async () => {
+    const { fetch, state } = world('2026.10.20')
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]) })
+    for (const tag of ['2026.10.20', '2026.10.26', '2026.11.02']) {
+      state.tag = tag
+      state.binary = `#!fake yt-dlp ${tag}`
+      expect(await updater.update('daily')).toEqual({ kind: 'updated', version: tag })
+    }
+    expect(held()).toEqual(['2026.10.26', '2026.11.02', 'state.json'])
+    expect(JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8'))).toEqual({ current: '2026.11.02', previous: '2026.10.26' })
+  })
+
+  it('a zip that cannot be unpacked is never run, and is downloaded again by the next run', async () => {
+    const { fetch } = world('2026.10.26')
+    const looked: string[] = []
+    let broken = true
+    const extract = async (zip: string, into: string): Promise<void> => {
+      if (broken) throw new Error('unzip: bad zipfile offset')
+      await unpackFake(zip, into)
+    }
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked), extract })
+    expect(await updater.update('boot')).toMatchObject({ kind: 'rejected', why: 'it could not be unpacked (unzip: bad zipfile offset)' })
+    expect(looked).toEqual([])
+    expect(held()).toEqual([])
+    broken = false
+    expect(await updater.update('daily')).toEqual({ kind: 'updated', version: '2026.10.26' })
+  })
+
+  it("the first layout's single file is no copy: PATH's is used until a run unpacks one, and the file goes", async () => {
+    writeFileSync(join(dir, 'yt-dlp'), '#!fake yt-dlp 2026.10.26')
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({ current: '2026.10.26' }))
+    const { fetch } = world('2026.10.26')
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]) })
+    expect(updater.binary()).toBeNull()
+    expect(await updater.update('boot')).toEqual({ kind: 'updated', version: '2026.10.26' })
+    expect(held()).toEqual(['2026.10.26', 'state.json'])
+  })
+
+  it('a latest release whose tag is not a version is not read as one, and names no directory', async () => {
+    const location = 'https://github.com/yt-dlp/yt-dlp/releases/download/../SHA2-256SUMS'
+    const fetch = (async (url: string) => ({ ok: false, status: 302, url, headers: new Headers({ location }), text: async () => '', arrayBuffer: async () => new ArrayBuffer(0) })) as UpdaterFetch
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]) })
+    expect(await updater.update('boot')).toMatchObject({ kind: 'unavailable' })
+    expect(held()).toEqual([])
+  })
+
   it('with the road off, nothing is downloaded or run', async () => {
     const fetched: string[] = []
     const looked: string[] = []
@@ -311,5 +371,34 @@ describe("the app's own yt-dlp (#503)", () => {
     expect(fetched).toEqual([])
     expect(looked).toEqual([])
     expect(updater.binary()).toBeNull()
+  })
+})
+
+const hasZip = ((): boolean => {
+  try {
+    execFileSync('zip', ['-v'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
+describe.skipIf(!hasZip)("unpacking the release's onedir zip (#503)", () => {
+  it('unpacks the executable beside its _internal/, with its mode', async () => {
+    const source = join(dir, 'source')
+    mkdirSync(join(source, '_internal'), { recursive: true })
+    writeFileSync(join(source, 'yt-dlp_linux'), '#!/bin/sh\n', { mode: 0o755 })
+    writeFileSync(join(source, '_internal', 'base_library.zip'), 'x')
+    execFileSync('zip', ['-qr', join(dir, 'release.zip'), '.'], { cwd: source })
+    mkdirSync(join(dir, 'into'))
+    await extractZip(join(dir, 'release.zip'), join(dir, 'into'))
+    expect(readdirSync(join(dir, 'into')).sort()).toEqual(['_internal', 'yt-dlp_linux'])
+    expect(statSync(join(dir, 'into', 'yt-dlp_linux')).mode & 0o111).not.toBe(0)
+  })
+
+  it('a zip that is not one is refused, not half unpacked', async () => {
+    writeFileSync(join(dir, 'release.zip'), 'not a zip')
+    mkdirSync(join(dir, 'into'))
+    await expect(extractZip(join(dir, 'release.zip'), join(dir, 'into'))).rejects.toThrow(/could not unpack/)
   })
 })
