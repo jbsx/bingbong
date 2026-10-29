@@ -46,7 +46,7 @@ const DOWNLOAD_MS = 5 * 60_000
 const REJECTED_FOR_MS = 24 * 60 * 60_000
 
 /** The slice of `fetch` the updater uses: a fake in the tests. */
-export type UpdaterFetch = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<Pick<Response, 'ok' | 'status' | 'url' | 'headers' | 'text' | 'arrayBuffer'>>
+export type UpdaterFetch = (url: string, init?: { headers?: Record<string, string>; redirect?: 'follow' | 'manual'; signal?: AbortSignal }) => Promise<Pick<Response, 'ok' | 'status' | 'url' | 'headers' | 'text' | 'arrayBuffer'>>
 
 export interface YtDlpUpdaterDeps {
   /** Where the app's copies live: userData's `yt-dlp/`. */
@@ -227,20 +227,26 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     if (asset === null) return { kind: 'unavailable', why: `yt-dlp ships no standalone binary for ${process.arch}` }
     mkdirSync(deps.dir, { recursive: true })
     const state = readState()
-    let sums: string
+    // The latest's version is in GitHub's first redirect, to the tag's own checksums; the next one goes to an asset host that names none.
     let version: string | null
     try {
-      const response = await fetchOk(LATEST_SUMS)
-      version = releaseTag(response.url)
-      sums = await response.text()
+      const latest = await deps.fetch(LATEST_SUMS, { redirect: 'manual', signal: AbortSignal.timeout(DOWNLOAD_MS) })
+      version = releaseTag(latest.headers.get('location') ?? '')
+      if (version === null) throw new Error(`the latest release names no version (${latest.status} from ${LATEST_SUMS})`)
     } catch (error) {
       reportFault('music.player.ytdlp', error)
       return { kind: 'unavailable', why: error instanceof Error ? error.message : String(error) }
     }
-    if (version === null) return { kind: 'unavailable', why: 'the latest release names no version' }
     const recheck = async (outcome: UpdateOutcome): Promise<UpdateOutcome> => (reason === 'failure' ? ((await recheckCurrent(readState())) ?? outcome) : outcome)
     if (state.current === version && existsSync(current)) return recheck({ kind: 'current', version })
     if (state.rejected?.version === version && now() - state.rejected.at < REJECTED_FOR_MS) return recheck({ kind: 'rejected', version, why: 'it failed the self-check within the day' })
+    let sums: string
+    try {
+      sums = await (await fetchOk(`${RELEASES}/download/${version}/SHA2-256SUMS`)).text()
+    } catch (error) {
+      reportFault('music.player.ytdlp', error)
+      return { kind: 'unavailable', why: error instanceof Error ? error.message : String(error) }
+    }
 
     const reject = (why: string): Promise<UpdateOutcome> => {
       rmSync(candidate, { force: true })

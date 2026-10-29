@@ -20,7 +20,14 @@ afterEach(() => {
 
 const sha = (bytes: string): string => createHash('sha256').update(bytes).digest('hex')
 
-/** GitHub's yt-dlp releases with one latest tag, and the stream a lookup names: a 206 of the whole range, unless cut. */
+const LATEST = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'
+
+/**
+ * GitHub's yt-dlp releases with one latest tag, as GitHub serves them: the
+ * latest's checksums redirect to the tag's, which redirect again to an asset
+ * host that names no tag. And the stream a lookup names: a 206 of the whole
+ * range, unless cut.
+ */
 function world(tag: string, binary = `#!fake yt-dlp ${tag}`) {
   const fetched: string[] = []
   const state = { tag, binary, sums: '', cut: new Set<string>() }
@@ -32,13 +39,15 @@ function world(tag: string, binary = `#!fake yt-dlp ${tag}`) {
     text: async () => body,
     arrayBuffer: async () => new TextEncoder().encode(body).buffer,
   })
-  const fetch = (async (url: string, init?: { headers?: Record<string, string> }) => {
+  const fetch = (async (url: string, init?: { headers?: Record<string, string>; redirect?: string }) => {
     fetched.push(url)
     const release = `https://github.com/yt-dlp/yt-dlp/releases/download/${state.tag}`
-    if (url === 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS') {
-      return reply(`${release}/SHA2-256SUMS`, 200, state.sums || `${sha(state.binary)}  yt-dlp_linux\n${sha('other')}  yt-dlp.exe\n`)
+    const asset = 'https://release-assets.githubusercontent.com/github-production-release-asset/1/abc'
+    if (url === LATEST) {
+      return init?.redirect === 'manual' ? reply(url, 302, '', { location: `${release}/SHA2-256SUMS` }) : reply(asset, 200, '')
     }
-    if (url === `${release}/yt-dlp_linux`) return reply(url, 200, state.binary)
+    if (url === `${release}/SHA2-256SUMS`) return reply(asset, 200, state.sums || `${sha(state.binary)}  yt-dlp_linux\n${sha('other')}  yt-dlp.exe\n`)
+    if (url === `${release}/yt-dlp_linux`) return reply(asset, 200, state.binary)
     if (url.startsWith('https://stream.example/')) {
       const [from, to] = SELF_CHECK_RANGE
       if (state.cut.has(decodeURIComponent(url.slice('https://stream.example/'.length))) || init?.headers?.Range !== `bytes=${from}-${to}`) return reply(url, 403, '')
@@ -126,7 +135,7 @@ describe("the app's own yt-dlp (#503)", () => {
     // Not tried again within the day: nothing more is downloaded.
     fetched.length = 0
     expect(await updater.update('daily')).toMatchObject({ kind: 'rejected', version: '2026.11.02' })
-    expect(fetched).toEqual(['https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'])
+    expect(fetched).toEqual([LATEST])
   })
 
   it('a download that does not match its SHA2-256SUMS is never run', async () => {
@@ -146,7 +155,7 @@ describe("the app's own yt-dlp (#503)", () => {
     await updater.update('boot')
     fetched.length = 0
     expect(await updater.update('daily')).toEqual({ kind: 'current', version: '2026.10.26' })
-    expect(fetched).toEqual(['https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'])
+    expect(fetched).toEqual([LATEST])
   })
 
   it('a copy in use that fails the self-check after a resolve failure is switched back from, to the previous copy', async () => {
