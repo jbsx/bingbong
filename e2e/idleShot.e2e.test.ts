@@ -136,7 +136,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-shot-'))
     await writeFile(
       join(userDataDir, 'settings.json'),
-      JSON.stringify({ weather: { city: weatherCity, units: 'metric' }, usageDashboard: usage.settings, weight: TWO_PEOPLE }),
+      JSON.stringify({ weather: { city: weatherCity, units: 'metric' }, usageDashboard: usage.settings, weight: TWO_PEOPLE, audioOnlyMusic: false }),
       'utf8',
     )
     await writeFile(join(userDataDir, 'repos.json'), `${JSON.stringify(topRepos())}\n`, 'utf8')

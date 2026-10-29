@@ -119,7 +119,9 @@ export const YOUTUBE_FIXTURE_NOTHING = 'nothing at all'
 /** The results page, its `ytInitialData` assigned with `var` as YouTube's own is: a fetched page (`queue <words>`) is parsed for that, a shown one read off `window`. */
 function youtubeResultsPage(words: string): string {
   const { id, title } = youtubeFixtureSong(words)
-  const videos = words.toLowerCase() === YOUTUBE_FIXTURE_NOTHING ? [] : [{ videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } } } }]
+  // The fixture song's result names its channel, as YouTube's do (#502): Now Playing names it before any watch page is read.
+  const owner = id === YOUTUBE_FIXTURE_SONG.id ? { ownerText: { runs: [{ text: YOUTUBE_FIXTURE_SONG.channel }] } } : {}
+  const videos = words.toLowerCase() === YOUTUBE_FIXTURE_NOTHING ? [] : [{ videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } }, ...owner } }]
   const data = {
     contents: {
       twoColumnSearchResultsRenderer: {

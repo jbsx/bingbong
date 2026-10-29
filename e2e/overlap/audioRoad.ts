@@ -5,7 +5,8 @@
 // run writes its road into its fresh profile, off as plainly as on, since a
 // profile that names none takes the road (78aed4f0). Every read takes the
 // surface's media, each named by the song the surface plays, and the song's
-// title the dashboard shows beside the pane's text in view, whichever road.
+// line the dashboard shows Now Playing, its title and channel (#502), beside
+// the pane's text in view, whichever road.
 
 import type { MediaState, PaneSample } from './timeline.ts'
 
@@ -37,8 +38,8 @@ export interface RoadRead {
 
 /**
  * The pane read with the road's: the surface's media after the pane's, each
- * carrying the song's title, and the Now Playing title the dashboard shows
- * after the text in view. No road read leaves the pane's read as it was.
+ * carrying the song's title, and the Now Playing line the dashboard shows
+ * (title and channel) after the text in view. No road read leaves the pane's read as it was.
  */
 export function withRoad<P extends Omit<PaneSample, 't'>>(pane: P, road: RoadRead | undefined, nowPlaying: string | undefined): P {
   const shown = nowPlaying?.trim() ?? ''

@@ -17,7 +17,8 @@ import { waitFor } from './waitFor'
 // and the wait is narrated on the Status Capsule — "finding the audio for
 // “Fixture Song”", its seconds counting — while the pane stays where it
 // was; a refused lookup says the watch page opens instead, and the Answer
-// says where the song plays. Each start's road is in the perf log.
+// says where the song plays. Each start's road is in the perf log, and on
+// both roads the Toolbar's Now Playing names the song and its channel.
 
 const PLAY = 'play fixture song'
 /** How long the scripted lookup takes: long enough for the Capsule to be read counting its seconds. */
@@ -55,6 +56,10 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
   const mediaStarts = async (): Promise<{ road?: string; lookup?: number | null; served?: number | null; fallback?: boolean; started?: boolean }[]> =>
     (await logLines<{ stage: string; detail?: Record<string, unknown> }>('perf-')).filter((record) => record.stage === 'media-start').map((record) => record.detail ?? {})
   const faces = (): Promise<string[]> => harness.dashboardEval<string[]>('window.__capsuleSeen')
+  /** The Toolbar's Now Playing line, as a person reads it beside the pane (#502). */
+  const songLine = (): Promise<string> =>
+    waitFor(async () => (await harness.dashboardEval<string>(`document.querySelector('.toolbar-song-line')?.textContent ?? ''`)) || undefined, { timeoutMs: 10_000, intervalMs: 250 })
+  const NAMED = `${YOUTUBE_FIXTURE_SONG.title} · ${YOUTUBE_FIXTURE_SONG.channel}`
 
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-road-'))
@@ -97,6 +102,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     expect((await faces()).some((face) => face.includes('finding the audio'))).toBe(false)
     const starts = await waitFor(async () => ((await mediaStarts()).length > 0 ? mediaStarts() : undefined), { timeoutMs: 10_000, intervalMs: 250 })
     expect(starts.at(-1)).toMatchObject({ road: 'page', lookup: null, fallback: false })
+    // Now Playing names the song and its channel beside the pane (#502).
+    expect(await songLine()).toBe(NAMED)
   }, 60_000)
 
   it('turned on in Settings and saved, with no restart: the next play is looked up, its wait named and counted on the Capsule, the pane left alone', async () => {
@@ -143,6 +150,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     expect(start.lookup).toBeGreaterThanOrEqual(LOOKUP_MS - 100)
     // The stream waited until it was served: the element is never handed it early.
     expect(start.served).toBeGreaterThanOrEqual(SERVED_MS - 100)
+    // On the road the pane shows no watch page: Now Playing names the song and its channel, as the page did (#502).
+    expect(await songLine()).toBe(NAMED)
   }, 90_000)
 
   it('a refused lookup is narrated to its end: the watch page instead, on the Capsule, and the Answer says the song plays on its watch page', async () => {

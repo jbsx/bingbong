@@ -304,8 +304,8 @@ const ROAD_SCRIPT = `(() => ({
   title: document.title,
   media: [...document.querySelectorAll('video, audio')].map((m) => ({ playing: !m.paused && !m.ended && m.readyState > 2, src: m.currentSrc || m.src || '', position: m.currentTime, volume: m.muted ? 0 : m.volume, loop: m.loop })),
 }))()`
-/** The song the dashboard's toolbar shows Now Playing. */
-const NOW_PLAYING_SCRIPT = `document.querySelector('.toolbar-song-title')?.textContent ?? ''`
+/** The song the dashboard's toolbar shows Now Playing: its title and its channel (#502), as the line reads. */
+const NOW_PLAYING_SCRIPT = `document.querySelector('.toolbar-song-line')?.textContent ?? ''`
 
 async function readPane(targets: Targets, chars: number): Promise<Omit<PaneSample, 't'>> {
   const read = (await targets.evaluate<Omit<PaneSample, 't'>>('pane', paneScript(chars)).catch(() => undefined)) ?? { url: '(no pane)', title: '', text: '', media: [] }

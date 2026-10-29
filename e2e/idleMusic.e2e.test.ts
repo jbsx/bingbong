@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -48,6 +48,8 @@ describe('idle screen e2e: music over the Idle Screen', () => {
 
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-music-'))
+    // The watch page in the hidden pane is what this suite drives: audio-only music is on by default since 78aed4f0, so the profile is saved with it off (the road is e2e/audioRoad's).
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: false }))
     fixture = await startFixtureServer()
     harness = await startHarness({
       userDataDir,
