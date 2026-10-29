@@ -7,5 +7,6 @@
   "happened": "Audio road, overlap:gate 2-correct-by-coldplay at media-not-started 0% (Jev jev-1.14.0, main 9edadc12): 'no, by coldplay' 713 ms after 'play yellow' was joined and read as play slot 'by coldplay' (s3-4 0.47 over 'yellow … by coldplay' 0.21, slot confidence 0.43); 'Best of Coldplay' played, the card said Playing: nothing",
   "meant": "Yellow by Coldplay plays: the correction keeps the song line 1 asked for",
   "log": "decision-1793273450785-1.jsonl",
+  "claimedBy": "#511",
   "case": "2-correct-by-coldplay"
 }
