@@ -10,7 +10,7 @@
 // kind and in the top frame only (#376).
 
 import { CONSENT_HELD_MARK } from '../browser/collectPageScript'
-import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, MARK_SEEK_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SEEK_MARK, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
+import { DUCK_FLOOR_FN, DUCK_MARK, HEARD_VOLUME_FN, MARK_SEEK_FN, PAGE_MEDIA_JS, PAUSE_PLAYING_JS, SEEK_MARK, SEEK_SETTLE_MS, SET_HEARD_VOLUME_FN } from '../browser/pageMediaScript'
 
 // The audio road's surface (#502, audioSurface.ts) answers the same
 // scripts: its page holds the bare stream's `<audio>` in a `#movie_player`
@@ -85,9 +85,10 @@ export interface WatchStatus {
  * lapse before the next read, and a count of reads lapses when custody's
  * settle reads twice inside it. A stalled poll does not stretch it: in
  * impl505-full p1 the next read came 3,550 ms after the seek and took a
- * consent sheet's pause for the seek's.
+ * consent sheet's pause for the seek's. One settle for the Player and a
+ * media ref (#506): the page's own, imported, never a copy.
  */
-export const SEEK_SETTLE_MS = 2_000
+export { SEEK_SETTLE_MS }
 
 /** Reads the player response's `loudnessDb` and the player's remembered level: `loudnessOf(player)`, `playerVolumeOf(player)`, null when there is none. */
 const LOUDNESS_READER = `const loudnessOf = (player) => {
