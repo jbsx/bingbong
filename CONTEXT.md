@@ -689,7 +689,11 @@ _Avoid_: relation, interruption type, supersede
 A black-box fixture: what is in front of the person, lines with their
 times (a millisecond, a window, or a point the person could see or hear),
 optional noise, and the end state a person could observe. It never names a
-reading or a mechanism. An Overlap is one kind; a split Utterance, a final
+reading or a mechanism. What is in front of the person is the page shown,
+with the pages behind it, and the song heard, wherever it plays. A run that
+cannot put its start in front of the person has its **start not met**: it
+measures nothing and is never counted red; a case is through when it is
+green on every road that can hold its start (#509). An Overlap is one kind; a split Utterance, a final
 that differs from its partial, and noise during a Task are others. Run by
 `pnpm overlap:gate`; `fixtures/overlap-cases/`.
 _Avoid_: scenario (that word is the Yield list's), script, flow
