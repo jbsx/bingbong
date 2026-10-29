@@ -32,5 +32,5 @@
     "the orchestrator's ruling on #490's eighth-pass note (4105662279): 'The new stop case (a person's \"stop\" over a read whose text holds \"Stop\" later) expects the stop to FIRE by either road, the direct abort or the runner's read; a stop that stopped the read is green.' The Feed's lines differ by road (cancelled by the abort; cancelled, done by the runner's read), so the case checks only that it stopped and said so",
     "the orchestrator's ruling on #496 (2026-10-28, F3's commit): the expected said is the exact sentence 'Stopped.' (src/core/command/answer.ts STOPPED_ANSWERS.stopped), never a meaning the judge can read from the article's own stop words: at 6e0279eb the run of record's p2 and p3 were false greens, the Page Read's 'not a full stop' and 'Stop the Clocks' credited as 'it stopped reading'"
   ],
-  "state": {"pane": {"is": "red", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
+  "state": {"pane": {"is": "red", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}, "audio": {"is": "red", "on": "d6fae94a", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
 }

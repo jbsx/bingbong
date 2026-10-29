@@ -24,5 +24,5 @@
     "turn-mvp8m1th-3",
     "turn-mvphvwa2-1"
   ],
-  "state": {"pane": {"is": "green", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
+  "state": {"pane": {"is": "green", "on": "d6fae94a", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "green", "on": "d6fae94a", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
 }

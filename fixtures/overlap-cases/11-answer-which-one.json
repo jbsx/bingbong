@@ -12,5 +12,5 @@
     "lines": ["done"]
   },
   "evidence": ["none yet"],
-  "state": {"pane": {"is": "green", "on": "6588a8b1", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
+  "state": {"pane": {"is": "green", "on": "0042b090", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "green", "on": "0042b090", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
 }
