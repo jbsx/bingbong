@@ -19,3 +19,16 @@ export function audioRoadBinary(env: Record<string, string | undefined>): string
   const value = env[AUDIO_ROAD_ENV]?.trim() ?? ''
   return value === '' || /^(on|off|1|0|true|false|yes|no)$/i.test(value) ? YT_DLP : value
 }
+
+/** Turns off the app's own yt-dlp (#503): the e2e harness sets it, so no launch downloads a build. */
+export const YT_DLP_UPDATE_ENV = 'BINGBONG_YTDLP_UPDATE'
+
+/**
+ * Whether the app keeps its own yt-dlp current (#503) while the road's
+ * setting is on: not where the env names a build (that build is the
+ * owner's pin), nor where it turns the updater off.
+ */
+export function appYtDlpKept(env: Record<string, string | undefined>): boolean {
+  if (/^(off|0|false|no)$/i.test(env[YT_DLP_UPDATE_ENV]?.trim() ?? '')) return false
+  return audioRoadBinary(env) === YT_DLP
+}

@@ -303,6 +303,8 @@ function buildEnv(
     BINGBONG_USER_DATA_DIR: userDataDir,
     // A screenshot run never sounds on the speakers (muteOffScreen).
     BINGBONG_MUTE_AUDIO: '1',
+    // Nor downloads the app's own yt-dlp (#503).
+    BINGBONG_YTDLP_UPDATE: 'off',
     BINGBONG_LLM_SCRIPT: llmScript,
     BINGBONG_PIPER_BIN: tts.piperBin,
     BINGBONG_PIPER_VOICE_DIR: tts.voicesDir,

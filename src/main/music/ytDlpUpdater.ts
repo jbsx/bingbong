@@ -155,10 +155,13 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
   const stateFile = join(deps.dir, 'state.json')
   let running: Promise<UpdateOutcome> | null = null
 
+  /** No state yet is no copy; a state that cannot be read is no copy either, and PATH's is used until the next run writes one. */
   function readState(): UpdaterState {
+    if (!existsSync(stateFile)) return {}
     try {
       return JSON.parse(readFileSync(stateFile, 'utf8')) as UpdaterState
-    } catch {
+    } catch (error) {
+      reportFault('music.player.ytdlp', error)
       return {}
     }
   }

@@ -104,6 +104,8 @@ export async function launchApp({
       DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(userDataDir, 'no-session-bus')}`,
       // Every launch dims on a scripted monitor, never a real one over DDC/CI: no display unless a test scripts one.
       BINGBONG_DDC_SCRIPT: JSON.stringify({ log: join(userDataDir, 'ddc-calls.log') }),
+      // Every launch's audio road runs the yt-dlp on PATH: no launch downloads the app's own copy (#503).
+      BINGBONG_YTDLP_UPDATE: 'off',
       ELECTRON_OZONE_PLATFORM_HINT: 'x11',
       WAYLAND_DISPLAY: undefined,
       XDG_SESSION_TYPE: 'x11',

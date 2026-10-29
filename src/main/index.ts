@@ -95,7 +95,8 @@ import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { createAudioSurface, withAudioRoadMedia } from './music/audioSurface'
 import { resolveAudioStream } from './music/ytDlp'
-import { audioRoadBinary } from '../core/music/audioRoad'
+import { appYtDlpKept, audioRoadBinary } from '../core/music/audioRoad'
+import { createYtDlpUpdater, startYtDlpUpkeep } from './music/ytDlpUpdater'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
 import { createDucking, duckInTurn } from '../core/music/ducking'
@@ -321,8 +322,14 @@ const voiceConfig = resolveVoiceConfig(bootEnv, { userDataDir: app.getPath('user
 // The cloud ear chosen with no key (#463): Parakeet hears, and Settings › Environment says why, as the host checks say theirs.
 const earFindings: HostFinding[] = voiceConfig.earUnarmed !== undefined ? [{ check: 'ear', message: voiceConfig.earUnarmed }] : []
 for (const finding of earFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
+// The app's own yt-dlp (#503), kept in userData behind the road's own setting: off, nothing is downloaded or run. A build
+// the env names is the owner's pin and is never replaced. Each song takes the copy that last passed the self-check, else PATH's.
+const ytDlpUpdater = appYtDlpKept(process.env)
+  ? createYtDlpUpdater({ dir: join(app.getPath('userData'), 'yt-dlp'), on: () => settingsStore.get().audioOnlyMusic, fetch: (url, init) => fetch(url, init), lookup: resolveAudioStream })
+  : null
+const audioRoadYtDlp = (): string => ytDlpUpdater?.binary() ?? audioRoadBinary(process.env)
 // The audio road's yt-dlp (#502): missing, Settings says so beside the audio-only music toggle; the fault log only while it is on.
-const ytDlpFindings = checkYtDlp(audioRoadBinary(process.env), (bin) => findOnPath(bin, process.env.PATH ?? ''))
+const ytDlpFindings = checkYtDlp(audioRoadYtDlp(), (bin) => findOnPath(bin, process.env.PATH ?? ''))
 if (settingsStore.get().audioOnlyMusic) for (const finding of ytDlpFindings) reportFault(`app.hostChecks.${finding.check}`, finding.message)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
@@ -341,6 +348,10 @@ let onBootReady: () => void = () => {}
 const bootReady = new Promise<void>((resolve) => {
   onBootReady = resolve
 })
+// The app's yt-dlp is updated in the background once the app is ready, then daily, and on a song's resolve failure at most
+// hourly (ruling 2 on #503): never on a Command's path, so no line waits on it.
+const ytDlpUpkeep = ytDlpUpdater === null ? null : startYtDlpUpkeep(ytDlpUpdater, bootReady)
+app.on('will-quit', () => ytDlpUpkeep?.stop())
 const wakeLoads = wakeConfig.engine === 'node' && wakeConfig.wakeScript === undefined
 // What the cold ear waits for (#442), said on the screen until each is in.
 const earLoads = { ...voiceLoads(voiceConfig), wake: wakeLoads }
@@ -587,8 +598,12 @@ async function createWindow(): Promise<BrowserWindow> {
   if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
   // The audio road (#502), behind the audio-only music setting, read at each song: a song Jev reads as music plays its
   // bare stream outside the pane. The surface's window is made on the road's first song, so a road never taken costs nothing.
-  const audioBinary = audioRoadBinary(process.env)
   const audioSurface = createAudioSurface()
+  // A stream refused (403), as a stale yt-dlp's were past their first 512 KB (2026-10-28), is a resolve failure (#503): the
+  // song itself goes on as it does today, and the updater runs at most hourly. The surface's own session sees only its streams.
+  session.fromPartition('bingbong-audio').webRequest.onCompleted({ urls: ['*://*.googlevideo.com/*'] }, (details) => {
+    if (details.statusCode === 403) ytDlpUpkeep?.failed()
+  })
   onWindowClosed(win, audioSurface.destroy)
   // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {
@@ -599,7 +614,11 @@ async function createWindow(): Promise<BrowserWindow> {
     propose: (term) => {
       learnedTermsStore.propose(term)
     },
-  }, paneCustody, perfTracer, { surface: audioSurface, resolve: (id) => resolveAudioStream(audioBinary, id), on: () => settingsStore.get().audioOnlyMusic })
+  }, paneCustody, perfTracer, { surface: audioSurface, resolve: (id) =>
+      resolveAudioStream(audioRoadYtDlp(), id).catch((error: unknown) => {
+        ytDlpUpkeep?.failed()
+        throw error
+      }), on: () => settingsStore.get().audioOnlyMusic })
   onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))
