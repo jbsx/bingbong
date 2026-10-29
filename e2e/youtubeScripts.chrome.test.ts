@@ -105,12 +105,13 @@ describe.skipIf(!canDriveChrome)('a seek of a playing element is marked, and the
   const song = "document.querySelector('#song')"
   const op = (action: object): Promise<unknown> => fixtures.chrome.evaluate(`${APPLY_MEDIA_OP_FN}(${song}, ${JSON.stringify(action)})`)
   const seeked = async (): Promise<number | null> => (await fixtures.chrome.evaluate<WatchStatus>(WATCH_SCRIPT)).seekAgeMs
+  /** The Player's poll watches the document, as it does live: a seek's pause here is the Player's to play on (#506). */
+  const watched = async (): Promise<void> => void (await fixtures.chrome.evaluate<WatchStatus>(WATCH_SCRIPT))
   async function playing(): Promise<void> {
     await fixtures.open('/player')
     await fixtures.chrome.evaluate(`${song}.play()`)
     await until(() => fixtures.chrome.evaluate<boolean>(`!${song}.paused && ${song}.seekable.length > 0`), 'the song to play')
-    // The Player's poll watches the document, as it does live: a seek's pause here is the Player's to play on (#506).
-    expect(await seeked()).toBeNull()
+    await watched()
   }
 
   it('a Media Op seek the page pauses after: read once, then taken', async () => {
@@ -134,6 +135,13 @@ describe.skipIf(!canDriveChrome)('a seek of a playing element is marked, and the
     await op({ op: 'pause' })
     expect(await seeked()).toBeNull()
     await op({ op: 'forward', seconds: 5 })
+    expect(await seeked()).toBeNull()
+  })
+
+  it('an idle stop after the seek takes the mark off: the stop is no seek’s pause (#506)', async () => {
+    await playing()
+    await op({ op: 'forward', seconds: 5 })
+    expect(await fixtures.chrome.evaluate<PausedAll>(PAUSE_ALL_SCRIPT)).toMatchObject({ paused: 1 })
     expect(await seeked()).toBeNull()
   })
 

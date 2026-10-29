@@ -14,22 +14,27 @@ import { silentWav } from './fixtureServer.ts'
 // Media Op's seek of the playing element — on its ref, or the Appliance
 // Card's by kind — is played on once from where it landed; a pause asked
 // after the seek, or an element paused before it, stays paused; the op's
-// own outcome is said at once, unchanged. A document the Player's poll
-// watches is left to the Player (#505).
+// own outcome is said at once, unchanged. The element the Player's poll
+// reads, `#movie_player`'s on a document it watches, is left to it (#505).
 
 const CLIP = `data:audio/wav;base64,${silentWav(60).toString('base64')}`
 
 /** The page pauses its clip this long after each seek while `window.pauseOnSeek` holds. */
 const PAGE_PAUSE_MS = 300
 
-const PAGES: Record<string, string> = {
-  '/clip': `<body style="margin:0"><video id="clip" src="${CLIP}" title="News Clip" muted controls style="display:block;width:320px;height:180px"></video>
-<script>
+const VIDEO = `<video id="clip" src="${CLIP}" title="News Clip" muted controls style="display:block;width:320px;height:180px"></video>`
+
+const PAGE_PAUSES = `<script>
   const clip = document.getElementById('clip')
   window.pauseOnSeek = false
   window.pagePauses = []
   clip.addEventListener('seeked', () => { if (window.pauseOnSeek) setTimeout(() => { window.pagePauses.push(performance.now()); clip.pause() }, ${PAGE_PAUSE_MS}) })
-</script></body>`,
+</script>`
+
+const PAGES: Record<string, string> = {
+  '/clip': `<body style="margin:0">${VIDEO}${PAGE_PAUSES}</body>`,
+  // The Player's own element, as its poll reads it: `#movie_player`'s.
+  '/watched': `<body style="margin:0"><div id="movie_player">${VIDEO}</div>${PAGE_PAUSES}</body>`,
 }
 
 describe.skipIf(!canDriveChrome)('a seek the page pauses after is played on once, by kind, with no Player (#506)', { timeout: 20_000 }, () => {
@@ -62,8 +67,8 @@ describe.skipIf(!canDriveChrome)('a seek the page pauses after is played on once
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
   /** The clip open and playing past `from` seconds; its media ref. */
-  async function playing(from = 20): Promise<number> {
-    await fixtures.open('/clip')
+  async function playing(from = 20, path = '/clip'): Promise<number> {
+    await fixtures.open(path)
     await fixtures.chrome.evaluate(`(${clip}.currentTime = ${from}, ${clip}.play())`)
     await until(() => fixtures.chrome.evaluate<boolean>(`!${clip}.paused && !${clip}.seeking && ${clip}.seekable.length > 0`), 'the clip to play')
     // The setup's own seek has landed; the page pauses on every seek from here.
@@ -72,11 +77,11 @@ describe.skipIf(!canDriveChrome)('a seek the page pauses after is played on once
     return (await controller.collectPage()).refs.find((ref) => ref.kind === 'media')!.ref
   }
 
-  /** The op on the ref, said before the page pauses: the line never waits on the settle. */
+  /** The op on the ref, said at once: the line never waits on the settle. */
   async function seek(ref: number, op: MediaOpAction): Promise<string> {
     const from = Date.now()
     const outcome = await controller.mediaOp(ref, op)
-    expect(Date.now() - from).toBeLessThan(PAGE_PAUSE_MS)
+    expect(Date.now() - from).toBeLessThan(SEEK_SETTLE_MS / 2)
     return outcome
   }
 
@@ -174,11 +179,19 @@ describe.skipIf(!canDriveChrome)('a seek the page pauses after is played on once
     await playsOnFrom(30)
   })
 
-  it("a document the Player's poll watches is left to the Player", async () => {
-    const ref = await playing()
+  it("the element the Player's poll reads is left to the Player", async () => {
+    const ref = await playing(20, '/watched')
     await fixtures.chrome.evaluate('window.__bingbongPlayer = { ended: null, endedId: null }')
     await seek(ref, { op: 'forward', seconds: 10 })
     await sleep(SEEK_SETTLE_MS + 500)
+    expect(await fixtures.chrome.evaluate<number>('window.pagePauses.length')).toBe(1)
     expect(await paused()).toBe(true)
+  })
+
+  it("other media on a document the Player's poll watches is played on: the poll reads only its own", async () => {
+    const ref = await playing()
+    await fixtures.chrome.evaluate('window.__bingbongPlayer = { ended: null, endedId: null }')
+    await seek(ref, { op: 'forward', seconds: 10 })
+    await playsOnFrom(30)
   })
 })

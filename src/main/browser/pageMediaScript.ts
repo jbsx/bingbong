@@ -22,10 +22,10 @@ export const DUCK_MARK = '__bingbongDuck'
 /**
  * The Seek Mark (#505): the property a seek leaves on an element that was
  * playing as it seeked, `{ at }` — the page's `performance.now()` at the seek. A
- * seek that leaves its element paused is resumed once, the Player's poll
- * reading the mark, or on a document it does not watch the element's own
- * pause (#506); a `pause`, `play` or stop on the element takes it off, so
- * a pause asked after the seek is never undone. Set by kind by every seek, a
+ * seek that leaves its element paused is resumed once: by the Player's poll
+ * where it watches the document, and elsewhere by a listener on the
+ * element's own pause (#506). A `pause`, `play` or stop on the element takes
+ * the mark off, so a pause asked after the seek is never undone. Set by kind by every seek, a
  * Media Op's and the Player's own.
  */
 export const SEEK_MARK = '__bingbongSeekedPlaying'
@@ -46,10 +46,16 @@ export const MARK_SEEK_FN = `((el, op, playing) => {
 })`
 
 /**
- * A JS function source `(el)` (#506): a seek the Seek Mark marked, on a
- * document the Player's poll does not watch (`__bingbongPlayer`, #505's),
- * is played on once should the element pause within the settle, by the
- * mark's own clock — one `pause` listener on the element, gone at its
+ * A JS function source `(el) => boolean`: the element is one the Player's
+ * poll reads (#505) — `#movie_player`'s, on a document the poll watches
+ * (`__bingbongPlayer`). Its seek's pause is the Player's to play on.
+ */
+const PLAYER_READS_FN = `((el) => Boolean(window.__bingbongPlayer) && el.closest('#movie_player') !== null)`
+
+/**
+ * A JS function source `(el)` (#506): a seek the Seek Mark marked, on an
+ * element the Player's poll does not read, is played on once should the
+ * element pause within the settle, by the mark's own clock — one `pause` listener on the element, gone at its
  * first pause or when the settle lapses. A pause, play or stop after the
  * seek took the mark off before the event comes, a later seek put its own
  * on, and an element at its end is the end's: each holds. Measured against
@@ -58,12 +64,13 @@ export const MARK_SEEK_FN = `((el, op, playing) => {
  */
 export const PLAY_ON_SEEK_PAUSE_FN = `((el) => {
   const mark = el.${SEEK_MARK}
-  if (!mark || window.__bingbongPlayer) return
+  const playerReads = ${PLAYER_READS_FN}
+  if (!mark || playerReads(el)) return
   let timer = 0
   const onPause = () => {
     el.removeEventListener('pause', onPause)
     clearTimeout(timer)
-    if (el.${SEEK_MARK} !== mark || performance.now() - mark.at > ${SEEK_SETTLE_MS} || window.__bingbongPlayer || el.ended) return
+    if (el.${SEEK_MARK} !== mark || performance.now() - mark.at > ${SEEK_SETTLE_MS} || playerReads(el) || el.ended) return
     delete el.${SEEK_MARK}
     el.play().catch(() => {})
   }
