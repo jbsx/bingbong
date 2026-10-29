@@ -1883,7 +1883,7 @@ describe('the audio road', () => {
     }
     const starts: PlayerStart[] = []
     const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async (ms) => void (wall += ms), now: () => wall, wallNow: () => wall, audio: { surface: audio.surface, resolve: audio.resolve }, onStart: (start) => starts.push(start) })
-    return { ...pane, audio, player, loadedAt, starts, perform: (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true) }
+    return { ...pane, audio, player, loadedAt, starts, wall: () => wall, perform: (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true) }
   }
 
   it('the stream is handed to the element only once YouTube serves it: never refused for being early', async () => {
@@ -2147,6 +2147,28 @@ describe('the audio road', () => {
       { kind: 'served', song: expect.objectContaining(song), since, until: since + 2_700 + 250 },
     ])
     expect(cards).toEqual([...told, null])
+  })
+
+  // The kiosk's lookups take 7–9 s, past the stream's `available_at` (2026-10-29: served 0 in 4 of 5): "Starting" counts from now, not from a time gone.
+  it('a stream already served when its lookup returns starts its count at 0s', async () => {
+    const { player, perform } = withServedAudio(-3_000)
+    const cards: (SongWait | null)[] = []
+    player.onSongWait((wait) => cards.push(wait))
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    const since = 1_793_237_540_000
+    expect(cards.find((wait) => wait?.kind === 'served')).toMatchObject({ since, until: since })
+  })
+
+  // On the kiosk the card closed with the song 1.5–1.6 s in (2026-10-29): the start's proof of play, not its first sound.
+  it('ends the wait at the song’s first sound, not once its start is proved', async () => {
+    const { player, perform, loadedAt, wall } = withServedAudio(0)
+    let endedAt: number | null = null
+    player.onSongWait((wait) => {
+      if (wait === null) endedAt = wall()
+    })
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    // A start is proved by 1.5 s of play (PLAYED_S): the first sound is the first read past the load.
+    expect(endedAt! - loadedAt[0]!).toBeLessThan(1_500)
   })
 
   it('a searched play’s wait begins as it fires, naming the words until the search picks the song, on one clock (#507 review: the Receipt)', async () => {

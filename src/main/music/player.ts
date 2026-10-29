@@ -868,8 +868,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       reportFault('music.player.served', new Error(`the stream for ${song.id} is served only in ${Math.round(servedInMs)} ms`))
       return false
     }
-    // When it sounds is known now (#507): the Wait Card and the Capsule count down to it.
-    if (servedAt !== null) waitFor('served', song, current, background, servedAt)
+    // When it sounds is known now (#507): the Wait Card and the Capsule count down to it — or, served already
+    // (the kiosk's lookups run past `available_at`), "Starting" counts from now, never from a time gone.
+    if (servedAt !== null) waitFor('served', song, current, background, Math.max(servedAt, wallNow()))
     // Bound on the monotonic clock too: a wall clock stepped back must not stretch the wait.
     const waited = now()
     while (servedAt !== null && wallNow() < servedAt && now() - waited < SERVED_WAIT_MS) {
@@ -992,6 +993,8 @@ export function createPlayer(deps: PlayerDeps): Player {
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
       const playing = last !== null && !last.ad && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
       since = playing ? (since ?? last!.time) : null
+      // The song sounds (#507): the Wait Card closes now, not once the start is proved.
+      if (playing) waitEnded(current)
       const started = playing && last!.time - since! >= PLAYED_S
       // Playing at the bound, it has a start's play longer to show it is one.
       const due = elapsed(read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)

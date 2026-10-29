@@ -1165,13 +1165,14 @@ describe('the Player (#343)', () => {
 
   it('every Loading of the wait carries the wait itself (#507): the Capsule says the Wait Card’s words, counting down once the stream’s served time is known', async () => {
     const { audio, events, runner } = music({ audio: true })
-    // Served a second ago: the road hands it over at once, and still tells when.
+    // Served a second ago: the road hands it over at once, and still tells it — "Starting" from now, not from a time gone.
     const servedAt = Date.now() - 1_000
     audio!.servedAt = () => servedAt
     await runner.run('play bohemian rhapsody')
     const waits = events.flatMap((event) => (event.type === 'status' && event.wait !== undefined ? [event.wait] : []))
     expect(waits.map((wait) => wait.kind)).toEqual(['lookup', 'lookup', 'served'])
-    expect(waits[2]).toMatchObject({ kind: 'served', song: { id: 'fJ9rUzIMcZQ', title: QUEEN }, since: waits[0]!.since, until: servedAt + 250 })
+    expect(waits[2]).toMatchObject({ kind: 'served', song: { id: 'fJ9rUzIMcZQ', title: QUEEN }, since: waits[0]!.since })
+    expect(waits[2]!.kind === 'served' && waits[2]!.until).toBeGreaterThanOrEqual(servedAt + 1_000)
     expect(loadingDetails(events)).toEqual([`finding the audio for “bohemian rhapsody”`, `finding the audio for “${QUEEN}”`, `the audio for “${QUEEN}”`])
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
   })
