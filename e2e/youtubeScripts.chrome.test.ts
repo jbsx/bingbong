@@ -109,6 +109,8 @@ describe.skipIf(!canDriveChrome)('a seek of a playing element is marked, and the
     await fixtures.open('/player')
     await fixtures.chrome.evaluate(`${song}.play()`)
     await until(() => fixtures.chrome.evaluate<boolean>(`!${song}.paused && ${song}.seekable.length > 0`), 'the song to play')
+    // The Player's poll watches the document, as it does live: a seek's pause here is the Player's to play on (#506).
+    expect(await seeked()).toBeNull()
   }
 
   it('a Media Op seek the page pauses after: read once, then taken', async () => {

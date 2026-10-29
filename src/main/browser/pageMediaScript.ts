@@ -23,17 +23,52 @@ export const DUCK_MARK = '__bingbongDuck'
  * The Seek Mark (#505): the property a seek leaves on an element that was
  * playing as it seeked, `{ at }` — the page's `performance.now()` at the seek. A
  * seek that leaves its element paused is resumed once, the Player's poll
- * reading the mark; a `pause` or `play` on the element takes it off, so a
- * pause asked after the seek is never undone. Set by kind by every seek, a
+ * reading the mark, or on a document it does not watch the element's own
+ * pause (#506); a `pause`, `play` or stop on the element takes it off, so
+ * a pause asked after the seek is never undone. Set by kind by every seek, a
  * Media Op's and the Player's own.
  */
 export const SEEK_MARK = '__bingbongSeekedPlaying'
+
+/**
+ * How long after a seek a pause counts as the seek's (#505, as measured; a
+ * media ref's, #506): the page paused the element ~260–400 ms after the
+ * seek in the runs that showed it, never later than 2 s. The Player's poll
+ * reads the same window (`youtubeScripts`' copy, held equal by test).
+ */
+export const SEEK_SETTLE_MS = 2_000
 
 /** A JS function source `(el, op, playing)`: a seek (`forward`, `back`, `restart`, `seek`) marks the element if it was playing, unmarks it if not; a `pause` or `play` unmarks it; other ops leave it be. */
 export const MARK_SEEK_FN = `((el, op, playing) => {
   const seek = op === 'forward' || op === 'back' || op === 'restart' || op === 'seek'
   if (seek && playing) el.${SEEK_MARK} = { at: performance.now() }
   else if (seek || op === 'pause' || op === 'play') delete el.${SEEK_MARK}
+})`
+
+/**
+ * A JS function source `(el)` (#506): a seek the Seek Mark marked, on a
+ * document the Player's poll does not watch (`__bingbongPlayer`, #505's),
+ * is played on once should the element pause within the settle, by the
+ * mark's own clock — one `pause` listener on the element, gone at its
+ * first pause or when the settle lapses. A pause, play or stop after the
+ * seek took the mark off before the event comes, a later seek put its own
+ * on, and an element at its end is the end's: each holds. Measured against
+ * a read the settle after the op (#506 note 4115730987): the element sat
+ * paused 1 ms here, 1.7 s there.
+ */
+export const PLAY_ON_SEEK_PAUSE_FN = `((el) => {
+  const mark = el.${SEEK_MARK}
+  if (!mark || window.__bingbongPlayer) return
+  let timer = 0
+  const onPause = () => {
+    el.removeEventListener('pause', onPause)
+    clearTimeout(timer)
+    if (el.${SEEK_MARK} !== mark || performance.now() - mark.at > ${SEEK_SETTLE_MS} || window.__bingbongPlayer || el.ended) return
+    delete el.${SEEK_MARK}
+    el.play().catch(() => {})
+  }
+  el.addEventListener('pause', onPause)
+  timer = setTimeout(() => el.removeEventListener('pause', onPause), ${SEEK_SETTLE_MS})
 })`
 
 /** A JS function source `(el) => 0–1`: the element's volume as heard once no duck holds it — the level a duck puts back, else its own. */
@@ -162,10 +197,13 @@ export const PAGE_MEDIA_JS = `(() => {
   return media.find((candidate) => !candidate.paused && !candidate.ended) || media.find((candidate) => candidate.currentTime > 0) || null
 })()`
 
-/** A JS expression pausing every media element playing in its document (#376), yielding those it paused. */
+/** A JS expression pausing every media element playing in its document (#376), yielding those it paused. A stop takes each one's Seek Mark off (#506): it holds. */
 export const PAUSE_PLAYING_JS = `(() => {
   const playing = Array.from(document.querySelectorAll(${MEDIA_SELECTOR})).filter((media) => !media.paused)
-  for (const media of playing) media.pause()
+  for (const media of playing) {
+    delete media.${SEEK_MARK}
+    media.pause()
+  }
   return playing
 })()`
 
@@ -207,8 +245,10 @@ export const APPLY_MEDIA_OP_FN = `((el, op) => {
     }
     case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
   }
-  // A seek of a playing element is marked (#505): if it leaves the element paused, the Player plays it once.
-  ${MARK_SEEK_FN}(el, op.op, !before.paused)
+  // A seek of a playing element is marked (#505): if it leaves the element paused, it is played once — by the Player's poll on a document it watches, else by the element's own pause (#506).
+  // The semicolon keeps the next call off this line's.
+  ${MARK_SEEK_FN}(el, op.op, !before.paused);
+  ${PLAY_ON_SEEK_PAUSE_FN}(el)
   // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
   return { before, after: facts(el) }
 })`
