@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { nowPlayingView, thumbnailUrl, type NowPlaying } from '../../core/music/nowPlaying'
+import { SongLine } from './SongLine'
 import { LoopIcon, MusicIcon } from './WeatherIcon'
 
 type Form = 'full' | 'small'
@@ -92,8 +93,8 @@ function Controls({ toggle, glyph, form, skippable }: { toggle: 'pause' | 'play'
  * with three moving bars, PAUSED, ENDED, STARTING; LOOP and MUTED when on),
  * the title, the channel and what is queued next — or, ended, how to hear
  * it again — over the elapsed time, the bar, the length and the controls.
- * Small, one row: the picture, the kicker with both times, the title and
- * the bar, the controls. No peach anywhere: music is not Bing Bong
+ * Small, one row: the picture, the kicker with both times, the title with
+ * the channel after it, and the bar, the controls. No peach anywhere: music is not Bing Bong
  * itself. Every control and the picture fire their music verb as a Command
  * on the pointer going down, and keep the Idle Screen up.
  */
@@ -131,7 +132,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
           {thumbnail}
           <span className="idle-music-info">
             {head}
-            <span className="idle-music-title">{view.title}</span>
+            <SongLine song={view} form="row" name="idle-music" />
             {bar}
           </span>
           {controls}
@@ -142,8 +143,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
             {thumbnail}
             <span className="idle-music-info">
               {head}
-              <span className="idle-music-title">{view.title}</span>
-              {nowPlaying.channel !== '' ? <span className="idle-music-channel">{nowPlaying.channel}</span> : null}
+              <SongLine song={view} form="stack" name="idle-music" />
               {state === 'ended' ? (
                 <span className="idle-music-next">Say “play” or tap to hear it again</span>
               ) : view.next.length > 0 ? (

@@ -599,6 +599,41 @@ body {
   }
 }
 
+/* A song named by its title and its channel (#502, SongLine.tsx), wherever
+   a song is shown. A stack leaves its parts to the surface's own column; a
+   row sets them on one line, the title ellipsizing first and the channel
+   kept whole up to twelve of its letters' widths. */
+.song-line--stack {
+  display: contents;
+}
+
+.song-line--row {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.song-line--row .song-line-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-line--row .song-line-dot {
+  flex: none;
+  white-space: pre;
+}
+
+.song-line--row .song-line-channel {
+  flex: none;
+  /* In em: a percentage resolves against a row sized by its own content and cuts a short channel. */
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The Toolbar's widgets (owner ruling 2026-10-19): the running Timer and
    the song Now Playing, right after the capsule in the left group, as tall
    as the hint's line and set like it, unboxed (#453). On a narrow window
@@ -673,6 +708,12 @@ body {
 
 .toolbar-song-title {
   max-width: 16rem;
+}
+
+/* The song's channel after its title (#502): quieter, the title giving way first. */
+.toolbar-song-channel,
+.toolbar-song-line .song-line-dot {
+  color: var(--fg2);
 }
 
 .toolbar-song--quiet,
@@ -3206,6 +3247,19 @@ button.idle-line {
   line-height: 32px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Small, the channel follows the title on its line, at its size, quieter (#502). */
+.idle-music-card--small .idle-music-line {
+  font-size: var(--type-m);
+  line-height: 32px;
+}
+
+.idle-music-card--small .idle-music-channel,
+.idle-music-card--small .idle-music-line .song-line-dot {
+  font-size: var(--type-m);
+  line-height: 32px;
+  color: var(--fg2);
 }
 
 .idle-music-channel,

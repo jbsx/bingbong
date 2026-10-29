@@ -3,6 +3,7 @@ import { nowPlayingView, type NowPlaying } from '../../core/music/nowPlaying'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import { ChromeIcon } from './ChromeIcon'
+import { SongLine } from './SongLine'
 
 /**
  * The Toolbar's widgets (owner ruling 2026-10-19), beside the Status
@@ -58,17 +59,19 @@ function TimerWidget({ timer }: { timer: Exclude<TimerState, { status: 'off' }> 
 }
 
 /**
- * The song Now Playing: its title, quieter while paused or ended. Paused
- * keeps its note, dimmed — a pause sign is the action, and read beside
- * the Now Playing card's ▶ it said the opposite (2026-10-22 audit); ended
- * puts a stop sign in the note's place, so the title keeps the room a
- * word would take.
+ * The song Now Playing: its title and its channel (#502), so the artist
+ * is on screen whichever road the song plays on, quieter while paused or
+ * ended. Paused keeps its note, dimmed — a pause sign is the action, and
+ * read beside the Now Playing card's ▶ it said the opposite (2026-10-22
+ * audit); ended puts a stop sign in the note's place, so the title keeps
+ * the room a word would take.
  */
 function SongWidget({ song }: { song: NowPlaying }) {
   const state = song.ended ? 'ended' : song.paused ? 'paused' : null
-  const who = song.channel === '' ? '' : ` · ${song.channel}`
-  // Over an ad (#497) the title line is the wait's, never the song's: Now Playing's own words.
-  const title = nowPlayingView(song).title
+  // Over an ad (#497) the line is the wait's, never the song's: Now Playing's own words.
+  const view = nowPlayingView(song)
+  const { title } = view
+  const who = view.channel === '' ? '' : ` · ${view.channel}`
   return (
     <span
       className={`toolbar-widget toolbar-song${state !== null ? ' toolbar-song--quiet' : ''}`}
@@ -76,7 +79,9 @@ function SongWidget({ song }: { song: NowPlaying }) {
       title={`${title}${who}${state !== null ? ` · ${state}` : ''}`}
     >
       <ChromeIcon name={state === 'ended' ? 'ended' : 'music'} size={22} />
-      <span className="toolbar-widget-text toolbar-song-title">{title}</span>
+      <span className="toolbar-widget-text toolbar-song-text">
+        <SongLine song={view} form="row" name="toolbar-song" />
+      </span>
     </span>
   )
 }

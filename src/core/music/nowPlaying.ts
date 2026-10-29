@@ -10,7 +10,7 @@ export interface NowPlaying {
   /** The YouTube video: the card's thumbnail is `i.ytimg.com/vi/<id>/mqdefault.jpg`. */
   readonly id: string
   readonly title: string
-  /** The channel, as the watch page names it; '' until read. */
+  /** The channel, as the element names it, else as the search result did (#502); '' while neither has. */
   readonly channel: string
   readonly elapsedS: number
   /** Null until the element knows its length. */
@@ -62,11 +62,33 @@ export function clockTime(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
 }
 
+/** A song as the screen names it (#502): its title and its channel, as one line wherever the song is shown. */
+export interface SongLine {
+  readonly title: string
+  /** The channel, '' when none is read or the title already holds it. */
+  readonly channel: string
+}
+
+/** Case and spacing set aside: how a name is looked for in a title. */
+const folded = (text: string): string => text.toLowerCase().replace(/\s+/g, ' ').trim()
+
+/**
+ * The song named by its title and its channel (#502, the orchestrator's
+ * ruling 4115625006): the artist on screen on either road, as the watch
+ * page named it, and a channel the title already holds not repeated.
+ */
+export function songLine(song: { readonly title: string; readonly channel: string }): SongLine {
+  const channel = song.channel.trim()
+  return { title: song.title, channel: channel === '' || folded(song.title).includes(folded(channel)) ? '' : channel }
+}
+
 /** What the Now Playing card (#365) says of a song. */
 export interface NowPlayingView {
   readonly kicker: 'Now playing' | 'Paused' | 'Ended' | 'Starting'
   /** The title line: the song's, or {@link AD_FIRST} while an ad plays before it (#497). */
   readonly title: string
+  /** The channel beside the title ({@link songLine}); '' while an ad plays before it, or when none is read or the title holds it. */
+  readonly channel: string
   /** What is on beside the kicker. */
   readonly flags: readonly ('Loop' | 'Muted')[]
   /** How far the bar is filled, 0–1. */
@@ -89,11 +111,11 @@ export interface NowPlayingView {
 
 /** The card's words, bar and toggle for a song: playing, paused, ended, or starting while its length is unknown — or while an ad plays before it (#497), its title kept off the card until the song itself plays. */
 export function nowPlayingView(nowPlaying: NowPlaying): NowPlayingView {
-  const { channel, paused, loop, muted, ended, queued } = nowPlaying
+  const { paused, loop, muted, ended, queued } = nowPlaying
   const ad = ended ? null : (nowPlaying.ad ?? null)
   // Over an ad the bar and times are the ad's, off its element: the wait is counted by the work itself (ui.md 2).
   const { elapsedS, durationS } = ad ?? nowPlaying
-  const title = ad === null ? nowPlaying.title : AD_FIRST
+  const { title, channel } = ad === null ? songLine(nowPlaying) : { title: AD_FIRST, channel: '' }
   const kicker = ended ? 'Ended' : paused ? 'Paused' : ad !== null || durationS === null ? 'Starting' : 'Now playing'
   const flags: ('Loop' | 'Muted')[] = []
   if (loop) flags.push('Loop')
@@ -101,6 +123,7 @@ export function nowPlayingView(nowPlaying: NowPlaying): NowPlayingView {
   return {
     kicker,
     title,
+    channel,
     flags,
     fraction: ended ? 1 : durationS !== null && durationS > 0 ? Math.min(1, elapsedS / durationS) : 0,
     elapsed: clockTime(ended && durationS !== null ? durationS : elapsedS),

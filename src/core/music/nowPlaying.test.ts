@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nowPlayingView, type NowPlaying } from './nowPlaying'
+import { nowPlayingView, songLine, type NowPlaying } from './nowPlaying'
 
 // What the Now Playing card (#365) says of the Player's state: its kicker,
 // flags, bar, times, the one control that toggles, and its foot.
@@ -22,6 +22,7 @@ describe('nowPlayingView', () => {
     expect(nowPlayingView(SONG)).toEqual({
       kicker: 'Now playing',
       title: 'Bohemian Rhapsody',
+      channel: 'Queen Official',
       flags: [],
       fraction: 159 / 369,
       elapsed: '2:39',
@@ -85,6 +86,7 @@ describe('nowPlayingView over an ad (#497)', () => {
       label: 'An ad first, 0:05 of 2:00',
     })
     expect(JSON.stringify(view)).not.toContain('Bohemian Rhapsody')
+    expect(view.channel).toBe('')
   })
 
   it('an ad whose length is not known yet: a dash for it', () => {
@@ -93,5 +95,26 @@ describe('nowPlayingView over an ad (#497)', () => {
 
   it('no ad: the song’s own title', () => {
     expect(nowPlayingView({ ...SONG, ad: null }).title).toBe('Bohemian Rhapsody')
+  })
+})
+
+describe('songLine (#502): the song named by its title and its channel', () => {
+  it('names both', () => {
+    expect(songLine({ title: 'Let Down (Remastered)', channel: 'Radiohead' })).toEqual({ title: 'Let Down (Remastered)', channel: 'Radiohead' })
+  })
+
+  it('no channel read yet: the title alone', () => {
+    expect(songLine({ title: 'Yellow', channel: '' })).toEqual({ title: 'Yellow', channel: '' })
+    expect(songLine({ title: 'Yellow', channel: '   ' })).toEqual({ title: 'Yellow', channel: '' })
+  })
+
+  it('a channel the title already holds is not repeated, whatever its case and spacing', () => {
+    expect(songLine({ title: 'Coldplay - Yellow (Official Video)', channel: 'Coldplay' }).channel).toBe('')
+    expect(songLine({ title: 'RADIOHEAD  -  Creep', channel: 'Radio Head' }).channel).toBe('Radio Head')
+    expect(songLine({ title: 'radiohead  -  creep', channel: ' Radiohead ' }).channel).toBe('')
+  })
+
+  it('a channel that only holds the title is still named', () => {
+    expect(songLine({ title: 'Yellow', channel: 'Yellow Magic Orchestra' }).channel).toBe('Yellow Magic Orchestra')
   })
 })

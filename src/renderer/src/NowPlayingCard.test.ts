@@ -68,18 +68,37 @@ describe('the Now Playing card', () => {
     expect(html).not.toContain('idle-music-channel')
   })
 
+  it('a channel the title already holds is not repeated (#502), in either form', () => {
+    for (const form of ['full', 'small'] as const) {
+      const html = render({ ...SONG, title: 'Queen Official - Bohemian Rhapsody' }, form)
+      expect(text(html)).toContain('Queen Official - Bohemian Rhapsody')
+      expect(html).not.toContain('idle-music-channel')
+      expect(html).toContain('aria-label="Now playing: Queen Official - Bohemian Rhapsody"')
+    }
+  })
+
+  it('over an ad (#497): neither the title nor the channel, in either form', () => {
+    for (const form of ['full', 'small'] as const) {
+      const html = render({ ...SONG, ad: { elapsedS: 4, durationS: 30, skippable: false } }, form)
+      expect(text(html)).toContain('An ad first')
+      expect(html).not.toContain('Bohemian Rhapsody')
+      expect(html).not.toContain('Queen Official')
+    }
+  })
+
   it('flags LOOP and MUTED beside the kicker while they are on', () => {
     expect(text(render({ ...SONG, loop: true, muted: true }))).toMatch(/Now playing Loop Muted/)
   })
 
-  it('small: the thumbnail, the kicker with the times at its right, the title on one line, the bar and the three controls — no channel, no queue', () => {
+  it('small: the thumbnail, the kicker with the times at its right, the title and its channel on one line, the bar and the three controls — no queue', () => {
     for (const song of [SONG, { ...SONG, paused: true }, { ...SONG, ended: true, queued: [] }]) {
       const html = render(song, 'small')
       expect(html).toContain('idle-music-card--small')
       expect(html).toContain('mqdefault.jpg')
-      expect(text(html)).toContain('Bohemian Rhapsody')
+      // The artist is named on either road (#502): after the title, on its line.
+      expect(text(html)).toContain('Bohemian Rhapsody · Queen Official')
+      expect(html).toContain('song-line--row')
       expect(text(html)).toMatch(/\d:\d\d \/ 5:55/)
-      expect(html).not.toContain('idle-music-channel')
       expect(html).not.toContain('idle-music-next')
       expect(html).toContain('aria-label="Previous"')
       expect(html).toContain('aria-label="Skip"')

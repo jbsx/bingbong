@@ -276,6 +276,21 @@ describe('the Player\'s Now Playing (#344)', () => {
     expect(player.nowPlaying()).toMatchObject({ paused: true, loop: true })
   })
 
+  it('names the channel the search result named until the element names its own (#502)', async () => {
+    const { youtube, player, perform } = wired()
+    youtube.search('let down', videoItem('ddddddddddd', 'Let Down (Remastered)', 'Radiohead'))
+    youtube.watches.set('ddddddddddd', { title: 'Let Down (Remastered)', channel: '' })
+    await perform({ kind: 'search', place: 'now' }, 'let down')
+    expect(player.nowPlaying()).toMatchObject({ title: 'Let Down (Remastered)', channel: 'Radiohead' })
+    // The poll reads no channel off the element: the result's stands.
+    await player.check()
+    expect(player.nowPlaying()?.channel).toBe('Radiohead')
+    // The element names its own: that one is shown.
+    youtube.watches.set('ddddddddddd', { title: 'Let Down (Remastered)', channel: 'Radiohead - Topic' })
+    await player.check()
+    expect(player.nowPlaying()?.channel).toBe('Radiohead - Topic')
+  })
+
   it('says the element muted while it is (#365): by the verb, and by the poll when YouTube mutes it itself', async () => {
     const { youtube, player, perform } = wired()
     await perform({ kind: 'search', place: 'now' }, 'song a')

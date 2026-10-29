@@ -446,7 +446,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     return {
       id: song.id,
       title: song.title,
-      channel: read?.channel ?? '',
+      // The element's own channel once read, else the one the search result named (#502): the artist is on screen from the start, on either road.
+      channel: read?.channel || song.channel || '',
       elapsedS: Math.floor(read?.elapsed ?? 0),
       durationS: read === null || read.duration === null ? null : Math.round(read.duration),
       paused: state.current !== null && state.paused,
