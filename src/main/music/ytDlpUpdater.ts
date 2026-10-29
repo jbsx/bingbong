@@ -154,9 +154,10 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
   const candidate = join(deps.dir, 'yt-dlp.candidate')
   const stateFile = join(deps.dir, 'state.json')
   let running: Promise<UpdateOutcome> | null = null
+  let queuedFailure: Promise<UpdateOutcome> | null = null
 
   /** No state yet is no copy; a state that cannot be read is no copy either, and PATH's is used until the next run writes one. */
-  function readState(): UpdaterState {
+  function loadState(): UpdaterState {
     if (!existsSync(stateFile)) return {}
     try {
       return JSON.parse(readFileSync(stateFile, 'utf8')) as UpdaterState
@@ -165,8 +166,20 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       return {}
     }
   }
+  // Read once and held: each song asks for the binary, and no song reads a file for it.
+  let held = loadState()
+  const readState = (): UpdaterState => held
+  /** Written whole or not at all: a crash mid-write leaves the last state, not a torn one. */
   function writeState(state: UpdaterState): void {
-    writeFileSync(stateFile, `${JSON.stringify(state)}\n`)
+    writeFileSync(`${stateFile}.tmp`, `${JSON.stringify(state)}\n`)
+    renameSync(`${stateFile}.tmp`, stateFile)
+    held = state
+  }
+  const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+  /** A release that could not be read or fetched: the copy in use stays, and the fault log says why. */
+  function unavailable(error: unknown): UpdateOutcome {
+    reportFault('music.player.ytdlp', error)
+    return { kind: 'unavailable', why: message(error) }
   }
 
   /**
@@ -181,7 +194,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     try {
       stream = await deps.lookup(binary, SELF_CHECK_VIDEO, SELF_CHECK_LOOKUP_MS)
     } catch (error) {
-      return `the lookup failed: ${error instanceof Error ? error.message : String(error)}`
+      return `the lookup failed: ${message(error)}`
     }
     // The stream answers 403 until YouTube serves it (#502).
     if (stream.availableAt !== null) await sleep(Math.min(SELF_CHECK_SERVED_MS, Math.max(0, stream.availableAt + 500 - now())))
@@ -193,7 +206,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       if (length !== to - from + 1) return `the stream sent ${length} of bytes ${from}-${to}`
       return null
     } catch (error) {
-      return `the stream's range could not be fetched: ${error instanceof Error ? error.message : String(error)}`
+      return `the stream's range could not be fetched: ${message(error)}`
     }
   }
 
@@ -203,11 +216,11 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     return response
   }
 
-  /** The copy in use, checked again on a resolve failure: failing, the previous copy if it passes, else PATH's. */
+  /** The copy in use, checked again on a resolve failure: failing (or gone), the previous copy if it passes, else PATH's. */
   async function recheckCurrent(state: UpdaterState): Promise<UpdateOutcome | null> {
-    if (state.current === undefined || !existsSync(current)) return null
-    const failed = await selfCheck(current)
-    if (failed === null) return null
+    if (state.current === undefined) return null
+    const why = await selfCheck(current)
+    if (why === null) return null
     const from = state.current
     let to: string | null = null
     if (state.previous !== undefined && existsSync(previous) && (await selfCheck(previous)) === null) {
@@ -218,7 +231,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       rmSync(previous, { force: true })
     }
     writeState({ ...(to === null ? {} : { current: to }), rejected: { version: from, at: now() } })
-    reportFault('music.player.ytdlp', new Error(`yt-dlp ${from} failed the self-check (${failed}): switched back to ${to === null ? "the yt-dlp on PATH" : `yt-dlp ${to}`}`))
+    reportFault('music.player.ytdlp', new Error(`yt-dlp ${from} failed the self-check (${why}): switched back to ${to === null ? "the yt-dlp on PATH" : `yt-dlp ${to}`}`))
     return { kind: 'rolled-back', from, to }
   }
 
@@ -234,8 +247,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
       version = releaseTag(latest.headers.get('location') ?? '')
       if (version === null) throw new Error(`the latest release names no version (${latest.status} from ${LATEST_SUMS})`)
     } catch (error) {
-      reportFault('music.player.ytdlp', error)
-      return { kind: 'unavailable', why: error instanceof Error ? error.message : String(error) }
+      return unavailable(error)
     }
     const recheck = async (outcome: UpdateOutcome): Promise<UpdateOutcome> => (reason === 'failure' ? ((await recheckCurrent(readState())) ?? outcome) : outcome)
     if (state.current === version && existsSync(current)) return recheck({ kind: 'current', version })
@@ -244,13 +256,13 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     try {
       sums = await (await fetchOk(`${RELEASES}/download/${version}/SHA2-256SUMS`)).text()
     } catch (error) {
-      reportFault('music.player.ytdlp', error)
-      return { kind: 'unavailable', why: error instanceof Error ? error.message : String(error) }
+      return unavailable(error)
     }
 
-    const reject = (why: string): Promise<UpdateOutcome> => {
+    /** Not switched to. A release that failed the self-check is not tried again within the day; a bad download is tried by the next run. */
+    const reject = (why: string, remembered = true): Promise<UpdateOutcome> => {
       rmSync(candidate, { force: true })
-      writeState({ ...readState(), rejected: { version, at: now() } })
+      if (remembered) writeState({ ...readState(), rejected: { version, at: now() } })
       reportFault('music.player.ytdlp', new Error(`yt-dlp ${version} is not used: ${why}`))
       return recheck({ kind: 'rejected', version, why })
     }
@@ -260,14 +272,13 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     try {
       bytes = Buffer.from(await (await fetchOk(`${RELEASES}/download/${version}/${asset}`)).arrayBuffer())
     } catch (error) {
-      reportFault('music.player.ytdlp', error)
-      return { kind: 'unavailable', why: error instanceof Error ? error.message : String(error) }
+      return unavailable(error)
     }
-    if (createHash('sha256').update(bytes).digest('hex') !== expected) return reject(`${asset} does not match its SHA2-256SUMS`)
+    if (createHash('sha256').update(bytes).digest('hex') !== expected) return reject(`${asset} does not match its SHA2-256SUMS`, false)
     writeFileSync(candidate, bytes)
     chmodSync(candidate, 0o755)
-    const failed = await selfCheck(candidate)
-    if (failed !== null) return reject(`it failed the self-check (${failed})`)
+    const why = await selfCheck(candidate)
+    if (why !== null) return reject(`it failed the self-check (${why})`)
     // Passed: the copy in use becomes the previous one, kept for a rollback.
     if (state.current !== undefined && existsSync(current)) renameSync(current, previous)
     renameSync(candidate, current)
@@ -275,15 +286,25 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     return { kind: 'updated', version }
   }
 
-  return {
+  const updater: YtDlpUpdater = {
     binary() {
-      return readState().current !== undefined && existsSync(current) ? current : null
+      return held.current !== undefined ? current : null
     },
     update(reason) {
-      running ??= run(reason).finally(() => {
-        running = null
+      if (running === null) {
+        running = run(reason).finally(() => {
+          running = null
+        })
+        return running
+      }
+      // A resolve failure while another run is under way is not lost: the copy in use is checked once that run ends.
+      if (reason !== 'failure') return running
+      queuedFailure ??= running.then(() => {
+        queuedFailure = null
+        return updater.update('failure')
       })
-      return running
+      return queuedFailure
     },
   }
+  return updater
 }

@@ -604,6 +604,10 @@ async function createWindow(): Promise<BrowserWindow> {
   session.fromPartition('bingbong-audio').webRequest.onCompleted({ urls: ['*://*.googlevideo.com/*'] }, (details) => {
     if (details.statusCode === 403) ytDlpUpkeep?.failed()
   })
+  // A stream cut off by the network counts too; one the element itself let go (a stop, a seek, the next song) does not.
+  session.fromPartition('bingbong-audio').webRequest.onErrorOccurred({ urls: ['*://*.googlevideo.com/*'] }, (details) => {
+    if (details.error !== 'net::ERR_ABORTED') ytDlpUpkeep?.failed()
+  })
   onWindowClosed(win, audioSurface.destroy)
   // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {

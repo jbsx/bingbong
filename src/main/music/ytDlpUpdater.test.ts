@@ -194,6 +194,28 @@ describe("the app's own yt-dlp (#503)", () => {
     expect(looked).toHaveLength(1)
   })
 
+  it('a resolve failure during a run is not lost: the copy in use is checked once that run ends', async () => {
+    const { fetch, state } = world('2026.10.26')
+    const looked: string[] = []
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents(looked) })
+    await updater.update('boot')
+    state.cut.add('#!fake yt-dlp 2026.10.26')
+    const daily = updater.update('daily')
+    const failure = updater.update('failure')
+    expect(await daily).toEqual({ kind: 'current', version: '2026.10.26' })
+    expect(await failure).toEqual({ kind: 'rolled-back', from: '2026.10.26', to: null })
+  })
+
+  it('a download that failed its checksum is downloaded again by the next run: a bad download is not a bad release', async () => {
+    const { fetch, state, fetched } = world('2026.10.26')
+    state.sums = `${sha('something else')}  yt-dlp_linux\n`
+    const updater = createYtDlpUpdater({ dir, on: () => true, fetch, lookup: lookupByContents([]) })
+    await updater.update('boot')
+    state.sums = ''
+    fetched.length = 0
+    expect(await updater.update('daily')).toEqual({ kind: 'updated', version: '2026.10.26' })
+  })
+
   it('offline, the copy in use stays and the fault log says why', async () => {
     const updater = createYtDlpUpdater({
       dir,

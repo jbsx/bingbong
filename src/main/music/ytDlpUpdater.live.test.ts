@@ -33,7 +33,9 @@ describe.skipIf(!live)("the app's own yt-dlp, live (#503)", () => {
       return { ok: response.ok, status: response.status, url: response.url, headers: response.headers, text: async () => bytes.toString(), arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer }
     }
     let corruptSha = ''
-    const updater = createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: resolveAudioStream })
+    // A fresh updater after each state written by hand: it reads its state once.
+    const fresh = () => createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: resolveAudioStream })
+    let updater = fresh()
     const log: string[] = []
     const state = (): { current?: string; previous?: string } => JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as { current?: string; previous?: string }
 
@@ -58,6 +60,7 @@ describe.skipIf(!live)("the app's own yt-dlp, live (#503)", () => {
 
     // 3. A corrupt download with the release's own checksums: never run, the copy in use stays.
     writeFileSync(join(dir, 'state.json'), JSON.stringify({ current: '2000.01.01' }))
+    updater = fresh()
     corrupt.on = true
     from = performance.now()
     const bySum = await updater.update('daily')
@@ -67,6 +70,7 @@ describe.skipIf(!live)("the app's own yt-dlp, live (#503)", () => {
 
     // 4. A corrupt candidate whose checksum matches: run, fails the self-check, never switched to.
     writeFileSync(join(dir, 'state.json'), JSON.stringify({ current: '2000.01.01' }))
+    updater = fresh()
     corruptSha = createHash('sha256').update(good.subarray(0, 1024 * 1024)).digest('hex')
     corrupt.matching = true
     from = performance.now()
@@ -80,11 +84,13 @@ describe.skipIf(!live)("the app's own yt-dlp, live (#503)", () => {
     copyFileSync(join(dir, 'yt-dlp'), join(dir, 'yt-dlp.previous'))
     writeFileSync(join(dir, 'yt-dlp'), good.subarray(0, 1024 * 1024))
     writeFileSync(join(dir, 'state.json'), JSON.stringify({ current: version, previous: `${version}-kept` }))
+    updater = fresh()
     from = performance.now()
     const back = await updater.update('failure')
     log.push(`5 corrupt copy in use: ${JSON.stringify(back)} in ${ms(from)} ms`)
     expect(back).toEqual({ kind: 'rolled-back', from: version, to: `${version}-kept` })
     expect(readFileSync(join(dir, 'yt-dlp')).equals(good)).toBe(true)
+    expect(faults.map((fault) => fault.message)).toContainEqual(expect.stringMatching(new RegExp(`^yt-dlp ${version} failed the self-check .*switched back to yt-dlp ${version}-kept$`, 's')))
 
     for (const fault of faults) log.push(`fault ${fault.site}: ${fault.message.slice(0, 220)}`)
     setFaultSink(null)
