@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvtlb2tn-v3",
+  "transcript": "Read the page.",
+  "at": 1793281170681,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "Kiosk A/B on 0.1.4-local.202610291330 (= fb1670b5) with BINGBONG_SPEECH_PLAYER=chromium, 2026-10-29 13:39: the owner talked over this 63 s Page Read (move on, stop, a command); the ear registered 0 speech starts and no wake word for the whole read with the Hot Listen open; the only line after it was 'Stop.' 3 s after the read ended. Same test on aplay at 12:20 registered 11 speech starts and a wake. The echo canceller, now given the app's voice as reference, removed the person with it.",
+  "meant": "The person's lines over the app's voice reach the ear (VAD, wake, Abort Head, STT) while the app's own voice is cancelled",
+  "log": "decision-1793281101413-1.jsonl",
+  "claimedBy": "#512"
+}
