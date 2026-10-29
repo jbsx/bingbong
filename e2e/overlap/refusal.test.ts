@@ -32,25 +32,25 @@ describe('a run refused for credit', () => {
 })
 
 describe('the kept summary and a resume', () => {
-  const head: SummaryHead = { commit: 'abc', seed: 1, points: 3, repeat: 1, audioOnlyMusic: true }
-  const point = { model: 'm', case: '5-independent-volume', point: 2, n: 1, label: 'loading 56%', cell: { verdict: 'green' } as const }
+  const head: SummaryHead = { commit: 'abc', seed: 1, points: 3, repeat: 1, roads: ['audio'] }
+  const point = { road: 'audio' as const, model: 'm', case: '5-independent-volume', point: 2, n: 1, label: 'loading 56%', cell: { verdict: 'green' } as const }
 
   it('skips a point finished on the same commit, model, seed and arm, and runs the refused one again', () => {
     let summary = resumeFrom(null, head)
     if (typeof summary === 'string') throw new Error(summary)
-    summary = withRefused(withFinished(summary, point), { model: 'm', case: '5-independent-volume', point: 3, n: 1, why: 'answered 402' })
+    summary = withRefused(withFinished(summary, point), { road: 'audio', model: 'm', case: '5-independent-volume', point: 3, n: 1, why: 'answered 402' })
     const resumed = resumeFrom(summary, head)
     if (typeof resumed === 'string') throw new Error(resumed)
-    expect(finishedCell(resumed, { model: 'm', case: '5-independent-volume', point: 2, n: 1 })).toEqual({ verdict: 'green' })
-    expect(finishedCell(resumed, { model: 'm', case: '5-independent-volume', point: 3, n: 1 })).toBeUndefined()
-    expect(finishedCell(resumed, { model: 'other', case: '5-independent-volume', point: 2, n: 1 })).toBeUndefined()
+    expect(finishedCell(resumed, { road: 'audio', model: 'm', case: '5-independent-volume', point: 2, n: 1 })).toEqual({ verdict: 'green' })
+    expect(finishedCell(resumed, { road: 'audio', model: 'm', case: '5-independent-volume', point: 3, n: 1 })).toBeUndefined()
+    expect(finishedCell(resumed, { road: 'audio', model: 'other', case: '5-independent-volume', point: 2, n: 1 })).toBeUndefined()
     expect(resumed.refused).toBeNull()
   })
 
   it('never resumes onto another commit, seed or arm', () => {
     const summary = resumeFrom(null, head) as Exclude<ReturnType<typeof resumeFrom>, string>
     expect(typeof resumeFrom(summary, { ...head, commit: 'def' })).toBe('string')
-    expect(typeof resumeFrom(summary, { ...head, audioOnlyMusic: false })).toBe('string')
+    expect(typeof resumeFrom(summary, { ...head, roads: ['pane'] })).toBe('string')
     expect(typeof resumeFrom(summary, { ...head, seed: 2 })).toBe('string')
   })
 

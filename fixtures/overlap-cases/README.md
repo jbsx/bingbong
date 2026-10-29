@@ -33,7 +33,7 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
     "nothingElse": true
   },
   "evidence": ["turn-…"],
-  "state": { "is": "red", "on": "<commit>", "date": "2026-10-27", "models": ["…"] }
+  "state": { "pane": { "is": "red", "on": "<commit>", "date": "2026-10-27", "models": ["…"] }, "audio": { "is": "start not met", … } }
 }
 ```
 
@@ -53,8 +53,17 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
   a person would press it: YouTube's autoplay sometimes never fires on a
   fresh profile. A start that still never comes, or one whose run met a 429
   from the Decision Model's host, is run again, twice at most, and counted
-  under the table. A start still not reached after that is a `wall` whose
-  cell says "start never reached" (below).
+  under the table.
+
+  The start is checked before line 1 (before the line asked, with
+  `asked`): the page shown is `page.url`, at least as many real pages are
+  behind it as `behind` names, and a song is heard, on the pane or the
+  road. A start the run could not put is **`start not met`**, its own
+  result beside red and green: it measured nothing, is never red, and is
+  not counted. A step that never came (a page that never loaded, a song
+  that never played) is run again first; a start that came but is not the
+  case's (on the pane road a song takes the pane, so a page and a song
+  together cannot be held there) is not.
 - **input**: `typed` lines go in the way the Toolbar's box sends them, so a
   line can arrive while the one before it is still running. `spoken` lines
   are heard through the microphone.
@@ -70,9 +79,13 @@ file or more per row; a variant (`pause`, `resume`, a seek) is its own file.
   with its time.
 - **evidence**: the Failed Lines ledger turns the case was drawn from, or
   `["none yet"]`.
-- **state**: `red` or `green` as one full gate run measured it, the commit
-  it ran on, the date and the models. Written by hand; the gate never edits
-  a case. `pnpm overlap:gate --check-state` fails when the table disagrees.
+- **state**: a result for each road the case was run on (`pane`,
+  `audio`): `red`, `green` or `start not met` as one full gate run on that
+  road measured it, the commit it ran on, the date and the models. Written
+  by hand; the gate never edits a case. A case is through when it is green
+  on every road that can hold its start. `pnpm overlap:gate --check-state`
+  fails when a road's table disagrees, or names a road the file has no
+  state for.
 
 ## When a line arrives
 
@@ -98,7 +111,7 @@ app published. A spoken case needs one for every named point, since its
 audio is laid out before the app starts. A typed case needs one only to
 size a `while` span: it sends an `after` line the moment the point is seen,
 and a `while` line that far into the span as it begins. `--keep dir` keeps
-each calibration (`<dir>/<case>/<model>/calibration.json`) and
+each calibration (`<dir>/<road>/<case>/<model>/calibration.json`) and
 `--calibration dir` reuses it. A fixed `ms` needs none.
 
 ## What is checked
@@ -145,17 +158,16 @@ last line.
   a case where the only other sound is the app's own voice, any further
   line was taken from it.
 
-The pane is one. A search or an open from a playing song leaves the song,
-so a case whose line 1 does that checks the URL and the lines, never the
-song: `5-independent-volume`'s "volume down" is through on "Nothing is
-playing.", which is true (#489, F1 arm a). Music that goes on through a
-search is a Yield entry, `missing`, not a case.
+On the pane road the pane is one: a search or an open from a playing song
+leaves the song, so a case whose line 1 does that checks the URL and the
+lines, never the song: `5-independent-volume`'s "volume down" is through
+on "Nothing is playing.", which is true (#489, F1 arm a). On the audio
+road the song plays on through a search (#502).
 
 A **wall** (a page the browser classes a Blocker: a challenge, a network
 block, a sign-in wall, or a page asking a person to prove they are no bot)
 seen before line 2 arrives makes that point `wall`, neither red nor green:
-line 1 never ran far enough for the overlap to be tested. A start never
-reached is the same: the cell is `wall` and says "start never reached".
+line 1 never ran far enough for the overlap to be tested.
 
 ## Audio
 
@@ -200,17 +212,26 @@ its voice is at the microphone. `--keep` keeps what the microphone heard as
 ```
 pnpm overlap:gate [--cases substr,…] [--models id,…] [--repeat N] [--seed N] [--points N]
                   [--keep dir] [--calibration dir] [--planner id] [--check-state] [--with-jev]
+                  [--road pane|audio|both] [--resume]
 ```
+
+`--road` is where a song plays: `audio` (the default, as shipped), `pane`,
+or `both`, one road after the other. Every fresh profile is written its
+road's audio-only music setting, off as plainly as on, so no run reads the
+default; every read takes the road's hidden window and the dashboard's Now
+Playing beside the pane, whichever the road. Both roads are run for an
+issue's final measure and for any change to the Player or the road (owner,
+#509 grill); the audio road alone otherwise.
 
 Every point gets a fresh app on a fresh profile: muted, under Xvfb,
 launched the way the e2e harness launches it, against real pages (rows
 that play go to real YouTube). The Decision Model is each of
 `BINGBONG_GATE_MODELS` (or `--models`), with the Planner on its default
 (`--planner id` sets one). Jev is asked only with `--with-jev`. The report
-has one table per model, case × point, and its footer carries the seed,
+has one table per road and model, case × point, and its footer carries the seed,
 points, repeat, commit and calibrated spans. A red cell names the first
 failed check. `--keep dir` writes each run as
-`<dir>/<case>/<model>/p<point>.json`: the end state, the records, the
+`<dir>/<road>/<case>/<model>/p<point>.json`: the end state, the records, the
 app's logs and its stderr. The gate is not part of `pnpm test`: it needs
 real models and real pages.
 

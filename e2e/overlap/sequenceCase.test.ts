@@ -7,7 +7,7 @@ const typed = {
   lines: [{ words: 'play radiohead' }, { words: 'open the weather', at: { while: 'media-not-started' } }],
   expect: { media: { playing: false }, lines: ['cancelled', 'done'] },
   evidence: ['none yet'],
-  state: { is: 'red', on: 'abc123', date: '2026-10-27', models: ['m'] },
+  state: { pane: { is: 'red', on: 'abc123', date: '2026-10-27', models: ['m'] } },
 }
 
 describe('a Sequence Case read from its file', () => {
@@ -35,6 +35,11 @@ describe('a Sequence Case read from its file', () => {
     expect(readSequenceCase({ ...typed, start: { page: { url: 'https://duckduckgo.com/' }, asked: 'errand open it' } }, '11-x.json')).toMatchObject({ start: { asked: 'errand open it' } })
   })
 
+  it('records a result for each road it was run on, a start not met among them (#509)', () => {
+    const state = { pane: { is: 'start not met', on: 'abc', date: '2026-10-29', models: ['jev'] }, audio: { is: 'green', on: 'abc', date: '2026-10-29', models: ['jev'] } }
+    expect(readSequenceCase({ ...typed, state }, '8-x.json')).toMatchObject({ state })
+  })
+
   it.each([
     ['a file name with no row', typed, 'replace.json', /row/],
     ['a start of no known kind', { ...typed, start: { song: 'x' } }, '1-a.json', /start/],
@@ -52,7 +57,10 @@ describe('a Sequence Case read from its file', () => {
     ['noise in a typed case', { ...typed, noise: [{ audio: 'n.wav', at: { ms: 100 } }] }, '1-a.json', /noise/],
     ['an outcome the Feed never shows', { ...typed, expect: { lines: ['superseded'] } }, '1-a.json', /outcome/],
     ['an empty expect', { ...typed, expect: {} }, '1-a.json', /expect/],
-    ['a state neither red nor green', { ...typed, state: { ...typed.state, is: 'amber' } }, '1-a.json', /state/],
+    ['a state neither red nor green', { ...typed, state: { pane: { ...typed.state.pane, is: 'amber' } } }, '1-a.json', /state/],
+    ['a state with no road', { ...typed, state: typed.state.pane }, '1-a.json', /state/],
+    ['a state on a road that is not one', { ...typed, state: { kitchen: typed.state.pane } }, '1-a.json', /state/],
+    ['a state on no road at all', { ...typed, state: {} }, '1-a.json', /state/],
     ['a position that is not a range', { ...typed, expect: { media: { position: 30 } } }, '1-a.json', /position/],
   ])('refuses %s', (_name, json, file, message) => {
     const read = readSequenceCase(json, file)

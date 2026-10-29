@@ -42,7 +42,7 @@
 // Usage:
 //   pnpm overlap:gate [--cases substr,…] [--models id,…] [--repeat N] [--seed N] [--points N]
 //                     [--keep dir] [--calibration dir] [--planner id] [--check-state] [--with-jev]
-//                     [--audio-only-music] [--resume]
+//                     [--road pane|audio|both] [--resume]
 //
 // With `--keep`, every run is written as it ends and `summary.json` there
 // after every point (e2e/overlap/summary.ts): each point finished, its
@@ -54,12 +54,18 @@
 // seed, points, repeat and arm, the refused point included, and reuses the
 // kept calibrations.
 //
-// `--audio-only-music` (#502) seeds the Settings toggle into each fresh
-// profile, so a song takes the audio road (yt-dlp on PATH, or
-// BINGBONG_AUDIO_ROAD's): the end state then reads the road's hidden window
-// beside the pane, its <audio> named by the song, and the dashboard's Now
-// Playing title in view (e2e/overlap/audioRoad.ts). Without it, every read is
-// the pane's alone.
+// `--road` (#509) is where a song plays: `audio` (the default, as shipped),
+// `pane`, or `both`, one after the other. Each fresh profile is written the
+// road's Settings toggle, off as plainly as on, so no run reads the default
+// (e2e/overlap/audioRoad.ts). Whichever the road, every read takes the road's
+// hidden window beside the pane, its <audio> named by the song, and the
+// dashboard's Now Playing title in view. Each road has its own tables, kept
+// runs (`<keep>/<road>/<case>/<model>/`) and calibrations.
+//
+// The start is checked before line 1 (e2e/overlap/start.ts): the page shown,
+// how many pages are behind it, a song heard on the pane or the road. A start
+// the run could not put is `start not met`: it measured nothing, is never red
+// and is not counted.
 //
 // The models are BINGBONG_GATE_MODELS (or --models), read as jev:gate reads them, each a Decision Model id
 // on the env's BINGBONG_DECISION_* host; --with-jev adds Jev, the default
@@ -77,16 +83,16 @@ import type { CdpClient } from '../e2e/cdpClient.ts'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from '../e2e/electronApp.ts'
 import { checkEnd, firstMediaFrom, lineOutcomes, saidFrom, type EndState } from '../e2e/overlap/checks.ts'
 import { casePoints, describePlaced, type CasePoint, type PlacedTime } from '../e2e/overlap/points.ts'
-import { formatTable, stateDisagreements, through, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
+import { formatTable, measuredOn, stateDisagreements, type CaseRow, type Cell } from '../e2e/overlap/report.ts'
 import { readSequenceCase, type SequenceCase } from '../e2e/overlap/sequenceCase.ts'
-import { startSteps } from '../e2e/overlap/start.ts'
+import { pagesBehind, startSteps, startUnmet } from '../e2e/overlap/start.ts'
 import { paneHeldStill, placeMs, QUIET_MS, SAMPLE_MS, spanBegun, spansOf, stageOpen, wallBefore, type MediaState, type PaneSample, type RunRecords, type Spans } from '../e2e/overlap/timeline.ts'
 import { layoutWav, type WavPiece } from '../e2e/overlap/wavLayout.ts'
 import { openRoom, type Room } from '../e2e/overlap/room.ts'
 import { openSlowHost, SLOW_HOST_ENV_KEY, type SlowHost } from '../e2e/overlap/slowHost.ts'
 import { creditRefusal, logLines } from '../e2e/overlap/refusal.ts'
 import { finishedCell, readSummary, resumeFrom, withFinished, withRefused, writeSummary, SUMMARY_FILE, type Summary } from '../e2e/overlap/summary.ts'
-import { AUDIO_ONLY_MUSIC_SETTINGS, isAudioSurfaceUrl, SETTINGS_FILE, withRoad, type RoadRead } from '../e2e/overlap/audioRoad.ts'
+import { isAudioSurfaceUrl, readRoads, roadSettings, SETTINGS_FILE, withRoad, type Road, type RoadRead } from '../e2e/overlap/audioRoad.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
@@ -121,8 +127,6 @@ const ENDPOINT_MS = 2_500
 const MEDIA_START_MS = 15_000
 const SETUP_BOUND_MS = 60_000
 const SETTLE_MS = 2_000
-/** A start never reached after the reruns is a wall, in these words (orchestrator, 2026-10-27): the case was never put. */
-const START_NOT_REACHED = 'start never reached'
 /** A start's song not playing this long after its line is started by hand. */
 const UNSTARTED_MS = 10_000
 const CDP_BOUND_MS = 15_000
@@ -152,7 +156,17 @@ const calibrationDir = valueOf('--calibration')
 const plannerModel = valueOf('--planner')
 const checkState = args.includes('--check-state')
 const withJev = args.includes('--with-jev')
-const audioOnlyMusic = args.includes('--audio-only-music')
+if (args.includes('--audio-only-music')) {
+  console.error('--audio-only-music is gone: every run writes its road, --road pane|audio|both (default audio)')
+  process.exit(2)
+}
+const roads = readRoads(valueOf('--road'))
+if (typeof roads === 'string') {
+  console.error(roads)
+  process.exit(2)
+}
+/** The road of the runs going now: the outer loop's. */
+let road: Road = roads[0]!
 const resume = args.includes('--resume')
 if (resume && valueOf('--keep') === undefined) {
   console.error('--resume reads the keep dir: pass --keep dir')
@@ -242,7 +256,18 @@ function targetsOf(cdp: CdpClient) {
       throw error
     }
   }
-  return { evaluate, activate }
+  /** The pane's history, as the pane keeps it: what `back` steps through. */
+  async function history(): Promise<{ currentIndex: number; entries: { url: string }[] } | undefined> {
+    const target = await find('pane')
+    if (target === undefined) return undefined
+    let sessionId = sessions.get(target.targetId)
+    if (sessionId === undefined) {
+      sessionId = (await bounded(cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true }), CDP_BOUND_MS, 'attaching')).sessionId
+      sessions.set(target.targetId, sessionId)
+    }
+    return bounded(cdp.send<{ currentIndex: number; entries: { url: string }[] }>('Page.getNavigationHistory', {}, sessionId), CDP_BOUND_MS, 'reading the history')
+  }
+  return { evaluate, activate, history }
 }
 type Targets = ReturnType<typeof targetsOf>
 
@@ -284,8 +309,7 @@ const NOW_PLAYING_SCRIPT = `document.querySelector('.toolbar-song-title')?.textC
 
 async function readPane(targets: Targets, chars: number): Promise<Omit<PaneSample, 't'>> {
   const read = (await targets.evaluate<Omit<PaneSample, 't'>>('pane', paneScript(chars)).catch(() => undefined)) ?? { url: '(no pane)', title: '', text: '', media: [] }
-  if (!audioOnlyMusic) return read
-  // On the audio road a person hears the road's window and sees the song on the dashboard: both read beside the pane.
+  // A person hears the road's window and sees the song on the dashboard: both read beside the pane, whichever the road.
   const road = await targets.evaluate<RoadRead>('audio', ROAD_SCRIPT).catch(() => undefined)
   const nowPlaying = await targets.evaluate<string>('dashboard', NOW_PLAYING_SCRIPT).catch(() => undefined)
   return withRoad(read, road, nowPlaying)
@@ -324,7 +348,7 @@ const slowHostOn = process.env[SLOW_HOST_ENV_KEY] === '1'
 async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null, room: Room | null): Promise<Live> {
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
-  if (audioOnlyMusic) writeFileSync(join(profile, SETTINGS_FILE), AUDIO_ONLY_MUSIC_SETTINGS)
+  writeFileSync(join(profile, SETTINGS_FILE), roadSettings(road))
   // Jev is the default endpoint: every BINGBONG_DECISION_* routing key unset, its key (TYPESAFE_API_KEY) kept — unsetting
   // that too left Jev unconfigured, so a --with-jev run asked nothing and read every line by the Local Match's guess.
   const decision = model === JEV ? Object.fromEntries(decisionEnvKeys().filter((key) => key.startsWith('BINGBONG_DECISION_')).map((key) => [key, undefined])) : { BINGBONG_DECISION_MODEL: model }
@@ -463,8 +487,30 @@ async function quiet(live: Live, from: number, notBefore: number, boundMs: numbe
   }, boundMs)
 }
 
-/** Puts the start in front of the person, step by step (e2e/overlap/start.ts); null when it is, else why not. */
-async function setUp(live: Live, sequence: SequenceCase): Promise<string | null> {
+/** Why a start is not in front of the person; `again` when the miss was the site's or the network's, worth a rerun. */
+interface Unmet {
+  readonly why: string
+  readonly again: boolean
+}
+
+/** What is in front of the person now: the page shown, the pages behind it, and whether a song is heard. */
+async function seenStart(live: Live): Promise<{ url: string; behind: string[]; heard: boolean }> {
+  const history = await live.targets.history().catch(() => undefined)
+  return { url: lastOf(live.pane)?.url ?? '(no pane)', behind: history === undefined ? [] : pagesBehind(history.entries, history.currentIndex), heard: playingNow(live) }
+}
+
+/**
+ * Puts the start in front of the person, step by step (e2e/overlap/start.ts),
+ * and checks it before the line asked, or before line 1: null when it is
+ * there. A step that never came (a page that never loaded, a song that never
+ * played) is run again; a start that came but is not what the case says (the
+ * pane road's song over the page) is not.
+ */
+async function setUp(live: Live, sequence: SequenceCase): Promise<Unmet | null> {
+  const check = async (): Promise<Unmet | null> => {
+    const why = startUnmet(sequence.start, await seenStart(live))
+    return why === null ? null : { why, again: false }
+  }
   for (const step of startSteps(sequence.start)) {
     if ('open' in step) {
       await live.targets.evaluate('dashboard', `window.bingbong.browser.navigate(${JSON.stringify(step.open)})`)
@@ -473,7 +519,7 @@ async function setUp(live: Live, sequence: SequenceCase): Promise<string | null>
         const sample = lastOf(live.pane)
         return sample !== undefined && URL.canParse(sample.url) && new URL(sample.url).hostname === host && (await live.targets.evaluate<string>('pane', 'document.readyState')) === 'complete'
       }, SETUP_BOUND_MS)
-      if (!landed) return `the start page ${step.open} never loaded`
+      if (!landed) return { why: `the start page ${step.open} never loaded`, again: true }
     } else if ('play' in step) {
       await submit(live, `play ${step.play}`)
       // The start is a song playing, however it got there: a song that never started (YouTube's own autoplay
@@ -482,18 +528,20 @@ async function setUp(live: Live, sequence: SequenceCase): Promise<string | null>
         console.error(`"play ${step.play}" unstarted after ${UNSTARTED_MS / 1000} s: the start presses play`)
         const press = `(() => { for (const media of document.querySelectorAll('video, audio')) if (media.paused && media.currentTime < 0.5) media.play().catch(() => {}); return true })()`
         await live.targets.evaluate('pane', press).catch(() => {})
-        if (audioOnlyMusic) await live.targets.evaluate('audio', press).catch(() => {})
-        if (!(await waitUntil(async () => playingNow(live), SETUP_BOUND_MS))) return `"play ${step.play}" never played`
+        await live.targets.evaluate('audio', press).catch(() => {})
+        if (!(await waitUntil(async () => playingNow(live), SETUP_BOUND_MS))) return { why: `"play ${step.play}" never played`, again: true }
       }
     } else {
+      const unmet = await check()
+      if (unmet !== null) return unmet
       const from = Date.now()
       await submit(live, step.ask)
       const asked = await waitUntil(async () => (await live.records()).events.some((record) => record.t >= from && record.event.type === 'site_question'), RUN_BOUND_MS)
-      if (!asked) return `"${step.ask}" never came to a question`
+      if (!asked) return { why: `"${step.ask}" never came to a question`, again: true }
     }
   }
   await quiet(live, 0, Date.now() + SETTLE_MS, SETUP_BOUND_MS)
-  return null
+  return sequence.start.asked === undefined ? check() : null
 }
 
 const spokenStart = (sequence: SequenceCase): number => LEAD_MS + (sequence.listen === 'wake' ? wavMs(WAKE_WAV) + AFTER_WAKE_MS : 0)
@@ -563,6 +611,8 @@ interface RunOutcome {
   readonly dumps?: Readonly<Record<string, Buffer>>
   /** Why a host refused the run for credit: the run measured nothing, and the gate stops. */
   readonly refused?: string
+  /** A start not met whose miss was the site's or the network's: the run is made again. */
+  readonly startAgain?: boolean
 }
 
 /** A host refused for credit: the gate stops, keeping what it finished. */
@@ -635,7 +685,8 @@ async function runOnce(sequence: SequenceCase, model: string, plan: { lines: num
     }
     if (unset !== null) {
       const wall = wallBefore(current.pane, Date.now())
-      return await finish(wall !== null ? { verdict: 'wall', why: `${wall} before line 1` } : { verdict: 'wall', why: `${START_NOT_REACHED}: ${unset}` }, null, 0)
+      if (wall !== null) return await finish({ verdict: 'wall', why: `${wall} before line 1` }, null, 0)
+      return { ...(await finish({ verdict: 'start not met', why: unset.why }, null, 0)), startAgain: unset.again }
     }
     if (spoken) {
       await current.targets.evaluate('dashboard', 'window.bingbong.voice.toggleMic()')
@@ -733,7 +784,7 @@ function limitedIn(ran: RunOutcome): number {
 
 /**
  * One run, made again (twice at most) when it measured something other than
- * its case: a start that never came (YouTube on a fresh profile sometimes
+ * its case: a start that never came, a page or a song (YouTube on a fresh profile sometimes
  * never starts the song, 1 run in 4 with or without the ad blocker, measured
  * 2026-10-27), or a host that answered 429, the Decision Model's or the
  * Planner's (the host, not the case: goal:gate's rule).
@@ -744,7 +795,7 @@ async function run(sequence: SequenceCase, model: string, plan: Parameters<typeo
     // Refused for credit: never run again (the account is spent, not busy), never counted.
     const refused = refusalOf(ran)
     if (refused !== null) return { ...ran, refused }
-    const unstarted = ran.cell.verdict === 'wall' && ran.cell.why.startsWith(START_NOT_REACHED)
+    const unstarted = ran.cell.verdict === 'start not met' && ran.startAgain === true
     const limited = limitedIn(ran) > 0
     if (!unstarted && !limited) break
     if (limited) rerun.limited += 1
@@ -768,6 +819,8 @@ interface Calibration {
   readonly date: string
   readonly spans: Spans
   readonly wall: string | null
+  /** Line 1's start was not met: every point of the case is `start not met` without a run (#509). */
+  readonly unmet?: string | null
 }
 
 /** One kept run: `<name>.json` (what the gate saw) and `<name>-logs/` (the app's own perf, decision and ask logs, for `pnpm perf:report` and `pnpm bugs:add --logs`). */
@@ -796,10 +849,10 @@ const spanWords = (spans: Spans): string =>
     .join(', ') || 'none seen'
 
 async function calibrate(sequence: SequenceCase, model: string, judge: Parameters<typeof runOnce>[3]): Promise<Calibration> {
-  const kept = calibrationDir === undefined ? undefined : join(calibrationDir, sequence.id, slug(model), 'calibration.json')
+  const kept = calibrationDir === undefined ? undefined : join(calibrationDir, road, sequence.id, slug(model), 'calibration.json')
   if (kept !== undefined && existsSync(kept)) return JSON.parse(readFileSync(kept, 'utf8')) as Calibration
   // A resume reuses the calibration its keep dir holds, made on the same commit.
-  const resumed = resume && keep !== undefined ? join(keep, sequence.id, slug(model), 'calibration.json') : undefined
+  const resumed = resume && keep !== undefined ? join(keep, road, sequence.id, slug(model), 'calibration.json') : undefined
   if (resumed !== undefined && existsSync(resumed)) {
     const calibration = JSON.parse(readFileSync(resumed, 'utf8')) as Calibration
     if (calibration.commit === commit) return calibration
@@ -807,20 +860,21 @@ async function calibrate(sequence: SequenceCase, model: string, judge: Parameter
   const ran = await run(sequence, model, { lines: 1, placed: [null], noise: [], spans: {}, wall: null, calibrating: true }, judge)
   if (ran.refused !== undefined) {
     if (keep !== undefined) {
-      mkdirSync(join(keep, sequence.id, slug(model)), { recursive: true })
-      keepRun(join(keep, sequence.id, slug(model)), 'calibration-refused', { case: sequence.id, model, commit, refused: ran.refused }, ran)
+      mkdirSync(join(keep, road, sequence.id, slug(model)), { recursive: true })
+      keepRun(join(keep, road, sequence.id, slug(model)), 'calibration-refused', { case: sequence.id, model, road, commit, refused: ran.refused }, ran)
     }
-    summary = summary === null ? null : withRefused(summary, { model, case: sequence.id, point: null, n: 1, why: ran.refused })
+    summary = summary === null ? null : withRefused(summary, { road, model, case: sequence.id, point: null, n: 1, why: ran.refused })
     throw new CreditRefused(ran.refused)
   }
   const spans = ran.lineAt === null ? {} : spansOf(ran.records, ran.lineAt)
-  const wall = ran.cell.verdict === 'wall' ? ran.cell.why : wallBefore(ran.records.pane, Number.POSITIVE_INFINITY)
-  const calibration: Calibration = { case: sequence.id, model, commit, date: new Date().toISOString().slice(0, 10), spans, wall }
+  const unmet = ran.cell.verdict === 'start not met' ? ran.cell.why : null
+  const wall = ran.cell.verdict === 'wall' ? ran.cell.why : unmet !== null ? null : wallBefore(ran.records.pane, Number.POSITIVE_INFINITY)
+  const calibration: Calibration = { case: sequence.id, model, commit, date: new Date().toISOString().slice(0, 10), spans, wall, unmet }
   if (keep !== undefined) {
-    mkdirSync(join(keep, sequence.id, slug(model)), { recursive: true })
-    keepRun(join(keep, sequence.id, slug(model)), 'calibration', calibration, ran)
+    mkdirSync(join(keep, road, sequence.id, slug(model)), { recursive: true })
+    keepRun(join(keep, road, sequence.id, slug(model)), 'calibration', { ...calibration, road }, ran)
   }
-  console.error(`${sequence.id} on ${model}: calibrated — ${spanWords(spans)}${wall !== null ? ` (${wall})` : ''}`)
+  console.error(`${sequence.id} on ${model}, ${road} road: calibrated — ${unmet !== null ? `start not met: ${unmet}` : spanWords(spans)}${wall !== null ? ` (${wall})` : ''}`)
   return calibration
 }
 
@@ -862,11 +916,11 @@ if (withJev && !resolveDecisionRouting(Object.fromEntries(Object.entries(process
   process.exit(2)
 }
 const plannerName = `${plannerModel ?? process.env.BINGBONG_PLANNER_MODEL ?? `${PLANNER_DEFAULT_MODEL} (default)`}`
-const tables: CaseRow[][] = []
+const tables: { road: Road; rows: CaseRow[] }[] = []
 /** The keep dir's summary, written after every point; null without --keep. */
 let summary: Summary | null = null
 if (keep !== undefined) {
-  const head = { commit, seed, points: pointCount, repeat, audioOnlyMusic }
+  const head = { commit, seed, points: pointCount, repeat, roads }
   const kept = readSummary(keep)
   if (resume) {
     const from = resumeFrom(kept, head)
@@ -884,80 +938,86 @@ if (keep !== undefined) {
   writeSummary(keep, summary)
 }
 let stopped: string | null = null
-console.error(`overlap:gate at ${commit}: audio-only music ${audioOnlyMusic ? 'on (--audio-only-music)' : 'off'}`)
-for (const model of models) {
-  const decisionName = model === JEV ? `Jev (${resolveDecisionRouting(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BINGBONG_DECISION_')))).configured ? 'default endpoint' : 'not configured'})` : model
-  const rows: CaseRow[] = []
-  const spans: Record<string, string> = {}
-  rerun.start = 0
-  rerun.limited = 0
-  cases: for (const sequence of cases) {
-    const points = casePoints(sequence, { seed, points: pointCount })
-    const row: { label: string; runs: Cell[] }[] = []
-    const finishedAll = summary !== null && points.every((point) => Array.from({ length: repeat }, (_, i) => i + 1).every((n) => finishedCell(summary!, { model, case: sequence.id, point: point.index, n }) !== undefined))
-    let calibration: Calibration | null = null
-    if (needsCalibration(sequence, points) && !finishedAll) {
-      try {
-        calibration = await calibrate(sequence, model, judgeMeaning)
-      } catch (error) {
-        if (!(error instanceof CreditRefused)) throw error
-        stopped = `${sequence.id} on ${model}, calibrating: ${error.message}`
-        if (summary !== null) writeSummary(keep!, summary)
-        break cases
-      }
-      spans[sequence.id] = spanWords(calibration.spans)
-    }
-    for (const point of points) {
-      const runs: Cell[] = []
-      for (let n = 1; n <= repeat; n++) {
-        const done = summary === null ? undefined : finishedCell(summary, { model, case: sequence.id, point: point.index, n })
-        if (done !== undefined) {
-          console.error(`${sequence.id} on ${model} at ${point.label}${repeat > 1 ? ` (${n}/${repeat})` : ''}: kept from the summary, ${done.verdict}`)
-          runs.push(done)
-          continue
-        }
-        const ran = await run(sequence, model, { lines: sequence.lines.length, placed: point.lines, noise: point.noise, spans: calibration?.spans ?? {}, wall: calibration?.wall ?? null }, judgeMeaning)
-        if (ran.refused !== undefined) {
-          console.error(`${sequence.id} on ${model} at ${point.label}: refused for credit — ${ran.refused}; the gate stops`)
-          if (keep !== undefined) {
-            const dir = join(keep, sequence.id, slug(model))
-            mkdirSync(dir, { recursive: true })
-            keepRun(dir, `p${point.index}${repeat > 1 ? `-${n}` : ''}-refused`, { case: sequence.id, model, point: point.index, seed, commit, audioOnlyMusic, refused: ran.refused }, ran)
-          }
-          if (summary !== null) {
-            summary = withRefused(summary, { model, case: sequence.id, point: point.index, n, why: ran.refused })
-            writeSummary(keep!, summary)
-          }
-          stopped = `${sequence.id} on ${model} at ${point.label}: ${ran.refused}`
-          if (runs.length > 0) row.push({ label: point.label, runs })
-          // A case cut before any point finished has no row: an empty row would read as through.
-          if (row.length > 0) rows.push({ id: sequence.id, points: row })
+console.error(`overlap:gate at ${commit}: ${roads.join(' road, then ')} road`)
+roads: for (const each of roads) {
+  road = each
+  for (const model of models) {
+    const decisionName = model === JEV ? `Jev (${resolveDecisionRouting(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BINGBONG_DECISION_')))).configured ? 'default endpoint' : 'not configured'})` : model
+    const rows: CaseRow[] = []
+    const spans: Record<string, string> = {}
+    rerun.start = 0
+    rerun.limited = 0
+    cases: for (const sequence of cases) {
+      const points = casePoints(sequence, { seed, points: pointCount })
+      const row: { label: string; runs: Cell[] }[] = []
+      const finishedAll = summary !== null && points.every((point) => Array.from({ length: repeat }, (_, i) => i + 1).every((n) => finishedCell(summary!, { road, model, case: sequence.id, point: point.index, n }) !== undefined))
+      let calibration: Calibration | null = null
+      if (needsCalibration(sequence, points) && !finishedAll) {
+        try {
+          calibration = await calibrate(sequence, model, judgeMeaning)
+        } catch (error) {
+          if (!(error instanceof CreditRefused)) throw error
+          stopped = `${sequence.id} on ${model}, ${road} road, calibrating: ${error.message}`
+          if (summary !== null) writeSummary(keep!, summary)
           break cases
         }
-        const cell = ran.cell
-        console.error(`${sequence.id} on ${model} at ${point.label}${repeat > 1 ? ` (${n}/${repeat})` : ''}: ${cell.verdict === 'green' ? 'green' : `${cell.verdict} — ${cell.why}`}`)
-        if (keep !== undefined) {
-          const dir = join(keep, sequence.id, slug(model))
-          mkdirSync(dir, { recursive: true })
-          const name = `p${point.index}${repeat > 1 ? `-${n}` : ''}`
-          keepRun(dir, name, { case: sequence.id, model, point: { ...point, placed: point.lines.map((placed) => (placed === null ? null : describePlaced(placed))) }, seed, commit, audioOnlyMusic }, ran)
-        }
-        runs.push(cell)
-        if (summary !== null) {
-          summary = withFinished(summary, { model, case: sequence.id, point: point.index, n, label: point.label, cell })
-          writeSummary(keep!, summary)
-        }
+        spans[sequence.id] = calibration.unmet != null ? `start not met: ${calibration.unmet}` : spanWords(calibration.spans)
       }
-      row.push({ label: point.label, runs })
+      const dir = keep === undefined ? undefined : join(keep, road, sequence.id, slug(model))
+      for (const point of points) {
+        const runs: Cell[] = []
+        for (let n = 1; n <= repeat; n++) {
+          const at = `${sequence.id} on ${model}, ${road} road, at ${point.label}${repeat > 1 ? ` (${n}/${repeat})` : ''}`
+          const done = summary === null ? undefined : finishedCell(summary, { road, model, case: sequence.id, point: point.index, n })
+          if (done !== undefined) {
+            console.error(`${at}: kept from the summary, ${done.verdict}`)
+            runs.push(done)
+            continue
+          }
+          // Line 1's start could not be put in its calibration: no point of the case can be (#509).
+          const ran: RunOutcome =
+            calibration?.unmet != null
+              ? { cell: { verdict: 'start not met', why: calibration.unmet }, lineAt: null, sentMs: [], end: null, records: { events: [], voice: [], pane: [] }, stderr: '' }
+              : await run(sequence, model, { lines: sequence.lines.length, placed: point.lines, noise: point.noise, spans: calibration?.spans ?? {}, wall: calibration?.wall ?? null }, judgeMeaning)
+          if (ran.refused !== undefined) {
+            console.error(`${at}: refused for credit — ${ran.refused}; the gate stops`)
+            if (dir !== undefined) {
+              mkdirSync(dir, { recursive: true })
+              keepRun(dir, `p${point.index}${repeat > 1 ? `-${n}` : ''}-refused`, { case: sequence.id, model, road, point: point.index, seed, commit, refused: ran.refused }, ran)
+            }
+            if (summary !== null) {
+              summary = withRefused(summary, { road, model, case: sequence.id, point: point.index, n, why: ran.refused })
+              writeSummary(keep!, summary)
+            }
+            stopped = `${at}: ${ran.refused}`
+            if (runs.length > 0) row.push({ label: point.label, runs })
+            // A case cut before any point finished has no row: an empty row would read as through.
+            if (row.length > 0) rows.push({ id: sequence.id, points: row })
+            break cases
+          }
+          const cell = ran.cell
+          console.error(`${at}: ${cell.verdict === 'green' ? 'green' : `${cell.verdict} — ${cell.why}`}`)
+          if (dir !== undefined) {
+            mkdirSync(dir, { recursive: true })
+            const name = `p${point.index}${repeat > 1 ? `-${n}` : ''}`
+            keepRun(dir, name, { case: sequence.id, model, road, point: { ...point, placed: point.lines.map((placed) => (placed === null ? null : describePlaced(placed))) }, seed, commit }, ran)
+          }
+          runs.push(cell)
+          if (summary !== null) {
+            summary = withFinished(summary, { road, model, case: sequence.id, point: point.index, n, label: point.label, cell })
+            writeSummary(keep!, summary)
+          }
+        }
+        row.push({ label: point.label, runs })
+      }
+      rows.push({ id: sequence.id, points: row })
     }
-    rows.push({ id: sequence.id, points: row })
+    tables.push({ road, rows })
+    console.log(formatTable(rows, { model: decisionName, planner: plannerName, road, seed, points: pointCount, repeat, commit, spans }))
+    console.log(`runs made again: ${rerun.start} whose start never came, ${rerun.limited} that met a 429`)
+    console.log('')
+    if (stopped !== null) break roads
   }
-  tables.push(rows)
-  console.log(`audio-only music: ${audioOnlyMusic ? 'on (--audio-only-music)' : 'off'}`)
-  console.log(formatTable(rows, { model: decisionName, planner: plannerName, seed, points: pointCount, repeat, commit, spans }))
-  console.log(`runs made again: ${rerun.start} whose start was never reached, ${rerun.limited} that met a 429`)
-  console.log('')
-  if (stopped !== null) break
 }
 if (stopped !== null) {
   if (summary !== null && keep !== undefined) writeSummary(keep, summary)
@@ -970,5 +1030,6 @@ if (checkState) {
   console.log(disagreements.length === 0 ? 'state: every case agrees with the table' : `state disagrees:\n${disagreements.map((line) => `- ${line}`).join('\n')}`)
   process.exitCode = disagreements.length === 0 ? 0 : 1
 } else {
-  process.exitCode = tables.every((rows) => rows.every(through)) ? 0 : 1
+  // A start not met measured nothing: only a red fails the gate.
+  process.exitCode = tables.every((table) => table.rows.every((row) => measuredOn(row) !== 'red')) ? 0 : 1
 }

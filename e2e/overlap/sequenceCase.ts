@@ -67,12 +67,16 @@ export interface CaseExpect {
   readonly nothingElse?: boolean
 }
 
+/** What one full gate run measured on one road: the result, the commit, the date and the models. */
 export interface CaseState {
-  readonly is: 'red' | 'green'
+  readonly is: 'red' | 'green' | 'start not met'
   readonly on: string
   readonly date: string
   readonly models: readonly string[]
 }
+
+/** A result for each road the case was run on (#509): a case is through when green on every road that can hold its start. */
+export type CaseStates = Partial<Record<'pane' | 'audio', CaseState>>
 
 export interface SequenceCase {
   /** The file name without `.json`: `<row>-<slug>`. */
@@ -87,7 +91,7 @@ export interface SequenceCase {
   readonly echo: boolean
   readonly expect: CaseExpect
   readonly evidence: readonly string[]
-  readonly state: CaseState
+  readonly state: CaseStates
 }
 
 const WHILES: readonly string[] = ['loading', 'speaking', 'media-not-started']
@@ -174,6 +178,19 @@ function readExpect(raw: unknown): CaseExpect | string {
   return Object.keys(out).length === 0 ? 'expect names at least one thing a person could see or hear' : out
 }
 
+const RESULTS: readonly string[] = ['red', 'green', 'start not met']
+
+function readStates(raw: unknown): CaseStates | string {
+  const shape = 'state is { pane?, audio? }, each { is: red | green | start not met, on: <commit>, date, models: [...] }'
+  if (!isObject(raw) || Object.keys(raw).length === 0 || Object.keys(raw).some((road) => road !== 'pane' && road !== 'audio')) return shape
+  const out: { -readonly [K in keyof CaseStates]: CaseStates[K] } = {}
+  for (const [road, state] of Object.entries(raw)) {
+    if (!isObject(state) || !RESULTS.includes(state.is as string) || !isString(state.on) || !isString(state.date) || !Array.isArray(state.models) || !state.models.every(isString)) return shape
+    out[road as 'pane' | 'audio'] = { is: state.is as CaseState['is'], on: state.on, date: state.date, models: state.models as string[] }
+  }
+  return out
+}
+
 /** The case in the file, or why it is not one. `file` is the file's name, `<row>-<slug>.json`. */
 export function readSequenceCase(raw: unknown, file: string): SequenceCase | string {
   const id = file.replace(/\.json$/, '')
@@ -217,10 +234,8 @@ export function readSequenceCase(raw: unknown, file: string): SequenceCase | str
   const expected = readExpect(raw.expect)
   if (typeof expected === 'string') return fail(expected)
   if (!Array.isArray(raw.evidence) || !raw.evidence.every(isString)) return fail('evidence is a list of ledger turns, or ["none yet"]')
-  const state = raw.state
-  if (!isObject(state) || (state.is !== 'red' && state.is !== 'green') || !isString(state.on) || !isString(state.date) || !Array.isArray(state.models) || !state.models.every(isString)) {
-    return fail('state is { is: red | green, on: <commit>, date, models: [...] }')
-  }
+  const state = readStates(raw.state)
+  if (typeof state === 'string') return fail(state)
   return {
     id,
     row,
@@ -232,6 +247,6 @@ export function readSequenceCase(raw: unknown, file: string): SequenceCase | str
     echo: raw.echo === true,
     expect: expected,
     evidence: raw.evidence as string[],
-    state: { is: state.is, on: state.on, date: state.date, models: state.models as string[] },
+    state,
   }
 }

@@ -15,5 +15,5 @@
     "said": [{ "startsWith": "Playing", "endsWith": "instead.", "notFirstMedia": true }]
   },
   "evidence": ["turn-mvsa6422-2"],
-  "state": {"is": "green", "on": "77116bc5", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}
+  "state": {"pane": {"is": "green", "on": "77116bc5", "date": "2026-10-28", "models": ["decision-models/baseten-mammoth-27b-latest"]}}
 }
