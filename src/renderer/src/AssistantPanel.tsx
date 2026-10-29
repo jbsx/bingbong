@@ -5,6 +5,7 @@ import { stageWord } from '../../core/pipeline/stageWords'
 import type { TaskProgress } from '../../core/pipeline/taskProgress'
 import { earWaitParts } from '../../core/voice/voicePrompt'
 import { EAR_FAILED } from '../../core/voice/voiceHint'
+import { useSecondClock } from './useSecondClock'
 
 /**
  * The Task's progress bar (#375): a track along the capsule's foot that
@@ -125,12 +126,8 @@ export function EarWait({ phase, voice }: { phase: 'starting' | 'transcribing'; 
  * an honestly climbing number, and Stop stays the only escape.
  */
 export function RunHint({ progress, status }: { progress: RunProgress; status: OrbStatus }) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1_000)
-    return () => clearInterval(timer)
-  }, [])
+  // A song's wait (#507) turns its second with the Wait Card's.
+  const now = useSecondClock(progress.wait)
   const parts = runProgressParts(progress, now, status)
 
   // The order of loss on a short line (#462): the detail, then the stage's words; the seconds never.
@@ -145,7 +142,8 @@ export function RunHint({ progress, status }: { progress: RunProgress; status: O
         </span>
       ) : null}
       <span className="run-hint-tail">
-        {parts.detail !== null || parts.stage !== null ? ' · ' : ''}
+        {/* A song's wait (#507): its words run into its count, as the Wait Card says them. */}
+        {parts.detail !== null || parts.stage !== null ? (parts.tied === true ? ' ' : ' · ') : ''}
         {parts.seconds}
       </span>
     </span>

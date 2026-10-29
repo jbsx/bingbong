@@ -98,11 +98,20 @@ export function useWeighInSlotRect(hidden: boolean): (el: HTMLDivElement | null)
   return useSlotRect('weighIn', '', hidden)
 }
 
+/**
+ * Reports the Wait Card's slot (#507) to main, which sizes the card's own
+ * view over the browsing pane by it, hidden while no song waits.
+ */
+export function useWaitCardSlotRect(hidden: boolean): (el: HTMLDivElement | null) => void {
+  return useSlotRect('waitCard', '', hidden)
+}
+
 /** The view a slot sizes; a name, not the function, so the effects never re-run on it. */
-type SlotView = 'feedPanel' | 'weighIn'
+type SlotView = 'feedPanel' | 'weighIn' | 'waitCard'
 
 function reportRect(slot: SlotView, rect: PaneRect): void {
   if (slot === 'feedPanel') window.bingbong.feedPanel.reportRect(rect)
+  else if (slot === 'waitCard') window.bingbong.music.reportWaitCardRect(rect)
   else window.bingbong.weight.reportPopupRect(rect)
 }
 

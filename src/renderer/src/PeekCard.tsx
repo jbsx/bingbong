@@ -17,7 +17,7 @@ import { TurnHistory, TurnRail, TurnStageRow, TurnWordsRow, turnFace, useTurnClo
 const BAND_HISTORY_ROWS = 5
 
 export function PeekCard({ state, onOpen }: { state: TurnCardState; onOpen(): void }) {
-  const now = useTurnClock()
+  const now = useTurnClock(state)
   const face = turnFace(state)
   return (
     <div

@@ -80,7 +80,7 @@ import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import { resolveOverSpeech } from '../core/voice/ownVoice'
 import type { VoiceSession } from '../core/voice/voiceSession'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
-import { attachWeighInViewToWindow } from './scale/attachWeighInView'
+import { attachPopupViewToWindow } from './attachPopupView'
 import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
 import { audioDumpEnabled } from '../core/voice/utteranceDump'
 import { silenceFramesForMs } from '../core/voice/vadEndpointing'
@@ -482,7 +482,11 @@ async function createWindow(): Promise<BrowserWindow> {
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
   // The Weigh-in pop-up's own view over the browsing pane, above the feed overlay.
-  const weighInView = attachWeighInViewToWindow(win, { preloadDir: join(__dirname, '../preload') })
+  const weighInView = attachPopupViewToWindow(win, 'weighIn', { preloadDir: join(__dirname, '../preload') })
+  // The Wait Card's own view over the browsing pane (#507), above the feed overlay too.
+  // Read, never acted on: a click on it gives focus back to the surface that had it (ruling 1).
+  const focusBackTo = [win.webContents, pane.view.webContents, feedPanel.contents()].filter((contents) => contents !== null)
+  const waitCardView = attachPopupViewToWindow(win, 'waitCard', { preloadDir: join(__dirname, '../preload'), focusBackTo })
   // The Weigh-ins and the Weigh-in pop-up reach every surface the pop-up shows on.
   for (const contents of [win.webContents, feedPanel.contents(), weighInView.contents()]) if (contents !== null) scaleListener?.addReceiver(contents)
   // The idle shortcut (Ctrl/Cmd+Shift+L) shows the Idle Screen now, from whichever surface owns focus.
@@ -538,7 +542,12 @@ async function createWindow(): Promise<BrowserWindow> {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)
   }
   const eventPublisher = createWindowEventPublisher({
-    sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),
+    sendPipelineEvent: (event) => {
+      sendToRenderer(PIPELINE_IPC.event, event)
+      // The Wait Card's view (#507) folds the song's wait from the same stream.
+      const waitCard = waitCardView.contents()
+      if (waitCard !== null) waitCard.send(PIPELINE_IPC.event, event)
+    },
     sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
     sendVoiceError: (error) => sendToRenderer(VOICE_IPC.error, error),
@@ -559,6 +568,7 @@ async function createWindow(): Promise<BrowserWindow> {
   onWindowClosed(win, unsubscribeLastPage)
   feedPanel.bringToTop()
   weighInView.bringToTop()
+  waitCardView.bringToTop()
   // Which downloads are a Task's (#423): the runner's Tasks are tracked below, and the pane's navigations each began during one.
   const taskActivity = createTaskActivityTracker()
   pane.view.webContents.on('did-start-navigation', (details) => {
@@ -630,6 +640,8 @@ async function createWindow(): Promise<BrowserWindow> {
   onWindowClosed(win, attachNowPlayingToWindow(win, music.player))
   // A queued video the Player opened in the background (#502) wakes the dashboard, as a `play` of one does: no Command shows it.
   onWindowClosed(win, music.player.onShown(() => eventPublisher.publish({ source: 'run', event: { type: 'shown', at: Date.now() } })))
+  // Every wait a song is in before it sounds, and its end (#507): what the Wait Card shows, on the stream the Capsule reads.
+  onWindowClosed(win, music.player.onSongWait((wait) => eventPublisher.publish({ source: 'run', event: { type: 'song_wait', wait, at: Date.now() } })))
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download
@@ -787,7 +799,7 @@ async function createWindow(): Promise<BrowserWindow> {
     // A packaged appliance keeps its DevTools shut; detached, they never squeeze the layout.
     ...(app.isPackaged ? {} : { devTools: (contents: Electron.WebContents) => contents.openDevTools({ mode: 'detach' }) }),
   }
-  for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents(), weighInView.contents()]) {
+  for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents(), weighInView.contents(), waitCardView.contents()]) {
     if (contents !== null) onWindowClosed(win, attachAppShortcuts(contents, shortcuts))
   }
 

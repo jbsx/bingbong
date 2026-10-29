@@ -1055,6 +1055,107 @@ body {
   pointer-events: none;
 }
 
+/* ---- the Wait Card (#507): a song waiting to sound, on whatever surface is up ----
+   Over the browsing pane its own view follows this slot: the pane's top,
+   clear of the Peek Card's band at its foot. Over Settings and the Weight
+   page the dashboard draws it in the same place; on the Idle Screen it sits
+   at the foot, under the Turn Card. Status type at 65 px (ui.md 5). */
+.waitcard-slot,
+.waitcard-place {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1240px, 92%);
+  height: 176px;
+  pointer-events: none;
+}
+
+.waitcard-place {
+  position: fixed;
+  top: 112px;
+  z-index: 20;
+}
+
+.idle-wait-place {
+  position: absolute;
+  z-index: 6;
+  bottom: 12px;
+  left: 50%;
+  width: 1240px;
+  height: 176px;
+  margin-left: -620px;
+  pointer-events: none;
+}
+
+.wait-card {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 16px 28px 16px 16px;
+  overflow: hidden;
+  color: var(--fg);
+  background: var(--surface-solid);
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-lg);
+}
+
+.wait-card-thumb {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 256px;
+  height: 144px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--raise2);
+  color: var(--fg2);
+}
+
+.wait-card-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wait-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wait-card-count {
+  font-size: var(--type-xl);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wait-card-title,
+.wait-card-channel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wait-card-title {
+  font-size: var(--type-l);
+  line-height: 1.15;
+}
+
+.wait-card-channel {
+  font-size: var(--type-m);
+  color: var(--fg2);
+}
+
 /* ---- the Feed (rendered by the panel's overlay view) ---- */
 .feed {
   display: flex;
@@ -2807,7 +2908,8 @@ button.idle-line {
 /* The stage row: the word at a fixed left, the live mark pinned right. */
 .turn-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The stage word whole; the mark takes the rest, its note giving way before the count (#507: a song's wait words). */
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: baseline;
   height: 80px;
 }
@@ -2834,6 +2936,7 @@ button.idle-line {
 }
 
 .turn-stage-mark {
+  min-width: 0;
   display: flex;
   gap: 16px;
   align-items: center;
@@ -2859,6 +2962,9 @@ button.idle-line {
 }
 
 .turn-stage-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--type-m);
   color: var(--fg2);
 }

@@ -509,6 +509,7 @@ export function IdleScreen({
   turn = null,
   onDismissTurn = () => undefined,
   result = null,
+  waitCard = null,
 }: {
   weather: WeatherState
   usage: UsageState
@@ -555,6 +556,8 @@ export function IdleScreen({
   onDismissTurn?: () => void
   /** The last Command's failure sentence, or "No response." (#470), kept in the Voice Prompt line until the next input. */
   result?: string | null
+  /** The Wait Card (#507): a song waiting to sound, over the screen's foot, the Turn Card left in sight. */
+  waitCard?: React.ReactNode
 }) {
   const [now, setNow] = useState(() => new Date())
   useCursorRest()
@@ -752,6 +755,7 @@ export function IdleScreen({
       </div>
       {/* The Turn Card (#474): the line being taken, read and done, over the columns, under the night veil. */}
       {turn !== null ? <TurnCard state={turn} onDismiss={onDismissTurn} /> : null}
+      {waitCard !== null ? <div className="idle-wait-place">{waitCard}</div> : null}
       {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says — unless the monitor itself is down. */}
       {isNightDimmed(now, nightDim) && !monitorDimmed ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
     </div>

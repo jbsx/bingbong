@@ -29,6 +29,14 @@ export interface Harness {
   overlayEval<T = unknown>(expression: string): Promise<T>
   /** Evaluate in the Weigh-in pop-up's own view over the browsing pane. */
   weighInEval<T = unknown>(expression: string): Promise<T>
+  /** Evaluate in the Wait Card's own view over the browsing pane (#507). */
+  waitCardEval<T = unknown>(expression: string): Promise<T>
+  /** The Wait Card's view as a PNG (#507): what shows over the pane, its own view composited above it. */
+  waitCardShot(): Promise<Buffer>
+  /** Lay the dashboard out at a width other than the window's, the kiosk's 1920 say (#507); null gives the window's back. */
+  emulateDashboardSize(size: { width: number; height: number } | null): Promise<void>
+  /** The dashboard's own page as a PNG, at its emulated size if one is set. */
+  dashboardShot(): Promise<Buffer>
   /**
    * Submit one typed command through the Prompt Bar (ADR 0011): open the
    * panel if the boot state collapsed it, then drive the bar in the
@@ -104,7 +112,7 @@ interface TargetInfo {
   url: string
 }
 
-type TargetKind = 'dashboard' | 'overlay' | 'weighin' | 'pane'
+type TargetKind = 'dashboard' | 'overlay' | 'weighin' | 'waitcard' | 'pane'
 
 // The floor a crashed renderer gets before the harness touches anything
 // again — process death (and its crash report) must land first.
@@ -129,6 +137,7 @@ const targetPredicates: Record<TargetKind, (info: TargetInfo) => boolean> = {
   dashboard: (info) => info.url.includes('out/renderer/index.html'),
   overlay: (info) => info.url.includes('out/renderer/overlay.html'),
   weighin: (info) => info.url.includes('out/renderer/weighin.html'),
+  waitcard: (info) => info.url.includes('out/renderer/waitcard.html'),
   pane: (info) => info.type === 'page' && !info.url.includes('out/renderer'),
 }
 
@@ -223,6 +232,7 @@ function noFixture(): FixtureServer {
     visionEndpointHits: () => 0,
     lastVisionAuthorization: () => undefined,
     setStatusBoard: refuse,
+    setResultsDelay: refuse,
     close: async () => {},
   }
 }
@@ -467,6 +477,31 @@ async function buildHarness(
     async weighInEval<T = unknown>(expression: string): Promise<T> {
       const sid = await waitFor(async () => sidOf('weighin'), { timeoutMs: 15000, intervalMs: 250 })
       return evaluate<T>(cdp, sid, expression)
+    },
+
+    async waitCardEval<T = unknown>(expression: string): Promise<T> {
+      const sid = await waitFor(async () => sidOf('waitcard'), { timeoutMs: 15000, intervalMs: 250 })
+      return evaluate<T>(cdp, sid, expression)
+    },
+
+    async waitCardShot() {
+      const sid = await waitFor(async () => sidOf('waitcard'), { timeoutMs: 15000, intervalMs: 250 })
+      const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, sid)
+      return Buffer.from(data, 'base64')
+    },
+
+    async emulateDashboardSize(size) {
+      const sid = dashboardSid()
+      if (!sid) throw new Error('dashboard target not found')
+      if (size === null) await cdp.send('Emulation.clearDeviceMetricsOverride', {}, sid)
+      else await cdp.send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false }, sid)
+    },
+
+    async dashboardShot() {
+      const sid = dashboardSid()
+      if (!sid) throw new Error('dashboard target not found')
+      const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, sid)
+      return Buffer.from(data, 'base64')
     },
 
     async ensurePanelOpen() {

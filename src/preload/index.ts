@@ -124,6 +124,9 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(MUSIC_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(MUSIC_IPC.changed, wrapped)
     },
+    reportWaitCardRect: (rect: PaneRect): void => {
+      ipcRenderer.send(MUSIC_IPC.waitCardRect, { rect })
+    },
   },
   usage: {
     get: (): Promise<UsageSnapshot | null> => ipcRenderer.invoke(USAGE_IPC.get),

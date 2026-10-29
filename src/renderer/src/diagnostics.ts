@@ -6,7 +6,7 @@ import { describeFault } from '../../core/trace/fault'
 // seam fail during development, and a no-op cost otherwise.
 
 /** The page a report comes from. */
-export type RendererSurface = 'dashboard' | 'feed_panel' | 'weighin'
+export type RendererSurface = 'dashboard' | 'feed_panel' | 'weighin' | 'waitcard'
 
 let surface: RendererSurface | null = null
 

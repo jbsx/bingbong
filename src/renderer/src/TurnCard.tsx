@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { TURN_END_TONES, TURN_END_WORDS, TURN_STATIONS, turnHistory, turnLive, turnStation, turnWords, type TurnCardState, type TurnLive, type TurnStepTone } from '../../core/idle/turnCard'
 import { lingerDelayMs, PEEK_CARD_LINGER_MS } from '../../core/panel/peekCardState'
 import { runProgressParts } from '../../core/pipeline/runProgress'
 import { stageWord } from '../../core/pipeline/stageWords'
 import { waitSeconds } from '../../core/voice/voicePrompt'
 import { PILL_LABELS, VoiceWave } from './AssistantPanel'
+import { useSecondClock } from './useSecondClock'
 
 /**
  * The Turn Card (#474, CONTEXT.md): one Tile-sized card centred over the
@@ -56,13 +57,8 @@ function word(live: TurnLive): string {
 const tenths = (ms: number): string => `${(Math.max(0, ms) / 1000).toFixed(1)}s`
 
 /** The renderer's second (ui.md 2): the seconds tick here alone, on this renderer's clock; a count that stops is the one true sign of a hang. */
-export function useTurnClock(): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1_000)
-    return () => clearInterval(timer)
-  }, [])
-  return now
+export function useTurnClock(state: TurnCardState): number {
+  return useSecondClock(state.stage?.wait)
 }
 
 /** The card's face at `now`: its name, the stage word, its tone, the rail's station. */
@@ -107,13 +103,16 @@ export function TurnStageRow({ state, face, now }: { state: TurnCardState; face:
   const { live } = face
   let mark: React.ReactNode
   let note: string | null = null
+  // A song's wait (#507): its words run into its count, as the Wait Card says them.
+  let tied = false
   switch (live.kind) {
     case 'ear':
       mark = live.phase === 'listening' || live.phase === 'hearing' ? <VoiceWave bars={6} /> : <span className="turn-stage-secs">{waitSeconds(live.since, now)}s</span>
       break
     case 'stage': {
-      const parts = runProgressParts({ stage: live.stage.status, startedAt: live.stage.startedAt, ...(live.stage.word !== undefined ? { word: live.stage.word } : {}), ...(live.stage.detail !== undefined ? { detail: live.stage.detail } : {}) }, now, live.stage.status)
+      const parts = runProgressParts({ stage: live.stage.status, startedAt: live.stage.startedAt, ...(live.stage.word !== undefined ? { word: live.stage.word } : {}), ...(live.stage.detail !== undefined ? { detail: live.stage.detail } : {}), ...(live.stage.wait !== undefined ? { wait: live.stage.wait } : {}) }, now, live.stage.status)
       note = parts.stage
+      tied = parts.tied === true
       mark = <span className="turn-stage-secs">{parts.seconds}</span>
       break
     }
@@ -130,7 +129,7 @@ export function TurnStageRow({ state, face, now }: { state: TurnCardState; face:
         {face.word}
       </span>
       <span className="turn-stage-mark">
-        {note !== null ? <span className="turn-stage-note">{note} · </span> : null}
+        {note !== null ? <span className="turn-stage-note">{tied ? note : `${note} · `}</span> : null}
         {mark}
       </span>
     </div>
@@ -176,7 +175,7 @@ function LingerBar({ retiresAt }: { retiresAt: number }) {
 }
 
 export function TurnCard({ state, onDismiss }: { state: TurnCardState; onDismiss(): void }) {
-  const now = useTurnClock()
+  const now = useTurnClock(state)
   const face = turnFace(state)
   const words = turnWords(state)
 

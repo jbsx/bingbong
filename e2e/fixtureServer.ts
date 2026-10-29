@@ -172,6 +172,8 @@ export interface FixtureServer {
   altUrl(path: string): string
   /** How many times the adblock filter list has been fetched (cache probes). */
   adblockListHits(): number
+  /** Hold every YouTube results page this long before it answers, as YouTube's own takes (#507: the Wait Card's Receipt over a search). */
+  setResultsDelay(ms: number): void
   /** How many times the OpenAI-compatible vision endpoint was called (#76 e2e). */
   visionEndpointHits(): number
   /** Authorization header of the latest vision call — proves which credentials reached the wire. */
@@ -1354,6 +1356,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   let visionEndpointHits = 0
   let lastAuthorization: string | undefined
   let statusBoardValue = 'north'
+  let resultsDelayMs = 0
   /** Responses the landing fixtures never finish (#328), destroyed at close. */
   const held = new Set<ServerResponse>()
   // Late-bound (the alt listener exists only after listenOn below); the
@@ -1480,8 +1483,11 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     if (req.url?.startsWith('/results?search_query=')) {
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(youtubeResultsPage(new URL(req.url, 'http://fixture').searchParams.get('search_query') ?? ''))
+      const page = youtubeResultsPage(new URL(req.url, 'http://fixture').searchParams.get('search_query') ?? '')
+      setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(page)
+      }, resultsDelayMs)
       return
     }
     if (req.url?.startsWith('/watch?v=')) {
@@ -1975,6 +1981,9 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     url: primary.url,
     altUrl: alt.url,
     adblockListHits: () => adblockListHits,
+    setResultsDelay: (ms: number) => {
+      resultsDelayMs = ms
+    },
     visionEndpointHits: () => visionEndpointHits,
     lastVisionAuthorization: () => lastAuthorization,
     setStatusBoard: (value: string) => {

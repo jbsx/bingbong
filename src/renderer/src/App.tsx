@@ -12,7 +12,9 @@ import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { weighInPopupSurface } from '../../core/scale/weighInPopup'
-import { useFeedPanel, useFeedSlotRect, useWeighInSlotRect } from './useFeedPanel'
+import { useFeedPanel, useFeedSlotRect, useWaitCardSlotRect, useWeighInSlotRect } from './useFeedPanel'
+import { WaitCard, useSongWait } from './WaitCard'
+import { waitCardSurface } from '../../core/music/songWait'
 import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
@@ -170,6 +172,11 @@ export function App() {
   // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.
   const timer = useTimer()
   const nowPlaying = useNowPlaying()
+  // The Wait Card (#507): a song waiting to sound, on whatever surface is up (ruling 1).
+  const songWait = useSongWait()
+  const waitSurface = waitCardSurface(songWait, showIdle, view)
+  const waitCard = songWait !== null ? <WaitCard wait={songWait} /> : null
+  const waitCardSlotRef = useWaitCardSlotRect(waitSurface !== 'pane')
   const sound = useSoundMute()
   const toggleMic = (): void => void window.bingbong.voice.toggleMic()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
@@ -223,6 +230,7 @@ export function App() {
           turn={turnUp ? turn.state : null}
           onDismissTurn={turn.dismiss}
           result={assistant.lastFailure}
+          waitCard={waitSurface === 'idle' ? waitCard : null}
         />
         {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} aside={turnUp} /> : null}
       </>
@@ -365,10 +373,14 @@ export function App() {
           />
           {/* The Weigh-in pop-up's own view over the pane follows this rect. */}
           <div ref={weighInSlotRef} className="weighin-slot" aria-hidden="true" />
+          {/* The Wait Card's own view over the pane (#507) follows this rect: at the pane's top, clear of the Peek Card's band. */}
+          <div ref={waitCardSlotRef} className="waitcard-slot" aria-hidden="true" />
         </div>
       </main>
       {/* Over Settings and the Weight page no native view covers the dashboard, so the pop-up is drawn here. */}
       {weighInSurface === 'dashboard' ? <WeighInPopup state={weighInPopup} /> : null}
+      {/* Over Settings and the Weight page the Wait Card is drawn here too (#507). */}
+      {waitSurface === 'dashboard' ? <div className="waitcard-place">{waitCard}</div> : null}
     </div>
   )
 }

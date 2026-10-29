@@ -86,6 +86,8 @@ export interface BingbongMusicApi {
   /** The Player's Now Playing (#344); null when it holds no song. */
   get(): Promise<NowPlaying | null>
   onChange(listener: (nowPlaying: NowPlaying | null) => void): () => void
+  /** Where the Wait Card's slot sits over the pane (#507): its own view follows it; 0×0 hides it. */
+  reportWaitCardRect(rect: PaneRect): void
 }
 
 export interface BingbongUsageApi {

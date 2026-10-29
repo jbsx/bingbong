@@ -43,7 +43,7 @@ export function OverlayPanel() {
   // single element shows (panel, card, or edge tab); the dashboard sizes
   // the slot rect from the same rule.
   const peek = usePeekCard(open)
-  // The Weigh-in pop-up (#350) rides the open panel's top here; collapsed, it has a view of its own (attachWeighInView).
+  // The Weigh-in pop-up (#350) rides the open panel's top here; collapsed, it has a view of its own (attachPopupView).
   const weighIn = useWeighInPopup()
   const slotContent = overlaySlotContent(open, peek.visible)
   const surfaceRef = useRef<HTMLDivElement>(null)
