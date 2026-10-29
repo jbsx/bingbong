@@ -1154,7 +1154,8 @@ describe('the Player (#343)', () => {
   it('the audio road\'s lookup is a narrated wait (#502, ui.md 2): Loading names the song it finds the audio for, and Playing ends it', async () => {
     const { events, runner } = music({ audio: true })
     await runner.run('play bohemian rhapsody')
-    expect(loadingDetails(events)).toEqual([`finding the audio for “${QUEEN}”`])
+    // From the Command firing, named by its words until the search picks the song (#507 review: the Receipt).
+    expect(loadingDetails(events)).toEqual([`finding the audio for “bohemian rhapsody”`, `finding the audio for “${QUEEN}”`])
     const lookup = events.findIndex((event) => event.type === 'status' && event.status === 'loading')
     const acting = events.findIndex((event) => event.type === 'status' && event.status === 'acting')
     expect(acting).toBeGreaterThan(-1)
@@ -1162,11 +1163,24 @@ describe('the Player (#343)', () => {
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
   })
 
+  it('every Loading of the wait carries the wait itself (#507): the Capsule says the Wait Card’s words, counting down once the stream’s served time is known', async () => {
+    const { audio, events, runner } = music({ audio: true })
+    // Served a second ago: the road hands it over at once, and still tells when.
+    const servedAt = Date.now() - 1_000
+    audio!.servedAt = () => servedAt
+    await runner.run('play bohemian rhapsody')
+    const waits = events.flatMap((event) => (event.type === 'status' && event.wait !== undefined ? [event.wait] : []))
+    expect(waits.map((wait) => wait.kind)).toEqual(['lookup', 'lookup', 'served'])
+    expect(waits[2]).toMatchObject({ kind: 'served', song: { id: 'fJ9rUzIMcZQ', title: QUEEN }, since: waits[0]!.since, until: servedAt + 250 })
+    expect(loadingDetails(events)).toEqual([`finding the audio for “bohemian rhapsody”`, `finding the audio for “${QUEEN}”`, `the audio for “${QUEEN}”`])
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
+  })
+
   it('a lookup that fails is narrated to its end: Loading says the watch page opens instead, and the Answer says where it plays (#502)', async () => {
     const { audio, events, runner } = music({ audio: true })
     audio!.fails.add('fJ9rUzIMcZQ')
     await runner.run('play bohemian rhapsody')
-    expect(loadingDetails(events)).toEqual([`finding the audio for “${QUEEN}”`, `the watch page for “${QUEEN}” instead`])
+    expect(loadingDetails(events)).toEqual([`finding the audio for “bohemian rhapsody”`, `finding the audio for “${QUEEN}”`, `the watch page for “${QUEEN}” instead`])
     expect(displays(events)).toEqual([`Playing “${QUEEN}” on its watch page.`])
   })
 

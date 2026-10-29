@@ -1,6 +1,7 @@
 import type { PipelineEvent, PipelineStatus } from './events'
 import { stageWord } from './stageWords'
 import type { EarPhase } from '../voice/voicePrompt'
+import { songWaitParts, type SongWait } from '../music/songWait'
 
 // Progress projection: the header hint's state, as a pure function over the
 // pipeline event stream. The stage and its start come from status events.
@@ -18,6 +19,8 @@ export interface RunProgress {
   word?: string
   /** The Hop the stage is in (#428). */
   hop?: number
+  /** A song waiting to sound (#507): the hint then says the wait's words on the wait's clock, as the Wait Card does. */
+  wait?: SongWait
 }
 
 /**
@@ -40,6 +43,7 @@ export function stageEntered(last: RunProgress | null, event: Extract<PipelineEv
     ...(word !== undefined ? { word } : {}),
     ...(detail !== undefined ? { detail } : {}),
     ...(event.hop !== undefined ? { hop: event.hop } : {}),
+    ...(event.wait !== undefined ? { wait: event.wait } : {}),
   }
 }
 
@@ -149,16 +153,23 @@ const STUCK_LINES: Readonly<Record<PipelineStatus, string | null>> = {
  * the seconds in this stage, which climb as the honest-hang signal and are
  * never cut; Stop stays the only escape.
  */
-export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; stage: string | null; seconds: string } {
+export function runProgressParts(progress: RunProgress, now: number, pillStatus: CapsuleStatus): { named: string; detail: string | null; stage: string | null; seconds: string; tied?: true } {
+  const named = pillStatus === progress.stage ? '' : `${stageWord(progress)} — `
+  const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
+  // A song's wait (#507, ruling 3): the song named, then the Wait Card's own words — which give way after the song does —
+  // tied to its count, never cut. Never "stuck": a lookup is bounded by its own timeout, and the count down says when it ends.
+  if (progress.wait !== undefined) {
+    const { words, count } = songWaitParts(progress.wait, now)
+    return { named, detail: `“${progress.wait.song.title}”`, stage: hop !== null ? `${hop} · ${words}` : words, seconds: count, tied: true }
+  }
   const elapsed = Math.max(0, now - progress.startedAt)
   const seconds = Math.floor(elapsed / 1000)
   const threshold = STUCK_STAGE_MS[progress.stage]
   const stuck = threshold !== null && elapsed >= threshold ? STUCK_LINES[progress.stage] : null
-  const hop = progress.hop !== undefined && progress.hop > 0 ? `hop ${progress.hop}` : null
   const detail = progress.detail === undefined || progress.detail === '' ? null : progress.stage === 'thinking' ? `“${progress.detail}”` : progress.detail
   const words = [hop, stuck].filter((part) => part !== null)
   return {
-    named: pillStatus === progress.stage ? '' : `${stageWord(progress)} — `,
+    named,
     detail,
     stage: words.length > 0 ? words.join(' · ') : null,
     seconds: `${seconds}s`,
@@ -167,6 +178,7 @@ export function runProgressParts(progress: RunProgress, now: number, pillStatus:
 
 /** The hint as one line: {@link runProgressParts} joined. */
 export function describeRunProgress(progress: RunProgress, now: number, pillStatus: CapsuleStatus): string {
-  const { named, detail, stage, seconds } = runProgressParts(progress, now, pillStatus)
-  return named + [detail, stage, seconds].filter((part) => part !== null).join(' · ')
+  const { named, detail, stage, seconds, tied } = runProgressParts(progress, now, pillStatus)
+  const words = [detail, stage].filter((part) => part !== null).join(' · ')
+  return named + (words === '' ? seconds : `${words}${tied === true ? ' ' : ' · '}${seconds}`)
 }

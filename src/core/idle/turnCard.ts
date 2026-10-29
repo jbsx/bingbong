@@ -3,6 +3,7 @@ import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
 import { stageEntered } from '../pipeline/runProgress'
 import { earPhase, type EarPhase } from '../voice/voicePrompt'
 import type { VoiceHeardEvent, VoiceState } from '../voice/ipcChannels'
+import type { SongWait } from '../music/songWait'
 
 // The Turn Card (#474): what the Idle Screen shows of a spoken or typed
 // line's whole journey — the ear taking it, its words, the reading, every
@@ -40,6 +41,8 @@ export interface TurnStage {
   word?: string
   detail?: string
   hop?: number
+  /** A song waiting to sound (#507): the row says the wait's words on the Wait Card's clock. */
+  wait?: SongWait
 }
 
 /** How a line ended, each said in a word of its own: Done, Failed, Stopped, No response. */
@@ -298,9 +301,9 @@ export function createTurnCardFold(): TurnCardFold {
           // next hop's turn keeps its start, and is no new row.
           const last = state.stage
           const entered = stageEntered(last === null ? null : { stage: last.status, startedAt: last.startedAt, ...(last.word !== undefined ? { word: last.word } : {}), ...(last.detail !== undefined ? { detail: last.detail } : {}), ...(last.hop !== undefined ? { hop: last.hop } : {}) }, event)
-          const { word, detail } = entered
+          const { word, detail, wait } = entered
           lastStatus = event.status
-          state = { ...state, stage: { status: event.status, startedAt: entered.startedAt, turnId: event.turnId, ...(word !== undefined ? { word } : {}), ...(detail !== undefined ? { detail } : {}), ...(entered.hop !== undefined ? { hop: entered.hop } : {}) } }
+          state = { ...state, stage: { status: event.status, startedAt: entered.startedAt, turnId: event.turnId, ...(word !== undefined ? { word } : {}), ...(detail !== undefined ? { detail } : {}), ...(entered.hop !== undefined ? { hop: entered.hop } : {}), ...(wait !== undefined ? { wait } : {}) } }
           // The same action's wait going on into the next hop's turn: no new row.
           if (last !== null && last.status === 'loading' && event.status === 'loading' && last.hop === event.hop) return
           const label = event.status === 'acting' ? (word ?? STEP_LABELS.acting) : STEP_LABELS[event.status]

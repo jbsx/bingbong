@@ -1,3 +1,5 @@
+import type { SongWait } from '../music/songWait'
+
 /**
  * The stages a Command passes through (#428), each published as it is
  * entered: `thinking` from the moment a line is taken, over the page read
@@ -29,10 +31,18 @@ export type PipelineStatus = 'thinking' | 'acting' | 'loading' | 'speaking' | 'c
  * `detail` is what the stage is on — the heard words while hop 0 thinks,
  * the action's object in the person's words while it acts (#438) — and
  * `word` is Acting's own word for the action ("Opening", "Searching").
+ * `wait` (#507): a `play`'s song waiting to sound — the stage's words and
+ * seconds are then the wait's, as the Wait Card says them.
  */
 export type PipelineEvent =
   | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; keepsIdle?: boolean; task?: { id: string; hop: number; step?: number; of?: number; progress?: number }; at: number }
-  | { type: 'status'; turnId: string; status: PipelineStatus; hop?: number; detail?: string; word?: string; at: number }
+  | { type: 'status'; turnId: string; status: PipelineStatus; hop?: number; detail?: string; word?: string; wait?: SongWait; at: number }
+  /**
+   * The Player's song is waiting to sound, or no longer is (`wait: null`)
+   * (#507): what the Wait Card shows — a Command's song, or a queued one
+   * starting into silence, which no Command waits on. Outside any turn.
+   */
+  | { type: 'song_wait'; wait: SongWait | null; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {
       type: 'tool_result'

@@ -16,6 +16,7 @@ import { CONSENT_PLAYED_MS } from '../browser/collectPageScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { ROAD_LOUDNESS_DB, YOUTUBE_DEFAULT_LEVEL, loudnessFactor, matchedLevel } from '../../core/music/loudness'
 import { DUCK_SHARE } from '../../core/music/ducking'
+import { waitedFor, type SongWait } from '../../core/music/songWait'
 import type { AudioStream } from './ytDlp'
 import { CONTINUE_SCRIPT, END_LEAD_S, HELD_RESUME_SCRIPT, LEVEL_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, START_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type HeldResumed, type LevelRead, type PausedAll, type StartRead, type WatchStatus } from './youtubeScripts'
 
@@ -103,9 +104,10 @@ export interface AudioRoad {
 /**
  * A wait the Player's song is in before it plays (#502), for the Command
  * waiting on it to narrate (ui.md 2): its stream looked up on the audio
- * road, or its watch page opened because the road could not play it.
+ * road, the time YouTube serves it once the lookup said (#507), or its
+ * watch page opened because the road could not play it.
  */
-export type PlayerWait = { readonly kind: 'lookup'; readonly song: Song } | { readonly kind: 'fallback'; readonly song: Song }
+export type PlayerWait = SongWait
 
 /** Where the Player's song plays (#502): the watch page in the pane, or the audio road. */
 export type Road = 'page' | 'audio'
@@ -253,6 +255,12 @@ export interface Player {
   readonly audioRoad: boolean
   /** Hears each wait a song opened for a Command is in before it plays (#502): the lookup, the fallback. The returned function stops it. */
   onWait(listener: (wait: PlayerWait) => void): () => void
+  /**
+   * Hears every wait a song is in before it sounds (#507) — a Command's,
+   * and a queued song's starting into silence — and its end (`null`):
+   * what the Wait Card shows. The returned function stops it.
+   */
+  onSongWait(listener: (wait: SongWait | null) => void): () => void
 }
 
 export interface PlayerDeps {
@@ -425,10 +433,43 @@ export function createPlayer(deps: PlayerDeps): Player {
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
   const shownListeners = new Set<() => void>()
   const waitListeners = new Set<(wait: PlayerWait) => void>()
-  /** A wait told (#502): only a Command's song is narrated; one opened in the background has no line waiting on it. */
-  const waitFor = (wait: PlayerWait, background: boolean): void => {
-    if (background) return
-    for (const listener of [...waitListeners]) listener(wait)
+  const cardListeners = new Set<(wait: SongWait | null) => void>()
+  /** The wait the Wait Card shows (#507), and the open it is for: only that open ends it — never one a later Command overtook. */
+  let waiting: { wait: SongWait; owner: () => boolean } | null = null
+  /** While a wait is up, its owner read every quarter second: a stop or a later line ends it then, not when its lookup returns (#507). */
+  let ownerWatch: ReturnType<typeof setInterval> | null = null
+  const closeWait = (): void => {
+    waiting = null
+    if (ownerWatch !== null) clearInterval(ownerWatch)
+    ownerWatch = null
+    for (const listener of [...cardListeners]) listener(null)
+  }
+  /**
+   * A wait told (#502, #507): a Command's song is narrated to the Command;
+   * every song's goes to the Wait Card, a queued one's too — it opens in
+   * the background only once the song before it ended or failed, so it
+   * starts into silence (ruling 4 on #507). Each kind of one song's wait
+   * keeps the wait's start, so its seconds are the whole wait's.
+   */
+  const waitFor = (kind: SongWait['kind'], song: Song, owner: () => boolean, background: boolean, until = 0): void => {
+    // The words' wait, then the pick's (#507): one open's wait for one song keeps one start.
+    const held = waiting !== null && waiting.owner === owner ? waitedFor(waiting.wait.song) : undefined
+    const since = waiting !== null && (held === null || held === song.id) ? waiting.wait.since : wallNow()
+    const named = { id: song.id, title: song.title, ...(song.channel !== undefined ? { channel: song.channel } : {}) }
+    tellWait(kind === 'served' ? { kind, song: named, since, until } : { kind, song: named, since }, owner, background)
+  }
+  const tellWait = (wait: SongWait, owner: () => boolean, background: boolean): void => {
+    waiting = { wait, owner }
+    ownerWatch ??= setInterval(() => {
+      if (waiting !== null && !waiting.owner()) closeWait()
+    }, 250)
+    if (!background) for (const listener of [...waitListeners]) listener(wait)
+    for (const listener of [...cardListeners]) listener(wait)
+  }
+  /** The open `owner` made is over — its song sounds, or it failed or gave way: its wait, if still the one shown, ends. */
+  const waitEnded = (owner: () => boolean): void => {
+    if (waiting === null || waiting.owner !== owner) return
+    closeWait()
   }
   /** The audio road is taken now (#502): wired, and its setting on. */
   const roadOn = (): boolean => deps.audio !== undefined && (deps.audio.on?.() ?? true)
@@ -806,7 +847,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function streamTo(song: Song, current: () => boolean, background: boolean): Promise<boolean | 'superseded'> {
     const audio = deps.audio!
     let stream: AudioStream
-    waitFor({ kind: 'lookup', song }, background)
+    waitFor('lookup', song, current, background)
     // A lookup that fails counts none: the last one's, of this same song perhaps, is not its own.
     lookedUp = null
     const from = now()
@@ -827,6 +868,8 @@ export function createPlayer(deps: PlayerDeps): Player {
       reportFault('music.player.served', new Error(`the stream for ${song.id} is served only in ${Math.round(servedInMs)} ms`))
       return false
     }
+    // When it sounds is known now (#507): the Wait Card and the Capsule count down to it.
+    if (servedAt !== null) waitFor('served', song, current, background, servedAt)
     // Bound on the monotonic clock too: a wall clock stepped back must not stretch the wait.
     const waited = now()
     while (servedAt !== null && wallNow() < servedAt && now() - waited < SERVED_WAIT_MS) {
@@ -864,9 +907,9 @@ export function createPlayer(deps: PlayerDeps): Player {
   const roadFor = (video: boolean): Road => (roadOn() && !video ? 'audio' : 'page')
 
   /** The watch page opened for a song the audio road could not play (#502, owner's ruling 3): told, and its start marked so. */
-  function fallBack(song: Song): void {
+  function fallBack(song: Song, current: () => boolean): void {
     fellBack = song.id
-    waitFor({ kind: 'fallback', song }, false)
+    waitFor('fallback', song, current, false)
   }
 
   /**
@@ -881,7 +924,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     fellBack = null
     const first = await openOn(song, current, leaving, on, undefined, background)
     if (first !== 'failed' || on !== 'audio' || background) return first
-    fallBack(song)
+    fallBack(song, current)
     return openOn(song, current, leaving, 'page')
   }
 
@@ -1030,7 +1073,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     // more — for a Command; in the background the pane is not the Player's to take, and the song is held unstarted.
     if (road === 'audio') {
       if (background) return first
-      fallBack(song)
+      fallBack(song, current)
       const opened = await openOn(song, current, song, 'page')
       if (opened !== 'opened') return opened === 'superseded' ? 'superseded' : first
       return startOf(song, current, background, true)
@@ -1083,6 +1126,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         publish()
       }
     })
+    // The queued song sounds, or none will (#507): the Wait Card closes.
+    background = background.finally(() => waitEnded(current))
   }
 
   /** A song that could not be opened: the Command fails, saying so, and the next queued song plays. */
@@ -1100,7 +1145,13 @@ export function createPlayer(deps: PlayerDeps): Player {
   async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song), video = song.video === true): Promise<PlayerOutcome> {
     // Read once for the song: the road it was asked on is the one its Answer tells it fell back from.
     const taken = roadOn()
-    const outcome = await playSongOn(song, current, answer, then, video)
+    let outcome: PlayerOutcome
+    try {
+      outcome = await playSongOn(song, current, answer, then, video)
+    } finally {
+      // The song sounds, or will not (#507): its wait is over, the Wait Card closes.
+      waitEnded(current)
+    }
     if (!taken || road !== 'page' || outcome.superseded === true || outcome.failure === true) return outcome
     // With the audio road taken, a song on the watch page is one to show (#502): a video, or the road's fallback — which its Answer says (ui.md 2).
     return { ...outcome, shown: true, ...(fellBack === song.id ? { answer: onItsWatchPage(outcome.answer) } : {}) }
@@ -1188,8 +1239,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (outcome.failure === true && outcome.unstarted !== true) deps.songs?.forgetWords(words)
       return outcome
     }
+    // The Receipt (#507 review): a song bound for the audio road waits from the Command firing, named by its words until the search picks it.
+    if (roadOn() && !video) tellWait({ kind: 'lookup', song: { title: words }, since: wallNow() }, current, false)
     const songs = await readResults(words, current)
-    if (!isSongs(songs)) return songs
+    if (!isSongs(songs)) {
+      waitEnded(current)
+      return songs
+    }
     const song = songs[0]!
     return openPick({ words, results: songs, index: 0, song, remembered: false, video }, current, `Playing ${quoted(song.title)}.`)
   }
@@ -1634,6 +1690,10 @@ export function createPlayer(deps: PlayerDeps): Player {
     onWait(listener) {
       waitListeners.add(listener)
       return () => waitListeners.delete(listener)
+    },
+    onSongWait(listener) {
+      cardListeners.add(listener)
+      return () => cardListeners.delete(listener)
     },
   }
   return player

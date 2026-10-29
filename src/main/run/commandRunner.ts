@@ -108,7 +108,7 @@ import { reportFault } from '../../core/trace/fault'
 import { cardBudgetChars, DEFAULT_CARD_BUDGET_TOKENS, promptChars, sizeRefusalOf, tighterBudget } from '../../core/decision/cardBudget'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
-import type { Player, PlayerOutcome } from '../music/player'
+import type { Player, PlayerOutcome, PlayerWait } from '../music/player'
 import { adWait, type AdShowing } from '../../core/music/nowPlaying'
 import { watchUrl } from '../../core/music/youtubeSearch'
 import { isSeek, type MediaOpAction } from '../../core/browser/mediaOp'
@@ -2141,9 +2141,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     let loading = false
     // What it loads (#442): the address the action goes to, else the page the pane is on now.
     let loadingHost: string | undefined
-    const sayLoading = (detail: string | undefined, host = detail): void => {
+    const sayLoading = (detail: string | undefined, host = detail, wait?: PlayerWait): void => {
       loadingHost = host
-      publish({ type: 'status', turnId, status: 'loading', hop: task.hop, ...(detail !== undefined ? { detail } : {}), at: at() })
+      publish({ type: 'status', turnId, status: 'loading', hop: task.hop, ...(detail !== undefined ? { detail } : {}), ...(wait !== undefined ? { wait } : {}), at: at() })
     }
     const release = deps.onEffect?.((effect) => {
       if (current() && speech === undefined) react(effect)
@@ -2178,8 +2178,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         ? deps.player?.onWait?.((wait) => {
             if (!current() || !performing) return
             loading = true
-            if (wait.kind === 'lookup') sayLoading(`finding the audio for “${wait.song.title}”`)
-            else sayLoading(`the watch page for “${wait.song.title}” instead`, loadingDetail(watchUrl(wait.song.id)))
+            // The wait rides on its Loading (#507): the Capsule says the Wait Card's words on its clock.
+            if (wait.kind === 'lookup') sayLoading(`finding the audio for “${wait.song.title}”`, undefined, wait)
+            else if (wait.kind === 'served') sayLoading(`the audio for “${wait.song.title}”`, undefined, wait)
+            else sayLoading(`the watch page for “${wait.song.title}” instead`, loadingDetail(watchUrl(wait.song.id)), wait)
           })
         : undefined
     let unchanged = false

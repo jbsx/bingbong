@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WithheldResourceError } from '../../core/browser/unsettledAction'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { FakeBrowser } from '../../core/testing/doubles'
@@ -6,10 +6,12 @@ import type { MusicAction } from '../../core/music/musicWords'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
+import { waitedFor, type SongWait } from '../../core/music/songWait'
 import { createPlayer, type PlayerConsent, type PlayerConsentTold, type PlayerOutcome, type PlayerSeekResume, type PlayerStart, type SongMemory } from './player'
 import { SEEK_SETTLE_MS, type ElementOp } from './youtubeScripts'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { SHEET_DISMISSAL, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
+import type { AudioStream } from './ytDlp'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
 // page's video in the pane over CDP. Tested against a scripted YouTube:
@@ -1847,7 +1849,7 @@ describe('the audio road', () => {
     const starts: PlayerStart[] = []
     const waits: string[] = []
     const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve: audio.resolve, ...(on !== undefined ? { on } : {}) }, onStart: (start) => starts.push(start) })
-    player.onWait((wait) => waits.push(`${wait.kind} ${wait.song.id}`))
+    player.onWait((wait) => waits.push(`${wait.kind} ${waitedFor(wait.song)}`))
     const always = (): boolean => true
     const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, always)
     return { ...pane, audio, player, perform, starts, waits }
@@ -2091,7 +2093,8 @@ describe('the audio road', () => {
   it('the lookup is a wait told to the Command (#502, ui.md 2), and the road its start took is in the perf log', async () => {
     const { starts, waits, perform } = withAudio()
     await perform({ kind: 'search', place: 'now' }, 'song a')
-    expect(waits).toEqual(['lookup aaaaaaaaaaa'])
+    // Named by the words until the search picks it (#507 review), then by the pick.
+    expect(waits).toEqual(['lookup null', 'lookup aaaaaaaaaaa'])
     expect(starts).toHaveLength(1)
     expect(starts[0]).toMatchObject({ video: 'aaaaaaaaaaa', road: 'audio', fallback: false, started: true })
     expect(typeof starts[0]!.lookup).toBe('number')
@@ -2101,7 +2104,7 @@ describe('the audio road', () => {
     const { audio, starts, waits, perform } = withAudio()
     audio.fails.add('aaaaaaaaaaa')
     await perform({ kind: 'search', place: 'now' }, 'song a')
-    expect(waits).toEqual(['lookup aaaaaaaaaaa', 'fallback aaaaaaaaaaa'])
+    expect(waits).toEqual(['lookup null', 'lookup aaaaaaaaaaa', 'fallback aaaaaaaaaaa'])
     expect(starts.at(-1)).toMatchObject({ video: 'aaaaaaaaaaa', road: 'page', lookup: null, fallback: true })
   })
 
@@ -2112,16 +2115,120 @@ describe('the audio road', () => {
     expect(starts.at(-1)).toMatchObject({ road: 'page', lookup: null, fallback: false })
   })
 
-  it('a song the queue opens in the background tells no wait: no Command waits on it', async () => {
+  it('a song the queue opens in the background tells no Command its wait: none waits on it — but it starts into silence, so the Wait Card shows it (#507, ruling 4)', async () => {
     const { audio, waits, player, perform } = withAudio()
+    const cards: string[] = []
+    player.onSongWait((wait) => cards.push(wait === null ? 'end' : `${wait.kind} ${waitedFor(wait.song)}`))
     await perform({ kind: 'search', place: 'now' }, 'song a')
     await perform({ kind: 'search', place: 'end' }, 'song b')
     waits.length = 0
+    cards.length = 0
     audio.youtube.endVideo()
     await player.check()
     await player.settled()
     expect(audio.loaded.map((load) => load.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb'])
     expect(waits).toEqual([])
+    expect(cards).toEqual(['lookup bbbbbbbbbbb', 'end'])
+  })
+
+  // The Wait Card (#507): every wait a song is in before it sounds, on the Command's clock — when it began, and when its stream is served.
+  it('tells the served time once the lookup knows it, on the wait’s own start, and ends the wait at the first sound', async () => {
+    const { player, perform } = withServedAudio(2_700)
+    const told: SongWait[] = []
+    const cards: (SongWait | null)[] = []
+    player.onWait((wait) => told.push(wait))
+    player.onSongWait((wait) => cards.push(wait))
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    const since = 1_793_237_540_000
+    const song = { id: 'aaaaaaaaaaa', title: 'Song A' }
+    expect(told).toEqual([
+      { kind: 'lookup', song: { title: 'song a' }, since },
+      { kind: 'lookup', song: expect.objectContaining(song), since },
+      { kind: 'served', song: expect.objectContaining(song), since, until: since + 2_700 + 250 },
+    ])
+    expect(cards).toEqual([...told, null])
+  })
+
+  it('a searched play’s wait begins as it fires, naming the words until the search picks the song, on one clock (#507 review: the Receipt)', async () => {
+    const pane = wired()
+    const audio = scriptedAudio(pane.youtube.watches)
+    let wall = 1_793_237_540_000
+    // The results page takes 800 ms, as YouTube's does live (three fetches, 0.76–0.90 s, 2026-10-29).
+    const fetchResults = (url: string): Promise<string> => ((wall += 800), pane.youtube.fetchResults(url))
+    const player = createPlayer({ browser: pane.browser, fetchResults, sleep: async () => {}, wallNow: () => wall, audio: { surface: audio.surface, resolve: audio.resolve } })
+    const cards: (SongWait | null)[] = []
+    player.onSongWait((wait) => cards.push(wait))
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    const since = 1_793_237_540_000
+    expect(cards).toEqual([
+      { kind: 'lookup', song: { title: 'song a' }, since },
+      { kind: 'lookup', song: expect.objectContaining({ id: 'aaaaaaaaaaa', title: 'Song A' }), since },
+      null,
+    ])
+  })
+
+  it('a search that finds nothing ends its wait', async () => {
+    const { player, perform } = withAudio()
+    const cards: string[] = []
+    player.onSongWait((wait) => cards.push(wait === null ? 'end' : `${wait.kind} ${wait.song.title}`))
+    expect(await perform({ kind: 'search', place: 'now' }, 'nothing here')).toMatchObject({ failure: true })
+    expect(cards).toEqual(['lookup nothing here', 'end'])
+  })
+
+  it('a searched video, or the road off, waits on no card while it searches', async () => {
+    const cards: unknown[] = []
+    const on = withAudio()
+    on.player.onSongWait((wait) => cards.push(wait))
+    await on.perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    const off = withAudio(() => false)
+    off.player.onSongWait((wait) => cards.push(wait))
+    await off.perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(cards).toEqual([])
+  })
+
+  it('a wait whose Command gave way (a stop, a later line) ends at once, not when its lookup returns (#507 review)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const pane = wired()
+      const audio = scriptedAudio(pane.youtube.watches)
+      // The lookup held until the test answers it: a yt-dlp still running when the Command gives way.
+      let answer: () => void = () => {}
+      const held = (id: string): Promise<AudioStream> => new Promise((done) => (answer = () => done(audio.resolve(id))))
+      const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve: held } })
+      const cards: string[] = []
+      player.onSongWait((wait) => cards.push(wait === null ? 'end' : `${wait.kind} ${waitedFor(wait.song)}`))
+      let live = true
+      const played = player.perform({ kind: 'search', place: 'now' }, 'song a', () => live)
+      while (!cards.includes('lookup aaaaaaaaaaa')) await new Promise((done) => setTimeout(done, 0))
+      live = false
+      await vi.advanceTimersByTimeAsync(250)
+      expect(cards).toEqual(['lookup null', 'lookup aaaaaaaaaaa', 'end'])
+      answer()
+      await played
+      expect(cards).toEqual(['lookup null', 'lookup aaaaaaaaaaa', 'end'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a fallback is a wait too, ended once the watch page’s song sounds', async () => {
+    const { audio, player, perform } = withAudio()
+    const cards: string[] = []
+    player.onSongWait((wait) => cards.push(wait === null ? 'end' : `${wait.kind} ${waitedFor(wait.song)}`))
+    audio.fails.add('aaaaaaaaaaa')
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(cards).toEqual(['lookup null', 'lookup aaaaaaaaaaa', 'fallback aaaaaaaaaaa', 'end'])
+  })
+
+  it('the watch page has no wait to show: with the road off, nor for a video, the Wait Card never comes up', async () => {
+    const off = withAudio(() => false)
+    const cards: unknown[] = []
+    off.player.onSongWait((wait) => cards.push(wait))
+    await off.perform({ kind: 'search', place: 'now' }, 'song a')
+    const on = withAudio()
+    on.player.onSongWait((wait) => cards.push(wait))
+    await on.perform({ kind: 'search', place: 'now', video: true }, 'song a')
+    expect(cards).toEqual([])
   })
 
   it('the setting off (#502): every play is the watch page, not shown, nothing looked up — exactly as with no road wired', async () => {

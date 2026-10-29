@@ -156,3 +156,28 @@ describe('capsuleStatus', () => {
     expect(capsuleStatus('failed', voice, 'acting')).toBe('acting')
   })
 })
+
+// A song's wait (#507, ruling 3): the Capsule says the Wait Card's words on the Wait Card's clock — never a count of its own.
+describe('a song’s wait on the Capsule (#507)', () => {
+  const song = { id: 'abc', title: 'Fixture Song', channel: 'Fixture Channel' }
+
+  it('names the song and says the wait’s own words and seconds, counted from the wait, not the stage — the words may give way, the count never', () => {
+    const progress = { stage: 'loading' as const, startedAt: 1_000, detail: 'finding the audio for “Fixture Song”', wait: { kind: 'lookup' as const, song, since: 2_000 } }
+    expect(runProgressParts(progress, 4_500, 'loading')).toEqual({ named: '', detail: '“Fixture Song”', stage: 'Finding the audio,', seconds: '2s', tied: true })
+    expect(describeRunProgress(progress, 4_500, 'loading')).toBe('“Fixture Song” · Finding the audio, 2s')
+  })
+
+  it('counts down to the served time, and is never called stuck: the count says when it ends', () => {
+    const progress = { stage: 'loading' as const, startedAt: 1_000, wait: { kind: 'served' as const, song, since: 1_000, until: 12_000 } }
+    expect(runProgressParts(progress, 9_100, 'loading')).toEqual({ named: '', detail: '“Fixture Song”', stage: 'Playing in', seconds: '3s', tied: true })
+  })
+
+  it('carries the wait from the status that names it, and drops it at the next stage', () => {
+    const tracker = createRunProgressTracker()
+    const wait = { kind: 'lookup' as const, song, since: 300 }
+    tracker.onEvent({ type: 'status', turnId: 't1', status: 'loading', hop: 0, detail: 'finding the audio for “Fixture Song”', wait, at: 300 })
+    expect(tracker.current()?.wait).toEqual(wait)
+    tracker.onEvent({ type: 'status', turnId: 't1', status: 'speaking', hop: 0, at: 900 })
+    expect(tracker.current()?.wait).toBeUndefined()
+  })
+})
