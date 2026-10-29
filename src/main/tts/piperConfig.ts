@@ -14,8 +14,22 @@ export interface PiperConfig {
   playerBin: string
   /** The player's ALSA device: 'null' when the run is muted (tests, agents), else aplay's default. */
   playerDevice?: string
+  /**
+   * Where the app's own voice plays (#490): 'aplay' (the default, outside
+   * Chromium) or 'chromium' (a hidden window's WebAudio, so the mic's echo
+   * canceller hears it), from BINGBONG_SPEECH_PLAYER. Speech and the chime
+   * follow it; the Timer's alarm stays on aplay.
+   */
+  speechPlayer: SpeechPlayerKind
   /** What the first launch downloads (#419): the binary unless it is one's own, and the default voice. */
   install: PiperInstallPlan
+}
+
+export type SpeechPlayerKind = 'aplay' | 'chromium'
+
+/** BINGBONG_SPEECH_PLAYER: 'chromium' plays the voice through Chromium (#490); anything else, aplay. */
+export function speechPlayerOf(env: Record<string, string | undefined>): SpeechPlayerKind {
+  return env.BINGBONG_SPEECH_PLAYER?.trim().toLowerCase() === 'chromium' ? 'chromium' : 'aplay'
 }
 
 export function resolvePiperConfig(
@@ -33,6 +47,7 @@ export function resolvePiperConfig(
     voiceId: env.BINGBONG_PIPER_VOICE?.trim() || DEFAULT_PIPER_VOICE,
     playerBin: env.BINGBONG_APLAY_BIN?.trim() || 'aplay',
     ...(shouldMuteAudio(env) ? { playerDevice: 'null' } : {}),
+    speechPlayer: speechPlayerOf(env),
     install: { piperDir, voicesDir, release },
   }
 }

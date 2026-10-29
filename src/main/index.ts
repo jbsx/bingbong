@@ -62,6 +62,8 @@ import { createRetriable } from './moonshine/retriable'
 import { systemClock } from '../core/ports/clock'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
+import { createChromiumPlayer } from './tts/createChromiumPlayer'
+import { createSpeechSurface } from './tts/speechSurface'
 import { registerTtsIpc } from './tts/attachTts'
 import { attachAppControl } from './app/attachAppControl'
 import { createSpeakingGate } from '../core/tts/speakingGate'
@@ -366,8 +368,15 @@ const chimeWav = createChimeWav()
 const soundMute = createMuteSwitch()
 // The Mic Mute (the button beside the Sound Mute's): the ear shut and the microphone released.
 const micMute = createMuteSwitch()
-// The chime and the alarm play through the same player as speech, so a muted run is silent.
-const chimePlayer = createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice, muted: soundMute.muted })
+// Where the app's own voice plays (#490): through aplay (the default), or, with BINGBONG_SPEECH_PLAYER=chromium, in a
+// hidden window's WebAudio, so the mic's echo canceller has the voice as its reference and takes it out of the mic. Its
+// window is made once the dashboard is, so the first line pays no window start.
+const speechSurface = piperConfig.speechPlayer === 'chromium' ? createSpeechSurface() : null
+// One player for speech and the chime, so their streams are numbered on the one page.
+const chromiumPlayer = speechSurface === null ? null : createChromiumPlayer({ surface: speechSurface, device: piperConfig.playerDevice, muted: soundMute.muted })
+app.on('will-quit', () => speechSurface?.destroy())
+// The chime plays where speech plays, and the alarm through aplay, the way speech does by default, so a muted run is silent.
+const chimePlayer = chromiumPlayer ?? createAplayPlayer({ bin: piperConfig.playerBin, device: piperConfig.playerDevice, muted: soundMute.muted })
 // The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
 // Screen; its alarm plays through its own aplay, so the chime and speech
 // never cut it.
@@ -655,8 +664,12 @@ async function createWindow(): Promise<BrowserWindow> {
       prefetch: true,
       ready: piperReady,
       muted: soundMute.muted,
+      ...(chromiumPlayer !== null ? { player: chromiumPlayer } : {}),
     }),
   )
+  // Made with the dashboard, and gone with it: a hidden window left behind would keep the app from quitting.
+  speechSurface?.prefetch()
+  if (speechSurface !== null) onWindowClosed(win, speechSurface.destroy)
   // Ducking (#344, #461): every media element playing in the pane — the Player's
   // song or a page's own — drops under the ear, a spoken line and a ringing Timer.
   const paneDuck = createPaneDuck(pane.view.webContents)

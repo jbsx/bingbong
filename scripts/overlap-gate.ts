@@ -96,6 +96,7 @@ import { finishedCell, readSummary, resumeFrom, withFinished, withRefused, write
 import { isAudioSurfaceUrl, readRoads, roadSettings, SETTINGS_FILE, withRoad, type Road, type RoadRead } from '../e2e/overlap/audioRoad.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
+import { speechPlayerOf } from '../src/main/tts/piperConfig.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
 import { createPlannerLimiter } from '../src/core/planner/limiter.ts'
 import { PLANNER_DEFAULT_MODEL, PLANNER_GATE_MODEL, resolvePlannerRouting } from '../src/core/planner/plannerRouting.ts'
@@ -346,6 +347,11 @@ interface Live {
 const slowHostOn = process.env[SLOW_HOST_ENV_KEY] === '1'
 
 async function launch(sequence: SequenceCase, model: string, profile: string, wav: string | null, room: Room | null): Promise<Live> {
+  // A room run mutes Chromium so the pane's sound stays out of the room: a voice played through Chromium (#490) would be
+  // muted with it, and every echo case would pass on a voice the mic never heard. That arm is the kiosk A/B's, not the gate's.
+  if (room !== null && speechPlayerOf(process.env) === 'chromium') {
+    throw new Error("BINGBONG_SPEECH_PLAYER=chromium: a room run mutes Chromium, so the app's voice would never reach the room (#490)")
+  }
   const spoken = sequence.input === 'spoken'
   if (spoken) symlinkSync(VOICE_MODELS, join(profile, 'models'))
   writeFileSync(join(profile, SETTINGS_FILE), roadSettings(road))

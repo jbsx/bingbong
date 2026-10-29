@@ -37,6 +37,12 @@ export interface LaunchOptions {
   pipeStdio?: boolean
   /** How long the app may take to expose its debug port (default 20 s). */
   startupTimeoutMs?: number
+  /**
+   * The PulseAudio server of a closed room (e2e/overlap/room.ts, #490): Chromium's own output plays into it instead of
+   * being muted, so the app's voice played through Chromium reaches the room's mic. ALSA, which Chromium falls back to
+   * when pulse fails, is pointed at its null device, so the app sounds nowhere but the room.
+   */
+  audioRoom?: string
 }
 
 export const STDERR_LIMIT = 10_000
@@ -81,6 +87,7 @@ export async function launchApp({
   env,
   pipeStdio = false,
   startupTimeoutMs = 20000,
+  audioRoom,
 }: LaunchOptions): Promise<LaunchedApp> {
   // Chromium's Ozone auto-detection prefers Wayland when WAYLAND_DISPLAY is
   // set (e.g. a sway session), which bypasses the Xvfb DISPLAY the suite runs
@@ -89,7 +96,8 @@ export async function launchApp({
   // output stream while every media element's own state (muted, volume) is untouched.
   // setpriv execs Electron in its own place (same pid) with a parent-death signal: when the test runner dies however it dies
   // (a timeout, Ctrl+C, an agent's shell ending), the kernel kills the app instead of leaving it running on its Xvfb.
-  const proc = spawn('setpriv', ['--pdeathsig', 'KILL', electronBinary, entry, ...args, '--ozone-platform=x11', '--mute-audio', `--remote-debugging-port=${debugPort}`], {
+  const audio = audioRoom === undefined ? ['--mute-audio'] : ['--alsa-output-device=null']
+  const proc = spawn('setpriv', ['--pdeathsig', 'KILL', electronBinary, entry, ...args, '--ozone-platform=x11', ...audio, `--remote-debugging-port=${debugPort}`], {
     cwd,
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: buildEnv(process.env, {
@@ -110,6 +118,7 @@ export async function launchApp({
       WAYLAND_DISPLAY: undefined,
       XDG_SESSION_TYPE: 'x11',
       ...env,
+      ...(audioRoom !== undefined ? { PULSE_SERVER: audioRoom } : {}),
     }),
   })
   const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))

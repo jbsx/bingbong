@@ -6,7 +6,7 @@ const INSTALL = { piperDir: '/nonexistent/piper', voicesDir: '/nonexistent/voice
 describe('createMainTts', () => {
   it('resolves a failed line as an outcome, never a throw, when piper cannot run', async () => {
     const tts = createMainTts({
-      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', install: INSTALL },
+      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', speechPlayer: 'aplay', install: INSTALL },
       getVoiceId: () => 'test',
     })
 
@@ -16,7 +16,7 @@ describe('createMainTts', () => {
   it('fails the line as an outcome when Piper could not be installed, and asks the install again at the next line (#419)', async () => {
     let installs = 0
     const tts = createMainTts({
-      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', install: INSTALL },
+      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test', playerBin: '/nonexistent/aplay', speechPlayer: 'aplay', install: INSTALL },
       getVoiceId: () => 'test',
       ready: () => {
         installs += 1

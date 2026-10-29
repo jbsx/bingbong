@@ -262,6 +262,8 @@ export async function startHarness(
     productionDefaults?: boolean
     /** How long the app may take to expose its debug port and mount; the default suits a warm cache. */
     startupTimeoutMs?: number
+    /** A closed room's PulseAudio server (launchApp's `audioRoom`, #490): Chromium plays into it, unmuted. */
+    audioRoom?: string
   },
 ): Promise<Harness> {
   const productionDefaults = options?.productionDefaults === true
@@ -282,6 +284,7 @@ export async function startHarness(
     args: options?.launchArgs,
     pipeStdio: options?.pipeStdio,
     startupTimeoutMs: options?.startupTimeoutMs,
+    ...(options?.audioRoom !== undefined ? { audioRoom: options.audioRoom } : {}),
     env: productionDefaults ? { ...options?.env } : { ...hermeticEnvTemplate(fixture, userDataDir), ...options?.env },
   })
   const teardown = async (quitOptions?: { signal?: NodeJS.Signals }) => {

@@ -12,6 +12,7 @@ describe('resolvePiperConfig', () => {
       voicesDir: join('/data', 'voices'),
       voiceId: 'en_GB-alba',
       playerBin: 'aplay',
+      speechPlayer: 'aplay',
       install: { piperDir: join('/data', 'piper'), voicesDir: join('/data', 'voices'), release: piperReleaseFor('linux', 'x64') },
     })
   })
@@ -39,6 +40,7 @@ describe('resolvePiperConfig', () => {
       voicesDir: '/opt/piper/voices',
       voiceId: 'en_GB-alan-low',
       playerBin: '/opt/bin/fake-aplay',
+      speechPlayer: 'aplay',
       // A binary of one's own is never replaced by a download.
       install: { piperDir: join('/data', 'piper'), voicesDir: '/opt/piper/voices', release: null },
     })
@@ -47,6 +49,14 @@ describe('resolvePiperConfig', () => {
   it('plays to the null device when the run is muted', () => {
     expect(resolvePiperConfig({ BINGBONG_MUTE_AUDIO: '1' }, '/data').playerDevice).toBe('null')
     expect(resolvePiperConfig({ XAUTHORITY: '/tmp/xvfb-run.Ab12Cd/Xauthority' }, '/data').playerDevice).toBe('null')
+  })
+
+  it("plays the app's voice through Chromium only when BINGBONG_SPEECH_PLAYER says so (#490); aplay otherwise", () => {
+    expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: 'chromium' }, '/data').speechPlayer).toBe('chromium')
+    expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: ' Chromium ' }, '/data').speechPlayer).toBe('chromium')
+    expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: 'aplay' }, '/data').speechPlayer).toBe('aplay')
+    expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: 'pulse' }, '/data').speechPlayer).toBe('aplay')
+    expect(resolvePiperConfig({}, '/data').speechPlayer).toBe('aplay')
   })
 
   it('ignores blank env values', () => {

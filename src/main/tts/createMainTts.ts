@@ -1,4 +1,4 @@
-import type { SpeechSynthesizer, TtsSpeaker } from '../../core/ports/tts'
+import type { AudioStreamPlayer, SpeechSynthesizer, TtsSpeaker } from '../../core/ports/tts'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import type { PiperConfig } from './piperConfig'
@@ -18,12 +18,15 @@ export interface MainTtsDeps {
   ready?: () => Promise<unknown>
   /** The Sound Mute: speech goes to no device while it holds. */
   muted?: () => boolean
+  /** The player the voice streams into (#490: the Chromium one behind BINGBONG_SPEECH_PLAYER); default aplay, from the config. */
+  player?: AudioStreamPlayer
 }
 
 /**
  * Composition root for spoken output (T8, #327): a persistent piper — the
  * per-line spawn behind it when it cannot start — streaming sentence by
- * sentence into one aplay per spoken text. The pane's media ducks under
+ * sentence into one player stream per spoken text — aplay, or Chromium's
+ * WebAudio when BINGBONG_SPEECH_PLAYER says so (#490). The pane's media ducks under
  * every spoken line through the Ducking gate (#461), not here.
  */
 export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
@@ -42,7 +45,7 @@ export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
   }
   return createSpeechCoordinator({
     synth,
-    player: createAplayPlayer({ bin: deps.config.playerBin, device: deps.config.playerDevice, ...(deps.muted ? { muted: deps.muted } : {}) }),
+    player: deps.player ?? createAplayPlayer({ bin: deps.config.playerBin, device: deps.config.playerDevice, ...(deps.muted ? { muted: deps.muted } : {}) }),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
   })
 }

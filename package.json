@@ -27,6 +27,7 @@
     "goal:gate": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node --env-file-if-exists=.env scripts/goal-gate.ts",
     "overlap:gate": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node --env-file-if-exists=.env scripts/overlap-gate.ts",
     "overlap:audio": "node scripts/overlap-audio.ts",
+    "speech:echo": "pnpm build && BINGBONG_SPEECH_ECHO=1 xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.e2e.config.ts e2e/speechEcho.e2e.test.ts",
     "jev:candidates": "node scripts/jev-candidates.ts",
     "jev:case": "node scripts/jev-case.ts",
     "jev:appliance": "node scripts/jev-appliance.ts",
