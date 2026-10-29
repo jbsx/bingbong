@@ -11,7 +11,7 @@ import { waitFor } from './waitFor'
 // response never ends: the navigate lands at dom-ready and a quiet window
 // on a page that goes quiet, at the 3 s cap on one that never does — the
 // decision record says which — and a not-found page is still read as the
-// wall it is on that collect, its line spoken.
+// wall it is on that collect, its line shown on the Line Overlay and chimed (#513).
 
 describe('the landing wait e2e', () => {
   let harness: Harness
@@ -80,13 +80,20 @@ describe('the landing wait e2e', () => {
     expect(await recordOf(line)).toMatchObject({ verb: 'navigate', landing: 'capped' })
   })
 
-  it('still reads a not-found landing as the wall it is, and speaks its line', async () => {
+  it('still reads a not-found landing as the wall it is, and shows its line with the failed chime, never spoken (#513)', async () => {
     const { line, ms } = await timedNavigate('/landing/missing')
     expect(ms).toBeLessThan(2_500)
     expect(await recordOf(line)).toMatchObject({ landing: 'quiet' })
+    // The Line Overlay over the pane, in the failure's colour.
     await waitFor(
-      async () => ((await readFile(log, 'utf8').catch(() => '')).split('\n').includes("piper-line That page doesn't exist.") ? true : undefined),
+      async () => ((await harness.lineOverlayEval<string>(`document.querySelector('.line-overlay--failed .line-overlay-text')?.textContent ?? ''`)).startsWith("That page doesn't exist.") ? true : undefined),
       { timeoutMs: 10_000, intervalMs: 100 },
     )
+    // A line chime (two 120 ms tones at 16 kHz: 7724 bytes with the header) went to aplay, and piper never ran.
+    const played = await waitFor(async () => {
+      const rows = (await readFile(log, 'utf8').catch(() => '')).split('\n')
+      return rows.some((row) => row.startsWith('aplay') && row.endsWith('bytes=7724')) ? rows : undefined
+    }, { timeoutMs: 10_000, intervalMs: 100 })
+    expect(played.filter((row) => row.startsWith('piper-line'))).toEqual([])
   })
 })

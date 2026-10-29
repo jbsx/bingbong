@@ -19,7 +19,9 @@ interface Span {
   readonly durMs: number
 }
 
-describe('speech through Chromium e2e', () => {
+// The voice is off (#513) and the Page Read this suite spoke through is gone: it waits for the voice to come back,
+// when it speaks a long line some other way.
+describe.skip('speech through Chromium e2e', () => {
   let harness: Harness
   let dir: string
   let log: string

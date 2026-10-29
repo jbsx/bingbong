@@ -394,15 +394,18 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '09c-read-answer-details')
   await clickPanel(run, '.feed-details-toggle')
   await sleep(300)
-  // The panel shut, the capsule keeps the sentence the read said (#436), until the next input.
+  await clickPanel(run, '[aria-label="Collapse the feed panel"]')
+  await shoot(run, '09b-read-answer-panel-shut')
+  await command(run, 'click 999')
+  // The panel shut, the capsule keeps the last line's sentence (#436), until the next input: the failure's, since a typed
+  // `read` says nothing (#513). The Prompt Bar opened the panel for the line; it is shut again to read the capsule.
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   const kept = await waitFor(async () => {
     const words = await harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`)
-    return /lighthouse/i.test(words) ? words : undefined
+    return /no item 999/i.test(words) ? words : undefined
   }, { timeoutMs: 10_000, intervalMs: 100 }).catch(async () => harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`))
-  expect.soft(kept, 'the capsule keeps the read sentence with the panel shut').toMatch(/lighthouse/i)
-  await shoot(run, '09b-read-answer-panel-shut')
-  await command(run, 'click 999')
+  expect.soft(kept, 'the capsule keeps the failure sentence with the panel shut').toMatch(/no item 999/i)
+  await harness.ensurePanelOpen()
   await shoot(run, '10-failure')
   await expectNextLine(run, '10-failure')
   await command(run, 'scroll down')
@@ -876,27 +879,20 @@ async function walkTheLedger(run: Run): Promise<void> {
   await shoot(run, '43-ledger-transcribing', false)
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the word and its seconds`).toMatch(/^Transcribing…[1-9]s$/)
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 43-ledger-transcribing: the last words`).toBe(`“${LEDGER_PARTIAL}”`)
-  // The read's sentence, held by the scripted player (LEDGER_ENV), so Speaking is a face that holds still.
-  await untilFace('speaking', 'ledger-speaking')
-  await sleep(1_200)
-  // Read before the shot, as the band's words are: the held sentence ends three seconds on.
-  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-stage')?.textContent ?? ''`), `${run.theme} 43b-ledger-speaking: the word and its seconds`).toMatch(/^Speaking…[0-9]s$/)
-  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 43b-ledger-speaking: the sentence as the words`).toMatch(/^The lighthouse\s+The keeper climbed/)
-  await shoot(run, '43b-ledger-speaking', false)
+  // No Speaking face: the app says nothing (#513), so the line goes from read to done.
   await untilFace('done', 'ledger-done')
   await shoot(run, '44-ledger-done')
   const rows = await harness.overlayEval<string[]>(`[...document.querySelectorAll('.peek-card--band .turn-step:not(.turn-step--blank)')].map((row) => row.querySelector('.turn-step-label').textContent + ': ' + row.querySelector('.turn-step-text').textContent)`)
-  expect.soft(rows.some((row) => row.startsWith('Reading: the page')), `${run.theme} 44-ledger-done: the action's row`).toBe(true)
+  expect.soft(rows.some((row) => row.startsWith('Reloading')), `${run.theme} 44-ledger-done: the action's row`).toBe(true)
   expect.soft(rows.some((row) => row.startsWith('Done: ')), `${run.theme} 44-ledger-done: the end row`).toBe(true)
-  expect.soft(await harness.overlayEval<string>(`document.querySelector('.peek-card--band .turn-words')?.textContent ?? ''`), `${run.theme} 44-ledger-done: the Answer as the words`).toMatch(/lighthouse/i)
 
   // Nothing moved (#474's rule, #475): every face's rail cells, stage word, mark, words row, hint and history rows at the same pixels.
   const faces = await harness.overlayEval<Record<string, unknown>>(`window.__faces`)
   const seen = Object.keys(faces)
   // Thinking and Acting are not demanded here: the stand-in reads at once and the fixture's read is a blink, so they
   // can share a paint; the action's own row is asserted above, the shell walk's typed line holds Thinking, Opening and
-  // Loading, and the fold's tests hold every row. Speaking is held by the scripted player.
-  expect.soft(seen, `${run.theme}: the faces the band passed through`).toEqual(expect.arrayContaining(['listening', 'transcribing', 'speaking', 'done']))
+  // Loading, and the fold's tests hold every row.
+  expect.soft(seen, `${run.theme}: the faces the band passed through`).toEqual(expect.arrayContaining(['listening', 'transcribing', 'done']))
   for (const key of seen) expect.soft(faces[key], `${run.theme}: the band's geometry at ${key} against listening`).toEqual(faces['listening'])
   // One series across both walks: the shell walk's held page (Thinking, Opening, Loading) stood where this line stands.
   const shellDone = SHELL_BAND_DONE.get(run.theme)
@@ -907,19 +903,18 @@ async function walkTheLedger(run: Run): Promise<void> {
   expect.soft(band.heardShownAt! - band.heardAt!, `${run.theme}: the Heard row after the heard event`).toBeLessThanOrEqual(100)
 }
 
-/** The Ledger walk's line (#475): Jev's, so it waits for its Endpoint — `read` alone is the grammar's and fires on its partial (#326). */
-const LEDGER_LINE = 'read the page'
+/** The Ledger walk's line (#475): exact only whole, so it fires at its Endpoint — no partial short of it is a grammar line (#326). */
+const LEDGER_LINE = 'refresh the page'
 /** Its last partial, short of the line: a partial that reads as the line would fire on it through the stand-in too. */
-const LEDGER_PARTIAL = 'read the pa'
+const LEDGER_PARTIAL = 'refresh the pa'
 
-/** The Ledger walk's ear (#475): the wake, a second of quiet, the line spoken over six seconds, then quiet; read in four seconds. Its sentence plays for three seconds. */
+/** The Ledger walk's ear (#475): the wake, a second of quiet, the line spoken over six seconds, then quiet; read in four seconds. */
 const LEDGER_ENV: Record<string, string> = {
-  BINGBONG_FAKE_APLAY_MS: '3000',
   BINGBONG_WAKE_ENGINE: 'node',
   BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
   BINGBONG_VAD_LOAD_MS: '20000',
   BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 30), ...frames(SPEECH, 200), QUIET]),
-  BINGBONG_STT_SCRIPT: JSON.stringify([{ text: LEDGER_LINE, delayMs: 4_000, partials: ['re', 'read th', ...frames(0, 300).map(() => LEDGER_PARTIAL)] }]),
+  BINGBONG_STT_SCRIPT: JSON.stringify([{ text: LEDGER_LINE, delayMs: 4_000, partials: ['re', 'refresh th', ...frames(0, 300).map(() => LEDGER_PARTIAL)] }]),
 }
 
 function expectClean(run: Run): void {
@@ -988,15 +983,11 @@ describe('the states screenshot review (#359)', () => {
     }, 120_000)
 
     it(`shoots the Ledger Strip through a spoken line in ${theme}`, async () => {
-      // A voice for the scripted piper (e2e/bin), so the read's sentence is spoken and its Speaking face is drawn.
-      const voices = await mkdtemp(join(tmpdir(), 'bingbong-e2e-ledger-voices-'))
-      await writeFile(join(voices, 'en_GB-alba-medium.onnx'), '')
-      await writeFile(join(voices, 'en_GB-alba-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
-      const run = await launch(theme, { ...LEDGER_ENV, BINGBONG_PIPER_VOICE_DIR: voices, ...decisionScript(readingOf(LEDGER_LINE, 'read')) }, FAKE_MIC)
+      const run = await launch(theme, LEDGER_ENV, FAKE_MIC)
       try {
         await walkTheLedger(run)
       } finally {
-        await close(run).finally(() => rm(voices, { recursive: true, force: true }).catch(() => {}))
+        await close(run)
         expectClean(run)
       }
     }, 200_000)

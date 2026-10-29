@@ -10,12 +10,11 @@ import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
-import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
+import type { SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { pageReadPartLine, type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { NONE_SAID } from '../../core/command/answer'
-import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import type { AppChange, AppState } from '../../core/command/appOp'
 import type { UpdateCheck } from '../../core/update/updateCheck'
@@ -143,7 +142,7 @@ class FakeSpeech {
   }
 }
 
-/** A Page Read as the controller writes one: the head, the refs, then the page's text and its part line. */
+/** A page listing as the controller writes one: the head, the refs, then the page's text and its part line. */
 const PAGE_READ = [
   '# Example — https://example.com/',
   'viewport 985x575 scroll 0/2000',
@@ -429,7 +428,7 @@ describe('an upload by voice (#424): the page\'s file chooser becomes the Shelf 
     await runner.run('attach the invoice', { source: 'typed' })
 
     expect(browser.attached).toEqual([])
-    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual([shown(SPOKEN_FAILURES.notFinished, 'read')])
+    expect(events.filter((event) => event.type === 'display').map((event) => event.type === 'display' && event.text)).toEqual([shown(SPOKEN_FAILURES.notFinished, 'help')])
     expect(records.find((record) => record.type === 'decision')).toMatchObject({ upload: { file: null, reason: 'unread', shelf: 2 } })
   })
 
@@ -1367,12 +1366,15 @@ describe('the Player (#343)', () => {
 
   it('`stop` with a Command in flight aborts it and leaves the music playing', async () => {
     const speech = new FakeSpeech()
-    const { events, youtube, runner } = music({ speech })
+    const { browser, events, youtube, runner } = music({ speech })
     await runner.run('play bohemian rhapsody')
+    let listed: (page: string) => void = () => {}
+    browser.readPage = () => new Promise<string>((resolve) => (listed = resolve))
     const reading = runner.run('read')
     await flushMicrotasks()
     expect(runner.getState()).toBe('running')
     await runner.run('stop', { source: 'spoken' })
+    listed(PAGE_READ)
     await reading
     expect(youtube.element.paused).toBe(false)
     expect(youtube.pauseAlls).toBe(0)
@@ -1555,7 +1557,7 @@ describe('a Command the Local Match settles', () => {
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://news.ycombinator.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
   })
 
-  it('reads the seven spoken commands of AC1 into their browser actions', async () => {
+  it('reads the spoken commands of AC1 into their browser actions, and a spoken `read` into none: the page listing is typed only (#513)', async () => {
     const { browser, decision, runner } = harness()
     await runner.run('open youtube', { source: 'spoken' })
     await runner.run('click sign in', { source: 'spoken' })
@@ -1563,14 +1565,13 @@ describe('a Command the Local Match settles', () => {
     decision.script.push({ answers: { action: choice('search'), slot: choice('s2-4') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('search for rust async book', { source: 'spoken' })
     await runner.run('type hello in the search box', { source: 'spoken' })
-    // Read before the back: the fake's back lands on a blank pane, where a read has nothing to read (#361).
     await runner.run('read', { source: 'spoken' })
     await runner.run('back', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
     expect(browser.clicks).toEqual([2])
     expect(browser.scrolls).toEqual(['down'])
     expect(browser.typed).toEqual([{ ref: 3, text: 'hello' }])
-    expect(browser.pageReads).toEqual([1])
+    expect(browser.pageReads).toEqual([])
   })
 
   it('reloads typed and spoken from the Local Match, and offers reload to Jev (#328 AC9)', async () => {
@@ -1799,7 +1800,7 @@ describe('a Command the Local Match cannot settle', () => {
 
     expect(types(events)).toEqual(['status', 'command', 'display', 'done'])
     expect(events[1]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
-    expect(events[2]).toMatchObject({ type: 'display', text: 'No response.\n\nNothing on this page fits the words.\n\nTry “read”.', muted: true })
+    expect(events[2]).toMatchObject({ type: 'display', text: 'No response.\n\nNothing on this page fits the words.\n\nTry “help”.', muted: true })
     expect(events[1]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
@@ -2621,171 +2622,44 @@ describe('Early Fire (#326)', () => {
   })
 })
 
-// Increment 3 (#327, ADR 0076): `read` speaks the Page Read, sentence by
-// sentence, and a failure speaks one line; actions that succeed stay silent.
-// The Reaction of a Command whose output is speech closes on its first
-// spoken sample.
+// Increment 3 (#327, ADR 0076): a failure speaks one line; actions that
+// succeed stay silent. The Page Read is gone (#513): `read` is the typed
+// page listing the e2e lists refs by, silent, and no spoken line reaches it.
 describe('a Command whose output is speech', () => {
-  it('reads the page aloud: the Card of its title and words, one speak of the page text, the Reaction on the first spoken sample (AC3)', async () => {
+  it('lists the page on a typed `read`: the Card of its title and words, one part, never spoken, the Reaction on the Card', async () => {
     const speech = new FakeSpeech()
     const { browser, events, perf, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
+    const reads: number[] = []
+    browser.readPage = async (part = 1) => {
+      reads.push(part)
+      return PAGE_READ
+    }
     perf.state.monotonicMs = 500
-    const run = runner.run('read', { source: 'spoken', turnId: 'voice-1', endpointAt: 400 })
-    await flushMicrotasks()
-
-    // The Card is shown when the text is in hand, before a word is spoken.
+    await runner.run('read', { turnId: 'typed-1', endpointAt: 400 })
+    expect(reads).toEqual([1])
     expect(events.find((event) => event.type === 'display')).toMatchObject({ text: '## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.' })
-    expect(speech.spoken).toEqual([{ text: 'Welcome to the example. It has two sentences.\nA second block.', turnId: 'voice-1' }])
-    expect(events.filter((event) => event.type === 'speak')).toEqual([
-      { type: 'speak', turnId: 'voice-1', text: 'Welcome to the example. It has two sentences.\nA second block.', at: expect.any(Number) },
-    ])
-    expect(types(events).indexOf('display')).toBeLessThan(types(events).indexOf('speak'))
-    expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
-    // Still the Command in flight while it speaks: the Abort Head reaches it.
-    expect(runner.getState()).toBe('running')
-    expect(events).toContainEqual(expect.objectContaining({ type: 'status', turnId: 'voice-1', status: 'speaking' }))
-
-    perf.state.monotonicMs = 1_150
-    speech.sound()
-    expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 750, detail: { verb: 'read', effect: 'spoken' } })
-    // The sentence's end is published (#470): the Peek Card's linger counts from it.
-    expect(events.filter((event) => event.type === 'spoken')).toEqual([])
-    speech.finish()
-    await run
-    expect(events.filter((event) => event.type === 'spoken')).toEqual([{ type: 'spoken', turnId: 'voice-1', at: expect.any(Number) }])
-    expect(types(events).indexOf('spoken')).toBeLessThan(types(events).indexOf('done'))
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(runner.getState()).toBe('idle')
-  })
-
-  it('reads on to the end of a page longer than one part, each part read once the one before has been spoken', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ speech })
-    const parts = (part: number): string => ['# Long — https://example.com/', 'page text:', `Part ${part} words.`, pageReadPartLine(part, 2)].join('\n')
-    const reads: number[] = []
-    browser.readPage = async (part = 1) => {
-      reads.push(part)
-      return parts(part)
-    }
-    const run = runner.run('read')
-    await flushMicrotasks()
-    expect(reads).toEqual([1])
-    speech.finish()
-    await flushMicrotasks()
-    expect(reads).toEqual([1, 2])
-    expect(speech.spoken.map((line) => line.text)).toEqual(['Part 1 words.', 'Part 2 words.'])
-    speech.finish()
-    await run
-    // One Card, the Page Read's first part, as today.
-    expect(events.filter((event) => event.type === 'display')).toHaveLength(1)
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-  })
-
-  it('reads no further part once the speech was cut — the wake word stops the speaker without the runner', async () => {
-    const speech = new FakeSpeech()
-    const { browser, runner } = harness({ speech })
-    const reads: number[] = []
-    browser.readPage = async (part = 1) => {
-      reads.push(part)
-      return ['page text:', `Part ${part} words.`, pageReadPartLine(part, 2)].join('\n')
-    }
-    const run = runner.run('read')
-    await flushMicrotasks()
-    speech.finish({ ok: true, stopped: true })
-    await run
-    expect(reads).toEqual([1])
-  })
-
-  it('closes the Reaction on the Card when no sample was ever spoken', async () => {
-    const speech = new FakeSpeech()
-    const { browser, perf, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
-    perf.state.monotonicMs = 500
-    const run = runner.run('read', { source: 'spoken', turnId: 'voice-1', endpointAt: 400 })
-    await flushMicrotasks()
-    perf.state.monotonicMs = 2_000
-    speech.finish({ ok: false, error: 'piper missing' })
-    await run
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: true, result: PAGE_READ })
+    expect(speech.spoken).toEqual([])
+    expect(events.filter((event) => event.type === 'speak')).toEqual([])
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'status', status: 'speaking' }))
     expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 100, detail: { verb: 'read', effect: 'display' } })
-  })
-
-  it('speaks that the page has no text when a read finds none', async () => {
-    const speech = new FakeSpeech()
-    const { runner } = harness({ speech })
-    const run = runner.run('read')
-    await flushMicrotasks()
-    expect(speech.spoken.map((line) => line.text)).toEqual([SPOKEN_FAILURES.empty])
-    speech.finish()
-    await run
-  })
-
-  it('speaks what a page of controls alone holds, and shows it as no failure (2026-10-21 audit)', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ speech })
-    browser.readPage = async () =>
-      ['# context menu fixture — http://127.0.0.1:4100/context-menu', 'signature 0a1b2c3d', '[1] button "Fixture video player"', '[2] button "Loop"', '[3] link "Plain link"', 'page text: part 1 of 1 — this page has no text; there is no part 2'].join('\n')
-    const run = runner.run('read')
-    await flushMicrotasks()
-    expect(speech.spoken.map((line) => line.text)).toEqual(['This page has no text, only 2 buttons and a link.'])
-    speech.finish()
-    await run
-    const card = events.find((event) => event.type === 'display')
-    expect(card).toMatchObject({ text: '## context menu fixture\n\nThis page has no text, only 2 buttons and a link.' })
-    expect(card).not.toMatchObject({ failure: true })
-  })
-
-  it('a later Command silences the reading, ends its turn cancelled, and the reading\'s remaining sentences are never synthesized (AC3)', async () => {
-    const synthesized: string[] = []
-    const renders: (() => void)[] = []
-    const streams: { stopped: boolean }[] = []
-    const speech = createSpeechCoordinator({
-      synth: {
-        synthesize: (text) => {
-          synthesized.push(text)
-          return new Promise((resolve) => renders.push(() => resolve(new Uint8Array([1]))))
-        },
-      },
-      player: {
-        open(): AudioStream {
-          const state = { stopped: false }
-          streams.push(state)
-          let resolveDone!: () => void
-          const done = new Promise<void>((resolve) => (resolveDone = resolve))
-          return { done, write: () => {}, end: () => {}, stop: () => ((state.stopped = true), resolveDone()) }
-        },
-      },
-    })
-    const { browser, events, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
-    const reading = runner.run('read', { turnId: 'read-1' })
-    await flushMicrotasks()
-    renders.shift()!()
-    await new Promise((resolve) => setImmediate(resolve))
-    expect(synthesized).toEqual(['Welcome to the example.', 'It has two sentences.'])
-
-    await runner.run('scroll down')
-    expect(streams[0]!.stopped).toBe(true)
-    renders.shift()!()
-    await reading
-    await new Promise((resolve) => setImmediate(resolve))
-    expect(synthesized).toEqual(['Welcome to the example.', 'It has two sentences.'])
-    // The cut sentence's end (#470) may land after the turn's; it ends nothing.
-    const readTurn = events.filter((event) => 'turnId' in event && event.turnId === 'read-1' && event.type !== 'spoken')
-    expect(readTurn.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
-    expect(events).toContainEqual({ type: 'spoken', turnId: 'read-1', at: expect.any(Number) })
-  })
-
-  it('abort silences the reading', async () => {
-    const speech = new FakeSpeech()
-    const { browser, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
-    const run = runner.run('read')
-    await flushMicrotasks()
-    expect(runner.abort()).toBe(true)
-    expect(speech.stops).toBe(1)
-    await run
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(runner.getState()).toBe('idle')
+  })
+
+  it('never lists the page for a spoken line: "read" and "read the page" said are no Local Match, at the Endpoint or on a partial', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    let reads = 0
+    browser.readPage = async () => {
+      reads += 1
+      return PAGE_READ
+    }
+    void runner.prepare()
+    await runner.consider('read')
+    for (const line of ['read', 'Read.', 'read the page']) await runner.run(line, { source: 'spoken' })
+    expect(reads).toBe(0)
+    expect(events.filter((event) => event.type === 'command' && event.action === 'read the page')).toEqual([])
   })
 
   it('a failed open speaks its one line, and the turn still ends failed at once (AC4)', async () => {
@@ -3109,7 +2983,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decision.requests).toHaveLength(2)
     expect(commands(events)).toEqual([expect.objectContaining({ dropped: true, task: expect.objectContaining({ hop: 0 }) })])
     expect(commands(events)[0]).not.toHaveProperty('action')
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nNothing on this page fits the words.\n\nTry “read”.' })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nNothing on this page fits the words.\n\nTry “help”.' })
     expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'none' }), expect.objectContaining({ verb: 'none', whereAsk: true, ended: 'terminal' })])
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
@@ -3119,7 +2993,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     decision.script.push({ answers: { action: choice('click-9', 0.8, { 'click-9': 0.8, none: 0.2 }), slot: choice('none') } })
     await runner.run('the ninth thing please', { source: 'spoken' })
     expect(browser.clicks).toEqual([])
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “read”.' })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “help”.' })
   })
 
   it('AC3: none at hop 1 with no sure yes ends unsure — the page stays, the line says so, the Feed says not sure', async () => {
@@ -3127,7 +3001,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     decision.script.push(answer('search', 's3-6'), answer('none'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
-    expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'read') })])
+    expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'help') })])
     expect(commands(events)[1]).toMatchObject({ action: 'not sure this is it', dropped: true, task: { hop: 1 } })
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
   })
@@ -3197,7 +3071,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       const { events, records, decision, runner } = taskHarness()
       decision.script.push(answer('search', 's3-6'), withOutcome(answer('none'), 'yes', 0.4))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-      expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'read') })])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'help') })])
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
     })
 
@@ -3771,7 +3645,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         ['search', undefined],
         ['none', 'unsure'],
       ])
-      expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'read') })])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: shown("I'm not sure this is it.", 'help') })])
     })
 
     it("a landing with its results in view, and a site's own page, are read as they stand: no wait", async () => {
@@ -4154,7 +4028,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(browser.clicks).toEqual([1, 2])
       expect(decision.requests).toHaveLength(3)
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unsure'])
-      expect(failures(events)).toEqual([expect.objectContaining({ text: shown(SPOKEN_FAILURES.unsure, 'read') })])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: shown(SPOKEN_FAILURES.unsure, 'help') })])
     })
 
     it('AC2: a hop that helped breaks the run: no-progress, progress, no-progress goes on', async () => {
@@ -4283,7 +4157,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       decision.script.push(answer('scroll_down'), hopAnswer({ none: 0.9 }, 's0-0'))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.pressedKeys).toEqual([])
-      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I'm not sure this is it.", 'read')])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I'm not sure this is it.", 'help')])
     })
 
     it('a Task that reaches the cap with a menu its last action opened closes it before it ends', async () => {
@@ -4301,7 +4175,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       decision.script.push(answer('scroll_down'), hopAnswer({ none: 0.9 }))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.pressedKeys).toEqual([])
-      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I'm not sure this is it.", 'read')])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual([shown("I'm not sure this is it.", 'help')])
     })
 
     it('AC5: with a song playing the ask carries the Playing line, and a click that ticked Loop is told as loop turned on — the Verdict\'s yes ends the Task done', async () => {
@@ -4438,7 +4312,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     unfit.decision.script.push(reading({ 'click-9': 0.8, none: 0.2 }))
     await unfit.runner.run('the ninth thing', { source: 'spoken' })
     expect(unfit.decision.requests).toHaveLength(1)
-    expect(displays(unfit.events)).toEqual(['No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “read”.'])
+    expect(displays(unfit.events)).toEqual(['No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “help”.'])
   })
 
   it('#394: a sure yes beside the Where Ask\'s action ends the Task done on the page as it is, nothing fired', async () => {
@@ -4483,7 +4357,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     decision.script.push(NONE_OVER_SETTINGS, reading({ none: 0.7, 'click-1': 0.05 }, { outcome: choice('yes', 0.8) }))
     await runner.run('look', { source: 'spoken', turnId: 't1' })
     expect(browser.clicks).toEqual([])
-    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “read”.'])
+    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “help”.'])
     expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
       ['none', undefined, undefined],
       ['none', true, 'terminal'],
@@ -4495,7 +4369,7 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     decision.script.push(NONE_OVER_SETTINGS, reading({ none: 0.9, 'click-1': 0.05 }))
     await runner.run('thank you', { source: 'spoken', turnId: 't1' })
     expect(browser.clicks).toEqual([])
-    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “read”.'])
+    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “help”.'])
     expect(commands(events)).toEqual([expect.objectContaining({ turnId: 't1', dropped: true })])
     expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.ended])).toEqual([
       ['none', undefined, undefined],
@@ -5048,16 +4922,13 @@ describe('the one Answer every Command leaves (#333)', () => {
     expect(displays(events)[0]).not.toMatchObject({ failure: true })
   })
 
-  it('a `read` shows a Card of the page title and its words alone — what is spoken', async () => {
+  it('a typed `read` shows a Card of the page title and its words alone, and says nothing (#513)', async () => {
     const speech = new FakeSpeech()
     const { browser, events, runner } = harness({ speech })
     browser.readPage = async () => PAGE_READ
-    const run = runner.run('read')
-    await flushMicrotasks()
-    speech.finish()
-    await run
+    await runner.run('read')
     expect(displays(events).map((event) => event.text)).toEqual(['## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.'])
-    expect(speech.spoken.map((spoken) => spoken.text)).toEqual(['Welcome to the example. It has two sentences.\nA second block.'])
+    expect(speech.spoken).toEqual([])
   })
 
   it('a thrown failure’s line is the Answer, marked a failure, with or without a voice', async () => {
@@ -5067,8 +4938,8 @@ describe('the one Answer every Command leaves (#333)', () => {
         throw new Error('ref 9 refused')
       }
       await runner.run('click 9')
-      expect(displays(events)).toEqual([expect.objectContaining({ text: shown("There's no item 9 on this page.", 'read'), failure: true })])
-      expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? [said("There's no item 9 on this page.", 'read')] : [])
+      expect(displays(events)).toEqual([expect.objectContaining({ text: shown("There's no item 9 on this page.", 'help'), failure: true })])
+      expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? [said("There's no item 9 on this page.", 'help')] : [])
     }
   })
 
@@ -5119,13 +4990,13 @@ describe('the one Answer every Command leaves (#333)', () => {
     expect(displays(events)[0]!.text).toMatch(/^## Example/)
   })
 
-  it('an empty Page Read’s Card is marked a failure, as its spoken line is', async () => {
+  it('an empty page listing’s Card is marked a failure', async () => {
     const { events, runner } = harness()
     await runner.run('read')
     expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.empty, failure: true })])
   })
 
-  it('a Page Read’s Card carries its whole part, uncut', async () => {
+  it('a page listing’s Card carries its whole part, uncut', async () => {
     const { browser, events, runner } = harness()
     const long = Array.from({ length: 300 }, (_, index) => `Sentence number ${index} of the page.`)
     browser.readPage = async () => ['# Long — https://example.com/', 'page text:', ...long, pageReadPartLine(1, 1)].join('\n')
@@ -5220,7 +5091,7 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     expect(browser.clicks).toEqual([1])
     expect(browser.scrolls).toEqual([])
     expect(decision.requests).toHaveLength(3)
-    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([said("I'm not sure this is it.", 'read')])
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([said("I'm not sure this is it.", 'help')])
     expect(decisions(records).map((record) => [record.task?.step, record.task?.hop, record.ended])).toEqual([
       [1, 0, undefined],
       [1, 1, 'unsure'],
@@ -5240,7 +5111,7 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
 
     expect(browser.clicks).toEqual([1, 2])
     expect(browser.scrolls).toEqual([])
-    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([said("I'm not sure this is it.", 'read')])
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([said("I'm not sure this is it.", 'help')])
     expect(commands(events).at(-1)).toMatchObject({ action: 'Step 2 not run', dropped: true, task: { id: 't1', hop: 0, step: 2, of: 2 } })
   })
 
@@ -5426,7 +5297,7 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
     await runner.run('thank you', { source: 'spoken', turnId: 't1' })
 
     expect(browser.clicks).toEqual([])
-    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “read”.'])
+    expect(displays(events)).toEqual(['No response.\n\nNothing on this page fits the words.\n\nTry “help”.'])
     expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.markAsk, record.ended])).toEqual([
       ['none', undefined, undefined, undefined],
       ['none', true, undefined, undefined],
@@ -5513,7 +5384,7 @@ describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Text
       await runner.run('the cog wheel thing', { source: 'spoken', turnId: 't1' })
 
       expect(browser.clicks).toEqual([])
-      expect(displays(events)).toEqual(['No response.\n\nThe words read as “click 1”, but no control on this page is sure to be it.\n\nTry “read”.'])
+      expect(displays(events)).toEqual(['No response.\n\nThe words read as “click 1”, but no control on this page is sure to be it.\n\nTry “help”.'])
       expect(decisions(records).map((record) => [record.verb, record.markAsk, record.ended])).toEqual([
         ['click', undefined, undefined],
         ['none', true, 'terminal'],
@@ -6262,23 +6133,20 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     expect(doneOf(two.events, two.turnId)).toBe('cancelled')
   })
 
-  it('a spoken outcome still sounding is the line running until its sentence ends (#490): "move on" over a Page Read ends it', async () => {
+  it('a spoken outcome still sounding is the line running until its sentence ends (#490): "move on" over a failure\'s line ends it', async () => {
     const speech = new FakeSpeech()
-    const { decision, asks, events, runner } = harness({ applianceCard: CARD, facts, speech })
-    const reading = runner.run('read')
-    await flushMicrotasks()
+    const { browser, decision, asks, runner } = harness({ applianceCard: CARD, facts, speech })
+    browser.navigate = async () => {
+      throw new Error('net::ERR_NAME_NOT_RESOLVED at https://nope.example/')
+    }
+    await runner.run('open nope.example')
     expect(speech.spoken).toHaveLength(1)
-    const readId = (events.find((event) => event.type === 'command') as { turnId: string }).turnId
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('ends') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
-    const moving = runner.run('move on', { overSpeech: true })
-    await flushMicrotasks()
-    await reading
-    await moving
+    await runner.run('move on', { overSpeech: true })
     expect(asks[0]!.state).toContain('Still running, from the user\'s line before this one')
-    expect(asks[0]!.state).toContain('"read"')
+    expect(asks[0]!.state).toContain('"open nope.example"')
     expect(asks[0]!.state).toContain('Its stage: Speaking')
     expect(speech.stops).toBeGreaterThanOrEqual(1)
-    expect(doneOf(events, readId)).toBe('cancelled')
   })
 
   it('a Task over whose sentence still sounds stays the line running, at Speaking, until the sentence ends (#490)', async () => {
@@ -6295,12 +6163,15 @@ describe('an Overlap (#489): a line given while another runs is read against it'
 
   it('an Early Fire that speaks is the line running while it sounds, and not once its sentence has ended (#490)', async () => {
     const speech = new FakeSpeech()
-    const { decision, asks, runner } = harness({ applianceCard: CARD, facts, speech })
+    const { browser, decision, asks, runner } = harness({ applianceCard: CARD, facts, speech })
+    browser.reload = async () => {
+      throw new Error('net::ERR_CONNECTION_RESET')
+    }
     void runner.prepare()
-    const considered = runner.consider('read')
+    const considered = runner.consider('reload')
     await flushMicrotasks()
     expect(speech.spoken).toHaveLength(1)
-    const endpoint = runner.run('read', { source: 'spoken' })
+    const endpoint = runner.run('reload', { source: 'spoken' })
     await flushMicrotasks()
     decision.script.push({ answers: { action: choice('none'), slot: choice('none'), fate: choice('goes_on') } }, { answers: { action: choice('none'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none') } })
     await runner.run('lovely weather', { source: 'spoken' })

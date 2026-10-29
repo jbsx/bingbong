@@ -6,8 +6,8 @@ import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { waitFor } from './waitFor'
 
-// Increment 3 (#327): `read` speaks the Page Read sentence by sentence
-// through one piper that stays up, into one player stream per spoken text,
+// Increment 3 (#327), with the voice switched back on (#513): a line is spoken sentence by sentence
+// through one piper that stays up, into one player stream per spoken text;
 // and a failed action speaks its one line. The synthesizer and the player
 // are the scripted bins in e2e/bin (the hermetic env sets them); they log
 // what they were given, which is what this suite reads.
@@ -40,7 +40,8 @@ describe('speech e2e', () => {
     harness = await startHarness({
       launchArgs: ['--browser-cli'],
       pipeStdio: true,
-      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log },
+      // The voice is off by default (#513): this suite is the voice's, switched back on.
+      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_VOICE: 'on' },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
   })
@@ -50,32 +51,32 @@ describe('speech e2e', () => {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('reads the page aloud sentence by sentence, through one piper prefetched at startup and one player stream per read', async () => {
+  it('speaks a line sentence by sentence, through one piper prefetched at startup and one player stream per line', async () => {
     // Prefetched: the process is up before anything is spoken.
     await heard(/^piper-start persistent$/)
-    await cli(harness, `navigate ${harness.fixture.url('/story')}`, /^navigated: /)
-    await cli(harness, 'read', /^# story fixture — /)
-    const lines = await heard(/^piper-line He lit it before dark\.$/, /^aplay .*-t raw/)
+    await cli(harness, `navigate ${harness.fixture.url('/landing/missing')}`, /^navigated: /)
+    const lines = await heard(/^piper-line Try “back”\.$/, /^aplay .*-t raw/)
 
     const spoken = lines.filter((line) => line.startsWith('piper-line ')).map((line) => line.slice('piper-line '.length))
-    expect(spoken).toEqual(['The lighthouse', 'The keeper climbed the stairs.', 'The lamp was cold.', 'He lit it before dark.'])
+    expect(spoken).toEqual(["That page doesn't exist.", 'Try “back”.'])
     const plays = lines.filter((line) => line.startsWith('aplay '))
     expect(plays).toHaveLength(1)
-    // Four sentences of 0.1 s each, through the one stream.
-    expect(plays[0]).toBe('aplay -D null -q -t raw -f S16_LE -c 1 -r 22050 - bytes=17640')
+    // Two sentences of 0.1 s each, through the one stream.
+    expect(plays[0]).toBe('aplay -D null -q -t raw -f S16_LE -c 1 -r 22050 - bytes=8820')
 
-    await cli(harness, 'read', /^# story fixture — /)
+    await cli(harness, `navigate ${harness.fixture.url('/landing/missing')}`, /^navigated: /)
     const again = await waitFor(async () => {
       const current = await logLines()
       return current.filter((line) => line.startsWith('aplay ')).length === 2 ? current : undefined
     }, { timeoutMs: 10_000, intervalMs: 100 })
-    // The same process served the second read: no new piper.
+    // The same process served the second line: no new piper.
     expect(again.filter((line) => line.startsWith('piper-start'))).toEqual(['piper-start persistent'])
   })
 
   it('speaks a failed action\'s one line and never its error', async () => {
     await cli(harness, 'click 999', /^error: /)
-    const lines = await heard(/^piper-line That didn't work\.$/)
-    expect(lines.some((line) => /999|ref/.test(line) && line.startsWith('piper-line'))).toBe(false)
+    // The item named in the person's words, never the action's error ("ref 999 …").
+    const lines = await heard(/^piper-line There's no item 999 on this page\.$/)
+    expect(lines.some((line) => /\bref\b/.test(line) && line.startsWith('piper-line'))).toBe(false)
   })
 })

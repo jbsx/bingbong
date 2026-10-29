@@ -11,7 +11,8 @@ html,
 body,
 #overlay-root,
 #weighin-root,
-#waitcard-root {
+#waitcard-root,
+#lineoverlay-root {
   height: 100%;
   margin: 0;
   background: transparent;

@@ -145,15 +145,15 @@ describe('noResponseAnswer', () => {
   const jev = (action: Record<string, number>) => ({ model: 'jev', latencyMs: 1, confidence: { action: 0.9, slot: 0.9 }, probabilities: { action, slot: {} } })
 
   it('says what the words were read as when nothing on the page fits it, and that they are no command otherwise, with the line to say next (#370, #438)', () => {
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ 'click-9': 0.8, none: 0.2 }) })).toBe('No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “read”.')
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ volume: 0.7, none: 0.3 }) })).toBe('No response.\n\nThe words read as “volume”, but nothing on this page fits it.\n\nTry “read”.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ 'click-9': 0.8, none: 0.2 }) })).toBe('No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “help”.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ volume: 0.7, none: 0.3 }) })).toBe('No response.\n\nThe words read as “volume”, but nothing on this page fits it.\n\nTry “help”.')
     expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe("No response.\n\nThose words aren't a command.\n\nTry “help”.")
   })
 
   it('names the second look after a Where Ask (#379, ADR 0082): what it read or why it gave nothing', () => {
     const first = jev({ none: 0.55, 'click-13': 0.2 })
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ none: 0.9 }) })).toBe('No response.\n\nNothing on this page fits the words.\n\nTry “read”.')
-    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ 'click-9': 0.6, none: 0.4 }) })).toBe('No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “read”.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ none: 0.9 }) })).toBe('No response.\n\nNothing on this page fits the words.\n\nTry “help”.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: jev({ 'click-9': 0.6, none: 0.4 }) })).toBe('No response.\n\nThe words read as “click 9”, but nothing on this page fits it.\n\nTry “help”.')
     expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: first, where: { model: 'jev', latencyMs: 800, reason: 'timeout' } })).toBe('No response.\n\nReading the words took too long.\n\nTry “help”.')
   })
 

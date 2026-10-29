@@ -135,6 +135,12 @@ export const CLI_HEADS = ['navigate', 'read', 'read_page', 'click', 'menu', 'cap
 type CliHead = (typeof CLI_HEADS)[number]
 const isCliHead = (head: string): head is CliHead => (CLI_HEADS as readonly string[]).includes(head)
 
+/** The heads a typed line alone reaches (#513): the page listing, which the ear is never biased toward. */
+const TYPED_ONLY_HEADS: ReadonlySet<CliHead> = new Set<CliHead>(['read', 'read_page'])
+
+/** The grammar's heads a spoken line can reach: every one but the typed-only page listing (#513). */
+export const SPOKEN_CLI_HEADS: readonly CliHead[] = CLI_HEADS.filter((head) => !TYPED_ONLY_HEADS.has(head))
+
 /** The verbs the grammar reads only as the whole line. */
 const WORDLESS_HEADS: ReadonlySet<string> = new Set<CliHead>(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
 
@@ -199,6 +205,7 @@ function parseGrammarLine(line: string): ParsedCliCommand {
       return { ok: true, command: { type: 'navigate', input: rest } }
     case 'read':
     case 'read_page':
+      // Kept as the e2e's ref listing after #513, typed only: the page silently listed, never spoken, never offered to Jev.
       return { ok: true, command: { type: 'read' } }
     case 'click': {
       if (!/^\d+$/.test(rest)) {

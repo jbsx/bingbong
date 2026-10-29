@@ -87,7 +87,8 @@ import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
 import { audioDumpEnabled } from '../core/voice/utteranceDump'
 import { silenceFramesForMs } from '../core/voice/vadEndpointing'
 import { resolveWakeConfig } from './wake/wakeConfig'
-import { createChimeWav } from '../core/tts/chime'
+import { createChimeWav, createLineChimeWav } from '../core/tts/chime'
+import { createShownSpeech } from '../core/tts/shownSpeech'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
@@ -308,7 +309,8 @@ const piperConfig = resolvePiperConfig(bootEnv, app.getPath('userData'))
 // Piper and its voice download on first launch (#419): started now, so the
 // first reply finds them; a failure is retried by the next spoken line.
 const piperReady = createRetriable(() => ensurePiper(piperConfig.install, fsPiperInstallDeps))
-void piperReady().catch((error: unknown) => reportFault('tts.piperInstall', error))
+// Installed only for a voice that speaks (#513): with it off, nothing waits on piper.
+if (piperConfig.voice) void piperReady().catch((error: unknown) => reportFault('tts.piperInstall', error))
 
 // The host checks (#419): what the machine must provide and the app cannot
 // ship, looked at once — each one missing is a line in the fault log and on
@@ -364,6 +366,8 @@ const boot = startBootClock(
 )
 boot.mark('main-loaded')
 const chimeWav = createChimeWav()
+// A line's done or failed chime (#513), with the voice off.
+const lineChimeWavs = { done: createLineChimeWav('done'), failed: createLineChimeWav('failed') }
 // The Sound Mute (the mute buttons beside the settings cogs): the pane, speech and the chime; never the alarm.
 const soundMute = createMuteSwitch()
 // The Mic Mute (the button beside the Sound Mute's): the ear shut and the microphone released.
@@ -371,7 +375,8 @@ const micMute = createMuteSwitch()
 // Where the app's own voice plays (#490): through aplay (the default), or, with BINGBONG_SPEECH_PLAYER=chromium, in a
 // hidden window's WebAudio, so the mic's echo canceller has the voice as its reference and takes it out of the mic. Its
 // window is made once the dashboard is, so the first line pays no window start.
-const speechSurface = piperConfig.speechPlayer === 'chromium' ? createSpeechSurface() : null
+// With the voice off (#513) nothing speaks, and the chimes play through aplay.
+const speechSurface = piperConfig.voice && piperConfig.speechPlayer === 'chromium' ? createSpeechSurface() : null
 // One player for speech and the chime, so their streams are numbered on the one page.
 const chromiumPlayer = speechSurface === null ? null : createChromiumPlayer({ surface: speechSurface, device: piperConfig.playerDevice, muted: soundMute.muted })
 app.on('will-quit', () => speechSurface?.destroy())
@@ -496,6 +501,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // Read, never acted on: a click on it gives focus back to the surface that had it (ruling 1).
   const focusBackTo = [win.webContents, pane.view.webContents, feedPanel.contents()].filter((contents) => contents !== null)
   const waitCardView = attachPopupViewToWindow(win, 'waitCard', { preloadDir: join(__dirname, '../preload'), focusBackTo })
+  // The Line Overlay's own view over the browsing pane (#513): read, never acted on, as the Wait Card is.
+  const lineOverlayView = attachPopupViewToWindow(win, 'lineOverlay', { preloadDir: join(__dirname, '../preload'), focusBackTo })
   // The Weigh-ins and the Weigh-in pop-up reach every surface the pop-up shows on.
   for (const contents of [win.webContents, feedPanel.contents(), weighInView.contents()]) if (contents !== null) scaleListener?.addReceiver(contents)
   // The idle shortcut (Ctrl/Cmd+Shift+L) shows the Idle Screen now, from whichever surface owns focus.
@@ -556,6 +563,9 @@ async function createWindow(): Promise<BrowserWindow> {
       // The Wait Card's view (#507) folds the song's wait from the same stream.
       const waitCard = waitCardView.contents()
       if (waitCard !== null) waitCard.send(PIPELINE_IPC.event, event)
+      // And the Line Overlay's (#513) the lines the app would have said.
+      const lineOverlay = lineOverlayView.contents()
+      if (lineOverlay !== null) lineOverlay.send(PIPELINE_IPC.event, event)
     },
     sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
@@ -578,6 +588,7 @@ async function createWindow(): Promise<BrowserWindow> {
   feedPanel.bringToTop()
   weighInView.bringToTop()
   waitCardView.bringToTop()
+  lineOverlayView.bringToTop()
   // Which downloads are a Task's (#423): the runner's Tasks are tracked below, and the pane's navigations each began during one.
   const taskActivity = createTaskActivityTracker()
   pane.view.webContents.on('did-start-navigation', (details) => {
@@ -656,17 +667,24 @@ async function createWindow(): Promise<BrowserWindow> {
   // Spoken output (T8), wrapped in a speaking gate (T9): download
   // announcements and the runner's Page Reads and failure lines (#327)
   // share it. Piper starts now, so the first line pays no model load.
-  const speakingGate = createSpeakingGate(
-    createMainTts({
-      config: piperConfig,
-      getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
-      tracer: perfTracer,
-      prefetch: true,
-      ready: piperReady,
-      muted: soundMute.muted,
-      ...(chromiumPlayer !== null ? { player: chromiumPlayer } : {}),
-    }),
-  )
+  // With the voice off (#513, the default) every one of those lines is
+  // shown on the Line Overlay and chimed instead, and nothing is ever said.
+  const speakingGate = piperConfig.voice
+    ? createSpeakingGate(
+        createMainTts({
+          config: piperConfig,
+          getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
+          tracer: perfTracer,
+          prefetch: true,
+          ready: piperReady,
+          muted: soundMute.muted,
+          ...(chromiumPlayer !== null ? { player: chromiumPlayer } : {}),
+        }),
+      )
+    : createShownSpeech({
+        show: ({ text, failure }) => eventPublisher.publish({ source: 'run', event: { type: 'line', text, ...(failure ? { failure: true } : {}), at: Date.now() } }),
+        chime: (kind) => void chimePlayer.play(lineChimeWavs[kind]).done.catch(() => {}),
+      })
   // Made with the dashboard, and gone with it: a hidden window left behind would keep the app from quitting.
   speechSurface?.prefetch()
   if (speechSurface !== null) onWindowClosed(win, speechSurface.destroy)

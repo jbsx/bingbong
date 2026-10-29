@@ -215,6 +215,9 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
+    reportLineOverlayRect: (rect: PaneRect): void => {
+      ipcRenderer.send(TTS_IPC.lineOverlayRect, { rect })
+    },
   },
   learnedTerms: {
     list: (): Promise<readonly string[]> => ipcRenderer.invoke(LEARNED_TERMS_IPC.list),

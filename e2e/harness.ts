@@ -33,6 +33,10 @@ export interface Harness {
   waitCardEval<T = unknown>(expression: string): Promise<T>
   /** The Wait Card's view as a PNG (#507): what shows over the pane, its own view composited above it. */
   waitCardShot(): Promise<Buffer>
+  /** Evaluate in the Line Overlay's own view over the browsing pane (#513). */
+  lineOverlayEval<T = unknown>(expression: string): Promise<T>
+  /** The Line Overlay's view as a PNG (#513). */
+  lineOverlayShot(): Promise<Buffer>
   /** Lay the dashboard out at a width other than the window's, the kiosk's 1920 say (#507); null gives the window's back. */
   emulateDashboardSize(size: { width: number; height: number } | null): Promise<void>
   /** The dashboard's own page as a PNG, at its emulated size if one is set. */
@@ -112,7 +116,7 @@ interface TargetInfo {
   url: string
 }
 
-type TargetKind = 'dashboard' | 'overlay' | 'weighin' | 'waitcard' | 'pane'
+type TargetKind = 'dashboard' | 'overlay' | 'weighin' | 'waitcard' | 'lineoverlay' | 'pane'
 
 // The floor a crashed renderer gets before the harness touches anything
 // again — process death (and its crash report) must land first.
@@ -138,6 +142,7 @@ const targetPredicates: Record<TargetKind, (info: TargetInfo) => boolean> = {
   overlay: (info) => info.url.includes('out/renderer/overlay.html'),
   weighin: (info) => info.url.includes('out/renderer/weighin.html'),
   waitcard: (info) => info.url.includes('out/renderer/waitcard.html'),
+  lineoverlay: (info) => info.url.includes('out/renderer/lineoverlay.html'),
   pane: (info) => info.type === 'page' && !info.url.includes('out/renderer'),
 }
 
@@ -489,6 +494,17 @@ async function buildHarness(
 
     async waitCardShot() {
       const sid = await waitFor(async () => sidOf('waitcard'), { timeoutMs: 15000, intervalMs: 250 })
+      const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, sid)
+      return Buffer.from(data, 'base64')
+    },
+
+    async lineOverlayEval<T = unknown>(expression: string): Promise<T> {
+      const sid = await waitFor(async () => sidOf('lineoverlay'), { timeoutMs: 15000, intervalMs: 250 })
+      return evaluate<T>(cdp, sid, expression)
+    },
+
+    async lineOverlayShot() {
+      const sid = await waitFor(async () => sidOf('lineoverlay'), { timeoutMs: 15000, intervalMs: 250 })
       const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, sid)
       return Buffer.from(data, 'base64')
     },

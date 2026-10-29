@@ -12,7 +12,9 @@ import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { weighInPopupSurface } from '../../core/scale/weighInPopup'
-import { useFeedPanel, useFeedSlotRect, useWaitCardSlotRect, useWeighInSlotRect } from './useFeedPanel'
+import { useFeedPanel, useFeedSlotRect, useLineOverlaySlotRect, useWaitCardSlotRect, useWeighInSlotRect } from './useFeedPanel'
+import { LineOverlay, useOverlayLine } from './LineOverlay'
+import { lineOverlaySurface } from '../../core/tts/lineOverlay'
 import { WaitCard, useSongWait } from './WaitCard'
 import { waitCardSurface } from '../../core/music/songWait'
 import { useIdle } from './useIdle'
@@ -177,6 +179,11 @@ export function App() {
   const waitSurface = waitCardSurface(songWait, showIdle, view)
   const waitCard = songWait !== null ? <WaitCard wait={songWait} /> : null
   const waitCardSlotRef = useWaitCardSlotRect(waitSurface !== 'pane')
+  // The Line Overlay (#513): the line the app would have said, on whatever surface is up, as the Wait Card is.
+  const overlayLine = useOverlayLine()
+  const lineSurface = lineOverlaySurface(overlayLine !== null, showIdle, view)
+  const lineOverlay = overlayLine !== null ? <LineOverlay line={overlayLine} /> : null
+  const lineOverlaySlotRef = useLineOverlaySlotRect(lineSurface !== 'pane', waitSurface === 'pane')
   const sound = useSoundMute()
   const toggleMic = (): void => void window.bingbong.voice.toggleMic()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
@@ -231,6 +238,7 @@ export function App() {
           onDismissTurn={turn.dismiss}
           result={assistant.lastFailure}
           waitCard={waitSurface === 'idle' ? waitCard : null}
+          lineOverlay={lineSurface === 'idle' ? lineOverlay : null}
         />
         {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} aside={turnUp} /> : null}
       </>
@@ -375,12 +383,16 @@ export function App() {
           <div ref={weighInSlotRef} className="weighin-slot" aria-hidden="true" />
           {/* The Wait Card's own view over the pane (#507) follows this rect: at the pane's top, clear of the Peek Card's band. */}
           <div ref={waitCardSlotRef} className="waitcard-slot" aria-hidden="true" />
+          {/* The Line Overlay's own view over the pane (#513) follows this rect: under the Wait Card's. */}
+          <div ref={lineOverlaySlotRef} className={`lineoverlay-slot${waitSurface === 'pane' ? ' lineoverlay-slot--below-wait' : ''}`} aria-hidden="true" />
         </div>
       </main>
       {/* Over Settings and the Weight page no native view covers the dashboard, so the pop-up is drawn here. */}
       {weighInSurface === 'dashboard' ? <WeighInPopup state={weighInPopup} /> : null}
       {/* Over Settings and the Weight page the Wait Card is drawn here too (#507). */}
       {waitSurface === 'dashboard' ? <div className="waitcard-place">{waitCard}</div> : null}
+      {/* And the Line Overlay (#513). */}
+      {lineSurface === 'dashboard' ? <div className={`lineoverlay-place${waitSurface === 'dashboard' ? ' lineoverlay-place--below-wait' : ''}`}>{lineOverlay}</div> : null}
     </div>
   )
 }

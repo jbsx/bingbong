@@ -89,7 +89,6 @@
           "forward": "go forward",
           "reload": "reload the page",
           "press": "press a key: enter, escape, space or an arrow key",
-          "read": "read the page aloud or show its contents",
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",

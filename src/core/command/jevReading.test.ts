@@ -419,15 +419,15 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
   })
 
   it('orders the card refs, then media ops, then opens, then menus under the cap: the menus give way before the ops', () => {
-    // 231 clicks and the eleven ops fill the 255 exactly beside none, the eleven ref-less verbs and the page's capture (#466): nothing is left for the link or a menu.
-    const refs: CommandRef[] = [...Array.from({ length: 230 }, (_, n) => ({ ref: n + 1, kind: 'button' as const, label: `Ref ${n + 1}`, href: null, inputType: null })), { ...VIDEO, ref: 231 }]
+    // 232 clicks and the eleven ops fill the 255 exactly beside none, the ten ref-less verbs and the page's capture (#466): nothing is left for the link or a menu.
+    const refs: CommandRef[] = [...Array.from({ length: 231 }, (_, n) => ({ ref: n + 1, kind: 'button' as const, label: `Ref ${n + 1}`, href: null, inputType: null })), { ...VIDEO, ref: 232 }]
     const labels = Object.keys(hopQuestions('pause it', { ...WATCH, refs }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)
     expect(labels.length).toBe(255)
-    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(231)
-    expect(labels).toEqual(expect.arrayContaining(['pause-231', 'rate-231']))
+    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(232)
+    expect(labels).toEqual(expect.arrayContaining(['pause-232', 'rate-232']))
     expect(labels).not.toContain('open-1')
     expect(labels.some((label) => label.startsWith('menu-'))).toBe(false)
-    expect(labels.indexOf('pause-231')).toBeGreaterThan(labels.indexOf('click-231'))
+    expect(labels.indexOf('pause-232')).toBeGreaterThan(labels.indexOf('click-232'))
     // One ref fewer, and the link takes the room before any menu does.
     expect(Object.keys(hopQuestions('pause it', { ...WATCH, refs: refs.slice(1) }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)).toContain('open-1')
   })
@@ -486,7 +486,6 @@ describe('the questions', () => {
       'forward',
       'reload',
       'press',
-      'read',
       'clear',
       'stop',
       'none',
@@ -1335,7 +1334,7 @@ describe('Appliance Verbs (#374)', () => {
     const appliance = { queued: true }
     for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance })]) {
       const labels = Object.keys(questions.action.options)
-      expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS, 'capture-page'])
+      expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'clear', 'stop', 'none', ...APPLIANCE_VERBS, 'capture-page'])
       for (const verb of APPLIANCE_VERBS) expect(questions.action.options[verb]).toMatch(/^music: /)
       expect(questions.action.instructions).not.toMatch(/music/)
     }
@@ -1347,7 +1346,7 @@ describe('Appliance Verbs (#374)', () => {
     expect(labels(PAGE_SONG, false)).toEqual(['play', 'play_next', 'queue', 'show'])
     expect(labels(WATCH, false)).toEqual(['play', 'play_next', 'queue'])
     expect(labels(WATCH, true)).toEqual(APPLIANCE_VERBS)
-    expect(Object.keys(commandQuestions('next song', PAGE_SONG).action.options)).toHaveLength(15)
+    expect(Object.keys(commandQuestions('next song', PAGE_SONG).action.options)).toHaveLength(14)
   })
 
   it("an Appliance Verb reading is the `play` Command the grammar's exact line makes", () => {
@@ -1474,7 +1473,7 @@ describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one
     expect(card.options['type-3']).toBe('type the words into [3] input[search] "Search"')
     expect(card.options['type-2']).toBeUndefined()
     expect(card.options['menu-2']).toBe('right-click [2] to open its menu')
-    for (const label of ['none', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'play', 'queue']) expect(card.options).toHaveProperty(label)
+    for (const label of ['none', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'clear', 'stop', 'play', 'queue']) expect(card.options).toHaveProperty(label)
     for (const label of ['done', 'click', 'type', 'menu']) expect(card.options).not.toHaveProperty(label)
     expect(questions).not.toHaveProperty('verb')
     expect(questions).not.toHaveProperty('target')
@@ -1663,21 +1662,21 @@ describe('Text Further Down (#393, ADR 0086): the blocks below the view are targ
   })
 
   it('takes the room the Choice leaves under its 255 options after the refs, before any right-click or open (#407)', () => {
-    // 120 buttons' clicks, the 12 ref-less options and the page's capture leave 122: the 4 blocks take their shows and
-    // their captures (#466), the right-clicks the 114 left.
+    // 120 buttons' clicks, the 11 ref-less options and the page's capture leave 123: the 4 blocks take their shows and
+    // their captures (#466), the right-clicks the 115 left.
     const roomy = options({ ...DOCS, refs: Array.from({ length: 120 }, button) })
     expect(Object.keys(roomy)).toHaveLength(255)
     expect(shows(roomy)).toEqual(['show-1', 'show-2', 'show-3', 'show-4'])
     expect(Object.keys(roomy).filter((label) => label.startsWith('capture-text-'))).toEqual(['capture-text-1', 'capture-text-2', 'capture-text-3', 'capture-text-4'])
-    expect(Object.keys(roomy).filter((label) => label.startsWith('menu-'))).toHaveLength(114)
+    expect(Object.keys(roomy).filter((label) => label.startsWith('menu-'))).toHaveLength(115)
     // At a hop, the links further down wait for the blocks too: on uptime-kuma's README a hundred links took the room its port was in.
     const links = Array.from({ length: 250 }, (_, index) => ({ label: `Link ${index + 1}`, href: `https://docs.python.org/further/${index + 1}` }))
     const hopped = options({ ...DOCS, refs: Array.from({ length: 120 }, button) }, { ...HOP, links })
     expect(shows(hopped)).toEqual(['show-1', 'show-2', 'show-3', 'show-4'])
     expect(Object.keys(hopped).filter((label) => label.startsWith('open-')).length).toBeGreaterThan(0)
     expect(Object.keys(hopped).some((label) => label.startsWith('menu-'))).toBe(false)
-    // The refs win: 243 clicks and the 12 leave no room.
-    const full = { ...DOCS, refs: Array.from({ length: 243 }, button) }
+    // The refs win: 244 clicks and the 11 leave no room.
+    const full = { ...DOCS, refs: Array.from({ length: 244 }, button) }
     expect(shows(options(full))).toEqual([])
     expect(commandState('x', full, undefined, undefined, undefined, commandQuestions('x', full))).not.toContain('Text further down')
   })

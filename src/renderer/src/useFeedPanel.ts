@@ -106,12 +106,22 @@ export function useWaitCardSlotRect(hidden: boolean): (el: HTMLDivElement | null
   return useSlotRect('waitCard', '', hidden)
 }
 
+/**
+ * Reports the Line Overlay's slot (#513) to main, which sizes the overlay's
+ * own view over the browsing pane by it, hidden while no line is up.
+ */
+export function useLineOverlaySlotRect(hidden: boolean, belowWait: boolean): (el: HTMLDivElement | null) => void {
+  // Stepping below a Wait Card moves the slot without resizing it.
+  return useSlotRect('lineOverlay', belowWait ? 'below-wait' : '', hidden)
+}
+
 /** The view a slot sizes; a name, not the function, so the effects never re-run on it. */
-type SlotView = 'feedPanel' | 'weighIn' | 'waitCard'
+type SlotView = 'feedPanel' | 'weighIn' | 'waitCard' | 'lineOverlay'
 
 function reportRect(slot: SlotView, rect: PaneRect): void {
   if (slot === 'feedPanel') window.bingbong.feedPanel.reportRect(rect)
   else if (slot === 'waitCard') window.bingbong.music.reportWaitCardRect(rect)
+  else if (slot === 'lineOverlay') window.bingbong.tts.reportLineOverlayRect(rect)
   else window.bingbong.weight.reportPopupRect(rect)
 }
 

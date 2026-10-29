@@ -31,6 +31,8 @@ export default defineConfig({
           overlay: 'src/renderer/overlay.html',
           weighin: 'src/renderer/weighin.html',
           waitcard: 'src/renderer/waitcard.html',
+          // The Line Overlay's (#513): the lines the app would have said.
+          lineoverlay: 'src/renderer/lineoverlay.html',
         },
       },
     },

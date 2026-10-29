@@ -68,8 +68,8 @@ function actionWords(label: string): string {
  * grammar's own error for a verb it knows, else what the words were read
  * as, in the person's words — off this page, no command at all, or not
  * read — and the Where Ask's second look when there was one. The next
- * line is a fallback wording: "read" when the words pointed at the page,
- * "help" otherwise.
+ * line is a fallback wording: "help", the words pointed at the page or
+ * not ("read" for the page's, until the Page Read went: #513, a guess).
  */
 function noResponseReason(facts: NoResponseFacts): { why: string; next: string } {
   if (facts.grammarError !== null) return { why: facts.grammarError, next: TRY_LINES.help }
@@ -77,15 +77,15 @@ function noResponseReason(facts: NoResponseFacts): { why: string; next: string }
   const jev = facts.jev
   if (jev !== undefined && 'reason' in jev) return { why: UNREAD[jev.reason], next: TRY_LINES.help }
   const top = topAction(jev)
-  const unfit = (action: string): { why: string; next: string } => ({ why: `The words read as “${actionWords(action)}”, but nothing on this page fits it.`, next: TRY_LINES.read })
+  const unfit = (action: string): { why: string; next: string } => ({ why: `The words read as “${actionWords(action)}”, but nothing on this page fits it.`, next: TRY_LINES.help })
   // An unsure click on a Textless Ref asked again with the marked page (#382): the page showed no control for it.
-  if (facts.marked !== undefined && facts.where === undefined) return { why: `The words read as “${actionWords(top)}”, but no control on this page is sure to be it.`, next: TRY_LINES.read }
+  if (facts.marked !== undefined && facts.where === undefined) return { why: `The words read as “${actionWords(top)}”, but no control on this page is sure to be it.`, next: TRY_LINES.help }
   const where = facts.where
   if (where === undefined) return top === 'none' ? { why: "Those words aren't a command.", next: TRY_LINES.help } : unfit(top)
   // After a Where Ask (#379, ADR 0082), the second look's reading: the first read none.
   if ('reason' in where) return { why: UNREAD[where.reason], next: TRY_LINES.help }
   const found = topAction(where)
-  return found === 'none' ? { why: 'Nothing on this page fits the words.', next: TRY_LINES.read } : unfit(found)
+  return found === 'none' ? { why: 'Nothing on this page fits the words.', next: TRY_LINES.help } : unfit(found)
 }
 
 /** The action card label a reading gave the most probability; `none` when it gave none. */
@@ -243,7 +243,7 @@ function pageReadHead(result: string): { url: string; title: string } {
 const counted = (n: number, one: string, many: string): string[] => (n === 0 ? [] : [n === 1 ? one : `${n} ${many}`])
 
 /**
- * What a Page Read with no words says of a page made only of controls
+ * What a page listing with no words says of a page made only of controls
  * (2026-10-21 audit): the links, buttons and media players it holds, counted
  * by kind — no failure, since the page showed something. Null when the read
  * has words, or lists none of them.
@@ -258,13 +258,13 @@ export function controlsOnlyLine(result: string): string | null {
 }
 
 /**
- * A Page Read's Card (#333): the page title as its heading and the page's
- * own words under it — the words `read` speaks, one paragraph a line, a
- * table's rows kept together, ending "…" when further parts follow —
- * never the controller's viewport, scroll, signature, refs or part lines.
- * `failure` when the page has no words: the Card then says so, as the
- * spoken line does, in the failure colour — unless it holds links, buttons
- * or media, which the Card names instead ({@link controlsOnlyLine}).
+ * The typed page listing's Card (#333; `read`, typed only since #513): the
+ * page title as its heading and the page's own words under it, one
+ * paragraph a line, a table's rows kept together, ending "…" when further
+ * parts follow — never the controller's viewport, scroll, signature, refs
+ * or part lines. `failure` when the page has no words: the Card then says
+ * so in the failure colour — unless it holds links, buttons or media,
+ * which the Card names instead ({@link controlsOnlyLine}).
  */
 export function pageReadCard(result: string): { text: string; failure: boolean } {
   const words = pageReadText(result)

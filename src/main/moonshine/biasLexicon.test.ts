@@ -15,7 +15,6 @@ describe('BIAS_LEXICON', () => {
       'scroll up',
       'scroll down',
       'click',
-      'read',
       'press',
       'screenshot',
       'navigate',

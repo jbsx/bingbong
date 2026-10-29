@@ -87,7 +87,8 @@ describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
     expect(localMatch('clear the field', REFS)).toMatchObject({ verb: 'clear' })
     expect(localMatch('clear the search box', REFS)).toBeNull()
     expect(localMatch('reload the page', REFS)).toMatchObject({ verb: 'reload' })
-    expect(localMatch('read the page', REFS)).toMatchObject({ verb: 'read' })
+    // The Page Read is gone (#513): its spoken phrases are Jev's, and the bare `read` the typed listing's.
+    expect(localMatch('read the page', REFS)).toBeNull()
     expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
     expect(localMatch('go back to the results', REFS)).toBeNull()
     expect(localMatch('scroll down a bit', REFS)).toBeNull()
@@ -266,7 +267,8 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('page up', REFS)).toMatchObject({ verb: 'scroll_up' })
     expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
     expect(localMatch('forward', REFS)).toMatchObject({ verb: 'forward' })
-    expect(localMatch('read the page', REFS)).toMatchObject({ verb: 'read' })
+    // The Page Read is gone (#513): its spoken phrases are Jev's, and the bare `read` the typed listing's.
+    expect(localMatch('read the page', REFS)).toBeNull()
     expect(localMatch('clear', REFS)).toMatchObject({ verb: 'clear' })
     expect(localMatch('stop', REFS)).toMatchObject({ verb: 'stop' })
     expect(localMatch('never mind', REFS)).toMatchObject({ verb: 'stop' })

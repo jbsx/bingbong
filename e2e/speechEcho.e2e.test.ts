@@ -154,6 +154,7 @@ async function measure(arm: 'aplay' | 'chromium', room: Room): Promise<ArmResult
   }
 }
 
+// Moot since #513: the voice is off and the `read` that spoke the page here is silent, typed only; #490 and #512 close as superseded.
 describe.skipIf(!asked || !existsSync(PIPER))("the echo canceller and the app's own voice (#490)", () => {
   const dir = mkdtempSync(join(tmpdir(), 'bingbong-speech-echo-'))
   afterAll(() => rmSync(dir, { recursive: true, force: true }))

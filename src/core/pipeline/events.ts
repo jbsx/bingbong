@@ -63,6 +63,11 @@ export type PipelineEvent =
    * With no `turnId`, a queued video the Player opened in the background.
    */
   | { type: 'shown'; turnId?: string; at: number }
+  /**
+   * A line the app would have said (#513), with the voice off: shown on the
+   * Line Overlay and chimed — every road that spoke, a turn's or not.
+   */
+  | { type: 'line'; text: string; failure?: boolean; at: number }
   /** A `speak`'s sentence has ended — spoken to its end, cut, or failed to sound (#470): the Peek Card's linger counts from it. */
   | { type: 'spoken'; turnId?: string; at: number }
   /**

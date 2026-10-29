@@ -4,7 +4,7 @@
 
 export const COMMAND_HELP_LINES: readonly string[] = [
   'a line is one command — plain words or the grammar:',
-  '  (a line that takes no words — back, reload, read, clear, stop, resume — is the whole line: “stop it” is plain words)',
+  '  (a line that takes no words — back, reload, clear, stop, resume — is the whole line: “stop it” is plain words)',
   '  open <site or words>     a bare word opens its .com, a url is opened; other words are read against the page, its site and the web',
   '  click <label or ref>     click the element the label names, or ref <n> from the last read',
   '  menu <ref>               open the element’s right-click menu (or: right-click <label>)',
@@ -24,7 +24,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  restart                  play this song from the beginning',
   '  louder | quieter | volume <0-100> | mute | unmute',
   '  press enter|escape|tab|space|up|down|left|right [n]   (or: press down three times)',
-  '  read                     print a numbered-ref snapshot of visible interactive elements',
+  '  read                     typed only: print a numbered-ref snapshot of the page',
   '  clear                    clear the focused field',
   '  screenshot [path]        save a jpeg screenshot (default: the downloads dir)',
   '  stop                     interrupt the command in flight — with none, pause the music',

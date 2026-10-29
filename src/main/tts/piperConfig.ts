@@ -21,6 +21,12 @@ export interface PiperConfig {
    * follow it; the Timer's alarm stays on aplay.
    */
   speechPlayer: SpeechPlayerKind
+  /**
+   * Whether the app speaks (#513): off by the owner's ruling, every line
+   * shown on the Line Overlay and chimed instead; BINGBONG_VOICE=on brings
+   * Piper back. Switched off, not deleted: the cheapest to reverse.
+   */
+  voice: boolean
   /** What the first launch downloads (#419): the binary unless it is one's own, and the default voice. */
   install: PiperInstallPlan
 }
@@ -48,6 +54,7 @@ export function resolvePiperConfig(
     playerBin: env.BINGBONG_APLAY_BIN?.trim() || 'aplay',
     ...(shouldMuteAudio(env) ? { playerDevice: 'null' } : {}),
     speechPlayer: speechPlayerOf(env),
+    voice: env.BINGBONG_VOICE?.trim().toLowerCase() === 'on',
     install: { piperDir, voicesDir, release },
   }
 }

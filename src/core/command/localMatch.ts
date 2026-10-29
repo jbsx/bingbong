@@ -12,7 +12,7 @@ import { captureOfRef } from './captureOp'
 // from the Utterance and the page alone, without asking the Decision Model
 // — fixed phrases only, each with one reading whatever the page holds
 // (ADR 0089). The CLI grammar; the control words (scroll, back, reload,
-// read, clear, stop, resume, a key), a phrase that takes no words only as
+// clear, stop, resume, a key), a phrase that takes no words only as
 // the whole Utterance (#368); the Timer's and the Player's lines; and a
 // plain verb with the one element the words name exactly: a label exactly
 // one ref carries, or an address after an opening phrase — a host, a URL,
@@ -85,11 +85,6 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['refresh the page', 'reload'],
   ['refresh page', 'reload'],
   ['refresh', 'reload'],
-  ['read the page', 'read'],
-  ['read page', 'read'],
-  ['read it', 'read'],
-  ['read this', 'read'],
-  ['read', 'read'],
   ['resume', 'resume'],
   ['continue', 'resume'],
   ['clear the field', 'clear'],
@@ -336,6 +331,7 @@ function fromGrammar(parsed: CliCommand, refs: readonly CommandRef[]): Command |
       // The typed line's address, or the search its words run when they are no address.
       return isAddressShaped(parsed.input) ? command('navigate', { slot: parsed.input }) : command('search', { slot: parsed.input })
     case 'read':
+      // Kept as the e2e's ref listing after #513, typed only: the runner never fires it for a spoken line.
       return command('read')
     case 'click':
       return command('click', { target: parsed.ref })
@@ -503,8 +499,8 @@ export function wordsAfterVerb(text: string): string {
  * Whether the words are a whole verb phrase that heads a longer one of
  * another kind — "scroll" (down) heads "scroll up" — so a partial
  * transcript that reads this way may still become a different Command
- * (Early Fire, #326). "read" heading "read the page" is the same Command,
- * and holds nothing back.
+ * (Early Fire, #326). "reload" heading "reload the page" is the same
+ * Command, and holds nothing back.
  */
 export function headsAnotherVerb(text: string): boolean {
   const clean = cleanOf(tokenize(text))

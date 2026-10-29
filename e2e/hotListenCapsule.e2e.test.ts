@@ -51,7 +51,8 @@ describe('the Status Capsule through a Hot Listen (#472)', () => {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('names the running stage beside the open ear, and says Speaking — no waveform, no "say a command" — while the app talks', async () => {
+  // The voice is off (#513) and the Page Read that spoke here is gone: no Speaking face to read until the voice comes back.
+  it.skip('names the running stage beside the open ear, and says Speaking — no waveform, no "say a command" — while the app talks', async () => {
     await mkdir(dir, { recursive: true })
     const harness = await startHarness({
       fixture,

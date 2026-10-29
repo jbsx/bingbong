@@ -57,8 +57,8 @@ export const COMMAND_VERBS = [
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
-/** The verbs the CLI grammar alone reaches: Jev is never offered them. */
-export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer'])
+/** The verbs the CLI grammar alone reaches: Jev is never offered them. `read` is the typed page listing, kept for the e2e after #513. */
+export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer', 'read'])
 
 /**
  * The browser's verbs the Decision Model chooses among (#324), `none`
@@ -67,7 +67,7 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
  * nor `say`, reached through the option of the fact it says (#402), nor
  * `app`, through the app's own options (#420).
  */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app' && verb !== 'capture') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play' | 'say' | 'app' | 'capture'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play' && verb !== 'say' && verb !== 'app' && verb !== 'capture') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'read' | 'play' | 'say' | 'app' | 'capture'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {

@@ -32,9 +32,9 @@ describe('nextLine', () => {
     expect(nextLine(failureLineOf('navigate', 'net::ERR_NAME_NOT_RESOLVED'), command('navigate', 'https://www.fixturely.test/x'))).toBe('back')
   })
 
-  it('an item the page lacks, or a Task not sure it is done, reads the page', () => {
-    expect(nextLine(failureLineOf('click', 'ref 999 refused'), command('click'))).toBe('read')
-    expect(nextLine(SPOKEN_FAILURES.unsure)).toBe('read')
+  it('an item the page lacks, or a Task not sure it is done, names help: the Page Read is gone (#513)', () => {
+    expect(nextLine(failureLineOf('click', 'ref 999 refused'), command('click'))).toBe('help')
+    expect(nextLine(SPOKEN_FAILURES.unsure)).toBe('help')
   })
 
   it("what was not found here is searched for on the web, in the grammar's own search line", () => {

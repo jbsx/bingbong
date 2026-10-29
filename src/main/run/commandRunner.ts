@@ -89,11 +89,10 @@ import {
   type TaskEnded,
   type TaskHop,
 } from '../../core/command/decisionRecord'
-import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
-import { FLAG_ANSWERS, NONE_SAID, STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from '../../core/command/answer'
+import { FLAG_ANSWERS, NONE_SAID, STOPPED_ANSWERS, commandAnswer, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { updateAnswer, type UpdateCheck } from '../../core/update/updateCheck'
@@ -139,12 +138,8 @@ import { doingAnswer, endedWithin, fateUnread, newGoalLine, stoppedLine, type En
 // once; a chain of retries that ends with the user moving on proposes its
 // last Slot, admitted when it recurs.
 //
-// Speech (#327): `read` speaks the Page Read's text, sentence by sentence,
-// after its Card is shown, and stays the Command in flight until the text
-// ends, the Abort Head, or the next Command silences it; its Reaction
-// closes on the first spoken sample. A Command that fails, or lands on an
-// Action Outcome class, speaks one plain line (spokenFailure.ts), marked a
-// failure. Every other action stays silent, but for a Task's end (#399):
+// Speech (#327): a Command that fails, or lands on an Action Outcome
+// class, speaks one plain line (spokenFailure.ts), marked a failure. Every other action stays silent, but for a Task's end (#399):
 // one done after more than one action says "Done.", and one that hit the
 // cap or lost Jev past hop 0 says it could not finish, marked a failure. A
 // best guess that landed shows an Answer naming what it fired (#329).
@@ -297,7 +292,7 @@ export interface CommandRunnerDeps {
   saveScreenshot(path: string, bytes: Uint8Array): Promise<void>
   /** The Learned Terms (ADR 0077); absent reads names off the page alone and learns nothing. */
   terms?: CommandTerms
-  /** The voice (#327): a Page Read and a failure's line are spoken through it; absent keeps every Command silent. */
+  /** The voice (#327): a failure's line is spoken through it; absent keeps every Command silent. */
   speech?: Pick<TtsSpeaker, 'speak' | 'stop'>
   /** The Last Page (CONTEXT.md), for `resume`; absent, or null, leaves `resume` nothing to reopen. */
   lastPage?(): LastPage | null
@@ -356,7 +351,7 @@ export const RESULTS_POLL_MS = 250
  */
 export const MOUNTING_WAIT_MS = 3_000
 
-/** How much of a Page Read the Feed card shows. */
+/** How much of the help the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
 
 /** A screenshot's result line: the path it was saved at. */
@@ -661,7 +656,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
   /** The Jev-read hop that last fired (#328), for the overrun signal; null once a Command read otherwise fires, or one is counted. */
   let jevHop: { turnId: string; hop: number; at: number } | null = null
-  /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
+  /** The runner's texts still sounding (a failure's line, an Answer): the next Command or an abort silences them. */
   let sounding = 0
   /** The last submission made with nothing in flight, being read or sounding (#343): a `stop` it carries pauses the music. */
   let idleAt = -1
@@ -1033,7 +1028,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     floor = Math.max(floor, submission)
     endErrand()
     const said = how === 'ends' && running !== null ? stoppedLine(acting) : undefined
-    // A line ended while its sentence sounds is silenced with it (#490): "move on" over a Page Read. A join on a line that fired, or
+    // A line ended while its sentence sounds is silenced with it (#490): "move on" over its sentence. A join on a line that fired, or
     // whose Task is over, leaves it to the joined line's reading (#494, #510): one that stands on it lets it finish, one that fires cuts it.
     const leftToJoined = how === 'joins' && running !== null && (running.settled || running.fired !== undefined)
     if (running !== null && running.sounding > 0 && !leftToJoined) silence()
@@ -1080,7 +1075,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     sounding += 1
     const line = soundingLine(turnId)
     return speech
-      .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
+      .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}), ...(failure ? { failure: true } : {}) })
       .catch((error: unknown): SpeakOutcome => {
         reportFault('run.commandRunner.speak', error, { turnId })
         return { ok: false, error: String(error) }
@@ -1108,39 +1103,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       .speak(text, { turnId })
       .catch((error: unknown) => reportFault('run.commandRunner.sayStop', error, { turnId }))
       .finally(() => publish({ type: 'spoken', turnId, at: at() }))
-  }
-
-  /**
-   * Speak a Page Read to its end (#327): its first part's text — or that
-   * the page has none — and then each further part, read when the one
-   * before has been spoken to its end. A part that was cut (barge-in, the
-   * Abort Head, a later Command) or failed ends the reading there.
-   */
-  async function speakPageRead(
-    speech: Pick<TtsSpeaker, 'speak'>,
-    turnId: string,
-    firstPart: string,
-    current: () => boolean,
-    onFirstSound: () => void,
-  ): Promise<void> {
-    let page = firstPart
-    for (let first = true; ; first = false) {
-      const words = pageReadText(page)
-      if (first || words !== '') {
-        // A page of controls alone says what it holds (2026-10-21 audit); only a page of nothing is the failure.
-        const said = words || controlsOnlyLine(page) || SPOKEN_FAILURES.empty
-        const outcome = await say(speech, turnId, said, { ...(first ? { onFirstSound } : {}), failure: said === SPOKEN_FAILURES.empty })
-        if (!outcome.ok || outcome.stopped === true) return
-      }
-      const at = pageReadPart(page)
-      if (!current() || at === null || at.part >= at.of) return
-      try {
-        page = await browser.readPage(at.part + 1)
-      } catch (error) {
-        reportFault('run.commandRunner.readNextPart', error, { turnId })
-        return
-      }
-    }
   }
 
   /**
@@ -1364,7 +1326,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Match can read it against the Page Terms.
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions = { split: true }): Promise<Reading> {
-    const quick = exactOf(text, [], options.running !== undefined)
+    const quick = exactOf(text, [], options.running !== undefined, spoken)
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
     if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
@@ -1376,7 +1338,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // speech-start collect once it has settled, else the last one while the pane is on its address — and never waits for one.
       const inHand = dismissed ?? (await pageInHand(pending)) ?? lastPageInHand()
       if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-      const local = exactOf(text, inHand.refs, options.running !== undefined)
+      const local = exactOf(text, inHand.refs, options.running !== undefined, spoken)
       if (local !== null) return { command: local, page: inHand, reading: 'local_match', jevAsked: false }
     }
     const model = deps.decisionModel()
@@ -1404,9 +1366,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * (resumePlan), so its one exact reading is moot and the words are read against the line running on the card. "Resume" over a
    * song still opening means start it, never a new goal that ends it; Jev reads which. Off the card, or on a blank pane, it is exact.
    */
-  function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean): Command | null {
-    const local = localMatch(text, refs, knownAddress)
+  function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean, spoken: boolean): Command | null {
+    const local = matchOf(text, refs, spoken)
     return mootResume(local, running) ? null : local
+  }
+
+  /** The Local Match, but for the page listing (`read`), which a typed line alone reaches (#513): a spoken one is read as if it matched nothing. */
+  function matchOf(text: string, refs: Parameters<typeof localMatch>[1], spoken: boolean): Command | null {
+    const local = localMatch(text, refs, knownAddress)
+    return spoken && local?.verb === 'read' ? null : local
   }
 
   /** A `resume` that reopens nothing, given over a running line with the card on (#508): no exact line, the card's to read. */
@@ -1559,7 +1527,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function readPageCard(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions, quick: Command | null, dismissed: CommandPage | null): Promise<Reading> {
     const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
-    const local = exactOf(text, page.refs, options.running !== undefined)
+    const local = exactOf(text, page.refs, options.running !== undefined, spoken)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
@@ -1940,9 +1908,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * What the Feed shows of a result as a Card: a Page Read's title and
-   * words, its whole part — what is spoken (#333) — where a screenshot
-   * went, the help; never an action's outcome line.
+   * What the Feed shows of a result as a Card: a page listing's title and
+   * words (#333), where a screenshot went, the help; never an action's
+   * outcome line.
    */
   function cardOf(command: Command, result: string): { text: string; failure: boolean } | null {
     if (command.verb === 'read') return pageReadCard(result)
@@ -1979,7 +1947,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   function heardExactly(text: string): string | null {
-    return exactLineHeard(text, learnedTerms(), commandHearing(), knownAddress)
+    const line = exactLineHeard(text, learnedTerms(), commandHearing(), knownAddress)
+    // The page listing is typed only (#513): a line heard as `read` is no exact line.
+    return line !== null && localMatch(line, [], knownAddress)?.verb === 'read' ? null : line
   }
 
   function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
@@ -2127,9 +2097,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { name, args } = resume !== null ? resume.tool : toolOf(command)
     publish({ type: 'tool_call', turnId, callId, name, args, at: at() })
 
-    // The Reaction (CONTEXT.md): Endpoint to the action's first observable
-    // effect — or, for a read that is spoken (#327), to its first spoken sample.
-    const speech = command.verb === 'read' ? deps.speech : undefined
+    // The Reaction (CONTEXT.md): Endpoint to the action's first observable effect.
     let reacted = false
     const react = (effect: string, endedAt = monotonic()): void => {
       if (reacted) return
@@ -2146,8 +2114,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       publish({ type: 'status', turnId, status: 'loading', hop: task.hop, ...(detail !== undefined ? { detail } : {}), ...(wait !== undefined ? { wait } : {}), at: at() })
     }
     const release = deps.onEffect?.((effect) => {
-      if (current() && speech === undefined) react(effect)
-      if (current() && speech === undefined && performing && !loading) {
+      if (current()) react(effect)
+      if (current() && performing && !loading) {
         loading = true
         sayLoading(loadingDetail(typeof args.url === 'string' ? args.url : browser.state().url))
       }
@@ -2215,19 +2183,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
       const card = cardOf(command, result)
-      if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
+      react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
       if (card !== null) answer(turnId, card.text, card.failure ? 'failure' : undefined)
-      if (speech !== undefined) {
-        const shownAt = monotonic()
-        publish({ type: 'status', turnId, status: 'speaking', hop: task.hop, at: at() })
-        await speakPageRead(speech, turnId, result, current, () => {
-          if (current()) react('spoken')
-        })
-        if (!current()) return ended('superseded')
-        // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
-        react('display', shownAt)
-      } else if (command.verb === 'say' || command.verb === 'app') {
+      if (command.verb === 'say' || command.verb === 'app') {
         // A fact's Answer (#402), an app op's (#420), is its sentence: shown, and spoken where there is a voice — but the Idle Screen's (#458), its own receipt.
         answer(turnId, result)
         const then = afterAnswer as (() => void) | null
@@ -3245,7 +3204,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * at its Endpoint, over the page prepared at speech start.
    */
   async function readPartial(words: string, stale: () => boolean): Promise<Reading | null> {
-    const quick = localMatch(words, [], knownAddress)
+    const quick = matchOf(words, [], true)
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
     const stopsSomething = quick?.verb === 'stop' && !idle()
@@ -3266,12 +3225,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const inHand = dismissed ?? (await pageInHand(prepared)) ?? lastPageInHand()
       if (stale()) return null
       if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-      const local = localMatch(words, inHand.refs, knownAddress)
+      const local = matchOf(words, inHand.refs, true)
       return local !== null && firesEarly(local) ? { command: local, page: inHand, reading: 'local_match', jevAsked: false } : null
     }
     const page = dismissed ?? (await collectPage(prepared))
     if (stale()) return null
-    const local = localMatch(words, page.refs, knownAddress)
+    const local = matchOf(words, page.refs, true)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     // Anything else — free words, a Slot, a line only Jev would read — waits for its Endpoint.
     return null

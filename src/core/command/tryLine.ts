@@ -17,7 +17,6 @@ import { SPOKEN_FAILURES } from './spokenFailure'
 /** Every fixed Try line, by the Command verb the Local Match reads it as. */
 export const TRY_LINES = {
   help: 'help',
-  read: 'read',
   back: 'back',
   reload: 'reload',
   resume: 'resume',
@@ -43,24 +42,21 @@ export const BY_FAILURE: ReadonlyMap<string, string | null> = new Map([
   [SPOKEN_FAILURES.empty, TRY_LINES.back],
   [SPOKEN_FAILURES.noPage, TRY_LINES.resume],
   [SPOKEN_FAILURES.noBack, TRY_LINES.resume],
-  [SPOKEN_FAILURES.unsure, TRY_LINES.read],
-  [SPOKEN_FAILURES.notFinished, TRY_LINES.read],
+  [SPOKEN_FAILURES.unsure, TRY_LINES.help],
+  [SPOKEN_FAILURES.notFinished, TRY_LINES.help],
   [SPOKEN_FAILURES.noShelfFile, null],
 ])
 
-/** The next line by the failed Command's kind, when the failure names none; `help` for a kind not listed. */
+/**
+ * The next line by the failed Command's kind, when the failure names none; `help` for a kind not listed —
+ * an action on the page among them, whose line was `read` until the Page Read went (#513, a guess).
+ */
 export const BY_KIND: Readonly<Partial<Record<CommandVerb, string | null>>> = {
   // The grammar has no line that searches for an address (`navigate <host>` opens it again), and an IP or localhost has nothing to search for.
   navigate: TRY_LINES.back,
   search: TRY_LINES.reload,
   // "not that one" is Jev's to read (ADR 0089), and the Queue already moved on past the song.
   play: null,
-  click: TRY_LINES.read,
-  type: TRY_LINES.read,
-  menu: TRY_LINES.read,
-  media: TRY_LINES.read,
-  scroll_up: TRY_LINES.read,
-  scroll_down: TRY_LINES.read,
 }
 
 /**
@@ -71,7 +67,7 @@ export const BY_KIND: Readonly<Partial<Record<CommandVerb, string | null>>> = {
 export function nextLine(failure: string, command?: Pick<Command, 'verb' | 'slot'> | null, words?: string): string | null {
   const fixed = BY_FAILURE.get(failure)
   if (fixed !== undefined) return fixed
-  if (/^There's no item \d+ /.test(failure)) return TRY_LINES.read
+  if (/^There's no item \d+ /.test(failure)) return TRY_LINES.help
   // Words that read as an address would be opened, not searched for.
   if (words !== undefined && words.trim() !== '' && !isAddressShaped(words.trim())) return searchLine(words)
   const byKind = command === undefined || command === null ? undefined : BY_KIND[command.verb]
