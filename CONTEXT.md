@@ -1101,8 +1101,10 @@ with both times, the title, the bar and the controls. A pause glyph over
 the picture while paused, a replay glyph once ended; no peach anywhere on
 it (music is not Bing Bong itself). It follows the Player's once-a-second
 read, so nothing new crosses CDP for it. A song that ran out with nothing
-queued stays on it, shown ended, with "Say “play” or tap to hear it again",
-and `play` plays it again from the start. Each control, and the picture as
+queued shows ended, with "Say “play” or tap to hear it again", and `play`
+plays it again from the start. A minute after the song last sounded, however
+it stopped, the card leaves the screen and the AI Usage takes its room back;
+the Player still holds the song, and `play` still answers. Each control, and the picture as
 the toggle, submits its music verb as a Command on the pointer going down
 like the other idle controls, and unlike them leaves the Idle Screen up.
 There is no control to show the video: the words do that, and it would be
