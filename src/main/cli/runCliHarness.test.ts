@@ -73,6 +73,7 @@ function harnessWith(overrides?: Partial<CliHarnessDeps>) {
   let exited = false
   const deps: CliHarnessDeps = {
     run: (line, options) => runner.run(line, options),
+    readPage: () => browser.readPage(),
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -128,7 +129,7 @@ describe('runCliHarness: a Task (#328)', () => {
 })
 
 describe('runCliHarness', () => {
-  it('prints a banner and prompt, then the Page Read a `read` line produces', async () => {
+  it('prints a banner and prompt, then the page listing its own `read` prints, no Command', async () => {
     const cli = harnessWith()
     await cli.expectOutput("bingbong browser harness — type 'help' for commands")
 

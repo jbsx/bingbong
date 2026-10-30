@@ -109,16 +109,16 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
 
     expect(snapshot.textDigest).toHaveLength(1800)
     expect(snapshot.textLength).toBe(7409)
-    expect(text.endsWith(`page text:\n${snapshot.textDigest}\npage text: first 1,800 of 7,409 characters — read_page returns the page's whole text in 1 part`)).toBe(true)
+    expect(text.endsWith(`page text:\n${snapshot.textDigest}\npage text: first 1,800 of 7,409 characters — read returns the page's whole text in 1 part`)).toBe(true)
     expect(formatPageSnapshot(buildPageSnapshot(textPage(30, 1000))).split('\n').at(-1)).toBe(
-      "page text: first 1,800 of 30,029 characters — read_page returns the page's whole text in 3 parts",
+      "page text: first 1,800 of 30,029 characters — read returns the page's whole text in 3 parts",
     )
   })
 
   it('a snapshot whose text fits carries no fact line (AC2)', () => {
     const text = formatPageSnapshot(buildPageSnapshot(textPage(2, 500)))
 
-    expect(text).not.toContain('read_page returns the whole text')
+    expect(text).not.toContain('read returns the whole text')
     expect(text.split('\n').at(-1)).toMatch(/^001 w+$/)
   })
 
@@ -147,9 +147,9 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
     // Part 1 starts at the top — the preview repeated — and each part holds whole blocks.
     expect(first).toContain(`page text:\n${snapshot.textDigest}`)
     expect(first).toContain('[1] button "Book"')
-    expect(first.endsWith(`${snapshot.textBlocks[10]}\npage text: part 1 of 3 — read_page part=2 continues`)).toBe(true)
+    expect(first.endsWith(`${snapshot.textBlocks[10]}\npage text: part 1 of 3 — read part=2 continues`)).toBe(true)
     expect(second).toContain(`page text:\n${snapshot.textBlocks[11]}\n`)
-    expect(second.endsWith(`${snapshot.textBlocks[21]}\npage text: part 2 of 3 — read_page part=3 continues`)).toBe(true)
+    expect(second.endsWith(`${snapshot.textBlocks[21]}\npage text: part 2 of 3 — read part=3 continues`)).toBe(true)
     expect(third.endsWith(`${snapshot.textBlocks[29]}\npage text: part 3 of 3 — the last part`)).toBe(true)
   })
 
@@ -162,7 +162,7 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
 
   it('refuses to format a part past the end, naming the range', () => {
     const snapshot = buildPageSnapshot(textPage(2, 100))
-    expect(() => formatPageRead(snapshot, 2)).toThrow("read_page: part 2 is past the end — this page's text has 1 part, part=1")
+    expect(() => formatPageRead(snapshot, 2)).toThrow("read: part 2 is past the end — this page's text has 1 part, part=1")
   })
 })
 

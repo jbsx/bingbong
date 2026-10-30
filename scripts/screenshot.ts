@@ -330,7 +330,6 @@ async function main(): Promise<void> {
   const tts = await writeFakeTts(userDataDir)
   const llmScript = JSON.stringify([
     { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: demo.url } }] },
-    { kind: 'tool_calls', calls: [{ id: 'c2', name: 'read_page', args: {} }] },
     { kind: 'answer', speak: ANSWER.speak, display: ANSWER.display },
   ])
   const debugPort = await pickFreePort()

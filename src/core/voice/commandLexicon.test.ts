@@ -11,7 +11,7 @@ describe('commandHeads', () => {
   it('carries every view and the verbs the owner says over a watch page, each once, each a single short word', () => {
     for (const head of ['idle', 'dashboard', 'weight', 'settings', 'panel', 'loop', 'back', 'volume', 'pause', 'help', 'flag', 'scroll', 'click', 'timer', 'dismiss'])
       expect(heads, head).toContain(head)
-    // The page listing is typed only since #513: the ear is never biased toward it.
+    // No verb reads the page since #513: the ear is never biased toward it.
     expect(heads).not.toContain('read')
     expect(new Set(heads).size).toBe(heads.length)
     for (const head of heads) {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyPageReadLine, pageReadPartLine, pageReadText } from '../browser/pageText'
-import { NONE_SAID, commandAnswer, controlsOnlyLine, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from './answer'
+import { NONE_SAID, commandAnswer, noResponseAnswer, noneIsALine, passageCard } from './answer'
 import type { Command } from './command'
 
 describe('commandAnswer (#333)', () => {
@@ -69,65 +68,7 @@ describe('commandAnswer (#333)', () => {
   })
 
   it('leaves the verbs whose Answer is a Card, and the ones that fire nothing, to themselves', () => {
-    for (const verb of ['read', 'screenshot', 'help', 'none'] as const) expect(answer(command(verb))).toBeNull()
-  })
-})
-
-describe('pageReadCard (#333)', () => {
-  const cardText = (result: string): string => pageReadCard(result).text
-  const read = (head: string[], text: string[], part = pageReadPartLine(1, 1)): string => [...head, '[1] link "Home"', 'page text:', ...text, part].join('\n')
-
-  it("heads the Card with the page title and shows only the page's words: no viewport, scroll, signature or part line", () => {
-    const card = cardText(read(['# Lighthouse — http://127.0.0.1:4100/interactive', 'viewport 978x571 scroll 0/572', 'signature 6dddda4d'], ['Keepers of the light.', 'Say hello below.']))
-    expect(card).toBe('## Lighthouse\n\nKeepers of the light.\n\nSay hello below.')
-  })
-
-  it('leaves out a first line that only repeats the title, case and spaces aside (2026-10-22 audit)', () => {
-    expect(cardText(read(['# clipped drawer fixture — https://example.com/'], ['Clipped  Drawer fixture', 'The drawer opens.']))).toBe('## clipped drawer fixture\n\nThe drawer opens.')
-    expect(cardText(read(['# story fixture — https://example.com/'], ['The lighthouse', 'Keepers.']))).toBe('## story fixture\n\nThe lighthouse\n\nKeepers.')
-    // A page whose only words are its title keeps them.
-    expect(cardText(read(['# Hi — https://example.com/'], ['Hi']))).toBe('## Hi\n\nHi')
-  })
-
-  it('carries the same words the Page Read speaks', () => {
-    const result = read(['# Lighthouse — https://example.com/', 'signature 1a2b'], ['One.', 'Two.'])
-    expect(cardText(result).replace(/^## .*\n\n/, '').split('\n\n')).toEqual(pageReadText(result).split('\n'))
-  })
-
-  it("keeps a table's rows together, so it still renders as a table", () => {
-    expect(cardText(read(['# Fares — https://example.com/'], ['Prices:', '| Zone | Fare |', '| --- | --- |', '| 1 | £2 |']))).toBe(
-      '## Fares\n\nPrices:\n\n| Zone | Fare |\n| --- | --- |\n| 1 | £2 |',
-    )
-  })
-
-  it('names the site when the page has no title, and reads past a consent dismissal above the head', () => {
-    expect(cardText(read(['dismissed a consent wall: [4] button "Accept"', '#  — https://www.example.com/a/b'], ['Hi.']))).toBe('## example.com\n\nHi.')
-  })
-
-  it('says the page goes on when more parts follow, as the spoken read does', () => {
-    expect(cardText(read(['# Long — https://example.com/'], ['One.'], pageReadPartLine(1, 3)))).toBe('## Long\n\nOne.\n\n…')
-  })
-
-  it('has no heading when the read names no page', () => {
-    expect(cardText(['page text:', 'Hi.', pageReadPartLine(1, 1)].join('\n'))).toBe('Hi.')
-  })
-
-  it('says the page shows no text when it has none, as the spoken line does', () => {
-    expect(pageReadCard(['# Blank — https://example.com/', 'signature 0000', emptyPageReadLine()].join('\n'))).toEqual({ text: '## Blank\n\nThis page shows no text.', failure: true })
-    expect(pageReadCard(read(['# Lighthouse — https://example.com/'], ['Hi.'])).failure).toBe(false)
-  })
-
-  it('names what a page of controls alone holds, by kind, and is no failure (2026-10-21 audit)', () => {
-    const controls = (...refs: string[]): string => ['# context menu fixture — http://127.0.0.1:4100/context-menu', 'signature 0000', ...refs, emptyPageReadLine()].join('\n')
-    expect(pageReadCard(controls('[1] button "Fixture video player"', '[2] button "Loop"', '[3] link "Plain link"'))).toEqual({
-      text: '## context menu fixture\n\nThis page has no text, only 2 buttons and a link.',
-      failure: false,
-    })
-    expect(controlsOnlyLine(controls('[1] media "Song"', '[2] button "Play"'))).toBe('This page has no text, only a media player and a button.')
-    expect(controlsOnlyLine(controls('[1] media "One"', '[2] media "Two"', '[3] button "Play"', '[4] link "Home"', '[5] link "About"'))).toBe('This page has no text, only 2 media players, a button and 2 links.')
-    // An input alone is no content of that kind; a page with words is read as words.
-    expect(controlsOnlyLine(controls('[1] input[search] "Search"'))).toBeNull()
-    expect(controlsOnlyLine(read(['# Lighthouse — https://example.com/'], ['Hi.']))).toBeNull()
+    for (const verb of ['screenshot', 'help', 'none'] as const) expect(answer(command(verb))).toBeNull()
   })
 })
 

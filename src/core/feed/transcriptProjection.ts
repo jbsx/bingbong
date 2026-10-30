@@ -36,7 +36,7 @@ export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | nu
         kind: 'command',
         text: event.text,
         at: event.at,
-        // The action only when it adds to the words: "read" → "read the page", never "back" → "back".
+        // The action only when it adds to the words, never "back" → "back".
         ...(event.action !== undefined && !sameWords(event.action, event.text) ? { action: event.action } : {}),
         ...(event.dropped ? { muted: true } : {}),
       }

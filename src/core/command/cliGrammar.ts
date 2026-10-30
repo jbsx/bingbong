@@ -4,7 +4,6 @@ import { readMusicLine, type MusicAction } from '../music/musicWords'
 
 export type CliCommand =
   | { type: 'navigate'; input: string }
-  | { type: 'read' }
   | { type: 'click'; ref: number }
   | { type: 'menu'; ref: number }
   | { type: 'capture'; ref: number | 'page' }
@@ -131,18 +130,12 @@ export function headsFlagLine(partial: string): boolean {
 }
 
 /** Every head word the grammar reads (#456): the switch below takes no other, and the Seed Lexicon lifts each. */
-export const CLI_HEADS = ['navigate', 'read', 'read_page', 'click', 'menu', 'capture', 'type', 'scroll', 'press', 'screenshot', 'back', 'reload', 'resume', 'timer', 'help', 'quit', 'exit'] as const
+export const CLI_HEADS = ['navigate', 'click', 'menu', 'capture', 'type', 'scroll', 'press', 'screenshot', 'back', 'reload', 'resume', 'timer', 'help', 'quit', 'exit'] as const
 type CliHead = (typeof CLI_HEADS)[number]
 const isCliHead = (head: string): head is CliHead => (CLI_HEADS as readonly string[]).includes(head)
 
-/** The heads a typed line alone reaches (#513): the page listing, which the ear is never biased toward. */
-const TYPED_ONLY_HEADS: ReadonlySet<CliHead> = new Set<CliHead>(['read', 'read_page'])
-
-/** The grammar's heads a spoken line can reach: every one but the typed-only page listing (#513). */
-export const SPOKEN_CLI_HEADS: readonly CliHead[] = CLI_HEADS.filter((head) => !TYPED_ONLY_HEADS.has(head))
-
 /** The verbs the grammar reads only as the whole line. */
-const WORDLESS_HEADS: ReadonlySet<string> = new Set<CliHead>(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
+const WORDLESS_HEADS: ReadonlySet<string> = new Set<CliHead>(['back', 'reload', 'resume', 'help', 'quit', 'exit'])
 
 function unknownCommand(head: string): ParsedCliCommand {
   return { ok: false, error: `unknown command: '${head}' — try 'help'` }
@@ -203,10 +196,6 @@ function parseGrammarLine(line: string): ParsedCliCommand {
     case 'navigate':
       if (!rest) return { ok: false, error: "navigate: expected 'navigate <url or search>'" }
       return { ok: true, command: { type: 'navigate', input: rest } }
-    case 'read':
-    case 'read_page':
-      // Kept as the e2e's ref listing after #513, typed only: the page silently listed, never spoken, never offered to Jev.
-      return { ok: true, command: { type: 'read' } }
     case 'click': {
       if (!/^\d+$/.test(rest)) {
         return { ok: false, error: "click: expected a ref number, e.g. 'click 7'" }

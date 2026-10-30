@@ -1,5 +1,5 @@
 import { appViews } from '../command/appOp'
-import { FLAG_HEADS, SPOKEN_CLI_HEADS } from '../command/cliGrammar'
+import { FLAG_HEADS, CLI_HEADS } from '../command/cliGrammar'
 import { DISMISS_PHRASES, DISMISS_VERBS } from '../command/dismissDialog'
 import { refLessCardLabels } from '../command/jevReading'
 import { LOCAL_MATCH_PHRASES, LOCAL_MATCH_VERBS } from '../command/localMatch'
@@ -23,7 +23,7 @@ function asSpoken(phrase: string): string {
 
 /** The command half of the Seed Lexicon, each phrase once, in source order. */
 export function commandLexicon(): string[] {
-  const sources = [SPOKEN_CLI_HEADS, LOCAL_MATCH_PHRASES, MUSIC_LINES, MEDIA_OP_WORDS, DISMISS_PHRASES, FLAG_HEADS, refLessCardLabels()]
+  const sources = [CLI_HEADS, LOCAL_MATCH_PHRASES, MUSIC_LINES, MEDIA_OP_WORDS, DISMISS_PHRASES, FLAG_HEADS, refLessCardLabels()]
   return [...new Set(sources.flat().map(asSpoken).filter((phrase) => phrase !== ''))]
 }
 
@@ -42,7 +42,7 @@ export function commandHeads(): string[] {
   // The app's own words first — the views, the card's ref-less labels — then the spoken verbs, the Player's, the media's, the
   // typed grammar's, the Flag's and the dismiss verbs: the budget cuts from the end once the Learned Terms have grown, and a
   // Page Term never carries `idle` while a page may carry `close`.
-  const sources = [appViews(), refLessCardLabels(), LOCAL_MATCH_VERBS, MUSIC_KINDS, MEDIA_OPS, SPOKEN_CLI_HEADS, FLAG_HEADS, DISMISS_VERBS]
+  const sources = [appViews(), refLessCardLabels(), LOCAL_MATCH_VERBS, MUSIC_KINDS, MEDIA_OPS, CLI_HEADS, FLAG_HEADS, DISMISS_VERBS]
   const heads = [...new Set(sources.flat().map((phrase) => asSpoken(phrase).split(' ')[0] ?? ''))]
   // A function word or a single letter heads nothing the ear could be biased toward: `that` of "that was wrong", `x` of the
   // dismiss glyph. The off side of a toggle (`unmute`, `unloop`) is its head's own word with `un` before it, and takes no slot.

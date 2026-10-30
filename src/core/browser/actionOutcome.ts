@@ -20,7 +20,7 @@ export const NO_OBSERVABLE_CHANGE = 'no observable change'
  * page (#308, note on ADR 0027): the line names the address the tab reports,
  * and the outcome carries no page.
  */
-export const PAGE_NOT_READ = 'The page could not be read; read_page will show it.'
+export const PAGE_NOT_READ = 'The page could not be read.'
 
 /** What a click reports when only the page's signature moved — meaningful, never inert. */
 export const PAGE_SIGNATURE_CHANGED = 'page signature changed'

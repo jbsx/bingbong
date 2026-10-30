@@ -8,15 +8,18 @@ import type { CommandRunOptions } from '../run/commandRunner'
 // typed line takes the same road as the Prompt Bar (#324, ADR 0076): the
 // Local Match, else one Jev call, else the best guess — so the CLI grammar
 // still works and plain words work too. The harness owns only the REPL:
-// `help` and `quit` are its own, everything else is one Command, and what
-// it prints is what the runner published for that Command's turn — the
-// action's outcome line, a Page Read, a failure as `error: …`. The harness
+// `help`, `quit` and `read` (the page's numbered refs and text, no Command)
+// are its own, everything else is one Command, and what it prints is what
+// the runner published for that Command's turn — the action's outcome line,
+// a failure as `error: …`. The harness
 // mints the turn id it submits under, so a spoken Command landing meanwhile
 // is never printed as the typed line's.
 
 export interface CliHarnessDeps {
   /** The window's Command runner: one typed line, read and performed (#324). */
   run(line: string, options: CommandRunOptions): Promise<boolean>
+  /** The page's numbered refs and text, for the harness's own `read`: how a terminal learns the refs `click <ref>` takes. */
+  readPage(): Promise<string>
   /** Hears every event the runner publishes; the returned release stops hearing. */
   subscribe(listener: (event: PipelineEvent) => void): () => void
   input: Readable
@@ -30,15 +33,17 @@ export interface CliHarnessDeps {
   confirmAnswer?: string
 }
 
-const HELP_TEXT = [...COMMAND_HELP_LINES, '  quit | exit              exit the app'].join('\n')
+const HELP_TEXT = [...COMMAND_HELP_LINES, '  read                     print a numbered-ref snapshot of the page', '  quit | exit              exit the app'].join('\n')
 
 const PROMPT = 'bingbong> '
 
-/** The harness's own words: help and quit never reach the runner. */
-function localCommand(line: string): 'help' | 'quit' | null {
+/** The harness's own words: help, quit and read never reach the runner. */
+function localCommand(line: string): 'help' | 'quit' | 'read' | null {
   switch (line.trim()) {
     case 'help':
       return 'help'
+    case 'read':
+      return 'read'
     case 'quit':
     case 'exit':
       return 'quit'
@@ -48,7 +53,7 @@ function localCommand(line: string): 'help' | 'quit' | null {
 }
 
 export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
-  const { run, subscribe, input, output, exit, confirmAnswer } = deps
+  const { run, readPage, subscribe, input, output, exit, confirmAnswer } = deps
 
   const write = (text: string): void => {
     if (!output.destroyed) output.write(text)
@@ -89,7 +94,7 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
           printed = true
           return
         case 'display':
-          // A Page Read and a screenshot print their result line above;
+          // A screenshot prints its result line above;
           // the Card repeats it (shortened) for the Feed.
           if (!printed) {
             write(`${event.text}\n`)
@@ -123,6 +128,9 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
       switch (localCommand(line)) {
         case 'help':
           write(`${HELP_TEXT}\n`)
+          return
+        case 'read':
+          write(`${await readPage()}\n`)
           return
         case 'quit':
           write('bye\n')

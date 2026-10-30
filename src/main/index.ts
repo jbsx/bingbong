@@ -416,12 +416,13 @@ let cliHarnessStarted = false
 // The harness drives the window's Command runner (#324, ADR 0076): a typed
 // CLI line takes the same road as the Prompt Bar, and the harness prints
 // what the runner publishes for its turn.
-function startCliHarness(runner: CommandRunner, subscribe: (listener: (event: PipelineEvent) => void) => () => void): void {
+function startCliHarness(runner: CommandRunner, readPage: () => Promise<string>, subscribe: (listener: (event: PipelineEvent) => void) => () => void): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
 
   void runCliHarness({
     run: (line, options) => runner.run(line, options),
+    readPage,
     subscribe,
     input: process.stdin,
     output: process.stdout,
@@ -817,7 +818,7 @@ async function createWindow(): Promise<BrowserWindow> {
   }
 
   if (runningCliHarness) {
-    startCliHarness(runner, (listener) => {
+    startCliHarness(runner, () => controller.readPage(), (listener) => {
       commandListeners.add(listener)
       return () => commandListeners.delete(listener)
     })

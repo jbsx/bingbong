@@ -3,7 +3,6 @@ import {
   MAX_PAGE_READ_TEXT,
   emptyPageReadLine,
   isPageTextFactLine,
-  pageReadPart,
   pageReadText,
   isPartPastTheEnd,
   pageReadPartLine,
@@ -190,12 +189,12 @@ describe('splitPageRead — a Page Read in parts (#235/AC1)', () => {
 
 describe('fact lines (#235/AC1, AC2)', () => {
   it('names shown and total characters on a cut preview, and the parts the whole text comes in (#290)', () => {
-    expect(previewFactLine(1800, 7412, 1)).toBe("page text: first 1,800 of 7,412 characters — read_page returns the page's whole text in 1 part")
-    expect(previewFactLine(1800, 30_029, 3)).toBe("page text: first 1,800 of 30,029 characters — read_page returns the page's whole text in 3 parts")
+    expect(previewFactLine(1800, 7412, 1)).toBe("page text: first 1,800 of 7,412 characters — read returns the page's whole text in 1 part")
+    expect(previewFactLine(1800, 30_029, 3)).toBe("page text: first 1,800 of 30,029 characters — read returns the page's whole text in 3 parts")
   })
 
   it('points a multi-part read at its next part, and says which part is the last', () => {
-    expect(pageReadPartLine(1, 3)).toBe('page text: part 1 of 3 — read_page part=2 continues')
+    expect(pageReadPartLine(1, 3)).toBe('page text: part 1 of 3 — read part=2 continues')
     expect(pageReadPartLine(3, 3)).toBe('page text: part 3 of 3 — the last part')
   })
 
@@ -217,15 +216,15 @@ describe('fact lines (#235/AC1, AC2)', () => {
   })
 
   it('does not call the last part collected the last when the collector stopped at its bound', () => {
-    expect(pageReadPartLine(19, 20, true)).toBe('page text: part 19 of 20 — read_page part=20 continues')
+    expect(pageReadPartLine(19, 20, true)).toBe('page text: part 19 of 20 — read part=20 continues')
     expect(pageReadPartLine(20, 20, true)).toBe(
       "page text: part 20 of 20 — the most one page read collects; the page's text continues past it",
     )
   })
 
   it('names the range when a part is past the end', () => {
-    expect(partPastTheEnd(4, 3)).toBe("read_page: part 4 is past the end — this page's text has 3 parts, part=1 to part=3")
-    expect(partPastTheEnd(2, 1)).toBe("read_page: part 2 is past the end — this page's text has 1 part, part=1")
+    expect(partPastTheEnd(4, 3)).toBe("read: part 4 is past the end — this page's text has 3 parts, part=1 to part=3")
+    expect(partPastTheEnd(2, 1)).toBe("read: part 2 is past the end — this page's text has 1 part, part=1")
   })
 
   it('recognises its own refusal, bare or behind a prefix, and nothing else (#290)', () => {
@@ -240,13 +239,6 @@ describe('pageReadText (#327)', () => {
   it('is the page\'s own text a Page Read carries: after its heading, up to its part line, nothing of the head, refs or reports', () => {
     const read = ['# Example — https://example.com/', 'signature 1a2b', '[1] link "Home"', 'page text:', 'First block.', 'Second block.', pageReadPartLine(1, 2), 'native alert dialog auto-dismissed: "hi"'].join('\n')
     expect(pageReadText(read)).toBe('First block.\nSecond block.')
-  })
-
-  it('names which part of how many a Page Read is, off its part line', () => {
-    expect(pageReadPart(['page text:', 'words', pageReadPartLine(1, 3)].join('\n'))).toEqual({ part: 1, of: 3 })
-    expect(pageReadPart(['page text:', 'words', pageReadPartLine(3, 3, true)].join('\n'))).toEqual({ part: 3, of: 3 })
-    expect(pageReadPart(emptyPageReadLine())).toEqual({ part: 1, of: 1 })
-    expect(pageReadPart('<page>blank</page>')).toBeNull()
   })
 
   it('is empty for a read that carries no text', () => {

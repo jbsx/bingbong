@@ -1,9 +1,6 @@
 import { isRealPage, lastPageLabel } from '../browser/lastPage'
-import { pageReadPart, pageReadText } from '../browser/pageText'
-import { pageControls } from '../browser/emptyLanding'
 import type { Command } from './command'
 import type { CommandSource, JevDetail, JevUnavailable } from './decisionRecord'
-import { SPOKEN_FAILURES } from './spokenFailure'
 import { NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
 import { mediaOpAnswer } from './mediaOp'
 import { captureAnswer } from './captureOp'
@@ -219,7 +216,6 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
       return command.durationMs !== undefined ? `Timer set for ${describeDuration(command.durationMs)}.` : 'Timer off.'
     case 'capture':
       return command.capture === undefined ? null : captureAnswer(command.capture.kind)
-    case 'read':
     case 'screenshot':
     case 'help':
     // The Player writes its own Answer (#343): what it played or queued is known only once it has.
@@ -233,62 +229,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
   }
 }
 
-/** The page a Page Read is of, off its `# title — address` head (a consent dismissal may ride above it). */
-function pageReadHead(result: string): { url: string; title: string } {
-  const head = result.split('\n').find((line) => line.startsWith('# ')) ?? ''
-  const split = head.lastIndexOf(' — ')
-  return split === -1 ? { url: '', title: head.slice(2).trim() } : { url: head.slice(split + 3).trim(), title: head.slice(2, split).trim() }
-}
-
-const counted = (n: number, one: string, many: string): string[] => (n === 0 ? [] : [n === 1 ? one : `${n} ${many}`])
-
-/**
- * What a page listing with no words says of a page made only of controls
- * (2026-10-21 audit): the links, buttons and media players it holds, counted
- * by kind — no failure, since the page showed something. Null when the read
- * has words, or lists none of them.
- */
-export function controlsOnlyLine(result: string): string | null {
-  if (pageReadText(result) !== '') return null
-  const controls = pageControls(result)
-  if (controls === null) return null
-  const kinds = [...counted(controls.media, 'a media player', 'media players'), ...counted(controls.button, 'a button', 'buttons'), ...counted(controls.link, 'a link', 'links')]
-  const listed = kinds.length === 1 ? kinds[0]! : `${kinds.slice(0, -1).join(', ')} and ${kinds.at(-1)!}`
-  return `This page has no text, only ${listed}.`
-}
-
-/**
- * The typed page listing's Card (#333; `read`, typed only since #513): the
- * page title as its heading and the page's own words under it, one
- * paragraph a line, a table's rows kept together, ending "…" when further
- * parts follow — never the controller's viewport, scroll, signature, refs
- * or part lines. `failure` when the page has no words: the Card then says
- * so in the failure colour — unless it holds links, buttons or media,
- * which the Card names instead ({@link controlsOnlyLine}).
- */
-export function pageReadCard(result: string): { text: string; failure: boolean } {
-  const words = pageReadText(result)
-  const controls = controlsOnlyLine(result)
-  const name = pageName(pageReadHead(result))
-  const lines = words !== '' ? withoutTitleLine(words.split('\n'), name) : [controls ?? SPOKEN_FAILURES.empty]
-  const part = pageReadPart(result)
-  if (part !== null && part.part < part.of) lines.push('…')
-  const body = lines.reduce((text, line, index) => {
-    if (index === 0) return line
-    const tableRow = line.startsWith('|') && lines[index - 1]!.startsWith('|')
-    return `${text}${tableRow ? '\n' : '\n\n'}${line}`
-  }, '')
-  return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' && controls === null }
-}
-
 /** A done Task's Answer Passage as its Card (#401, ADR 0087): the page's name over the block, the block verbatim. */
 export function passageCard(page: { url: string; title: string }, block: string): string {
   const name = pageName(page)
   return name === '' ? block : `## ${name}\n\n${block}`
-}
-
-/** The page's lines without a first that only repeats the Card's heading, case and spaces aside (2026-10-22 audit); a page with no other words keeps it. */
-function withoutTitleLine(lines: string[], name: string): string[] {
-  const bare = (text: string): string => text.toLowerCase().replace(/\s+/g, '')
-  return lines.length > 1 && name !== '' && bare(lines[0]!) === bare(name) ? lines.slice(1) : lines
 }

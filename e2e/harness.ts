@@ -192,7 +192,7 @@ function elementCenterScript(selector: string): string {
  * path that doesn't exist, so e2e never picks up the developer's real
  * .env next to the repo — tests that want file config pass their own
  * BINGBONG_ENV_FILE and override this. Speech (#327) runs through the
- * scripted piper and aplay in e2e/bin: `read` and a failure speak, and no
+ * scripted piper and aplay in e2e/bin: a fact and a failure speak, and no
  * launch may load a real voice or reach the sound card. Downloads and
  * `screenshot` files (#330) land in the launch's own profile, never in
  * the developer's ~/bingbong_downloads. The News card's Top Repos ask the

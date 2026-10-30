@@ -9,7 +9,7 @@ import { sleep, waitFor } from './waitFor'
 // A page still loading never stalls, crashes or scrambles the Commands
 // around it (#330). Every case navigates to /held-response, whose headers
 // are held back 12 s, and gives Commands while it loads: Stop ends the
-// load, `read` waits for the landing, the Feed keeps the order Commands
+// load, a scroll is answered, the Feed keeps the order Commands
 // were given, and a failed navigation's address is the one shown.
 
 describe('a page still loading e2e', () => {
@@ -51,17 +51,17 @@ describe('a page still loading e2e', () => {
     expect(Date.now() - stoppedAt).toBeLessThan(1_000)
 
     const shown = (await feedDisplays(harness)).length
-    expect(await harness.submitCommand('read')).toBe('submitted')
+    expect(await harness.submitCommand('scroll down')).toBe('submitted')
     const submittedAt = Date.now()
-    await waitFor(async () => ((await feedDisplays(harness)).slice(shown).includes('second fixture page') ? true : undefined), { timeoutMs: 1_000, intervalMs: 50 })
+    await waitFor(async () => ((await feedDisplays(harness)).length > shown ? true : undefined), { timeoutMs: 1_000, intervalMs: 50 })
     expect(Date.now() - submittedAt).toBeLessThan(1_000)
   })
 
-  it('`read` given during a slow navigation waits for its landing and reads that page, never a raw exception', async () => {
+  it('a scroll given during a slow navigation is answered, never a raw exception', async () => {
     await startHeldNavigation()
     const shown = (await feedDisplays(harness)).length
-    expect(await harness.submitCommand('read')).toBe('submitted')
-    await waitFor(async () => ((await feedDisplays(harness)).slice(shown).includes('held response fixture page') ? true : undefined), {
+    expect(await harness.submitCommand('scroll down')).toBe('submitted')
+    await waitFor(async () => ((await feedDisplays(harness)).length > shown ? true : undefined), {
       timeoutMs: HELD_RESPONSE_MS + 5_000,
       intervalMs: 250,
     })
@@ -75,13 +75,13 @@ describe('a page still loading e2e', () => {
     await startHeldNavigation()
     expect(await harness.submitCommand('click 999')).toBe('submitted')
     await sleep(300)
-    expect(await harness.submitCommand('read')).toBe('submitted')
+    expect(await harness.submitCommand(`navigate ${harness.fixture.url('/second')}`)).toBe('submitted')
     await waitFor(async () => ((await commandEntries()).length - before >= 3 ? true : undefined), { timeoutMs: HELD_RESPONSE_MS + 5_000, intervalMs: 250 })
     const entries = (await commandEntries()).slice(before)
     expect(entries.map((entry) => entry.text)).toEqual([
       expect.stringMatching(/^navigate .*\/held-response/),
       expect.stringMatching(/^click 999abandoned: a later Command came first$/),
-      expect.stringMatching(/^read/),
+      expect.stringMatching(/^navigate .*\/second/),
     ])
     expect(entries.map((entry) => entry.muted)).toEqual([false, true, false])
   }, 30_000)

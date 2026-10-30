@@ -92,7 +92,7 @@ import {
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { ONE_SCREEN, scrollOpOfVerb } from '../../core/command/scrollOp'
 import { DEAD_END_LANDINGS, DONE_LINE, SPOKEN_FAILURES, failureLineOf, landedUrl, notHereLine, spokenFailureOf, suspectedFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
-import { FLAG_ANSWERS, NONE_SAID, STOPPED_ANSWERS, commandAnswer, noResponseAnswer, noneIsALine, pageReadCard, passageCard } from '../../core/command/answer'
+import { FLAG_ANSWERS, NONE_SAID, STOPPED_ANSWERS, commandAnswer, noResponseAnswer, noneIsALine, passageCard } from '../../core/command/answer'
 import { factAnswer, withPageSong, type ApplianceFacts } from '../../core/command/applianceFacts'
 import { appAnswer, appChangeOf, appOpSpeaks, appWords, placeName, placeSettings, withSetting, type AppChange, type AppState, type PickedPlace } from '../../core/command/appOp'
 import { updateAnswer, type UpdateCheck } from '../../core/update/updateCheck'
@@ -457,7 +457,7 @@ interface FireResult {
 const MAX_STALLED_HOPS = 2
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
-const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'menu', 'scroll_up', 'scroll_down', 'read', 'forward'])
+const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'menu', 'scroll_up', 'scroll_down', 'forward'])
 
 let commandPhrases: readonly string[] | undefined
 
@@ -533,8 +533,6 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'scroll', args: { direction: scrollOpOfVerb(command.verb), ...(command.target !== null ? { ref: command.target } : {}), ...command.extent, ...(command.show !== undefined ? { show: command.show.text } : {}) } }
     case 'press':
       return { name: 'press', args: { key: command.key?.key ?? 'Enter', times: command.times ?? 1, ...(command.key?.shift ? { shift: true } : {}) } }
-    case 'read':
-      return { name: 'read_page', args: {} }
     case 'screenshot':
       return { name: 'screenshot', args: command.slot ? { path: command.slot } : {} }
     case 'play':
@@ -550,7 +548,7 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
 
 /** An Errand under way (#467): its id, the submission it started at (a later one ends it), what aborts its Planner call, and the confirm or question waiting on the next line, if one is. */
 /** The verbs that open or start nothing (#504): an Errand step of these leaves the pane's media as it found it. */
-const LEAVES_MEDIA: ReadonlySet<CommandVerb> = new Set(['type', 'scroll_up', 'scroll_down', 'read', 'clear', 'stop', 'none', 'screenshot', 'help', 'timer', 'say', 'app', 'capture'])
+const LEAVES_MEDIA: ReadonlySet<CommandVerb> = new Set(['type', 'scroll_up', 'scroll_down', 'clear', 'stop', 'none', 'screenshot', 'help', 'timer', 'say', 'app', 'capture'])
 
 interface ErrandRun {
   readonly id: string
@@ -1326,7 +1324,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Match can read it against the Page Terms.
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions = { split: true }): Promise<Reading> {
-    const quick = exactOf(text, [], options.running !== undefined, spoken)
+    const quick = exactOf(text, [], options.running !== undefined)
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
     if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
@@ -1338,7 +1336,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // speech-start collect once it has settled, else the last one while the pane is on its address — and never waits for one.
       const inHand = dismissed ?? (await pageInHand(pending)) ?? lastPageInHand()
       if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-      const local = exactOf(text, inHand.refs, options.running !== undefined, spoken)
+      const local = exactOf(text, inHand.refs, options.running !== undefined)
       if (local !== null) return { command: local, page: inHand, reading: 'local_match', jevAsked: false }
     }
     const model = deps.decisionModel()
@@ -1366,15 +1364,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * (resumePlan), so its one exact reading is moot and the words are read against the line running on the card. "Resume" over a
    * song still opening means start it, never a new goal that ends it; Jev reads which. Off the card, or on a blank pane, it is exact.
    */
-  function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean, spoken: boolean): Command | null {
-    const local = matchOf(text, refs, spoken)
-    return mootResume(local, running) ? null : local
-  }
-
-  /** The Local Match, but for the page listing (`read`), which a typed line alone reaches (#513): a spoken one is read as if it matched nothing. */
-  function matchOf(text: string, refs: Parameters<typeof localMatch>[1], spoken: boolean): Command | null {
+  function exactOf(text: string, refs: Parameters<typeof localMatch>[1], running: boolean): Command | null {
     const local = localMatch(text, refs, knownAddress)
-    return spoken && local?.verb === 'read' ? null : local
+    return mootResume(local, running) ? null : local
   }
 
   /** A `resume` that reopens nothing, given over a running line with the card on (#508): no exact line, the card's to read. */
@@ -1527,7 +1519,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function readPageCard(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions, quick: Command | null, dismissed: CommandPage | null): Promise<Reading> {
     const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
-    const local = exactOf(text, page.refs, options.running !== undefined, spoken)
+    const local = exactOf(text, page.refs, options.running !== undefined)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
@@ -1829,8 +1821,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         await browser.pressKey(key, command.times ?? 1)
         return `pressed ${key.shift ? 'Shift+' : ''}${key.key}${(command.times ?? 1) > 1 ? ` ×${command.times}` : ''}`
       }
-      case 'read':
-        return browser.readPage()
       case 'clear':
         return browser.clearFocused()
       case 'screenshot': {
@@ -1908,12 +1898,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * What the Feed shows of a result as a Card: a page listing's title and
-   * words (#333), where a screenshot went, the help; never an action's
-   * outcome line.
+   * What the Feed shows of a result as a Card (#333): where a screenshot
+   * went, the help; never an action's outcome line.
    */
   function cardOf(command: Command, result: string): { text: string; failure: boolean } | null {
-    if (command.verb === 'read') return pageReadCard(result)
     if (command.verb === 'screenshot') return { text: screenshotCardOf(result), failure: false }
     if (command.verb !== 'help') return null
     const shown = result.length > DISPLAY_LIMIT ? `${result.slice(0, DISPLAY_LIMIT)}\n…` : result
@@ -1947,9 +1935,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   function heardExactly(text: string): string | null {
-    const line = exactLineHeard(text, learnedTerms(), commandHearing(), knownAddress)
-    // The page listing is typed only (#513): a line heard as `read` is no exact line.
-    return line !== null && localMatch(line, [], knownAddress)?.verb === 'read' ? null : line
+    return exactLineHeard(text, learnedTerms(), commandHearing(), knownAddress)
   }
 
   function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
@@ -2183,7 +2169,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
       const card = cardOf(command, result)
-      react(card !== null && command.verb === 'read' ? 'display' : 'settled')
+      react('settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
       if (card !== null) answer(turnId, card.text, card.failure ? 'failure' : undefined)
       if (command.verb === 'say' || command.verb === 'app') {
@@ -3204,7 +3190,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * at its Endpoint, over the page prepared at speech start.
    */
   async function readPartial(words: string, stale: () => boolean): Promise<Reading | null> {
-    const quick = matchOf(words, [], true)
+    const quick = localMatch(words, [], knownAddress)
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
     const stopsSomething = quick?.verb === 'stop' && !idle()
@@ -3225,12 +3211,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const inHand = dismissed ?? (await pageInHand(prepared)) ?? lastPageInHand()
       if (stale()) return null
       if (inHand === null) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-      const local = matchOf(words, inHand.refs, true)
+      const local = localMatch(words, inHand.refs, knownAddress)
       return local !== null && firesEarly(local) ? { command: local, page: inHand, reading: 'local_match', jevAsked: false } : null
     }
     const page = dismissed ?? (await collectPage(prepared))
     if (stale()) return null
-    const local = matchOf(words, page.refs, true)
+    const local = localMatch(words, page.refs, knownAddress)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     // Anything else — free words, a Slot, a line only Jev would read — waits for its Endpoint.
     return null

@@ -330,9 +330,6 @@ function fromGrammar(parsed: CliCommand, refs: readonly CommandRef[]): Command |
     case 'navigate':
       // The typed line's address, or the search its words run when they are no address.
       return isAddressShaped(parsed.input) ? command('navigate', { slot: parsed.input }) : command('search', { slot: parsed.input })
-    case 'read':
-      // Kept as the e2e's ref listing after #513, typed only: the runner never fires it for a spoken line.
-      return command('read')
     case 'click':
       return command('click', { target: parsed.ref })
     case 'menu':

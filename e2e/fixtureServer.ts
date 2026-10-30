@@ -1432,7 +1432,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     // #330: a page whose response is held — no headers — for 12 s, the
-    // slow navigation Stop, `read` and the Feed's order are driven against.
+    // slow navigation Stop, a scroll and the Feed's order are driven against.
     if (req.url === '/held-response') {
       held.add(res)
       setTimeout(() => {

@@ -11,7 +11,7 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
-import { pageReadPartLine, type TextBelow } from '../../core/browser/pageText'
+import { type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { NONE_SAID } from '../../core/command/answer'
@@ -141,18 +141,6 @@ class FakeSpeech {
     this.pending.shift()?.resolve(outcome)
   }
 }
-
-/** A page listing as the controller writes one: the head, the refs, then the page's text and its part line. */
-const PAGE_READ = [
-  '# Example — https://example.com/',
-  'viewport 985x575 scroll 0/2000',
-  'signature 1a2b3c4d',
-  '[1] link "Home"',
-  'page text:',
-  'Welcome to the example. It has two sentences.',
-  'A second block.',
-  pageReadPartLine(1, 1),
-].join('\n')
 
 function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture']; applianceCard?: CommandRunnerDeps['applianceCard'] }) {
   const browser = new FakeBrowser()
@@ -1368,14 +1356,14 @@ describe('the Player (#343)', () => {
     const speech = new FakeSpeech()
     const { browser, events, youtube, runner } = music({ speech })
     await runner.run('play bohemian rhapsody')
-    let listed: (page: string) => void = () => {}
-    browser.readPage = () => new Promise<string>((resolve) => (listed = resolve))
-    const reading = runner.run('read')
+    let scrolled: (outcome: string) => void = () => {}
+    browser.scroll = () => new Promise<string>((resolve) => (scrolled = resolve))
+    const scrolling = runner.run('scroll down')
     await flushMicrotasks()
     expect(runner.getState()).toBe('running')
     await runner.run('stop', { source: 'spoken' })
-    listed(PAGE_READ)
-    await reading
+    scrolled('scrolled down')
+    await scrolling
     expect(youtube.element.paused).toBe(false)
     expect(youtube.pauseAlls).toBe(0)
     expect(displays(events).at(-1)).toBe('Stopped.')
@@ -1449,10 +1437,10 @@ describe('the Player (#343)', () => {
     const speech = new FakeSpeech()
     const { youtube, runner } = music({ speech })
     await runner.run('play bohemian rhapsody')
-    const reading = runner.run('read')
+    const scrolling = runner.run('scroll down')
     await flushMicrotasks()
     await runner.consider('stop')
-    await reading
+    await scrolling
     expect(runner.getState()).toBe('idle')
     expect(youtube.element.paused).toBe(false)
   })
@@ -1557,7 +1545,7 @@ describe('a Command the Local Match settles', () => {
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://news.ycombinator.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
   })
 
-  it('reads the spoken commands of AC1 into their browser actions, and a spoken `read` into none: the page listing is typed only (#513)', async () => {
+  it('reads the spoken commands of AC1 into their browser actions', async () => {
     const { browser, decision, runner } = harness()
     await runner.run('open youtube', { source: 'spoken' })
     await runner.run('click sign in', { source: 'spoken' })
@@ -1565,7 +1553,6 @@ describe('a Command the Local Match settles', () => {
     decision.script.push({ answers: { action: choice('search'), slot: choice('s2-4') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('search for rust async book', { source: 'spoken' })
     await runner.run('type hello in the search box', { source: 'spoken' })
-    await runner.run('read', { source: 'spoken' })
     await runner.run('back', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
     expect(browser.clicks).toEqual([2])
@@ -1588,12 +1575,12 @@ describe('a Command the Local Match settles', () => {
     expect(Object.keys(actions.options)).toContain('reload')
   })
 
-  it('shows a read as a Card and an action as its one-line Answer (#333) — actions stay silent', async () => {
+  it('shows help as a Card and an action as its one-line Answer (#333) — actions stay silent', async () => {
     const { events, runner } = harness()
-    await runner.run('read')
+    await runner.run('help')
     await runner.run('scroll down')
     const displays = events.filter((event) => event.type === 'display')
-    expect(displays.map((display) => display.text)).toEqual([SPOKEN_FAILURES.empty, 'Scrolled down.'])
+    expect(displays.map((display) => display.text)).toEqual([expect.stringContaining('click <label or ref>'), 'Scrolled down.'])
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
   })
 
@@ -2623,45 +2610,8 @@ describe('Early Fire (#326)', () => {
 })
 
 // Increment 3 (#327, ADR 0076): a failure speaks one line; actions that
-// succeed stay silent. The Page Read is gone (#513): `read` is the typed
-// page listing the e2e lists refs by, silent, and no spoken line reaches it.
+// succeed stay silent. The Page Read is gone (#513).
 describe('a Command whose output is speech', () => {
-  it('lists the page on a typed `read`: the Card of its title and words, one part, never spoken, the Reaction on the Card', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, perf, runner } = harness({ speech })
-    const reads: number[] = []
-    browser.readPage = async (part = 1) => {
-      reads.push(part)
-      return PAGE_READ
-    }
-    perf.state.monotonicMs = 500
-    await runner.run('read', { turnId: 'typed-1', endpointAt: 400 })
-    expect(reads).toEqual([1])
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: '## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.' })
-    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: true, result: PAGE_READ })
-    expect(speech.spoken).toEqual([])
-    expect(events.filter((event) => event.type === 'speak')).toEqual([])
-    expect(events).not.toContainEqual(expect.objectContaining({ type: 'status', status: 'speaking' }))
-    expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 100, detail: { verb: 'read', effect: 'display' } })
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(runner.getState()).toBe('idle')
-  })
-
-  it('never lists the page for a spoken line: "read" and "read the page" said are no Local Match, at the Endpoint or on a partial', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ speech })
-    let reads = 0
-    browser.readPage = async () => {
-      reads += 1
-      return PAGE_READ
-    }
-    void runner.prepare()
-    await runner.consider('read')
-    for (const line of ['read', 'Read.', 'read the page']) await runner.run(line, { source: 'spoken' })
-    expect(reads).toBe(0)
-    expect(events.filter((event) => event.type === 'command' && event.action === 'read the page')).toEqual([])
-  })
-
   it('a failed open speaks its one line, and the turn still ends failed at once (AC4)', async () => {
     const speech = new FakeSpeech()
     const { browser, events, runner } = harness({ speech })
@@ -2959,14 +2909,13 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => record.ended)).toEqual(['local_match', 'local_match', 'local_match', 'local_match'])
   })
 
-  it('AC2: a Jev-read read, stop or clear ends terminal with no continuation call', async () => {
+  it('AC2: a Jev-read stop or clear ends terminal with no continuation call', async () => {
     const { decision, records, runner } = harness()
-    decision.script.push(answer('read'), answer('stop'), answer('clear'))
-    await runner.run('what does this say', { source: 'spoken' })
+    decision.script.push(answer('stop'), answer('clear'))
     await runner.run('hold it right there', { source: 'spoken' })
     await runner.run('wipe that field', { source: 'spoken' })
-    expect(decision.requests).toHaveLength(3)
-    expect(decisions(records).map((record) => record.ended)).toEqual(['terminal', 'terminal', 'terminal'])
+    expect(decision.requests).toHaveLength(2)
+    expect(decisions(records).map((record) => record.ended)).toEqual(['terminal', 'terminal'])
   })
 
   it('AC3: hop 0\'s first reading asks no Verdict and a none never ends "already here" (#370): a none fires nothing, writes a record, is dropped with "No response.", and has no Reaction', async () => {
@@ -4922,15 +4871,6 @@ describe('the one Answer every Command leaves (#333)', () => {
     expect(displays(events)[0]).not.toMatchObject({ failure: true })
   })
 
-  it('a typed `read` shows a Card of the page title and its words alone, and says nothing (#513)', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
-    await runner.run('read')
-    expect(displays(events).map((event) => event.text)).toEqual(['## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.'])
-    expect(speech.spoken).toEqual([])
-  })
-
   it('a thrown failure’s line is the Answer, marked a failure, with or without a voice', async () => {
     for (const speech of [undefined, new FakeSpeech()]) {
       const { browser, events, runner } = harness(speech ? { speech } : {})
@@ -4976,32 +4916,6 @@ describe('the one Answer every Command leaves (#333)', () => {
       ['Stopped.', true, undefined],
       ['Nothing to stop.', true, undefined],
     ])
-  })
-
-  it('a `read` stopped while it is spoken keeps its Card as its one Answer', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ speech })
-    browser.readPage = async () => PAGE_READ
-    const run = runner.run('read')
-    await flushMicrotasks()
-    runner.abort()
-    await run
-    expect(displays(events)).toHaveLength(1)
-    expect(displays(events)[0]!.text).toMatch(/^## Example/)
-  })
-
-  it('an empty page listing’s Card is marked a failure', async () => {
-    const { events, runner } = harness()
-    await runner.run('read')
-    expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.empty, failure: true })])
-  })
-
-  it('a page listing’s Card carries its whole part, uncut', async () => {
-    const { browser, events, runner } = harness()
-    const long = Array.from({ length: 300 }, (_, index) => `Sentence number ${index} of the page.`)
-    browser.readPage = async () => ['# Long — https://example.com/', 'page text:', ...long, pageReadPartLine(1, 1)].join('\n')
-    await runner.run('read')
-    expect(displays(events)[0]!.text).toContain('Sentence number 299 of the page.')
   })
 
   it('a wall’s line is the Answer, marked a failure, in place of the verb’s sentence', async () => {

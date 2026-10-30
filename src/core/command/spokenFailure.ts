@@ -92,7 +92,6 @@ export function failureLineOf(tool: string, error: string): string {
     const net = NET_ERROR_RE.exec(error)?.[1]
     return (net !== undefined ? NET_FAILURES[net] : undefined) ?? "That address can't be opened."
   }
-  if (tool === 'read_page') return "This page can't be read right now."
   // A refused step back (#336): no history, or only the blank start page behind.
   if (tool === 'back' && /^cannot go back\b/.test(error)) return SPOKEN_FAILURES.noBack
   return SPOKEN_FAILURES.failed

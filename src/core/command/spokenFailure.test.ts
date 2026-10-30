@@ -131,10 +131,6 @@ describe('failureLineOf', () => {
     expect(failureLineOf('navigate', "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:9/'")).toBe("That site isn't answering.")
   })
 
-  it('says a failed Page Read could not read the page', () => {
-    expect(failureLineOf('read_page', 'page evaluation failed: TypeError: Cannot read properties of null')).toBe("This page can't be read right now.")
-  })
-
   it('falls back to the plain failure line for anything else', () => {
     expect(failureLineOf('scroll', 'something odd happened')).toBe(SPOKEN_FAILURES.failed)
   })
@@ -143,7 +139,6 @@ describe('failureLineOf', () => {
     const errors: [string, string][] = [
       ['click', 'ref 3 refused: it no longer names the element you were shown. Continue from the page below'],
       ['navigate', "ERR_SSL_PROTOCOL_ERROR (-107) loading 'https://bad.example/'"],
-      ['read_page', 'page element collector is unavailable'],
       ['press', "pressKey: unsupported key 'Hyper'"],
       ['screenshot', 'EACCES: permission denied, open /shots/screenshot-1.jpg'],
     ]

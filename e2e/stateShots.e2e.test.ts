@@ -382,23 +382,23 @@ async function walkTheShell(run: Run): Promise<void> {
   expect.soft(await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.placeholder ?? ''`), `${run.theme} 07-feed-empty: the Prompt Bar's one placeholder (#455)`).toBe('Type a command')
   await command(run, `navigate ${fixture.url('/story')}`)
   await shoot(run, '08-page-loaded')
-  await command(run, 'read')
-  await shoot(run, '09-read-answer')
+  await command(run, 'help')
+  await shoot(run, '09-card-answer')
   // The one Details switch (#454): off by default; on, every entry's time and action line is drawn, and the choice is kept.
   const detailsDrawn = `[...document.querySelectorAll('.feed-time, .feed-action')].filter((el) => el.getClientRects().length > 0).length`
-  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09-read-answer: no Detail drawn by default`).toBe(0)
+  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09-card-answer: no Detail drawn by default`).toBe(0)
   await clickPanel(run, '.feed-details-toggle')
   await sleep(300)
-  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09c-read-answer-details: the times and action lines drawn`).toBeGreaterThan(2)
+  expect.soft(await harness.overlayEval<number>(detailsDrawn), `${run.theme} 09c-card-answer-details: the times and action lines drawn`).toBeGreaterThan(2)
   expect.soft(await harness.overlayEval<string | null>(`localStorage.getItem('bingbong.feedDetails')`), `${run.theme}: the switch is kept`).toBe('on')
-  await shoot(run, '09c-read-answer-details')
+  await shoot(run, '09c-card-answer-details')
   await clickPanel(run, '.feed-details-toggle')
   await sleep(300)
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
-  await shoot(run, '09b-read-answer-panel-shut')
+  await shoot(run, '09b-card-answer-panel-shut')
   await command(run, 'click 999')
   // The panel shut, the capsule keeps the last line's sentence (#436), until the next input: the failure's, since a typed
-  // `read` says nothing. The Prompt Bar opened the panel for the line; it is shut again to read the capsule.
+  // `help` says nothing. The Prompt Bar opened the panel for the line; it is shut again to read the capsule.
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   const kept = await waitFor(async () => {
     const words = await harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`)

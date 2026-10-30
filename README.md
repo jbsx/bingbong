@@ -19,7 +19,7 @@ as fast as it can, built on this shell.
 - **A browser an agent can act through.** The pane's page is collected into
   a numbered snapshot of its interactive elements (Vimium-style: visible
   rect, label, kind, risk facts) plus its text; actions are `navigate`,
-  `read`, `click <ref>`, `type <ref> <text>`, `scroll`, `press`,
+  `click <ref>`, `type <ref> <text>`, `scroll`, `press`,
   `screenshot`, `back`, `reload`, `resume` (the last page, reopened after a
   restart). Every action's outcome names what happened on the
   page — a blocker, a consent wall, a covered click, an empty or not-found
@@ -48,8 +48,9 @@ pnpm dev
 ```
 
 Open the feed panel (`Ctrl+Shift+F`) and type `navigate youtube.com`, then
-`read`, then `click <ref>` — or arm listening with `Ctrl/Cmd+Space` and say
-it. `pnpm cli` drives the same browser controller from a terminal REPL.
+`scroll down` — or arm listening with `Ctrl/Cmd+Space` and say it. `pnpm cli`
+drives the same browser controller from a terminal REPL, whose own `read`
+lists the refs `click <ref>` takes.
 Nothing is installed by hand: the small models ship with the app and the
 rest fetch themselves on first launch.
 

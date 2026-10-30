@@ -13,8 +13,6 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `scroll ${String(args.direction ?? '')}`
     case 'press':
       return `press ${String(args.key ?? '')}${typeof args.times === 'number' && args.times > 1 ? ` ×${args.times}` : ''}`
-    case 'read_page':
-      return args.part !== undefined ? `read page (part ${String(args.part)})` : 'read page'
     case 'screenshot':
       return 'screenshot'
     case 'back':

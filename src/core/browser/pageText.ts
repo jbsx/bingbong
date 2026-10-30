@@ -282,7 +282,7 @@ const count = (value: number): string => value.toLocaleString('en-US')
  * text that entered view — so the parts are named as the page's.
  */
 export function previewFactLine(shown: number, total: number, parts: number): string {
-  return `page text: first ${count(shown)} of ${count(total)} characters — read_page returns the page's whole text in ${parts} ${parts === 1 ? 'part' : 'parts'}`
+  return `page text: first ${count(shown)} of ${count(total)} characters — read returns the page's whole text in ${parts} ${parts === 1 ? 'part' : 'parts'}`
 }
 
 /**
@@ -293,7 +293,7 @@ export function previewFactLine(shown: number, total: number, parts: number): st
  * page's text.
  */
 export function pageReadPartLine(part: number, of: number, cut = false): string {
-  if (part < of) return `page text: part ${part} of ${of} — read_page part=${part + 1} continues`
+  if (part < of) return `page text: part ${part} of ${of} — read part=${part + 1} continues`
   if (cut) return `page text: part ${part} of ${of} — the most one page read collects; the page's text continues past it`
   if (of <= 1) return `page text: part ${part} of ${of} — the text is complete; there is no part 2`
   return `page text: part ${part} of ${of} — the last part`
@@ -307,7 +307,7 @@ export function emptyPageReadLine(): string {
 /** The refusal for a part the page does not have, naming the range. */
 export function partPastTheEnd(part: number, of: number): string {
   const range = of === 1 ? '1 part, part=1' : `${of} parts, part=1 to part=${of}`
-  return `read_page: part ${part} is past the end — this page's text has ${range}`
+  return `read: part ${part} is past the end — this page's text has ${range}`
 }
 
 const FACT_LINE = /^page text: (?:part \d+ of \d+|first [\d,]+ of [\d,]+ characters) — /
@@ -323,7 +323,7 @@ export function isPageTextFactLine(line: string): boolean {
 /**
  * The page's own text a Page Read carries (#327): what follows its
  * `page text:` heading, up to the part line — never the head, the refs or
- * the reports riding after it. What `read` speaks; empty when it carries none.
+ * the reports riding after it. Empty when it carries none.
  */
 export function pageReadText(result: string): string {
   const lines = result.split('\n')
@@ -337,15 +337,7 @@ export function pageReadText(result: string): string {
   return text.join('\n').trim()
 }
 
-const PART_LINE = /^page text: part (\d+) of (\d+) — /m
-
-/** Which part of how many a Page Read is, off its part line (#327): what a spoken read continues through; null without one. */
-export function pageReadPart(result: string): { part: number; of: number } | null {
-  const match = PART_LINE.exec(result)
-  return match === null ? null : { part: Number(match[1]), of: Number(match[2]) }
-}
-
-const PART_PAST_THE_END =/\bread_page: part \d+ is past the end\b/
+const PART_PAST_THE_END =/\bread: part \d+ is past the end\b/
 
 /** Whether a result is that refusal, wherever in the text it sits: what the Round Audit counts (#290). */
 export function isPartPastTheEnd(text: string): boolean {

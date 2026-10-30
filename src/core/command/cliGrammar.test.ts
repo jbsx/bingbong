@@ -8,7 +8,6 @@ describe('parseCliCommand', () => {
       ['help!', { type: 'help' }],
       ['Back.', { type: 'back' }],
       ['Reload…', { type: 'reload' }],
-      ['Read.', { type: 'read' }],
       ['Resume?', { type: 'resume' }],
       ['Scroll down.', { type: 'scroll', direction: 'down' }],
       ['click 7.', { type: 'click', ref: 7 } ],
@@ -44,11 +43,6 @@ describe('parseCliCommand', () => {
       ok: true,
       command: { type: 'navigate', input: 'youtube.com' },
     })
-  })
-
-  it('accepts read and read_page as aliases', () => {
-    expect(parseCliCommand('read')).toEqual({ ok: true, command: { type: 'read' } })
-    expect(parseCliCommand('read_page')).toEqual({ ok: true, command: { type: 'read' } })
   })
 
   it('parses click with an integer ref', () => {
@@ -214,7 +208,7 @@ describe('parseCliCommand', () => {
   })
 
   it('reads a verb that takes no words only alone: words past it make no grammar line (#368)', () => {
-    for (const line of ['back to the results', 'read the comments', 'read_page now', 'reload the comments', 'resume the video', 'help me', 'quit it', 'exit the menu']) {
+    for (const line of ['back to the results', 'reload the comments', 'resume the video', 'help me', 'quit it', 'exit the menu']) {
       expect(parseCliCommand(line)).toMatchObject({ ok: false, error: expect.stringMatching(/^unknown command/) })
     }
   })

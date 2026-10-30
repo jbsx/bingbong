@@ -72,7 +72,7 @@ describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
     expect(localMatch('never mind that', REFS)).toBeNull()
   })
 
-  it('reads the grammar\'s bare words the same way: `back`, `read`, `reload` and `resume` take no words past them', () => {
+  it('reads the grammar\'s bare words the same way: `back`, `reload` and `resume` take no words past them', () => {
     expect(localMatch('back', REFS)).toMatchObject({ verb: 'back' })
     expect(localMatch('back to the search results', REFS)).toBeNull()
     expect(localMatch('reload', REFS)).toMatchObject({ verb: 'reload' })
@@ -87,7 +87,7 @@ describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
     expect(localMatch('clear the field', REFS)).toMatchObject({ verb: 'clear' })
     expect(localMatch('clear the search box', REFS)).toBeNull()
     expect(localMatch('reload the page', REFS)).toMatchObject({ verb: 'reload' })
-    // The Page Read is gone (#513): its spoken phrases are Jev's, and the bare `read` the typed listing's.
+    // The Page Read is gone (#513): its phrases are Jev's.
     expect(localMatch('read the page', REFS)).toBeNull()
     expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
     expect(localMatch('go back to the results', REFS)).toBeNull()
@@ -240,7 +240,7 @@ describe('the Local Match: a whole line has one reading on every page (ADR 0089)
 describe('the Local Match: the CLI grammar', () => {
   it('reads the CLI grammar as Commands, with no page needed', () => {
     expect(localMatch('navigate youtube.com', [])).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
-    expect(localMatch('read', [])).toEqual({ verb: 'read', target: null, slot: null })
+    expect(localMatch('read', [])).toBeNull()
     expect(localMatch('click 7', [])).toEqual({ verb: 'click', target: 7, slot: null })
     expect(localMatch('type 3 hello world', [])).toEqual({ verb: 'type', target: 3, slot: 'hello world' })
     expect(localMatch('scroll down', [])).toEqual({ verb: 'scroll_down', target: null, slot: null })
@@ -267,7 +267,7 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('page up', REFS)).toMatchObject({ verb: 'scroll_up' })
     expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
     expect(localMatch('forward', REFS)).toMatchObject({ verb: 'forward' })
-    // The Page Read is gone (#513): its spoken phrases are Jev's, and the bare `read` the typed listing's.
+    // The Page Read is gone (#513): its phrases are Jev's.
     expect(localMatch('read the page', REFS)).toBeNull()
     expect(localMatch('clear', REFS)).toMatchObject({ verb: 'clear' })
     expect(localMatch('stop', REFS)).toMatchObject({ verb: 'stop' })

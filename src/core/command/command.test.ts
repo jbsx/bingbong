@@ -82,7 +82,7 @@ describe('commandKeepsIdle on a blank pane (#361)', () => {
   const command = (verb: CommandVerb): Command => ({ verb, target: null, slot: null })
 
   it('keeps the Idle Screen up for every Command but one that opens a page', () => {
-    for (const verb of ['scroll_down', 'read', 'click', 'back', 'reload', 'press', 'screenshot', 'help'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(true)
+    for (const verb of ['scroll_down', 'click', 'back', 'reload', 'press', 'screenshot', 'help'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(true)
     for (const verb of ['navigate', 'search', 'resume'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(false)
   })
 
