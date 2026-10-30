@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended 2026-10-30 by ADR 0098 (#513): the app does not speak. The Page Read
+is gone from every spoken road; the typed `read` is a silent page listing, and
+what this record says is spoken is shown on the Line Overlay and chimed.
+
 Accepted on 2026-10-23 by the owner ("add it"), grilled from #401. Amends
 ADR 0076 (a done Task now speaks) and ADR 0082 (#394's Where Ask yes
 carries the passage too). Of the grill's eight questions, six were decided

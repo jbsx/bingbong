@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended 2026-10-30 by ADR 0098 (#513): the app does not speak by default; its
+lines are shown on the Line Overlay and chimed, and the voice runs only with
+`BINGBONG_VOICE=on`.
+
 Accepted on 2026-10-26, built for #430 (gitlab main 6f63adba). The
 orchestrator ruled on the owner's behalf on the issue: (a) utilityProcess
 over worker_threads unless measured otherwise, (b) frames go through main

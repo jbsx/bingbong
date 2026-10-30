@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended 2026-10-30 by ADR 0098 (#513): the app does not speak. The Page Read
+is gone from every spoken road; the typed `read` is a silent page listing, and
+what this record says is spoken is shown on the Line Overlay and chimed.
+
 Accepted on 2026-10-22 by the owner ("add it"), grilled from #393 (split
 out of the #391 grill). The owner delegated the answers: "if we can test
 something empirically, then do so … make sure no suggested fix violates the

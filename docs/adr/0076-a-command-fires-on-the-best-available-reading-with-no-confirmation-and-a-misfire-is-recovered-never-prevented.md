@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended 2026-10-30 by ADR 0098 (#513): the app does not speak. The Page Read
+is gone from every spoken road; the typed `read` is a silent page listing, and
+what this record says is spoken is shown on the Line Overlay and chimed.
+
 Amended on 2026-10-28 by ADR 0097 (#489): a line given while another runs
 ends nothing on its arrival. A Fate that ends or joins, a `stop`, Escape,
 the Abort Head or an exact line that takes the pane end a Task as they end
