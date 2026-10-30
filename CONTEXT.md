@@ -886,9 +886,7 @@ for the ear and a Card one for the view. An Answer renders as at most one
 Feed Entry — the Card when it exists, otherwise the Spoken rendering. Both
 renderings are written in English, the product's one language, whatever
 language the command or the pages read were in.
-Every Command leaves exactly one Answer (#333), and no model writes it: a
-typed page listing's Card (`read`, typed only since #513) is the page title
-over the page's own words, said nowhere; a done Task's Answer Passage, the page title over the section the
+Every Command leaves exactly one Answer (#333), and no model writes it: a done Task's Answer Passage, the page title over the section the
 Decision Model chose; a failure's plain line, shown once in the failure colour; else the
 verb's fixed sentence filled from facts the Command and the page hold
 ("Opened Lighthouse page.", "Clicked “Say hello”.", "Scrolled down.").
@@ -1877,8 +1875,8 @@ wraps a paragraph in no element (#265) — from the top, in numbered parts when
 it exceeds one result. Every Page Read says which part it is of how many, a
 page of one part included (#290). Reading a page is one Page Read, or one per
 part, never a sequence of scrolls; each part of an unchanged page is its own
-first observation. Since #513 no Command speaks a Page Read: the typed `read`
-lists it silently, and the Errand's Planner reads its parts.
+first observation. No Command reads a page since #513: the Errand's Planner
+reads its parts, and the terminal harness's own `read` prints it.
 _Avoid_: full read, page dump, read the whole page by scrolling
 
 **Selected Passage**:

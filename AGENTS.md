@@ -105,7 +105,7 @@ measure. Measuring runs on the free models; Jev joins only on
 - **The command seam** is `src/main/run/commandRunner.ts`. A typed or spoken
   line enters `CommandRunner.run` and becomes one Command (ADR 0076,
   `src/core/command/`): the Local Match first (the CLI grammar —
-  `navigate <url>`, `read` (typed only: the page listing), `click <ref>`, `type <ref> <text>`,
+  `navigate <url>`, `click <ref>`, `type <ref> <text>`,
   `scroll up|down`, `press <key> [n]`, `screenshot`, `back`, `reload`,
   `resume` — or a plain
   verb and the label exactly one ref carries), else one Jev call, else the
@@ -140,7 +140,8 @@ measure. Measuring runs on the free models; Jev joins only on
   the media ops; YouTube is the Media Engine (`siteScope.ts`), the default
   as DuckDuckGo is for `search`.
 - **The CLI harness** (`pnpm cli`, `--browser-cli`) drives the same
-  controller from a terminal.
+  controller from a terminal. Its own `read` prints the page's numbered
+  refs and text; it is no Command.
 
 ## Agent skills
 
