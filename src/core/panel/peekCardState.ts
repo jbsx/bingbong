@@ -16,11 +16,11 @@
 export const PEEK_CARD_LINGER_MS = 15_000
 
 /**
- * How far into its linger a bar drawn now already is, as a (negative) animation delay from the deadline: a card shown
- * late starts part drained, and nothing pauses it. The Turn Card's bar (#474) reads it.
+ * When a bar running out at this deadline began, on the deadline's clock: a card shown late starts part drained, and
+ * nothing pauses it. The Turn Card's bar (#474) reads it.
  */
-export function lingerDelayMs(retiresAt: number, now: number): number {
-  return Math.min(0, retiresAt - PEEK_CARD_LINGER_MS - now)
+export function lingerStartsAt(retiresAt: number): number {
+  return retiresAt - PEEK_CARD_LINGER_MS
 }
 
 /**

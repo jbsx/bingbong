@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { TURN_END_TONES, TURN_END_WORDS, TURN_STATIONS, turnHistory, turnLive, turnStation, turnWords, type TurnCardState, type TurnLive, type TurnStepTone } from '../../core/idle/turnCard'
-import { lingerDelayMs, PEEK_CARD_LINGER_MS } from '../../core/panel/peekCardState'
+import { lingerStartsAt, PEEK_CARD_LINGER_MS } from '../../core/panel/peekCardState'
 import { runProgressParts } from '../../core/pipeline/runProgress'
 import { stageWord } from '../../core/pipeline/stageWords'
 import { waitSeconds } from '../../core/voice/voicePrompt'
@@ -165,13 +165,21 @@ export function TurnHistory({ state, rows }: { state: TurnCardState; rows?: numb
 
 /**
  * The bar along the card's foot draining across the 15 s after its line is over (the Peek Card's own, #470):
- * drawn from the deadline, so a card shown late starts part drained; nothing pauses it. The delay is taken once, when
- * the bar first shows: the card re-renders every second, and a running animation given a new delay jumps ahead by it,
- * which drained the bar at twice the pace of the close. A new deadline is a new bar (its key at the call).
+ * drawn from the deadline, so a card shown late starts part drained; nothing pauses it. Its start is pinned to
+ * the deadline itself, so the bar runs out as the card goes: a CSS animation starts on the first frame it gets, and a
+ * renderer busy on that frame (a line's page loading on the kiosk) left the bar that far behind the close for good.
+ * The document's timeline counts from `performance.timeOrigin`, the clock the deadline is read on. On the compositor
+ * as before: this adds no main-thread frame.
  */
 function LingerBar({ retiresAt }: { retiresAt: number }) {
-  const [delayMs] = useState(() => lingerDelayMs(retiresAt, Date.now()))
-  return <span className="turn-linger" style={{ animationDuration: `${PEEK_CARD_LINGER_MS}ms`, animationDelay: `${delayMs}ms` }} aria-hidden="true" />
+  const bar = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const animation = bar.current?.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: PEEK_CARD_LINGER_MS, fill: 'forwards' })
+    if (animation === undefined) return
+    animation.startTime = lingerStartsAt(retiresAt) - performance.timeOrigin
+    return () => animation.cancel()
+  }, [retiresAt])
+  return <span ref={bar} className="turn-linger" aria-hidden="true" />
 }
 
 export function TurnCard({ state, onDismiss }: { state: TurnCardState; onDismiss(): void }) {
@@ -199,7 +207,7 @@ export function TurnCard({ state, onDismiss }: { state: TurnCardState; onDismiss
         <TurnStageRow state={state} face={face} now={now} />
         <TurnWordsRow state={state} />
         <TurnHistory state={state} />
-        {state.retiresAt !== null ? <LingerBar key={state.retiresAt} retiresAt={state.retiresAt} /> : null}
+        {state.retiresAt !== null ? <LingerBar retiresAt={state.retiresAt} /> : null}
       </div>
     </>
   )

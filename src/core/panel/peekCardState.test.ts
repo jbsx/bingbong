@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createTurnCardFold } from '../idle/turnCard'
-import { lingerDelayMs, overlaySlotContent, PEEK_CARD_LINGER_MS, retiredByPanel } from './peekCardState'
+import { lingerStartsAt, overlaySlotContent, PEEK_CARD_LINGER_MS, retiredByPanel } from './peekCardState'
 
 // The Peek Card's rules beside the line's own fold (#474, #475): the linger
 // constant and its bar's delay, and the overlay slot's one element.
@@ -8,8 +8,7 @@ import { lingerDelayMs, overlaySlotContent, PEEK_CARD_LINGER_MS, retiredByPanel 
 describe('the linger', () => {
   it('is 15 s (#470), and a bar drawn late starts part drained', () => {
     expect(PEEK_CARD_LINGER_MS).toBe(15_000)
-    expect(lingerDelayMs(20_000, 5_000)).toBe(0)
-    expect(lingerDelayMs(20_000, 9_000)).toBe(-4_000)
+    expect(lingerStartsAt(20_000)).toBe(5_000)
   })
 })
 

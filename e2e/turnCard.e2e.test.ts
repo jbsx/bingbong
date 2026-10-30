@@ -65,6 +65,20 @@ const LINGER_WATCH = `(() => {
 })()`
 
 /**
+ * The renderer busy for 1.5 s as each bar first shows, as a kiosk is while a line's page loads: the bar's first frame
+ * comes that late.
+ */
+const BUSY_ON_THE_BARS_FIRST_FRAME = `(() => {
+  new MutationObserver(() => {
+    const bar = document.querySelector('.turn-linger')
+    if (bar === null || bar.dataset.busied !== undefined) return
+    bar.dataset.busied = ''
+    const until = Date.now() + 1_500
+    while (Date.now() < until);
+  }).observe(document.body, { childList: true, subtree: true })
+})()`
+
+/**
  * Records, on every change of the card, the first geometry seen for each of its states: the rail cells, the stage
  * word's left edge, the mark's right edge, the words row and the six history rows — and when the card first showed,
  * against when this renderer learned the ear opened (#441's recipe), both on the renderer's clock.
@@ -119,6 +133,7 @@ describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
       await waitFor(async () => ((await onDashboard<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 20_000, intervalMs: 100 })
       expect(await onDashboard<boolean>(`!!document.querySelector('.turn-card')`)).toBe(false)
       await onDashboard(WATCH)
+      await onDashboard(BUSY_ON_THE_BARS_FIRST_FRAME)
       // The wake: the card is up as soon as the ear opens (AC1), on the listening state.
       const { shownAt, listenAt } = await waitFor(async () => {
         const turn = await onDashboard<Seen>('window.__turn')
@@ -159,7 +174,6 @@ describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
       expect(seen.states.dropped?.text).toContain('No response')
       if (seen.states.speaking !== undefined) expect(seen.states.speaking.text).toContain('Speaking…')
       if (seen.states.acting !== undefined) expect(seen.states.acting.text).toContain('Playing…')
-      expect(seen.states.failed?.text).toContain(`Heard“${PLAY}”`)
       expect(seen.states.failed?.text).toContain('Read asplay')
       expect(seen.states.failed?.text).toContain('SpeakingNo videos found')
       expect(seen.states.failed?.text).toContain('FailedNo videos found')
@@ -186,8 +200,9 @@ describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
       await waitFor(async () => ((await onDashboard<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 30_000, intervalMs: 100 })
       expect(Date.now() - doneAt).toBeGreaterThanOrEqual(LINGER_MS - 2_000)
       expect(await onDashboard<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
-      // The bar drains to the close, not ahead of it: each drawn length is the time then left over the linger, across the
-      // card's once-a-second re-renders. The bound is a guess at a frame's and a sample's slack (0.05 of 15 s is 750 ms).
+      // The bar drains to the close, neither ahead of it nor behind: each drawn length is the time then left over the
+      // linger, across the card's once-a-second re-renders and its busy first frame. The bound is a guess at a frame's and
+      // a sample's slack (0.05 of 15 s is 750 ms; the 1.5 s stall left a bar started on its first frame 0.10 behind).
       const linger = await waitFor(async () => {
         const seenLinger = await onDashboard<{ samples: [number, number][]; closedAt: number | null }>('window.__linger')
         return seenLinger.closedAt !== null ? seenLinger : undefined

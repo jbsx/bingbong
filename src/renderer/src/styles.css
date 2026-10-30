@@ -3047,16 +3047,7 @@ button.idle-line {
   color: var(--fail-text);
 }
 
-/* The bar along the card's foot draining across the 15 s after the line is over (the Peek Card's own, #470). */
-@keyframes turn-drain {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-
+/* The bar along the card's foot draining across the 15 s after the line is over (the Peek Card's own, #470); LingerBar animates it. */
 .turn-linger {
   position: absolute;
   right: 0;
@@ -3065,9 +3056,6 @@ button.idle-line {
   height: 4px;
   background: var(--fg3);
   transform-origin: left center;
-  animation-name: turn-drain;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
 }
 
 /* The Idle Prompt beside the Turn Card (#474): at the foot of the screen, the card's own scrim doing the dimming. */
