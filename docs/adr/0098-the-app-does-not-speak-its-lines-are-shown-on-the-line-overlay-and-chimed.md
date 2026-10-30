@@ -2,6 +2,9 @@
 
 ## Status
 
+Superseded by ADR 0099 for the voice (#514). Its removal of the Page Read
+stands.
+
 Accepted 2026-10-30, by the owner's ruling of 2026-10-29 (#513). Built on
 gitlab main 94938481. Amends ADR 0076, 0081, 0082, 0086 and 0087 where they
 name the Page Read, and ADR 0019 and 0093 where they name the voice.

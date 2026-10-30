@@ -178,17 +178,15 @@ UI's job is to keep that prediction updateable. Four words carry it:
 - **Receipt**: every input shows the words heard before anything is
   done, within 100 ms.
 - **Narrated wait**: a wait names its stage and object, counts its
-  seconds from the work itself, shows partial results, and ends in an
-  outcome shown on the Line Overlay and chimed; a cold start is a wait.
+  seconds from the work itself, shows partial results, and ends in a
+  spoken outcome; a cold start is a wait.
 - **Glance surface**: the screen is read from 2 m on a 21-inch panel.
-  Status type is 65 px and up, and every line the app would have said
-  is shown at that size on the Line Overlay, with a done or failed
-  chime for someone not looking. Its first job is to show whether
-  speaking now will be heard.
+  Status type is 65 px and up, and what cannot be read from the chair
+  is said aloud. Its first job is to show whether speaking now will be
+  heard.
 - **Spoken handle**: every live thing carries a visible name the person
   can say, and no two live things answer the same words; what voice
-  cannot reach is named as such, on screen and chimed failed, with
-  where it is.
+  cannot reach is named as such, aloud, with where it is.
 
 The ten principles, each with its reason and the numbers behind it, are
 in `docs/agents/ui.md`. A change that adds a wait, a state, a word on
@@ -219,7 +217,7 @@ Five rules hold the promises:
   guess.
 - A Misfire is recovered by the next Command, and that recovery is
   Instant.
-- Every line is answered: a reading of `none` is shown and chimed.
+- Every line is answered: a reading of `none` is shown and said.
 
 The headline is Commands between Frustrations; a Frustration is a
 Command that ended not done, unavailable or unsure, a Misfire, a line

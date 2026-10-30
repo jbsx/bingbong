@@ -13,10 +13,6 @@ here and names what is left to build.
 
 ## Language
 
-Since #513 the app does not speak: where a term below says a line is said, spoken or
-said aloud, it is shown on the Line Overlay and chimed, unless the voice is switched
-back on (`BINGBONG_VOICE=on`).
-
 
 ### Voice
 
@@ -69,9 +65,9 @@ _Avoid_: silence detection
 An Utterance's loudness, the mean RMS of its loudest fifth of 32 ms
 frames, in dBFS, carried on the `stt` span. Speech at the mic reads above
 −26; speech across the room (the TV, a remark) below. A line read `none`
-is shown and chimed failed ("I didn't catch that, say it again.") only when
-Jev was unsure of the `none` and the Speech Level reached the floor; otherwise
-it is a remark, shown greyed and never chimed (#500, #513).
+is said back ("I didn't catch that, say it again.") only when Jev was
+unsure of the `none` and the Speech Level reached the floor; otherwise it
+is a remark, shown greyed and unsaid (#500).
 _Avoid_: volume, loudness score
 
 **Turn Check**:
@@ -108,10 +104,9 @@ stops at the read when the line is for the app (an action, or a Fate that
 ends, joins or waits on the line running), and comes back up when it was the
 app's own words, or a line read as no Command that lets the running one go
 on. A line over the voice that fires nothing (read as no Command, unsure, or
-unanswered) is never handed to the Errand and ends with nothing said. With the voice
-on, a line still saying its outcome is the line running until its sentence
-ends, so "move on" over it is read against it; with it off (#513) a line is
-shown at once and holds nothing running.
+unanswered) is never handed to the Errand and ends with nothing said. A line
+still saying its outcome is the line running until
+its sentence ends, so "move on" over it is read against it.
 
 **Ducking**:
 The music dropping under the voice (#344): while the ear is open — from a
@@ -166,9 +161,9 @@ One spoken outcome the appliance carries across as many Tasks and hops as
 it takes, with a memory: the Goal Line, the steps done, what was captured,
 the last card. Driven by the Planner, never by the Decision Model, which
 reads one card at a time and keeps no memory past "Done so far". Bounded
-by seconds shown, not by a count of actions; an action whose effect
-leaves the appliance (post, send, pay, delete, submit) is shown and chimed
-and waits for yes, answered by voice or typed. The Planner names each action's class and code enforces
+by seconds said aloud, not by a count of actions; an action whose effect
+leaves the appliance (post, send, pay, delete, submit) is said back and
+waits for yes. The Planner names each action's class and code enforces
 it: a click, Enter or submit on a control labelled post, send, pay, buy,
 order, delete, submit, publish, reply, comment or subscribe is `leaves`
 whatever the Planner said, by kind and never by site. The confirm rides
@@ -663,7 +658,7 @@ _Avoid_: error, wrong action, false positive, hallucination
 **Overlap**:
 A line that arrives before the Command before it has ended: still being
 read, fired and not yet landed, the page still changing, the media not yet
-started, or the app still speaking (voice on). What the later line means to the
+started, or the app still speaking. What the later line means to the
 earlier one (a new goal, a correction, an add-on, a control on the thing
 loading, a question about the wait, a stop) is read as its **Fate**, never
 assumed from its timing. A Sequence Case measures it; #486.
@@ -677,7 +672,7 @@ bringing, once that is there), or lets it **go on** (something else, a
 question about the wait, a remark or noise). Read by Jev on the Appliance
 Card, which carries the running Command right after the words; unsure, it
 goes on; when no host answers, a line that opens with a grammar verb head
-ends it and any other goes on, shown and chimed (#504, #513). An exact line's Fate is by kind: one that takes the pane ends it, a
+ends it and any other goes on, said (#504). An exact line's Fate is by kind: one that takes the pane ends it, a
 control on media still opening waits, any other goes on. A joined line is
 the line it joins, one line on its Task: a first half still being read gives
 way into it; one that fired and ended stands when the two read as one fire
@@ -866,7 +861,7 @@ the transcriber is in is held, `STARTING` with its words and the seconds
 since its Endpoint. Only a wake heard while the transcriber loaded hears
 "I'm ready" when it is in. A model that hears or reads that does not load
 ends the wait (#447): `Ear did not start — type, or restart`, no
-count, the orb grey, chimed failed only where "I'm ready" would have been;
+count, the orb grey, said aloud only where "I'm ready" would have been;
 a later load of it that succeeds clears the line. In the panel a state
 word wider than the panel, `TRANSCRIBING`, steps down to 40 px.
 _Avoid_: voice line (that is the Spoken Rendering), input box, omnibar
@@ -1631,24 +1626,6 @@ field center, feed and settings controls right. The window's only drag
 region; never covers the browsing pane.
 _Avoid_: header, dashboard header, browser chrome, title bar
 
-**Line Overlay**:
-The line the app would have said (#513), on whatever surface is up: its own
-view over the pane's top (under the Wait Card while one is up), the Idle
-Screen's foot, or over Settings and the Weight page. Status type at 65 px,
-one sentence, three lines at most; up 15 s or until the next line, and never
-focused. A failure's line is in the failure colour. Every road that spoke
-shows here: an Answer, a failure, a Fate, a stop, a site's question, an
-Errand's ask, a download, the ear's own lines.
-_Avoid_: toast, caption, subtitle
-
-**Line Chime**:
-The short sound that marks a line on the Line Overlay (#513), for someone
-not looking: **done** (two tones rising) when the line answers or confirms,
-**failed** (two tones falling, below the wake's) when it tells a failure, a
-`none`, an unsure reading or a wall. Played through aplay, under the Sound
-Mute; under half a second, so no echo cancelling is needed.
-_Avoid_: beep, notification sound
-
 **Status Capsule**:
 The single control naming the assistant's state — orb, pill, and the live
 run/voice hints collapsed into one pill-shaped surface. It names each state
@@ -1987,7 +1964,7 @@ a fact about the page, on whatever action landed there; it is neutral to
 Progress; and it is not escape from a Search Loop. Only a Composed Address
 landing there spends the site's allowance. It ends the Task with its line,
 no one asked, only on the status the site served; a title that says not
-found goes to the Verdict, and the line is shown and chimed when Jev does not answer
+found goes to the Verdict, and the line is said when Jev does not answer
 (ADR 0089). The same holds for an Unavailable Landing (a 5xx) and a Blocker
 (a challenge host or token).
 _Avoid_: 404 hit, failed navigate, bad guess
@@ -2159,7 +2136,7 @@ _Avoid_: server, deployment environment, target machine
 A build of the app published from the `production` branch, the only build
 the Kiosk runs. The Kiosk installs a new Release on its own only while the
 Idle Screen is up. When the owner asks for an update (#422, ADR 0090), a
-Release already downloaded installs at once, once its Answer has been shown;
+Release already downloaded installs at once, once its Answer has been said;
 one not yet downloaded downloads and installs when the screen is idle.
 _Avoid_: deploy, push, nightly
 

@@ -31,8 +31,8 @@ items at 65 px and up, never a panel of text.
    and doubt makes them repeat it, which fires twice. Within 100 ms, on
    screen, heard words separate from action taken.
 
-2. **A wait is narrated by the work itself until it ends in an outcome
-   on the Line Overlay and its chime**, because the sense that the app is alive comes from
+2. **A wait is narrated by the work itself until it ends in a spoken
+   outcome**, because the sense that the app is alive comes from
    change, and a static message is read as the last thing it drew
    before dying. Stage and object named; seconds counting on the
    renderer's own clock, so a count that stops is the one true "frozen"
@@ -40,7 +40,7 @@ items at 65 px and up, never a panel of text.
    arrive; "longer than usual" at a threshold measured from the perf
    logs, since a guessed one cries wolf or stays quiet and either
    teaches the person to ignore it; every stage bounded and the bound
-   shown. A cold start is a wait and gets the same treatment,
+   said aloud. A cold start is a wait and gets the same treatment,
    because the first interaction sets the baseline for all the rest.
 
 3. **Nothing happens that was not asked, and anything that did happen
@@ -64,8 +64,8 @@ items at 65 px and up, never a panel of text.
    at the pane or at nothing, and speaking into the wrong state reads
    as deafness. Status items at 65 px and up; contrast 7:1; a dark
    ground with full-brightness foreground, dimmed at night, because the
-   pupil adapts to the brightest thing in view; the last result kept on
-   screen, because a chime carries no words.
+   pupil adapts to the brightest thing in view; the last spoken result
+   kept on screen, because speech cannot be scrolled back by ear.
 
 6. **Everything the person can act on carries a visible name they can
    say, and no two live things answer the same words**, because voice
@@ -73,8 +73,8 @@ items at 65 px and up, never a panel of text.
    however well it affords a click; a dead thing looks dead, since a
    failed try on it feels like a hang; only the words that apply right
    now are offered, since an offered word that cannot fire will be
-   said; when something is out of voice's reach the app shows so, with
-   the failed chime, and shows where it is, since the person has no other way to learn the
+   said; when something is out of voice's reach the app says so and
+   says where it is, since the person has no other way to learn the
    boundary.
 
 7. **One thing on the screen is clearly first, related things sit
@@ -98,22 +98,17 @@ items at 65 px and up, never a panel of text.
 9. **One vocabulary across screen, speech and sound**, because each
    distinct wording or chime is a thing to learn, and anything that
    must be learned reads as uncertain until it is. The same state has
-   the same word and colour everywhere; one sound means one thing, and a
-   line has two chimes, done rising and failed falling, apart from the
-   wake's; an
+   the same word and colour everywhere; one sound means one thing; an
    error says what happened, what it means and what to say next, in
    the person's words, because an error is a broken prediction and
    without the next line the person retries the same thing.
 
-10. **The Line Overlay says the result in one sentence, confirms what
-    changed, and leaves the floor to the person**, because the person
-    may be across the room: big type, one sentence, a chime for
-    whoever is not looking. "Volume 38 percent", nothing procedural; a
+10. **Speech says the result in one sentence, confirms what changed,
+    and yields the floor the moment the person speaks**, because speech
+    is slow, cannot be skimmed, and is the only channel that reaches
+    someone not looking. "Volume 38 percent", nothing procedural; a
     failed line names a line that would have worked, since voice has
-    no menu to discover. The app never speaks over the person (#513).
-    With the voice switched back on (`BINGBONG_VOICE=on`), speech says
-    the same one sentence and yields the floor the moment the person
-    speaks.
+    no menu to discover; holding the floor reads as not listening.
 
 ## Checking a change
 

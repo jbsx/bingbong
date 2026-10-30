@@ -13,9 +13,6 @@ the last speech frame, through the silence and Smart Turn check that make
 the Endpoint, so the promises are set on the Felt Reaction:
 `end-of-speech` + `reaction` in the perf log. An Early Fire's Felt
 Reaction runs from the last speech frame of the partial it fired on.
-A Command whose output is a line has its Reaction close when the line
-is shown on the Line Overlay (#513): with the voice off, that is its
-first effect.
 
 ## Tiers
 
@@ -70,12 +67,12 @@ page collected while the owner is still speaking.
    recovery is what makes firing at once safe.
 5. **Every line is answered.** 83 of 227 spoken lines read `none`; the
    owner cannot tell noise from a swallowed command. A `none` is shown;
-   it is shown and chimed failed ("I didn't catch that, say it again.")
-   when it was a line to the app: spoken at the mic (Speech Level ≥ −26
-   dBFS, measured on the kiosk's dumps of 25–28 October) and read `none`
-   under the choice bar on the reading the line ended on. A sure `none`,
-   far speech and a typed line are shown greyed and never chimed (ui.md,
-   Receipt and Narrated wait). #500, #513.
+   it is said ("I didn't catch that, say it again.") when it was a line
+   to the app: spoken at the mic (Speech Level ≥ −26 dBFS, measured on
+   the kiosk's dumps of 25–28 October) and read `none` under the choice
+   bar on the reading the line ended on. A sure `none`, far speech, a
+   line over the app's voice and a typed line are shown greyed and never
+   said (ui.md, Receipt and Narrated wait). #500.
 6. **Same words, same wait.** The spread (p99 ÷ p50 by verb) is watched
    beside p95: the Local Match ran 720 ms p50 and 14.7 s p95, and the
    spread is what feels flaky.
@@ -85,8 +82,7 @@ page collected while the owner is still speaking.
 A Frustration is a Command that ended not done, `unavailable` or
 `unsure`; a Misfire; a line said again or reworded within 15 s (the same
 verb, or transcripts at 0.7 similarity or more); or a real command read
-as `none`, labelled from the audio dumps, its outcome shown and chimed
-(#513). Today, by that heuristic,
+as `none`, labelled from the audio dumps. Today, by that heuristic,
 about one Command in five is followed by a repeat (36 of 181).
 `perf:report` counts every part but the repeat today.
 

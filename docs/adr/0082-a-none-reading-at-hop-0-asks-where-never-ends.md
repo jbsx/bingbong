@@ -2,9 +2,8 @@
 
 ## Status
 
-Amended 2026-10-30 by ADR 0098 (#513): the app does not speak. The Page Read
-is gone from every spoken road; the typed `read` is a silent page listing, and
-what this record says is spoken is shown on the Line Overlay and chimed.
+Amended 2026-10-30 by ADR 0099 (#514): the Page Read is removed; every other
+line is spoken.
 
 Amended on 2026-10-27 by ADR 0096 (#485): the Where Ask follows the page
 card's first reading; see the amendment below.
