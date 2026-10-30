@@ -17,4 +17,10 @@ describe('roomLeaks (#490)', () => {
     expect(roomLeaks(modules, '0\talsa_output.pci\tmodule-alsa-card.c\ts16le 2ch 44100Hz\tIDLE\n')).toBe("the room's sink is alsa_output.pci on module-alsa-card.c")
     expect(roomLeaks(modules, `${sinks}1\tother\tmodule-null-sink.c\ts16le 1ch 16000Hz\tIDLE\n`)).toBe('the room has 2 sinks')
   })
+
+  it('holds a replay room to its two null sinks (#515)', () => {
+    const replay = '0\tspk\tmodule-null-sink.c\ts16le 2ch 48000Hz\tIDLE\n1\tair\tmodule-null-sink.c\ts16le 1ch 48000Hz\tIDLE\n'
+    expect(roomLeaks(modules, replay, ['spk', 'air'])).toBeNull()
+    expect(roomLeaks(modules, '0\tspk\tmodule-null-sink.c\ts16le 2ch 48000Hz\tIDLE\n1\talsa_output.pci\tmodule-alsa-card.c\ts16le 2ch 44100Hz\tIDLE\n', ['spk', 'air'])).toBe("the room's sink is alsa_output.pci on module-alsa-card.c")
+  })
 })

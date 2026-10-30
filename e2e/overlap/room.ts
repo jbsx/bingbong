@@ -36,26 +36,37 @@ const ALLOWED_MODULES = new Set(['module-native-protocol-unix', 'module-null-sin
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** What the room's server holds, read over its own socket: why it is not a closed room, or null. */
-export function roomLeaks(modules: string, sinks: string): string | null {
+export function roomLeaks(modules: string, sinks: string, allowed: readonly string[] = [SINK]): string | null {
   for (const line of modules.split('\n').filter((row) => row.trim() !== '')) {
     const name = line.split('\t')[1] ?? ''
     if (!ALLOWED_MODULES.has(name)) return `the room loaded ${name}`
   }
   const rows = sinks.split('\n').filter((row) => row.trim() !== '')
-  if (rows.length !== 1) return `the room has ${rows.length} sinks`
-  const [, name, driver] = rows[0]!.split('\t')
-  if (name !== SINK || driver !== 'module-null-sink.c') return `the room's sink is ${name} on ${driver}`
+  if (rows.length !== allowed.length) return `the room has ${rows.length} sinks`
+  for (const row of rows) {
+    const [, name, driver] = row.split('\t')
+    if (!allowed.includes(name!) || driver !== 'module-null-sink.c') return `the room's sink is ${name} on ${driver}`
+  }
   return null
 }
 
-export async function openRoom(dir: string): Promise<Room> {
+/** A kiosk replay's room (#515): the reference plays into `REPLAY_REFERENCE_SINK`, which no mic hears, and the take's raw mic into `REPLAY_AIR_SINK`, whose monitor is the mic. Closed as `openRoom`'s is. */
+export const REPLAY_REFERENCE_SINK = 'spk'
+export const REPLAY_AIR_SINK = 'air'
+
+export async function openReplayRoom(dir: string): Promise<{ readonly server: string; close(): Promise<void> }> {
+  const room = await startRoom(dir, [`module-null-sink sink_name=${REPLAY_REFERENCE_SINK} rate=48000 channels=2`, `module-null-sink sink_name=${REPLAY_AIR_SINK} rate=48000 channels=1`, `module-remap-source master=${REPLAY_AIR_SINK}.monitor source_name=${MIC} channels=1`], REPLAY_REFERENCE_SINK, [REPLAY_REFERENCE_SINK, REPLAY_AIR_SINK])
+  return { server: room.server, close: room.close }
+}
+
+async function startRoom(dir: string, modules: readonly string[], defaultSink: string, sinks: readonly string[]): Promise<{ readonly server: string; readonly children: ChildProcess[]; close(): Promise<void> }> {
   mkdirSync(join(dir, 'run'), { recursive: true })
   mkdirSync(join(dir, 'state'), { recursive: true })
   const socket = join(dir, 'native')
   const server = `unix:${socket}`
   const daemon = spawn(
     'pulseaudio',
-    ['-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=no', '--system=no', '--disable-shm=yes', '--log-target=stderr', '-L', `module-native-protocol-unix socket=${socket} auth-anonymous=1`, '-L', `module-null-sink sink_name=${SINK} rate=16000 channels=1`, '-L', `module-remap-source master=${SINK}.monitor source_name=${MIC} rate=16000 channels=1`],
+    ['-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=no', '--system=no', '--disable-shm=yes', '--log-target=stderr', '-L', `module-native-protocol-unix socket=${socket} auth-anonymous=1`, ...modules.flatMap((module) => ['-L', module])],
     // Off the session bus: a room's daemon claims org.PulseAudio1 there, and a second room beside a live one (the
     // capture slot is three runs) exits on the name already taken, so no two rooms could be up at once (#494).
     { env: { ...process.env, PULSE_RUNTIME_PATH: join(dir, 'run'), PULSE_STATE_PATH: join(dir, 'state'), DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(dir, 'no-bus')}` }, stdio: 'ignore' },
@@ -74,13 +85,18 @@ export async function openRoom(dir: string): Promise<Room> {
     }
     await sleep(100)
   }
-  pactl('set-default-sink', SINK)
+  pactl('set-default-sink', defaultSink)
   pactl('set-default-source', MIC)
-  const leak = roomLeaks(pactl('list', 'short', 'modules').stdout, pactl('list', 'short', 'sinks').stdout)
+  const leak = roomLeaks(pactl('list', 'short', 'modules').stdout, pactl('list', 'short', 'sinks').stdout, sinks)
   if (leak !== null) {
     await close()
     throw new Error(`the room is not closed: ${leak}`)
   }
+  return { server, children, close }
+}
+
+export async function openRoom(dir: string): Promise<Room> {
+  const { server, children, close } = await startRoom(dir, [`module-null-sink sink_name=${SINK} rate=16000 channels=1`, `module-remap-source master=${SINK}.monitor source_name=${MIC} rate=16000 channels=1`], SINK, [SINK])
   // The app's player, held to the room: the pulse plugin, never ALSA's default.
   const aplay = join(dir, 'aplay')
   writeFileSync(aplay, `#!/bin/sh\nexec aplay -D pulse "$@"\n`)
