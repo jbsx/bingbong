@@ -2350,6 +2350,143 @@ describe('the audio road', () => {
     expect(player.road()).toBe('audio')
   })
 
+  describe('a remembered address (#516)', () => {
+    const SIX_HOURS_ON = Math.floor(Date.now() / 1000) + 6 * 3600
+    const playA = (perform: ReturnType<typeof withAudio>['perform']) => perform({ kind: 'search', place: 'now' }, 'song a')
+
+    it('a repeat play runs no lookup, and its start says so: under 100 ms, playing, the same address', async () => {
+      const { audio, starts, player, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      expect(starts[0]).toMatchObject({ road: 'audio', started: true, remembered: false })
+      expect(await playA(perform)).toMatchObject({ answer: 'Playing “Song A”.' })
+      expect(audio.resolved).toEqual(['aaaaaaaaaaa'])
+      expect(audio.loaded.map((load) => load.stream)).toEqual([audio.loaded[0]!.stream, audio.loaded[0]!.stream])
+      expect(starts[1]).toMatchObject({ road: 'audio', started: true, remembered: true, fallback: false })
+      expect(starts[1]!.lookup).toBeLessThan(100)
+      expect(player.road()).toBe('audio')
+    })
+
+    it('a stream cut after it started is that address’s fault only when it came from memory, and either way the address is forgotten', async () => {
+      const { audio, player, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      // Looked up: a stale yt-dlp's stream, cut past its first 512 KB, counts against the yt-dlp.
+      expect(player.streamRefused()).toBe(false)
+      await playA(perform)
+      expect(audio.resolved).toHaveLength(2)
+      await playA(perform)
+      expect(audio.resolved).toHaveLength(2)
+      // Remembered: the address's own fault, and the next play looks up, so the next cut counts.
+      expect(player.streamRefused()).toBe(true)
+      await playA(perform)
+      expect(audio.resolved).toHaveLength(3)
+      expect(player.streamRefused()).toBe(false)
+    })
+
+    it('a remembered song still playing through the next song’s lookup is still the one a fault is about', async () => {
+      const pane = wired()
+      const audio = scriptedAudio(pane.youtube.watches)
+      audio.expires = SIX_HOURS_ON
+      let answer: (() => void) | null = null
+      let hold = false
+      const resolve = (id: string): Promise<AudioStream> => (hold ? new Promise((done) => (answer = () => done(audio.resolve(id)))) : audio.resolve(id))
+      const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve } })
+      const live = (): boolean => true
+      await player.perform({ kind: 'search', place: 'now' }, 'song a', live)
+      await player.perform({ kind: 'search', place: 'now' }, 'song a', live)
+      hold = true
+      const next = player.perform({ kind: 'search', place: 'now' }, 'song b', live)
+      while (answer === null) await new Promise((done) => setTimeout(done, 0))
+      expect(player.streamRefused()).toBe(true)
+      ;(answer as () => void)()
+      await next
+      expect(player.streamRefused()).toBe(false)
+    })
+
+    it('an address naming no expiry is looked up each time', async () => {
+      const { audio, perform } = withAudio()
+      await playA(perform)
+      await playA(perform)
+      expect(audio.resolved).toEqual(['aaaaaaaaaaa', 'aaaaaaaaaaa'])
+    })
+
+    it('an address whose time is up is looked up again', async () => {
+      const { audio, perform } = withAudio()
+      audio.expires = Math.floor(Date.now() / 1000) + 30
+      await playA(perform)
+      await playA(perform)
+      expect(audio.resolved).toEqual(['aaaaaaaaaaa', 'aaaaaaaaaaa'])
+    })
+
+    it('a remembered address refused gets one fresh lookup and plays on the road, each try its own start', async () => {
+      const { audio, starts, player, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      audio.refused.add(audio.loaded[0]!.stream)
+      const played = await playA(perform)
+      expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
+      expect(audio.resolved).toEqual(['aaaaaaaaaaa', 'aaaaaaaaaaa'])
+      expect(starts.slice(1)).toMatchObject([
+        { road: 'audio', started: false, remembered: true, fallback: false },
+        { road: 'audio', started: true, remembered: false, fallback: false },
+      ])
+      expect(player.road()).toBe('audio')
+      expect(player.streamRefused()).toBe(false)
+    })
+
+    it('that fresh address is remembered in its place', async () => {
+      const { audio, starts, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      audio.refused.add(audio.loaded[0]!.stream)
+      await playA(perform)
+      await playA(perform)
+      expect(audio.resolved).toHaveLength(2)
+      expect(starts.at(-1)).toMatchObject({ started: true, remembered: true })
+    })
+
+    it('a remembered address refused with the fresh lookup failing reaches the watch page', async () => {
+      const { audio, browser, starts, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      audio.refused.add(audio.loaded[0]!.stream)
+      audio.fails.add('aaaaaaaaaaa')
+      const played = await playA(perform)
+      expect(played.answer).toContain('watch page')
+      expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+      expect(starts.at(-1)).toMatchObject({ road: 'page', started: true, fallback: true, remembered: false })
+    })
+
+    it('a fresh address refused goes straight to the watch page, unpressed, and is not remembered', async () => {
+      const { audio, browser, starts, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      audio.refused.add(`https://stream.example/aaaaaaaaaaa?expire=${SIX_HOURS_ON}&try=1`)
+      await playA(perform)
+      expect(starts[0]).toMatchObject({ road: 'audio', started: false, pressed: false, remembered: false })
+      expect(audio.youtube.controls).not.toContainEqual({ op: 'play' })
+      expect(browser.landings).toEqual([`${WATCH}aaaaaaaaaaa`])
+      await playA(perform)
+      expect(audio.resolved).toEqual(['aaaaaaaaaaa', 'aaaaaaaaaaa'])
+    })
+
+    it('a remembered address tells no lookup: the wait is not Finding the audio', async () => {
+      const { audio, waits, perform } = withAudio()
+      audio.expires = SIX_HOURS_ON
+      await playA(perform)
+      waits.length = 0
+      await playA(perform)
+      expect(waits.filter((wait) => wait === 'lookup aaaaaaaaaaa')).toEqual([])
+    })
+
+    it('a start carries how its lookup went: the client, the steps, the first ask’s failure', async () => {
+      const { audio, starts, perform } = withAudio()
+      audio.asked = { client: 'default', steps: [{ at: 900, step: 'exit' }], failedFirst: { why: 'ran out of time', ms: 5_000, steps: [] } }
+      await playA(perform)
+      expect(starts[0]!.asked).toEqual(audio.asked)
+    })
+  })
+
   it('with no audio road wired every play is the watch page, and the road reads page', async () => {
     const { browser, player, perform } = wired()
     const played = await perform({ kind: 'search', place: 'now' }, 'song a')

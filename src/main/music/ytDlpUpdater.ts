@@ -95,7 +95,7 @@ export interface YtDlpUpdaterDeps {
   /** The road's own switch (#502 ruling 2), read at each run: off, nothing is downloaded or run. */
   on(): boolean
   readonly fetch: UpdaterFetch
-  /** The road's lookup, run on a given binary: `resolveAudioStream`. */
+  /** The lookup that proves a binary, run on it: `askDefaultClients`, with no fallback in it to hide one that fails (#516). */
   lookup(binary: string, id: string, timeoutMs: number): Promise<AudioStream>
   /**
    * The yt-dlp on PATH and how to read its version. It is kept while it is
@@ -207,6 +207,31 @@ export function startYtDlpUpkeep(updater: YtDlpUpdater, up: Promise<void>, now: 
       if (daily !== null) clearInterval(daily)
     },
   }
+}
+
+/** The slice of the audio surface's `webRequest` the watch hears: a fake in the tests. */
+export interface StreamRequests {
+  onCompleted(filter: { urls: string[] }, listener: (details: { statusCode: number }) => void): void
+  onErrorOccurred(filter: { urls: string[] }, listener: (details: { error: string }) => void): void
+}
+
+/**
+ * A stream refused (403), as a stale yt-dlp's were past their first 512 KB
+ * (2026-10-28), is a resolve failure (#503): the song itself goes on as it
+ * does today, and the updater runs at most hourly. A stream cut off by the
+ * network counts too; one the element itself let go (a stop, a seek, the
+ * next song) does not. Nor does either on a remembered address (#516): it
+ * can be refused after the IP changes, with no yt-dlp at fault. `refused`
+ * tells the Player, which forgets the address and says whether it was one.
+ */
+export function watchStreamFaults(requests: StreamRequests, refused: () => boolean, failed: () => void): void {
+  const urls = ['*://*.googlevideo.com/*']
+  requests.onCompleted({ urls }, (details) => {
+    if (details.statusCode === 403 && !refused()) failed()
+  })
+  requests.onErrorOccurred({ urls }, (details) => {
+    if (details.error !== 'net::ERR_ABORTED' && !refused()) failed()
+  })
 }
 
 export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {

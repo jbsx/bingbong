@@ -259,6 +259,8 @@ export interface StartRead {
   readonly ad: boolean
   /** The engine offers to skip that ad now (#497): its own Skip button is up. */
   readonly skippable: boolean
+  /** The element gave up on its source (`error`, a 403 among them): it will not play again without a new one (#516). */
+  readonly failed: boolean
 }
 
 /**
@@ -276,7 +278,7 @@ export const START_SCRIPT = `(() => {
   if (!video) return null
   ${SKIP_FINDER}
   const ad = player.classList.contains('ad-showing')
-  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad, skippable: ad && skipButton(player) !== null }
+  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad, skippable: ad && skipButton(player) !== null, failed: video.error !== null }
 })()`
 
 /** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */

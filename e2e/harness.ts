@@ -233,6 +233,7 @@ function noFixture(): FixtureServer {
     lastVisionAuthorization: () => undefined,
     setStatusBoard: refuse,
     setResultsDelay: refuse,
+    refuseNextStream: refuse,
     close: async () => {},
   }
 }

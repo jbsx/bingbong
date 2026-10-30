@@ -96,9 +96,9 @@ import { registerSoundMuteIpc } from './sound/attachSoundMute'
 import { registerWeatherIpc } from './weather/attachWeather'
 import { attachPlayer } from './music/attachPlayer'
 import { createAudioSurface, withAudioRoadMedia } from './music/audioSurface'
-import { resolveAudioStream, ytDlpVersion } from './music/ytDlp'
+import { askDefaultClients, resolveAudioStream, ytDlpVersion } from './music/ytDlp'
 import { appYtDlpKept, audioRoadBinary, YT_DLP } from '../core/music/audioRoad'
-import { createYtDlpUpdater, startYtDlpUpkeep } from './music/ytDlpUpdater'
+import { createYtDlpUpdater, startYtDlpUpkeep, watchStreamFaults } from './music/ytDlpUpdater'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
 import { createDucking, duckInTurn } from '../core/music/ducking'
@@ -327,7 +327,7 @@ for (const finding of earFindings) reportFault(`app.hostChecks.${finding.check}`
 // The app's own yt-dlp (#503), kept in userData behind the road's own setting: off, nothing is downloaded or run. A build
 // the env names is the owner's pin and is never replaced. Each song takes PATH's while it is the latest release and passes, else the app's copy that passed, else PATH's.
 const ytDlpUpdater = appYtDlpKept(process.env)
-  ? createYtDlpUpdater({ dir: join(app.getPath('userData'), 'yt-dlp'), on: () => settingsStore.get().audioOnlyMusic, fetch: (url, init) => fetch(url, init), lookup: resolveAudioStream, path: { binary: YT_DLP, version: () => ytDlpVersion(YT_DLP) } })
+  ? createYtDlpUpdater({ dir: join(app.getPath('userData'), 'yt-dlp'), on: () => settingsStore.get().audioOnlyMusic, fetch: (url, init) => fetch(url, init), lookup: askDefaultClients, path: { binary: YT_DLP, version: () => ytDlpVersion(YT_DLP) } })
   : null
 const audioRoadYtDlp = (): string => ytDlpUpdater?.binary() ?? audioRoadBinary(process.env)
 // The audio road's yt-dlp (#502): missing, Settings says so beside the audio-only music toggle; the fault log only while it is on.
@@ -619,15 +619,6 @@ async function createWindow(): Promise<BrowserWindow> {
   // The audio road (#502), behind the audio-only music setting, read at each song: a song Jev reads as music plays its
   // bare stream outside the pane. The surface's window is made on the road's first song, so a road never taken costs nothing.
   const audioSurface = createAudioSurface()
-  // A stream refused (403), as a stale yt-dlp's were past their first 512 KB (2026-10-28), is a resolve failure (#503): the
-  // song itself goes on as it does today, and the updater runs at most hourly. The surface's own session sees only its streams.
-  session.fromPartition('bingbong-audio').webRequest.onCompleted({ urls: ['*://*.googlevideo.com/*'] }, (details) => {
-    if (details.statusCode === 403) ytDlpUpkeep?.failed()
-  })
-  // A stream cut off by the network counts too; one the element itself let go (a stop, a seek, the next song) does not.
-  session.fromPartition('bingbong-audio').webRequest.onErrorOccurred({ urls: ['*://*.googlevideo.com/*'] }, (details) => {
-    if (details.error !== 'net::ERR_ABORTED') ytDlpUpkeep?.failed()
-  })
   onWindowClosed(win, audioSurface.destroy)
   // A song that stayed (#345) is remembered in songs.json beside lexicon.json, its title learned and its channel proposed (#456).
   const music = attachPlayer(controller, pane.session, {
@@ -643,6 +634,8 @@ async function createWindow(): Promise<BrowserWindow> {
         ytDlpUpkeep?.failed()
         throw error
       }), on: () => settingsStore.get().audioOnlyMusic })
+  // The surface's own session sees only its streams.
+  watchStreamFaults(session.fromPartition('bingbong-audio').webRequest, () => music.player.streamRefused(), () => ytDlpUpkeep?.failed())
   onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))

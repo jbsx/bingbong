@@ -73,6 +73,8 @@ export class ScriptedYouTube {
   readonly loudness = new Map<string, number>()
   /** The audio road's bare element (#502): it opens at full volume, its stream naming no loudness and no player remembering a level. */
   bare = false
+  /** The element gave up on the stream it was handed (#516): the audio road's refused address. */
+  streamFailed = false
   /** The duck's mark on the element (#459): the volume (0–100) it puts back and the floor's share; a new page's element has none. */
   duckMark: { restore: number; share: number } | null = null
   /** The pane's duck (#461), its floor's share while it holds: it reaches a new page's element before the Player does. */
@@ -265,8 +267,9 @@ export class ScriptedYouTube {
       // An ad ran out: the pod's next is up, its marker off for this one read, or the song plays (`adEnds`).
       if (this.ad !== null && !this.ad.between && time >= this.ad.lengthS) this.adEnds()
     }
+    if (this.streamFailed) return { paused: true, ended: false, ready: 0, time: 0, duration: null, refused: null, ad: false, skippable: false, failed: true }
     const { paused, currentTime, duration } = this.element
-    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing, skippable: this.skippable() }
+    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing, skippable: this.skippable(), failed: false }
   }
 
   /** The ad ends — run out, or skipped: the pod's next one is up for its first read, else the song plays in the same element from 0 by itself, the marker off. */
@@ -476,16 +479,24 @@ export function scriptedAudio(watches: Map<string, ScriptedWatch>) {
     fails: new Set<string>(),
     /** When each lookup's stream is served (epoch ms), from the wall clock the test gives the Player; null for at once. */
     servedAt: null as (() => number) | null,
+    /** When each lookup's address expires (epoch s, #516), each a new address; null for one naming no expiry. */
+    expires: null as number | null,
+    /** Addresses the element gives up on, as a 403 makes it (#516). */
+    refused: new Set<string>(),
+    /** What the lookup says of itself (#516). */
+    asked: undefined as AudioStream['asked'],
     resolve: async (id: string): Promise<AudioStream> => {
       road.resolved.push(id)
       if (road.fails.has(id)) throw new Error(`yt-dlp: no stream for ${id}`)
-      return { stream: `https://stream.example/${id}`, availableAt: road.servedAt?.() ?? null }
+      const address = `https://stream.example/${id}${road.expires === null ? '' : `?expire=${road.expires}&try=${road.resolved.length}`}`
+      return { stream: address, availableAt: road.servedAt?.() ?? null, ...(road.asked !== undefined ? { asked: road.asked } : {}) }
     },
     surface: {
       evaluate: <T>(script: string) => browser.evaluate<T>(script),
       load: async (song: { id: string }, stream: string): Promise<void> => {
         road.loaded.push({ id: song.id, stream })
         await browser.navigate(watchUrl(song.id))
+        youtube.streamFailed = road.refused.has(stream)
       },
       stop: async (): Promise<void> => {
         road.stops += 1

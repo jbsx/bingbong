@@ -172,8 +172,16 @@ export interface RoadStarts {
 export interface SongsReport {
   page: RoadStarts
   audio: RoadStarts
+  /** The lookups that ran: a remembered address's (#516) is no lookup, and would flatter them. */
   lookupP50: number | null
   lookupP95: number | null
+  /** Starts on a remembered address (#516), and those it did not play. */
+  remembered: number
+  rememberedRefused: number
+  /** Starts by the client that answered their lookup (#516), and how many of them the first ask failed: a stream that would not start and its fallback are one lookup and two starts. */
+  visionos: number
+  defaultClients: number
+  firstFailed: number
   /** Page starts that were the audio road's fallback. */
   fallbacks: number
 }
@@ -188,7 +196,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
   const byType = new Map<string, number[]>()
   const plays: PlaybackRecord[] = []
   const cpuCounts = new Set<number | null>()
-  const starts: { road: 'page' | 'audio'; started: boolean; ms: number; lookup: number | null; fallback: boolean }[] = []
+  const starts: SongStart[] = []
   for (const record of records) {
     if (!isAppRecord(record) || record.detail === undefined) continue
     const detail = record.detail
@@ -215,23 +223,36 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
     } else if (record.stage === 'playback') {
       plays.push(detail as unknown as PlaybackRecord)
     } else if (record.stage === 'media-start') {
-      starts.push({ road: detail.road === 'audio' ? 'audio' : 'page', started: detail.started === true, ms: record.durMs, lookup: typeof detail.lookup === 'number' ? detail.lookup : null, fallback: detail.fallback === true })
+      const asked = detail.asked !== null && typeof detail.asked === 'object' ? (detail.asked as { client?: unknown; failedFirst?: unknown }) : null
+      starts.push({ road: detail.road === 'audio' ? 'audio' : 'page', started: detail.started === true, ms: record.durMs, lookup: typeof detail.lookup === 'number' ? detail.lookup : null, fallback: detail.fallback === true, remembered: detail.remembered === true, client: typeof asked?.client === 'string' ? asked.client : null, firstFailed: asked?.failedFirst != null })
     }
   }
   return { runs: [...runs.values()], cpu: cpuReport(totals, byType, cpuCounts.size === 1 ? [...cpuCounts][0] : null), playback: playbackReport(plays), songs: songsReport(starts), lifecycle: buildLifecycleReport(records) }
 }
 
+interface SongStart {
+  road: 'page' | 'audio'
+  started: boolean
+  ms: number
+  lookup: number | null
+  fallback: boolean
+  remembered: boolean
+  client: string | null
+  firstFailed: boolean
+}
+
 const percentileOf = (samples: readonly number[], p: number): number | null => (samples.length === 0 ? null : nearestRankPercentile([...samples].sort((a, b) => a - b), p))
 
-function songsReport(starts: readonly { road: 'page' | 'audio'; started: boolean; ms: number; lookup: number | null; fallback: boolean }[]): SongsReport | null {
+function songsReport(starts: readonly SongStart[]): SongsReport | null {
   if (starts.length === 0) return null
   const onRoad = (road: 'page' | 'audio'): RoadStarts => {
     const mine = starts.filter((start) => start.road === road)
     const ms = mine.filter((start) => start.started).map((start) => start.ms)
     return { count: mine.length, started: ms.length, startP50: percentileOf(ms, 50), startP95: percentileOf(ms, 95) }
   }
-  const lookups = starts.flatMap((start) => (start.lookup === null ? [] : [start.lookup]))
-  return { page: onRoad('page'), audio: onRoad('audio'), lookupP50: percentileOf(lookups, 50), lookupP95: percentileOf(lookups, 95), fallbacks: starts.filter((start) => start.road === 'page' && start.fallback).length }
+  const lookups = starts.flatMap((start) => (start.lookup === null || start.remembered ? [] : [start.lookup]))
+  const remembered = starts.filter((start) => start.remembered)
+  return { page: onRoad('page'), audio: onRoad('audio'), lookupP50: percentileOf(lookups, 50), lookupP95: percentileOf(lookups, 95), remembered: remembered.length, rememberedRefused: remembered.filter((start) => !start.started).length, visionos: starts.filter((start) => start.client === 'visionos').length, defaultClients: starts.filter((start) => start.client === 'default').length, firstFailed: starts.filter((start) => start.firstFailed).length, fallbacks: starts.filter((start) => start.road === 'page' && start.fallback).length }
 }
 
 function formatRoadStarts(name: string, road: RoadStarts): string {
@@ -300,7 +321,9 @@ export function formatAppReport(report: AppReport): string[] {
   if (report.songs !== null) {
     const s = report.songs
     const lookup = s.lookupP50 === null || s.lookupP95 === null ? '' : ` | lookup p50 ${formatMs(s.lookupP50)} p95 ${formatMs(s.lookupP95)}`
-    lines.push(`songs by road: ${formatRoadStarts('page', s.page)} | ${formatRoadStarts('audio', s.audio)}${lookup} | fell back to the page ${s.fallbacks}`)
+    const remembered = s.remembered === 0 ? '' : ` | remembered ${s.remembered} (${s.rememberedRefused} refused)`
+    const clients = s.visionos + s.defaultClients === 0 ? '' : ` | answered by visionos ${s.visionos}, default ${s.defaultClients} (first ask failed ${s.firstFailed})`
+    lines.push(`songs by road: ${formatRoadStarts('page', s.page)} | ${formatRoadStarts('audio', s.audio)}${lookup}${remembered}${clients} | fell back to the page ${s.fallbacks}`)
   }
   lines.push(...formatLifecycleReport(report.lifecycle))
   return lines

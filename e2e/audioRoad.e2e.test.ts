@@ -293,7 +293,8 @@ describe('audio-only music e2e: the toggle, the narrated lookup, the road in the
     await harness.waitCardEval<string>(WATCH_WAIT_CARD)
     const line = await cli(harness, PLAY, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
     expect(line).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
-    expect(await looked()).toHaveLength(4)
+    // Three songs asked once each, then this one asked twice: visionos, then the default clients (#516).
+    expect(await looked()).toHaveLength(5)
     expect(await harness.paneUrl()).toContain(`/watch?v=${YOUTUBE_FIXTURE_SONG.id}`)
     const seen = await faces()
     console.log(`[capsule faces] ${seen.join('  →  ')}`)
@@ -334,4 +335,81 @@ describe('audio-only music e2e: a yt-dlp the app cannot find is said beside the 
       await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
     }
   }, 90_000)
+})
+
+describe('audio-only music e2e: a refused stream gives up at once, and a repeat play runs no lookup (#516)', () => {
+  let harness: Harness
+  let fixture: FixtureServer
+  let userDataDir: string
+  let lookups: string
+  const ENDED = /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/
+
+  type Start = { durMs?: number; road?: string; lookup?: number | null; started?: boolean; pressed?: boolean; fallback?: boolean; remembered?: boolean; asked?: { client?: string; steps?: { step: string }[] } | null }
+  const mediaStarts = async (): Promise<Start[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('perf-')).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as { stage: string; durMs: number; detail?: Start }).filter((record) => record.stage === 'media-start').map((record) => ({ ...record.detail, durMs: record.durMs }))
+  }
+  const looked = async (): Promise<string[]> => (await readFile(lookups, 'utf8').catch(() => '')).split('\n').filter((line) => line !== '')
+  const startsReach = (count: number): Promise<Start[]> => waitFor(async () => {
+    const starts = await mediaStarts()
+    return starts.length >= count ? starts : undefined
+  }, { timeoutMs: 10_000, intervalMs: 250 })
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-memory-'))
+    lookups = join(userDataDir, 'yt-dlp.log')
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: true }))
+    fixture = await startFixtureServer()
+    harness = await startHarness({
+      userDataDir,
+      fixture,
+      launchArgs: ['--browser-cli', '--mute-audio'],
+      pipeStdio: true,
+      env: {
+        BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
+        // An address that names its expiry, as YouTube's does, far off.
+        BINGBONG_FAKE_YTDLP_STREAM: fixture.url(`/youtube-fixture/song.wav?expire=${Math.floor(Date.now() / 1000) + 6 * 3600}&dur=60`),
+        BINGBONG_FAKE_YTDLP_LOG: lookups,
+        ...decisionScript(readingOf(PLAY), readingOf(PLAY), readingOf(PLAY)),
+      },
+    })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close().catch(() => {})
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  // The element's own refusal, on a real `<audio>`: the first address answers 403. A repeat on the surface never asks the host
+  // again (Chromium answers a same address from its media buffer, even `no-store`, one request over three plays, 2026-10-30), so
+  // a remembered address's refusal cannot be forced here: player.test.ts walks that road on this element's same `error` fact.
+  it('a stream the element is refused gives up at once, unpressed, and the watch page plays the song', async () => {
+    fixture.refuseNextStream()
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    const starts = await startsReach(2)
+    expect(starts[0]).toMatchObject({ road: 'audio', started: false, pressed: false, remembered: false })
+    expect(starts[0]!.durMs).toBeLessThan(2_500)
+    expect(starts[1]).toMatchObject({ road: 'page', started: true, fallback: true })
+  }, 60_000)
+
+  it('the next play asks visionos, and its start names the client and yt-dlp’s steps', async () => {
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    expect(await looked()).toHaveLength(2)
+    expect((await looked())[1]).toContain('player_client=visionos')
+    const start = (await startsReach(3))[2]
+    expect(start).toMatchObject({ road: 'audio', started: true, remembered: false, asked: { client: 'visionos' } })
+    expect(start!.asked!.steps!.map((each) => each.step)).toEqual(['[youtube] scripted: Downloading webpage', 'printed', 'exit'])
+  }, 60_000)
+
+  it('the repeat plays on the road with no lookup, in under 100 ms', async () => {
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    expect(await looked()).toHaveLength(2)
+    const start = (await startsReach(4))[3]
+    expect(start).toMatchObject({ road: 'audio', started: true, remembered: true, fallback: false, asked: null })
+    expect(start!.lookup).toBeLessThan(100)
+  }, 60_000)
 })

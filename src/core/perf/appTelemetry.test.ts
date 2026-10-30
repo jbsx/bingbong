@@ -99,6 +99,18 @@ describe('buildAppReport', () => {
 describe('songs by road (#502)', () => {
   const start = (durMs: number, detail: Record<string, unknown>): PerfSpanRecord => ({ ...app('media-start', { video: 'v', started: true, ...detail }), durMs })
 
+  it('a remembered address is no lookup: it leaves the lookup times, and the report counts it and the client that answered (#516)', () => {
+    const asked = (client: string, failedFirst: unknown = null) => ({ client, steps: [], failedFirst })
+    const report = buildAppReport([
+      start(900, { road: 'audio', lookup: 2_100, fallback: false, remembered: false, asked: asked('visionos') }),
+      start(900, { road: 'audio', lookup: 7_000, fallback: false, remembered: false, asked: asked('default', { why: 'ran out of time', ms: 5_000, steps: [] }) }),
+      start(800, { road: 'audio', lookup: 0, fallback: false, remembered: true, asked: null }),
+      start(100, { road: 'audio', lookup: 0, fallback: false, remembered: true, asked: null, started: false }),
+    ])
+    expect(report.songs).toMatchObject({ lookupP50: 2_100, lookupP95: 7_000, remembered: 2, rememberedRefused: 1, visionos: 1, defaultClients: 1, firstFailed: 1 })
+    expect(formatAppReport(report).find((line) => line.startsWith('songs'))).toContain('| remembered 2 (1 refused) | answered by visionos 1, default 1 (first ask failed 1) |')
+  })
+
   it("splits the Player's starts by road: the audio road's lookup times, and how often the watch page stood in for it", () => {
     const report = buildAppReport([
       start(900, { road: 'audio', lookup: 4_600, fallback: false }),
@@ -113,6 +125,11 @@ describe('songs by road (#502)', () => {
       audio: { count: 3, started: 2, startP50: 700, startP95: 900 },
       lookupP50: 4_600,
       lookupP95: 5_100,
+      remembered: 0,
+      rememberedRefused: 0,
+      visionos: 0,
+      defaultClients: 0,
+      firstFailed: 0,
       fallbacks: 1,
     })
     expect(formatAppReport(report).find((line) => line.startsWith('songs'))).toBe('songs by road: page 2 (2 started, start p50 2000ms p95 2500ms) | audio 3 (2 started, start p50 700ms p95 900ms) | lookup p50 4600ms p95 5100ms | fell back to the page 1')

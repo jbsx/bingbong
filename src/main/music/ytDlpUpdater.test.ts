@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
-import { createYtDlpUpdater, extractZip, SELF_CHECK_RANGE, SELF_CHECK_VIDEO, startYtDlpUpkeep, type UpdateReason, type UpdaterFetch, type YtDlpUpdaterDeps } from './ytDlpUpdater'
+import { createYtDlpUpdater, extractZip, SELF_CHECK_RANGE, SELF_CHECK_VIDEO, startYtDlpUpkeep, watchStreamFaults, type UpdateReason, type UpdaterFetch, type YtDlpUpdaterDeps } from './ytDlpUpdater'
 
 let dir: string
 let faults: FaultReport[]
@@ -421,5 +421,44 @@ describe.skipIf(!hasZip)("unpacking the release's onedir zip (#503)", () => {
     writeFileSync(join(dir, 'release.zip'), 'not a zip')
     mkdirSync(join(dir, 'into'))
     await expect(extractZip(join(dir, 'release.zip'), join(dir, 'into'))).rejects.toThrow(/could not unpack/)
+  })
+})
+
+describe('a stream refused counts against the yt-dlp, unless its address was remembered (#503, #516)', () => {
+  function watched(remembered: boolean) {
+    const heard: { completed?: (details: { statusCode: number }) => void; errored?: (details: { error: string }) => void } = {}
+    let failures = 0
+    watchStreamFaults(
+      {
+        onCompleted: (_filter, listener) => void (heard.completed = listener),
+        onErrorOccurred: (_filter, listener) => void (heard.errored = listener),
+      },
+      () => remembered,
+      () => (failures += 1),
+    )
+    return { heard, failures: () => failures }
+  }
+
+  it('a 403 on a looked-up stream is a failure; a 206 is not', () => {
+    const { heard, failures } = watched(false)
+    heard.completed!({ statusCode: 206 })
+    expect(failures()).toBe(0)
+    heard.completed!({ statusCode: 403 })
+    expect(failures()).toBe(1)
+  })
+
+  it('a stream cut off is a failure; one the element let go is not', () => {
+    const { heard, failures } = watched(false)
+    heard.errored!({ error: 'net::ERR_ABORTED' })
+    expect(failures()).toBe(0)
+    heard.errored!({ error: 'net::ERR_CONNECTION_RESET' })
+    expect(failures()).toBe(1)
+  })
+
+  it('neither counts on a remembered address', () => {
+    const { heard, failures } = watched(true)
+    heard.completed!({ statusCode: 403 })
+    heard.errored!({ error: 'net::ERR_CONNECTION_RESET' })
+    expect(failures()).toBe(0)
   })
 })

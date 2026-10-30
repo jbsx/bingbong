@@ -174,6 +174,8 @@ export interface FixtureServer {
   adblockListHits(): number
   /** Hold every YouTube results page this long before it answers, as YouTube's own takes (#507: the Wait Card's Receipt over a search). */
   setResultsDelay(ms: number): void
+  /** The next request for the fixture's sound with a query, as a stream address has, answers 403 (#516). */
+  refuseNextStream(): void
   /** How many times the OpenAI-compatible vision endpoint was called (#76 e2e). */
   visionEndpointHits(): number
   /** Authorization header of the latest vision call — proves which credentials reached the wire. */
@@ -1357,6 +1359,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   let lastAuthorization: string | undefined
   let statusBoardValue = 'north'
   let resultsDelayMs = 0
+  let refuseStream = false
   /** Responses the landing fixtures never finish (#328), destroyed at close. */
   const held = new Set<ServerResponse>()
   // Late-bound (the alt listener exists only after listenOn below); the
@@ -1461,7 +1464,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       held.add(res)
       return
     }
-    if (req.url === '/youtube-fixture/song.wav') {
+    if (req.url?.split('?')[0] === '/youtube-fixture/song.wav') {
+      if (refuseStream && req.url.includes('?')) {
+        refuseStream = false
+        res.writeHead(403).end()
+        return
+      }
       // Served in ranges, as a real host does: without them Chromium takes the file for a stream of no known length.
       const wav = silentWav(60)
       const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
@@ -1981,6 +1989,9 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     url: primary.url,
     altUrl: alt.url,
     adblockListHits: () => adblockListHits,
+    refuseNextStream: () => {
+      refuseStream = true
+    },
     setResultsDelay: (ms: number) => {
       resultsDelayMs = ms
     },

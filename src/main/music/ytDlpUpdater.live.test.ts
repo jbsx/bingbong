@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeF
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
-import { resolveAudioStream, ytDlpVersion } from './ytDlp'
+import { askDefaultClients, resolveAudioStream, ytDlpVersion } from './ytDlp'
 import { createYtDlpUpdater, SELF_CHECK_VIDEO, type UpdaterFetch } from './ytDlpUpdater'
 
 // The live run (#503's measure): a real release from GitHub, the real
@@ -38,14 +38,14 @@ describe.skipIf(!live)("the app's own yt-dlp, live (#503)", () => {
       return { ok: response.ok, status: response.status, url: response.url, headers: response.headers, text: async () => bytes.toString(), arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer }
     }
     // A fresh updater after each state written by hand: it reads its state once.
-    const fresh = () => createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: resolveAudioStream })
+    const fresh = () => createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: askDefaultClients })
     const log: string[] = []
     const state = (): { current?: string; previous?: string } => JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as { current?: string; previous?: string }
     const exe = (version: string): string => join(dir, version, 'yt-dlp_linux')
 
     // 0. PATH's yt-dlp, when it is the latest release and passes the self-check, is kept: nothing is downloaded.
     const from0 = performance.now()
-    const kept = await createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: resolveAudioStream, path: { binary: 'yt-dlp', version: () => ytDlpVersion('yt-dlp') } }).update('boot')
+    const kept = await createYtDlpUpdater({ dir, on: () => true, fetch: fetchThrough, lookup: askDefaultClients, path: { binary: 'yt-dlp', version: () => ytDlpVersion('yt-dlp') } }).update('boot')
     log.push(`0 PATH's yt-dlp: ${JSON.stringify(kept)} in ${ms(from0)} ms`)
     expect(kept.kind).toBe('path')
     rmSync(dir, { recursive: true, force: true })
