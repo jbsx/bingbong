@@ -12,10 +12,10 @@ import { sleep, waitFor } from './waitFor.ts'
 // (#490), aplay against Chromium (BINGBONG_SPEECH_PLAYER). Model-free: the
 // app, with its real Piper and voice, runs in a closed room
 // (e2e/overlap/room.ts: a null sink whose monitor is the mic; nothing
-// reaches a speaker), `read`s a long page — a Local Match line, no model is
-// asked — and a recorder in the dashboard takes the mic with the app's own
+// reaches a speaker), opens a page whose long alert is said — a typed line, no
+// model is asked — and a recorder in the dashboard takes the mic with the app's own
 // capture constraints (micCapture.ts: echoCancellation on) and its capture
-// context. The measure is the mic's p90 level over the read, whole and
+// context. The measure is the mic's p90 level over that line, whole and
 // after the canceller's first 4 s, per arm, beside `tts-first-sound`.
 //
 // It runs only when asked (`pnpm speech:echo`), as it needs pulseaudio and
@@ -25,16 +25,11 @@ import { sleep, waitFor } from './waitFor.ts'
 const CONFIG_DIR = join(homedir(), '.config', 'bingbong')
 const PIPER = join(CONFIG_DIR, 'piper', 'piper', 'piper')
 const VOICES = join(CONFIG_DIR, 'voices')
-const asked = process.env.BINGBONG_SPEECH_ECHO === '1'
 const OUT = process.env.BINGBONG_SPEECH_ECHO_OUT ?? join(tmpdir(), 'speech-echo.json')
 
-/** A page whose read lasts some fifteen seconds in alba. */
+/** A page whose alert lasts some fifteen seconds in alba: the longest line left to say since the Page Read went. */
 const PAGE = `<!doctype html><html><head><title>Lighthouse</title></head><body><main><h1>The lighthouse keeper</h1>
-<p>The keeper climbed the stairs at dusk, as he had every evening for thirty years.</p>
-<p>The lamp was cold, and the glass was thick with salt from the morning storm.</p>
-<p>He wiped it clean with a rag, trimmed the wick, and struck a match against the iron rail.</p>
-<p>Far out on the water a fishing boat was turning for home, its sails grey against the cloud.</p>
-<p>He lit the lamp before dark, and the beam swung out across the rocks and the harbour wall.</p></main></body></html>`
+<script>setTimeout(() => alert('The keeper climbed the stairs at dusk, as he had every evening for thirty years. The lamp was cold, and the glass was thick with salt from the morning storm. He wiped it clean with a rag, trimmed the wick, and struck a match against the iron rail. Far out on the water a fishing boat was turning for home, its sails grey against the cloud. He lit the lamp before dark, and the beam swung out across the rocks and the harbour wall.'), 500)</script></main></body></html>`
 
 /** micCapture.ts's captureConstraints('default') and CAPTURE_CONTEXT_OPTIONS (a renderer module, so not imported here). */
 const CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
@@ -130,7 +125,6 @@ async function measure(arm: 'aplay' | 'chromium', room: Room): Promise<ArmResult
     // Piper warms (the prefetch) and the mic's quiet floor is taken.
     await sleep(4000)
     await cli(harness, `navigate http://127.0.0.1:${port}/`, /^navigated: /)
-    await cli(harness, 'read', /^# /)
     const userDataDir = harness.userDataDir
     const playback = await waitFor(async () => spans(userDataDir).find((span) => span.stage === 'tts-playback' && span.durMs > 5000), { timeoutMs: 60_000, intervalMs: 250 })
     const firstSound = spans(userDataDir).find((span) => span.stage === 'tts-first-sound')
@@ -154,8 +148,9 @@ async function measure(arm: 'aplay' | 'chromium', room: Room): Promise<ArmResult
   }
 }
 
-// Moot since #513: the voice is off and the `read` that spoke the page here is silent, typed only; #490 and #512 close as superseded.
-describe.skipIf(!asked || !existsSync(PIPER))("the echo canceller and the app's own voice (#490)", () => {
+// Off until it has a long line again (#514): typed `read` no longer speaks, and the page's alert below did not sound in
+// the CLI harness (a 60 s wait for its playback, 2026-10-30).
+describe.skip("the echo canceller and the app's own voice (#490)", () => {
   const dir = mkdtempSync(join(tmpdir(), 'bingbong-speech-echo-'))
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 

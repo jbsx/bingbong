@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
+import { speechPlayerOf, type SpeechPlayerKind } from '../../core/tts/speechPlayer'
 import { shouldMuteAudio } from '../muteOffScreen'
 import { installedPiperBin, piperReleaseFor, type PiperInstallPlan } from './piperInstall'
 
@@ -21,21 +22,8 @@ export interface PiperConfig {
    * follow it; the Timer's alarm stays on aplay.
    */
   speechPlayer: SpeechPlayerKind
-  /**
-   * Whether the app speaks (#513): off by the owner's ruling, every line
-   * shown on the Line Overlay and chimed instead; BINGBONG_VOICE=on brings
-   * Piper back. Switched off, not deleted: the cheapest to reverse.
-   */
-  voice: boolean
   /** What the first launch downloads (#419): the binary unless it is one's own, and the default voice. */
   install: PiperInstallPlan
-}
-
-export type SpeechPlayerKind = 'aplay' | 'chromium'
-
-/** BINGBONG_SPEECH_PLAYER: 'chromium' plays the voice through Chromium (#490); anything else, aplay. */
-export function speechPlayerOf(env: Record<string, string | undefined>): SpeechPlayerKind {
-  return env.BINGBONG_SPEECH_PLAYER?.trim().toLowerCase() === 'chromium' ? 'chromium' : 'aplay'
 }
 
 export function resolvePiperConfig(
@@ -54,7 +42,6 @@ export function resolvePiperConfig(
     playerBin: env.BINGBONG_APLAY_BIN?.trim() || 'aplay',
     ...(shouldMuteAudio(env) ? { playerDevice: 'null' } : {}),
     speechPlayer: speechPlayerOf(env),
-    voice: env.BINGBONG_VOICE?.trim().toLowerCase() === 'on',
     install: { piperDir, voicesDir, release },
   }
 }

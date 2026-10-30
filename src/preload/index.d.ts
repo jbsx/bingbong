@@ -134,8 +134,6 @@ export interface BingbongSettingsApi {
 export interface BingbongTtsApi {
   /** Installed piper voice ids, for the settings picker. */
   listVoices(): Promise<string[]>
-  /** Where the Line Overlay's slot sits over the pane (#513): its own view follows it; 0×0 hides it. */
-  reportLineOverlayRect(rect: PaneRect): void
 }
 
 export interface BingbongLearnedTermsApi {

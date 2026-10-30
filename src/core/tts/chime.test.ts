@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createChimeWav, createLineChimeWav } from './chime'
+import { createChimeWav } from './chime'
 
 // The activation chime (T10): a generated two-tone "bing bong" WAV played on
 // wake. Pure bytes — the test checks the WAV is well-formed and actually
@@ -41,33 +41,5 @@ describe('chime', () => {
     const second = zeroCrossings(pcm, half, pcm.length)
     expect(first).toBeGreaterThan(second * 1.3)
     expect(second).toBeGreaterThan(0)
-  })
-})
-
-// The line chimes (#513): with the voice off, every line the app would have
-// said is shown and marked by one of two short sounds — done rising, failed
-// falling — told apart by ear from each other and from the wake chime.
-describe('line chimes', () => {
-  it('done rises and failed falls, both audible and under a second', () => {
-    for (const [kind, rises] of [
-      ['done', true],
-      ['failed', false],
-    ] as const) {
-      const pcm = new Int16Array(createLineChimeWav(kind).buffer, 44)
-      const half = Math.floor(pcm.length / 2)
-      expect(pcm.length).toBeLessThan(16000)
-      expect(Math.max(...pcm.map(Math.abs))).toBeGreaterThan(4000)
-      const first = zeroCrossings(pcm, 0, half)
-      const second = zeroCrossings(pcm, half, pcm.length)
-      if (rises) expect(second).toBeGreaterThan(first * 1.3)
-      else expect(first).toBeGreaterThan(second * 1.3)
-    }
-  })
-
-  it('failed sits below the wake chime, so the two are not confused', () => {
-    const failed = new Int16Array(createLineChimeWav('failed').buffer, 44)
-    const wake = new Int16Array(createChimeWav().buffer, 44)
-    const rate = (pcm: Int16Array) => zeroCrossings(pcm, 0, pcm.length) / pcm.length
-    expect(rate(wake)).toBeGreaterThan(rate(failed) * 1.3)
   })
 })

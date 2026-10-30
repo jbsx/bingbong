@@ -510,7 +510,6 @@ export function IdleScreen({
   onDismissTurn = () => undefined,
   result = null,
   waitCard = null,
-  lineOverlay = null,
 }: {
   weather: WeatherState
   usage: UsageState
@@ -559,8 +558,6 @@ export function IdleScreen({
   result?: string | null
   /** The Wait Card (#507): a song waiting to sound, over the screen's foot, the Turn Card left in sight. */
   waitCard?: React.ReactNode
-  /** The Line Overlay (#513): the line the app would have said, at the screen's foot, over the Wait Card's place. */
-  lineOverlay?: React.ReactNode
 }) {
   const [now, setNow] = useState(() => new Date())
   useCursorRest()
@@ -760,7 +757,6 @@ export function IdleScreen({
       {/* The Turn Card (#474): the line being taken, read and done, over the columns, under the night veil. */}
       {turn !== null ? <TurnCard state={turn} onDismiss={onDismissTurn} /> : null}
       {waitCard !== null ? <div className="idle-wait-place">{waitCard}</div> : null}
-      {lineOverlay !== null ? <div className={`idle-line-place${waitCard !== null ? ' idle-line-place--above-wait' : ''}`}>{lineOverlay}</div> : null}
       {/* Night Dim: a black veil over everything, taps passing through it, so the screen at night is as bright as the setting says — unless the monitor itself is down. */}
       {isNightDimmed(now, nightDim) && !monitorDimmed ? <div className="idle-night" aria-hidden="true" style={{ opacity: 1 - nightDim.brightnessPercent / 100 }} /> : null}
     </div>

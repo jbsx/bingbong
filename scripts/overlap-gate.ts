@@ -96,7 +96,7 @@ import { finishedCell, readSummary, resumeFrom, withFinished, withRefused, write
 import { isAudioSurfaceUrl, readRoads, roadSettings, SETTINGS_FILE, withRoad, type Road, type RoadRead } from '../e2e/overlap/audioRoad.ts'
 import { stripMarkdownForSpeech } from '../src/core/tts/stripMarkdownForSpeech.ts'
 import { DEFAULT_PIPER_VOICE } from '../src/core/tts/piperVoices.ts'
-import { speechPlayerOf } from '../src/main/tts/piperConfig.ts'
+import { speechPlayerOf } from '../src/core/tts/speechPlayer.ts'
 import { decisionEnvKeys, resolveDecisionRouting } from '../src/core/decision/decisionRouting.ts'
 import { createPlannerLimiter } from '../src/core/planner/limiter.ts'
 import { PLANNER_DEFAULT_MODEL, PLANNER_GATE_MODEL, resolvePlannerRouting } from '../src/core/planner/plannerRouting.ts'

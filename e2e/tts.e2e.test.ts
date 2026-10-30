@@ -6,7 +6,7 @@ import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { waitFor } from './waitFor'
 
-// Increment 3 (#327), with the voice switched back on (#513): a line is spoken sentence by sentence
+// Increment 3 (#327): a line is spoken sentence by sentence
 // through one piper that stays up, into one player stream per spoken text;
 // and a failed action speaks its one line. The synthesizer and the player
 // are the scripted bins in e2e/bin (the hermetic env sets them); they log
@@ -40,8 +40,7 @@ describe('speech e2e', () => {
     harness = await startHarness({
       launchArgs: ['--browser-cli'],
       pipeStdio: true,
-      // The voice is off by default (#513): this suite is the voice's, switched back on.
-      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_VOICE: 'on' },
+      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
   })
@@ -67,7 +66,8 @@ describe('speech e2e', () => {
     await cli(harness, `navigate ${harness.fixture.url('/landing/missing')}`, /^navigated: /)
     const again = await waitFor(async () => {
       const current = await logLines()
-      return current.filter((line) => line.startsWith('aplay ')).length === 2 ? current : undefined
+      // By its sentences, not by its stream: a line asked while the last one's stream is still open may join it.
+      return current.filter((line) => line.startsWith('piper-line ')).length === 4 ? current : undefined
     }, { timeoutMs: 10_000, intervalMs: 100 })
     // The same process served the second line: no new piper.
     expect(again.filter((line) => line.startsWith('piper-start'))).toEqual(['piper-start persistent'])

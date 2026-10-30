@@ -4,7 +4,6 @@ import { isPaneRect } from '../core/browser/paneState'
 import { toPaneBounds } from '../core/browser/paneGeometry'
 import { WEIGHT_IPC } from '../core/scale/ipcChannels'
 import { MUSIC_IPC } from '../core/music/ipcChannels'
-import { TTS_IPC } from '../core/tts/ipcChannels'
 import { resolvePreloadPath } from './preloadPath'
 import { onWindowClosed } from './onWindowClosed'
 
@@ -15,7 +14,7 @@ import { onWindowClosed } from './onWindowClosed'
 // stacked above the pane and the feed overlay, sized by the slot the
 // dashboard reports, and 0×0 whenever the dashboard says the pop-up is not
 // over the pane. The Weigh-in pop-up (#350) sits in the Peek Card's place;
-// the Wait Card (#507) at the pane's top; the Line Overlay (#513) at its foot.
+// the Wait Card (#507) at the pane's top.
 
 export interface PopupView {
   /** Re-adds the view last so it sits above the pane and the feed overlay. */
@@ -28,7 +27,6 @@ export interface PopupView {
 const POPUPS = {
   weighIn: { page: 'weighin.html', rect: WEIGHT_IPC.popupRect },
   waitCard: { page: 'waitcard.html', rect: MUSIC_IPC.waitCardRect },
-  lineOverlay: { page: 'lineoverlay.html', rect: TTS_IPC.lineOverlayRect },
 } as const
 
 export function attachPopupViewToWindow(

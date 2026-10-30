@@ -13,7 +13,6 @@ describe('resolvePiperConfig', () => {
       voiceId: 'en_GB-alba',
       playerBin: 'aplay',
       speechPlayer: 'aplay',
-      voice: false,
       install: { piperDir: join('/data', 'piper'), voicesDir: join('/data', 'voices'), release: piperReleaseFor('linux', 'x64') },
     })
   })
@@ -42,7 +41,6 @@ describe('resolvePiperConfig', () => {
       voiceId: 'en_GB-alan-low',
       playerBin: '/opt/bin/fake-aplay',
       speechPlayer: 'aplay',
-      voice: false,
       // A binary of one's own is never replaced by a download.
       install: { piperDir: join('/data', 'piper'), voicesDir: '/opt/piper/voices', release: null },
     })
@@ -59,12 +57,6 @@ describe('resolvePiperConfig', () => {
     expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: 'aplay' }, '/data').speechPlayer).toBe('aplay')
     expect(resolvePiperConfig({ BINGBONG_SPEECH_PLAYER: 'pulse' }, '/data').speechPlayer).toBe('aplay')
     expect(resolvePiperConfig({}, '/data').speechPlayer).toBe('aplay')
-  })
-
-  it('keeps the voice off unless BINGBONG_VOICE=on (#513): lines are shown and chimed', () => {
-    expect(resolvePiperConfig({}, '/data').voice).toBe(false)
-    expect(resolvePiperConfig({ BINGBONG_VOICE: 'off' }, '/data').voice).toBe(false)
-    expect(resolvePiperConfig({ BINGBONG_VOICE: ' On ' }, '/data').voice).toBe(true)
   })
 
   it('ignores blank env values', () => {

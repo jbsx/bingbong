@@ -14,8 +14,9 @@ import { waitFor } from './waitFor'
 // starts under the line, so the capsule says Speaking and invites nothing.
 // Chromium's fake mic feeds the real capture graph at the mic's own pace;
 // the scripts stand in for the models, one VAD score per 512-sample frame:
-// speech for the wake's gate, then `navigate`, then `read`, which speaks the
-// page through the scripted piper and an aplay held open for its playback.
+// speech for the wake's gate, then `navigate`, then a click on an item the
+// page lacks, whose failure line goes through the scripted piper and an
+// aplay held open for its playback.
 
 const SPEECH = 0.95
 const QUIET = 0.01
@@ -51,8 +52,7 @@ describe('the Status Capsule through a Hot Listen (#472)', () => {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
   })
 
-  // The voice is off (#513) and the Page Read that spoke here is gone: no Speaking face to read until the voice comes back.
-  it.skip('names the running stage beside the open ear, and says Speaking — no waveform, no "say a command" — while the app talks', async () => {
+  it('names the running stage beside the open ear, and says Speaking — no waveform, no "say a command" — while the app talks', async () => {
     await mkdir(dir, { recursive: true })
     const harness = await startHarness({
       fixture,
@@ -63,14 +63,14 @@ describe('the Status Capsule through a Hot Listen (#472)', () => {
         BINGBONG_WAKE_ENGINE: 'node',
         BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
         BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 12), ...frames(QUIET, 40), ...frames(SPEECH, 20), ...frames(QUIET, 60), ...frames(SPEECH, 20), QUIET]),
-        BINGBONG_STT_SCRIPT: JSON.stringify([`navigate ${fixture.url('/story')}`, 'read']),
+        BINGBONG_STT_SCRIPT: JSON.stringify([`navigate ${fixture.url('/story')}`, 'click 999']),
       },
     })
     try {
       await waitFor(async () => ((await harness.dashboardEval<{ listening: boolean }>('window.bingbong.voice.getState()')).listening ? true : undefined), { timeoutMs: 30_000, intervalMs: 20 })
       await harness.dashboardEval<string>(WATCH)
       await harness.waitForPaneUrl(fixture.url('/story'))
-      await waitFor(async () => ((await feedText(harness)).includes('read') ? true : undefined), { timeoutMs: 20_000, intervalMs: 250 })
+      await waitFor(async () => ((await feedText(harness)).includes('click 999') ? true : undefined), { timeoutMs: 20_000, intervalMs: 250 })
       const seen = await waitFor(
         async () => {
           const faces = await harness.dashboardEval<string[]>('window.__capsuleSeen')

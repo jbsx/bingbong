@@ -124,7 +124,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     // The cold start is said aloud only to a wake that came in while the words loaded (owner ruling 3, #442).
     if (told.sayReady) void deps.tts.speak('I’m ready').catch((error: unknown) => reportFault('voice.attachVoice.ready', error))
     // A failed load ends that wait the same way (#447): said only where "I'm ready" would have been.
-    if (told.sayFailed) void deps.tts.speak(EAR_FAILED_SPOKEN, { failure: true }).catch((error: unknown) => reportFault('voice.attachVoice.failed', error))
+    if (told.sayFailed) void deps.tts.speak(EAR_FAILED_SPOKEN).catch((error: unknown) => reportFault('voice.attachVoice.failed', error))
   }
   const session = createVoiceChainClient<VoiceProcessConfig>({
     start: deps.startVoiceProcess,

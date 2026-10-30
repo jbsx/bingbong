@@ -9,8 +9,6 @@ export interface SpeakOptions {
   readonly turnId?: string
   /** Called once, when the text's first sample is handed to the player (#327): the Reaction of a Command whose output is speech closes on it. */
   readonly onFirstSound?: () => void
-  /** The line tells a failure (#513, the `speak` event's flag): with the voice off it takes the failed chime. */
-  readonly failure?: boolean
 }
 
 export interface TtsSpeaker {

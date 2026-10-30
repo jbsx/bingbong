@@ -10,8 +10,8 @@
   "echo": true,
   "lines": [
     {
-      "words": "Read the page.",
-      "audio": "read-the-page.wav"
+      "words": "What's playing?",
+      "audio": "whats-playing.wav"
     },
     {
       "words": "Move on.",
@@ -39,7 +39,17 @@
   "evidence": [
     "turn-mvplpcok-v17",
     "owner's ruling, #509 grill (note 4112916965): 'Move on.' over a read with music playing ends the read; the song plays on, and the app says it stopped",
-    "the read page (#509 guard: from a real line): cli-10-mvjkuljs, 2026-10-22, a read of https://en.wikipedia.org/wiki/Alan_Turing in the asks log (.claude/jobs/537b836c/tmp/bb-live-UoSumb/logs), the one read of a prose article in any asks log; the owner's own reads with music in the room (kiosk, 2026-10-26: turn-mvp2yn8g-vg, turn-mvplpj0i-v1a) were all of the song's watch page, which the audio road does not show"
+    "the read page (#509 guard: from a real line): cli-10-mvjkuljs, 2026-10-22, a read of https://en.wikipedia.org/wiki/Alan_Turing in the asks log (.claude/jobs/537b836c/tmp/bb-live-UoSumb/logs), the one read of a prose article in any asks log; the owner's own reads with music in the room (kiosk, 2026-10-26: turn-mvp2yn8g-vg, turn-mvplpj0i-v1a) were all of the song's watch page, which the audio road does not show",
+    "#514: the Page Read is gone, so this case's first line is a fact's sentence, the longest kind left that a spoken line reaches; talking over the app is held over a short line now"
   ],
-  "state": {"pane": {"is": "start not met", "on": "2ceeb9d8", "date": "2026-10-29", "models": ["jev (default endpoint)"]}, "audio": {"is": "red", "on": "2ceeb9d8", "date": "2026-10-29", "models": ["jev (default endpoint)"]}}
+  "state": {
+    "audio": {
+      "is": "red",
+      "on": "f3712c4e",
+      "date": "2026-10-30",
+      "models": [
+        "jev (default endpoint)"
+      ]
+    }
+  }
 }

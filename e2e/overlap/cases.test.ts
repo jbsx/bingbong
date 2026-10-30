@@ -48,7 +48,8 @@ const BEFORE: Record<string, OldStart> = {
 /** Edited after the move (#509), each with its expect as it stood before: a start that gains steps, an expect that gains checks. */
 const EDITED: Record<string, object> = {
   '8-split-by-pause': { lines: ['done', 'none'] },
-  '10-own-voice-not-taken': { speech: 'whole', lines: ['running'], nothingElse: true },
+  // #514: a fact's sentence, not the Page Read that outlasted the run, so the line ends done.
+  '10-own-voice-not-taken': { speech: 'whole', lines: ['done'], nothingElse: true },
   '10-move-on-while-speaking': { lines: ['cancelled', 'done'] },
 }
 

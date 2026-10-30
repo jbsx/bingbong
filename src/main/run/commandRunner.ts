@@ -1075,7 +1075,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     sounding += 1
     const line = soundingLine(turnId)
     return speech
-      .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}), ...(failure ? { failure: true } : {}) })
+      .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
       .catch((error: unknown): SpeakOutcome => {
         reportFault('run.commandRunner.speak', error, { turnId })
         return { ok: false, error: String(error) }
