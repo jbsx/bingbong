@@ -406,6 +406,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let ownPause = false
   /** What the poll last read of the song playing: its channel and progress. */
   let progress: { id: string; channel: string; elapsed: number; duration: number | null } | null = null
+  /** When the song held last moved, and the element's time then: what lets the Idle Screen's card go however the song stopped. */
+  let sounded: { id: string; at: number; time: number | null } | null = null
   /** An ad playing in the song's element (#497), as its start or the poll last read it; null while the song itself plays. */
   let adOver: { id: string; ad: AdShowing } | null = null
   /** The element's volume as last read while not ducked. */
@@ -497,6 +499,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       ended: state.current === null,
       queued: state.upNext.slice(0, QUEUED_SHOWN).map((song) => song.title),
       ...(ad !== null ? { ad } : {}),
+      soundedAt: sounded?.id === song.id ? sounded.at : wallNow(),
     }
   }
 
@@ -544,6 +547,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** Tells the card what changed, if anything did. */
   function publish(): void {
     if (state.current !== null) ended = null
+    const song = state.current ?? ended
+    if (song !== null && sounded?.id !== song.id) sounded = { id: song.id, at: wallNow(), time: null }
     const now = nowPlaying()
     const json = JSON.stringify(now)
     if (json === published) return
@@ -1431,6 +1436,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     // An ad in the song's element (#497), mid-song too: Now Playing says it until the song itself plays again.
     // Off the song's page, or its element gone, no ad is counted: a count that stands still would read as frozen (ui.md 2).
     if (song !== null) showAd(song, status.id === song.id && status.hasVideo && status.ad ? { time: status.elapsed, duration: status.duration, skippable: status.skippable } : null)
+    // The element's time moving, an ad's too, is the song sounding; on another page, or standing still, its mark stands.
+    if (song !== null && status.id === song.id && status.hasVideo && (sounded?.id !== song.id || sounded.time !== status.elapsed)) sounded = { id: song.id, at: wallNow(), time: status.elapsed }
     if (song === null || !showsSong(status, song)) return
     await applyHeldSeek(song, status)
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }

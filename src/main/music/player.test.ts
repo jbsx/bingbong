@@ -20,7 +20,7 @@ import type { AudioStream } from './ytDlp'
 const RESULTS = 'https://www.youtube.com/results?search_query='
 const WATCH = 'https://www.youtube.com/watch?v='
 
-function wired() {
+function wired(wallNow?: () => number) {
   const browser = new FakeBrowser()
   const youtube = new ScriptedYouTube(browser)
   youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
@@ -29,7 +29,7 @@ function wired() {
   youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
   youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
   youtube.watches.set('ccccccccccc', { title: 'Song C' })
-  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {} })
+  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async () => {}, ...(wallNow !== undefined ? { wallNow } : {}) })
   const always = (): boolean => true
   const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, always)
   return { browser, youtube, player, perform }
@@ -271,6 +271,7 @@ describe('the Player\'s Now Playing (#344)', () => {
       muted: false,
       ended: false,
       queued: ['Song B', 'Song C'],
+      soundedAt: expect.any(Number),
     })
     expect(seen.at(-1)).toEqual(player.nowPlaying())
     await perform({ kind: 'pause' })
@@ -427,6 +428,69 @@ describe('the Player\'s Now Playing (#344)', () => {
     await player.check()
     expect(browser.evaluations).toHaveLength(read)
     expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: true })
+  })
+
+  describe('when the song last sounded: its time moving, whatever stopped it', () => {
+    const playing = async () => {
+      let wall = 1_000
+      const { browser, youtube, player, perform } = wired(() => wall)
+      await perform({ kind: 'search', place: 'now' }, 'song a')
+      youtube.element.currentTime = 10
+      await player.check()
+      expect(player.nowPlaying()?.soundedAt).toBe(1_000)
+      wall = 5_000
+      return { browser, youtube, player, perform, tick: (ms: number) => (wall += ms) }
+    }
+
+    it('follows the time while it moves', async () => {
+      const { youtube, player } = await playing()
+      youtube.element.currentTime = 11
+      await player.check()
+      expect(player.nowPlaying()?.soundedAt).toBe(5_000)
+    })
+
+    it('stands once it is paused, and moves again as it plays', async () => {
+      const { youtube, player, perform, tick } = await playing()
+      await perform({ kind: 'pause' })
+      tick(60_000)
+      await player.check()
+      expect(player.nowPlaying()).toMatchObject({ paused: true, soundedAt: 1_000 })
+      await perform({ kind: 'unpause' })
+      youtube.element.currentTime = 12
+      await player.check()
+      expect(player.nowPlaying()).toMatchObject({ paused: false, soundedAt: 65_000 })
+    })
+
+    it('stands once the song has ended, the song still held for `play`', async () => {
+      const { youtube, player, tick } = await playing()
+      youtube.endVideo()
+      await player.check()
+      tick(60_000)
+      await player.check()
+      expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', ended: true, soundedAt: 1_000 })
+    })
+
+    it('stands once the pane has left the song\'s page, though the Queue still holds it', async () => {
+      const { browser, player, tick } = await playing()
+      await browser.navigate('https://example.com/')
+      tick(60_000)
+      await player.check()
+      expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+      expect(player.nowPlaying()).toMatchObject({ ended: false, paused: false, soundedAt: 1_000 })
+    })
+
+    it('stands when an unpaused element has stopped moving: a stalled stream', async () => {
+      const { player, tick } = await playing()
+      tick(60_000)
+      await player.check()
+      expect(player.nowPlaying()).toMatchObject({ paused: false, soundedAt: 1_000 })
+    })
+
+    it('starts afresh for the next song', async () => {
+      const { player, perform } = await playing()
+      await perform({ kind: 'search', place: 'now' }, 'song b')
+      expect(player.nowPlaying()).toMatchObject({ id: 'bbbbbbbbbbb', soundedAt: 5_000 })
+    })
   })
 
   it('"show the video" names the ended song too: the watch page is still there', async () => {

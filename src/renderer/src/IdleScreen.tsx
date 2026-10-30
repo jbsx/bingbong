@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { lastPageLabel, type LastPage } from '../../core/browser/lastPage'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
-import type { NowPlaying } from '../../core/music/nowPlaying'
+import { onIdleCard, type NowPlaying } from '../../core/music/nowPlaying'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { firstDayOfWeek, monthEntries, twoWeeks, upNext, type UpNext, type WeekStart } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
@@ -470,8 +470,8 @@ function useFitZoom(): number {
  * The at-rest screen (T11, CONTEXT.md Idle Screen): F1 Headline's three
  * Columns (ADR 0078) — the weather down the left; the clock and date, the
  * Timer Clock beside it while a Timer is set, the Clock Lines under them
- * and, under those, Now Playing while a song is held over the AI Usage
- * down the middle; the Calendar, the Weight
+ * and, under those, Now Playing while a song sounds and a moment after, over
+ * the AI Usage down the middle; the Calendar, the Weight
  * card and the News card down the right. Every pinned card has its home; a
  * hidden one leaves and its Column-mates take its room, stepping down to a
  * smaller form where the Column runs short (core/idle/columns). Over it the
@@ -622,10 +622,11 @@ export function IdleScreen({
   }
 
   const showWeather = columnCards('left', cards).length > 0
-  // The middle Column's cards under the clock and its lines: Now Playing while a song is held, over the AI Usage (#365).
+  // The middle Column's cards under the clock and its lines: Now Playing while a song sounds and a moment after, over the AI Usage (#365).
+  const song = nowPlaying !== null && onIdleCard(nowPlaying, now.getTime()) ? nowPlaying : null
   const rings = ringsHeight(usageViews)
   const middleUsage = usageViews.length > 0 ? { rings } : usage.status === 'error' ? ('note' as const) : null
-  const middle = columnBands(middleAsks(cards, { music: nowPlaying !== null, usage: middleUsage }), middleRoom({ timer: timer.status !== 'off', lines: lines.length }))
+  const middle = columnBands(middleAsks(cards, { music: song !== null, usage: middleUsage }), middleRoom({ timer: timer.status !== 'off', lines: lines.length }))
 
   // The AI Usage draws its chart and its rings' size by its band's height; a note, and Now Playing, as their band says.
   const middleLayout = (band: Band<IdleCardId>): { form: 'full' | 'small'; compact: boolean } =>
@@ -634,7 +635,7 @@ export function IdleScreen({
   const middleCard = (id: IdleCardId, layout: { form: 'full' | 'small'; compact: boolean }): React.ReactNode => {
     switch (id) {
       case 'music':
-        return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={layout.form} /> : null
+        return song !== null ? <NowPlayingCard nowPlaying={song} form={layout.form} /> : null
       case 'usage':
         return usage.status === 'ready' && usageViews.length > 0 ? (
           <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} format={timeFormat} ear={earLine(usage.snapshot.ear ?? {})} {...layout} />

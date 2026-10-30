@@ -2,11 +2,13 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { CARD_OUTLASTS_SOUND_MS } from '../src/core/music/nowPlaying'
 import { YOUTUBE_FIXTURE_SONG, startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { feedText } from './feed'
 import { decisionScript, readingOf } from './scriptedJev'
+import { startUsageStandIn, type UsageStandIn } from './usageStandIn'
 import { waitFor } from './waitFor'
 
 // Music over the Idle Screen (#344, AC5): `play <words>` from the Idle
@@ -33,6 +35,7 @@ const VIDEO_FACTS = `(() => {
 describe('idle screen e2e: music over the Idle Screen', () => {
   let harness: Harness
   let fixture: FixtureServer
+  let usage: UsageStandIn
   let userDataDir: string
 
   const facts = (): Promise<VideoFacts> => harness.paneEval<VideoFacts>(VIDEO_FACTS)
@@ -49,7 +52,8 @@ describe('idle screen e2e: music over the Idle Screen', () => {
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-music-'))
     // The watch page in the hidden pane is what this suite drives: audio-only music is on by default since 78aed4f0, so the profile is saved with it off (the road is e2e/audioRoad's).
-    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: false }))
+    usage = await startUsageStandIn(3)
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: false, usageDashboard: usage.settings }))
     fixture = await startFixtureServer()
     harness = await startHarness({
       userDataDir,
@@ -70,6 +74,7 @@ describe('idle screen e2e: music over the Idle Screen', () => {
   afterAll(async () => {
     await harness?.quit()
     await fixture?.close().catch(() => {})
+    await usage?.close().catch(() => {})
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
@@ -170,6 +175,37 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     await cardIs('paused')
     await harness.clickDashboardElement('.idle-music-thumb')
     await cardIs('playing')
+    expect(await idleShown()).toBe(true)
+  }, 60_000)
+
+  it('a song stopped a while leaves the Idle Screen and the AI Usage takes its chart back; `play` still plays it', async () => {
+    const shown = (selector: string): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`)
+    const until = (selector: string, want: boolean): Promise<true> => waitFor(async () => ((await shown(selector)) === want ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+
+    await until('.usage-card', true)
+    await cli(harness, 'play', /^(play: |error:)/)
+    await until('.idle-music-card--playing', true)
+    // The card asks the room the chart would draw in.
+    expect(await shown('.usage-chart')).toBe(false)
+    expect(await cli(harness, 'pause', /^(pause: |error:)/)).toMatch(/^pause: paused=true/)
+    await until('.idle-music-card--paused', true)
+
+    // The Idle Screen's clock moved past the grace, so the suite need not sit through it.
+    await harness.dashboardEval(`(() => {
+      const Real = window.Date
+      window.__realDate = Real
+      window.Date = class extends Real {
+        constructor(...args) { if (args.length === 0) super(Real.now() + ${CARD_OUTLASTS_SOUND_MS}); else super(...args) }
+        static now() { return Real.now() + ${CARD_OUTLASTS_SOUND_MS} }
+      }
+    })()`)
+    await until('.idle-music-card', false)
+    await until('.usage-chart', true)
+    await harness.dashboardEval(`void (window.Date = window.__realDate)`)
+
+    // It went from the screen, not from the Player: the same words as ever bring it back.
+    expect(await cli(harness, 'play', /^(play: |error:)/)).toMatch(/^play: paused=false/)
+    await until('.idle-music-card--playing', true)
     expect(await idleShown()).toBe(true)
   }, 60_000)
 

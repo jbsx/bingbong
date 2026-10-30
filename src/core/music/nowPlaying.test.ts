@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nowPlayingView, songLine, type NowPlaying } from './nowPlaying'
+import { CARD_OUTLASTS_SOUND_MS, nowPlayingView, onIdleCard, songLine, type NowPlaying } from './nowPlaying'
 
 // What the Now Playing card (#365) says of the Player's state: its kicker,
 // flags, bar, times, the one control that toggles, and its foot.
@@ -16,6 +16,26 @@ const SONG: NowPlaying = {
   ended: false,
   queued: ['Around the World', 'One More Time'],
 }
+
+describe('onIdleCard', () => {
+  const song = { ...SONG, soundedAt: 1_000_000 }
+
+  it('holds the card while the song sounds and for its grace after, then lets it go', () => {
+    expect(onIdleCard(song, 1_000_000)).toBe(true)
+    expect(onIdleCard(song, 1_000_000 + CARD_OUTLASTS_SOUND_MS - 1)).toBe(true)
+    expect(onIdleCard(song, 1_000_000 + CARD_OUTLASTS_SOUND_MS)).toBe(false)
+  })
+
+  it('goes for a paused song and an ended one alike', () => {
+    const later = 1_000_000 + CARD_OUTLASTS_SOUND_MS
+    expect(onIdleCard({ ...song, paused: true }, later)).toBe(false)
+    expect(onIdleCard({ ...song, ended: true }, later)).toBe(false)
+  })
+
+  it('holds a song no Player has timed', () => {
+    expect(onIdleCard(SONG, Number.MAX_SAFE_INTEGER)).toBe(true)
+  })
+})
 
 describe('nowPlayingView', () => {
   it('playing: NOW PLAYING, the bar as far as the song has run, both times, pause as the toggle, the queue after it', () => {

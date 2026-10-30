@@ -30,6 +30,16 @@ export interface NowPlaying {
    * on an engine that states no ads.
    */
   readonly ad?: AdShowing | null
+  /** When the song's element last moved (wall ms): it stands however the song stopped, paused, ended, its page left or its stream stalled. Absent off the Player. */
+  readonly soundedAt?: number
+}
+
+/** How long the Idle Screen's card outlasts the song's sound, for a tap or a word to take it up. A guess: only the owner's day settles it. */
+export const CARD_OUTLASTS_SOUND_MS = 60_000
+
+/** Whether the Idle Screen draws the card now: the AI Usage takes its room back once the song has been still this long, and the Player still holds it for `play`. */
+export function onIdleCard(nowPlaying: NowPlaying, now: number): boolean {
+  return nowPlaying.soundedAt === undefined || now - nowPlaying.soundedAt < CARD_OUTLASTS_SOUND_MS
 }
 
 /** An ad playing where the song will (#497): its seconds in, and its length (null while unknown). */
