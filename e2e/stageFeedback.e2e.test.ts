@@ -124,8 +124,11 @@ describe('narrated wait e2e (#438): stage words in the Capsule, no layout shift 
     expect(first.hint).toMatch(/^127\.0\.0\.1 · \d+s$/)
     expect(`${first.pill} ${first.hint}`).not.toMatch(/navigate|http|acting/i)
     // The Feed's Run Detail names the same stage with the same words.
-    const lines = await harness.overlayEval<string[]>(`Array.from(document.querySelectorAll('.feed-entry--stage .feed-text')).map((el) => el.textContent)`)
-    expect(lines).toContain('Opening 127.0.0.1')
+    // The panel is its own renderer and main sends it each event after the dashboard, so the line lands just after the pill.
+    const lines = await waitFor(async () => {
+      const shown = await harness.overlayEval<string[]>(`Array.from(document.querySelectorAll('.feed-entry--stage .feed-text')).map((el) => el.textContent)`)
+      return shown.includes('Opening 127.0.0.1') ? shown : undefined
+    }, { timeoutMs: 1_000, intervalMs: 20 })
     expect(lines.join(' ')).not.toMatch(/Understanding|Working on the page|Waiting for the page/)
     const seconds = (hint: string): number => Number(/(\d+)s$/.exec(hint)![1])
     const later = await waitFor(async () => {
