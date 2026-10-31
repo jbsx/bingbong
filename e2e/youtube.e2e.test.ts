@@ -126,7 +126,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
   })
 
   it('snapshots the youtube home page with numbered refs', async () => {
-    await cli(harness, `navigate ${YOUTUBE_HOME}`, /^navigated: https:\/\/(www\.)?youtube\.com\//)
+    await cli(harness, `navigate ${YOUTUBE_HOME}`, /^navigated: url=https:\/\/(www\.)?youtube\.com\//)
     await harness.waitForPaneUrl(YOUTUBE_HOME)
     await harness.focusPane()
     await dismissConsentDialog(harness)
@@ -159,7 +159,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
       const lines = await readRefLines(harness)
       candidates = selectVideoLinks(lines)
       if (candidates.length === 0) {
-        await cli(harness, 'scroll down', /^scrolled down$/)
+        await cli(harness, 'scroll down', /^scrolled down: /)
       }
     }
     expect(candidates.length).toBeGreaterThan(0)
@@ -171,12 +171,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
     let landed: string | undefined
     for (let batch = 0; batch < 3 && !landed; batch++) {
       if (batch > 0) {
-        await cli(harness, 'scroll down', /^scrolled down$/)
+        await cli(harness, 'scroll down', /^scrolled down: /)
         candidates = selectVideoLinks(await readRefLines(harness))
       }
       for (const candidate of candidates.slice(0, 5)) {
         const ref = refOf(candidate)
-        await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
+        await cli(harness, `click ${ref}`, new RegExp(`^clicked \\[${ref}\\]: `))
         landed = await waitFor(
           async () => {
             const url = await harness.paneUrl()
@@ -259,7 +259,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
   }, 150_000)
 
   it('captures a real screenshot of youtube', async () => {
-    await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^saved screenshot to ${screenshotPath} \\(\\d+ bytes\\)$`))
+    await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^screenshot saved: ${screenshotPath}$`))
     const bytes = await readFile(screenshotPath)
     expect(bytes.byteLength).toBeGreaterThan(10_000)
     expect(bytes[0]).toBe(0xff)
