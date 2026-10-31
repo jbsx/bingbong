@@ -35,6 +35,7 @@ import { voiceHint } from '../../core/voice/voiceHint'
 import { earPhase } from '../../core/voice/voicePrompt'
 import { capsuleStatus } from '../../core/pipeline/runProgress'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
+import { turnCardShows } from '../../core/idle/turnCard'
 import type { AppView } from '../../core/command/appOp'
 
 export function App() {
@@ -196,8 +197,8 @@ export function App() {
   }, [showIdle])
 
   if (showIdle) {
-    // The Turn Card is up while a line is taken, read and done (#474); the Idle Prompt sits at the foot beside it, its scrim stood down.
-    const turnUp = turn.state.phase === 'open'
+    // The Turn Card is up while a line is taken, read and done (#474), but not over a control for its own tap (#525); the Idle Prompt sits at the foot beside it, its scrim stood down.
+    const turnUp = turnCardShows(turn.state)
     return (
       <>
         <IdleScreen

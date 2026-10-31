@@ -72,6 +72,8 @@ export interface TurnCardState {
   /** When the card goes, on the events' clock: null while live or while a sentence still sounds. */
   retiresAt: number | null
   steps: readonly TurnStep[]
+  /** The line came from a tap on an Idle Screen control: its effect is on the control, and the card stays down unless it fails (CONTEXT.md). */
+  tapped: boolean
 }
 
 /** The card's words for a line read as no Command (the Answer's own words, ui.md 9) and a Stop. */
@@ -97,7 +99,7 @@ const REST: EarPhase = 'rest'
 const BLIP_GRACE_MS = 1_000
 
 function hidden(ear: EarPhase, earSince: number, partial: string, lastWords: string): TurnCardState {
-  return { phase: 'hidden', openedAt: 0, ear, earSince, partial, lastWords, heard: null, heardAt: null, turnId: null, reading: null, dropped: false, stage: null, said: null, answer: null, end: null, endedAt: null, retiresAt: null, steps: [] }
+  return { phase: 'hidden', openedAt: 0, ear, earSince, partial, lastWords, heard: null, heardAt: null, turnId: null, reading: null, dropped: false, stage: null, said: null, answer: null, end: null, endedAt: null, retiresAt: null, steps: [], tapped: false }
 }
 
 const firstLine = (text: string): string => text.split('\n', 1)[0]!
@@ -122,6 +124,8 @@ export interface TurnCardFold {
   expire(now: number): void
   /** A tap: the card goes; the line it reported is not touched. */
   dismiss(): void
+  /** A control on the Idle Screen was tapped: the next line to start is that tap's, until no tap's submit is still out. */
+  onControlTap(pending: boolean): void
   state(): TurnCardState
 }
 
@@ -149,6 +153,9 @@ export function createTurnCardFold(): TurnCardFold {
   let speechPending = false
   // The running line's turns when speech started over it: their rows are the old command's, never drawn again.
   let superseded = new Set<string>()
+  // A control was tapped and its line has not started; once it has, which running turns are a tap's.
+  let tapPending = false
+  const tapTurns = new Set<string>()
 
   /** What one line kept: its turns, its outcome trail, its sentences sounding, its words. */
   const clearLine = (): void => {
@@ -197,8 +204,15 @@ export function createTurnCardFold(): TurnCardFold {
     if (last !== undefined && last.label === 'Listening' && last.turnId === null && last.line === line) replaceLast({ at: last.at, label: 'Listening', text, tone, turnId: null })
     else push({ at, label: 'Listening', text, tone, turnId: null })
   }
+  /** The first new line's first turn after a tap is the tap's, read before anything moves the card: a card showing a running line stays up over it. */
+  const claimTap = (turnId: string, hop: number): void => {
+    if (!tapPending || hop !== 0 || turns.has(turnId)) return
+    tapPending = false
+    if (!(turnCardShows(state) && state.end === null)) tapTurns.add(turnId)
+  }
   const adopt = (turnId: string, at: number, hop: number): void => {
     if (turns.has(turnId)) return
+    claimTap(turnId, hop)
     if (state.phase === 'hidden') {
       open(at)
     } else if (state.end !== null && hop === 0 && !speechPending) {
@@ -213,6 +227,9 @@ export function createTurnCardFold(): TurnCardFold {
       state = { ...state, end: null, endedAt: null, retiresAt: null, steps }
       speechPending = false
     }
+    // A new line clears the mark at its first event, so a line over a tap's shows its Receipt.
+    if (tapTurns.has(turnId)) state = { ...state, tapped: true }
+    else if (hop === 0) state = { ...state, tapped: false }
     if (state.end === null) state = { ...state, retiresAt: null }
     turns.add(turnId)
   }
@@ -225,7 +242,10 @@ export function createTurnCardFold(): TurnCardFold {
       const was = state.ear
       const hearing = voice.listening && voice.hearing
       const taking = voice.listening || voice.transcribing
-      state = { ...state, ear, earSince: ear === was ? state.earSince : since }
+      // The ear opening, or speech starting in one already open, is the person speaking to the card: a tapped line it
+      // comes over no longer keeps it down. Main says the state again for a sentence with the ear open: that is neither.
+      const addressed = (taking && !wasTaking) || (hearing && !wasHearing)
+      state = { ...state, ear, earSince: ear === was ? state.earSince : since, tapped: state.tapped && !addressed }
       if (taking && !wasTaking && (ear === 'listening' || ear === 'hearing' || ear === 'starting') && (state.phase === 'hidden' || state.end !== null)) {
         // The wake: the card opens on the ear opening for an Utterance — afresh over a line that ended, whose rows are not this one's.
         open(since)
@@ -315,6 +335,7 @@ export function createTurnCardFold(): TurnCardFold {
           // A hop past the first that fires nothing is no Command of its own (#336).
           if (event.dropped && event.task !== undefined && event.task.hop > 0) return
           const hop = event.task?.hop ?? 0
+          claimTap(event.turnId, hop)
           if (hop === 0 && state.turnId !== null && state.turnId !== event.turnId) {
             // The next line: its card, keeping what this line's ear and its own thinking already drew.
             reset((step) => step.turnId === event.turnId || (step.turnId === null && step.line === line))
@@ -352,6 +373,7 @@ export function createTurnCardFold(): TurnCardFold {
           if (event.turnId !== undefined && turns.has(event.turnId)) sawError = true
           return
         case 'done': {
+          tapTurns.delete(event.turnId)
           if (!turns.has(event.turnId)) return
           const outcome = inferRunOutcome(event.outcome, lastStatus, sawError)
           // A line whose Answer tells a failure ended on it, whatever its outcome says (#329): the Peek Card's dot reads the same flag.
@@ -374,8 +396,24 @@ export function createTurnCardFold(): TurnCardFold {
     dismiss() {
       if (state.phase === 'open') close()
     },
+    onControlTap(pending) {
+      tapPending = pending
+    },
     state: () => state,
   }
+}
+
+/**
+ * Whether the Idle Screen draws the card: a tapped line's effect is on the
+ * control, so its card stays down over it unless the line fails (#525). A
+ * guess, the arm cheapest to reverse, for the tap with no effect on the
+ * control: "Nothing queued." brings no card, and a `previous` or `skip` that
+ * loads a song on the page road has no narrated wait. What would settle it:
+ * the owner tapping Skip with nothing queued on the kiosk and saying whether
+ * they knew what happened.
+ */
+export function turnCardShows(state: TurnCardState): boolean {
+  return state.phase === 'open' && (!state.tapped || state.end === 'failed')
 }
 
 /** The six stations of the rail, in order; the live one is lit and the track fills to it. */

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { nowPlayingView, thumbnailUrl, type NowPlaying } from '../../core/music/nowPlaying'
 import { SongLine } from './SongLine'
+import { tapCommand } from './tapCommand'
 import { LoopIcon, MusicIcon } from './WeatherIcon'
 
 type Form = 'full' | 'small'
@@ -36,9 +37,7 @@ function Bars() {
 
 /** Fires a music verb as a Command on the pointer going down, keeping the Idle Screen up: the music verbs need no pane, and useIdle never hears the press. */
 function tap(verb: string) {
-  const submit = (): void => {
-    void window.bingbong.assistant.submit(verb)
-  }
+  const submit = (): void => tapCommand(verb)
   return {
     onPointerDown: (event: React.PointerEvent) => {
       event.stopPropagation()

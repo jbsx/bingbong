@@ -2,12 +2,13 @@
 
 What happens after you type or speak a request to Bing Bong. Open the HTML in a browser; `?view=main`, `?view=voice` and `?view=decision` select a view. How to make a new version: [`docs/agents/input-output-chart.md`](../../agents/input-output-chart.md).
 
-**Latest:** [2026-10-30, base `c35c75b1` + #516 (accompanying implementation changes)](versions/2026-10-30-c35c75b1-remembered-address/chart.html). A song's lookup asks `visionos` first, and a repeat play takes the address that played. [Overview](versions/2026-10-30-c35c75b1-remembered-address/overview.png), [changes](versions/2026-10-30-c35c75b1-remembered-address/changes.md).
+**Latest:** [2026-10-31, base `4bed530e` + #525 (accompanying implementation changes)](versions/2026-10-31-4bed530e-tap-no-card/chart.html). A tap on an Idle Screen control that leaves the screen up brings no Turn Card unless its line fails. [Overview](versions/2026-10-31-4bed530e-tap-no-card/overview.png), [changes](versions/2026-10-31-4bed530e-tap-no-card/changes.md).
 
 ## History
 
 | Date | Source | Chart | Notes |
 | --- | --- | --- | --- |
+| 2026-10-31 | `4bed530e` + #525 | [chart](versions/2026-10-31-4bed530e-tap-no-card/chart.html) | No box or arrow added or removed. A tap on an Idle Screen control that leaves the screen up (a Now Playing control, the ringing Timer) brings no Turn Card: the control shows what it did, and the next tap lands on it. If its line fails, the card comes up on Failed. The whole journey's failures note was recaptured at full height and inspected; the voice and decision views are unchanged. [changes](versions/2026-10-31-4bed530e-tap-no-card/changes.md) |
 | 2026-10-30 | `c35c75b1` + #516 | [chart](versions/2026-10-30-c35c75b1-remembered-address/chart.html) | No box or arrow added or removed. The lookup asks `visionos` first; a repeat play takes the address that played, and one that does not play gets one fresh lookup before the watch page. [changes](versions/2026-10-30-c35c75b1-remembered-address/changes.md) |
 | 2026-10-30 | `f2c21d13` + #514 | [chart](versions/2026-10-30-f2c21d13-no-read-verb/chart.html) | No box or arrow added or removed. `read` is off the grammar, so the word goes to Jev like any other; the terminal harness keeps its own `read`, no Command, for the refs `click <ref>` takes. The Planner's `read` is unchanged. [changes](versions/2026-10-30-f2c21d13-no-read-verb/changes.md) |
 | 2026-10-30 | `f3712c4e` + #514 | [chart](versions/2026-10-30-f3712c4e-voice-back/chart.html) | The voice is back as the default; the Line Overlay and its chimes are gone; only the Page Read stays removed. [changes](versions/2026-10-30-f3712c4e-voice-back/changes.md) |

@@ -1023,6 +1023,7 @@ ellipsize, a history row's text does. An open ear that has heard nothing
 yields to the running line or its end, said by the waveform (#472); speech
 starting after a line has ended is the next line's card. A Command that
 acts on the pane wakes the screen as before, and the card goes with it.
+A tap on an Idle Screen control that leaves the screen up (a Now Playing control, the ringing Timer) brings no card: the control shows what it did, and the next tap lands on it. If its line fails, the card comes up on Failed.
 The Status Capsule no longer floats over the Idle Screen, and the Peek
 Card's Idle Screen form is gone: the Turn Card is what the screen shows
 for a line's answer and failure. The Idle Prompt sits at the foot of the

@@ -172,20 +172,29 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     const cardIs = (state: string): Promise<true> =>
       waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card--${state}')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
     const answered = (words: string): Promise<true> => waitFor(async () => ((await feedText(harness)).includes(words) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    const turnCardUp = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card')`)
+
+    // The last typed line's Turn Card may still be up: a tap closes it, as a person's does (CONTEXT.md). From here each tap is one effect.
+    if (await turnCardUp()) await harness.clickDashboardElement('.turn-card')
+    await waitFor(async () => (!(await turnCardUp()) ? true : undefined), { timeoutMs: 5_000, intervalMs: 100 })
 
     await harness.clickDashboardElement('.idle-music-button[aria-label="Pause"]')
     await waitFor(async () => ((await facts()).paused ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
     await cardIs('paused')
+    // A control's line brings no Turn Card over the control: the next tap lands on it.
+    expect(await turnCardUp()).toBe(false)
     expect(await idleShown()).toBe(true)
 
     await harness.clickDashboardElement('.idle-music-button[aria-label="Play"]')
     await waitFor(async () => (!(await facts()).paused ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
     await cardIs('playing')
+    expect(await turnCardUp()).toBe(false)
     expect(await idleShown()).toBe(true)
 
     // One song, nothing before it.
     await harness.clickDashboardElement('.idle-music-button[aria-label="Previous"]')
     await answered('Nothing before this.')
+    expect(await turnCardUp()).toBe(false)
     expect(await idleShown()).toBe(true)
 
     // Nothing queued: a skip with nothing to do does nothing — the song plays on (2026-10-21 audit).
@@ -193,6 +202,7 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     await answered('Nothing queued.')
     await cardIs('playing')
     expect((await facts()).paused).toBe(false)
+    expect(await turnCardUp()).toBe(false)
     expect(await idleShown()).toBe(true)
 
     // The picture toggles, as the line did.
@@ -200,6 +210,7 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     await cardIs('paused')
     await harness.clickDashboardElement('.idle-music-thumb')
     await cardIs('playing')
+    expect(await turnCardUp()).toBe(false)
     expect(await idleShown()).toBe(true)
   }, 60_000)
 

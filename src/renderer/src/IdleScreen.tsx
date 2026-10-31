@@ -26,6 +26,7 @@ import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
 import { EarWait, PILL_LABELS, VoiceWave } from './AssistantPanel'
+import { tapCommand } from './tapCommand'
 import { TurnCard } from './TurnCard'
 import type { TurnCardState } from '../../core/idle/turnCard'
 import { GlobeIcon } from './WeatherIcon'
@@ -138,9 +139,7 @@ function TimerClock({ timer, format }: { timer: Exclude<TimerState, { status: 'o
       </section>
     )
   }
-  const dismiss = (): void => {
-    void window.bingbong.assistant.submit('timer off')
-  }
+  const dismiss = (): void => tapCommand('timer off')
   return (
     <button
       type="button"

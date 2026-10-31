@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createTurnCardFold, type TurnCardState } from '../../core/idle/turnCard'
+import { onCommandTap } from './tapCommand'
 
 // The renderer half of the Turn Card (#474): the pure fold in core owns
 // the card's state; this hook owns the subscriptions — the voice state and
@@ -37,6 +38,7 @@ export function useTurnCard(): TurnCardView {
         fold.onEvent(event)
         sync()
       }),
+      onCommandTap((pending) => fold.onControlTap(pending)),
     ]
     // Monitoring can be up before this mounted: pull the truth.
     void window.bingbong.voice.getState().then((voice) => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PEEK_CARD_LINGER_MS } from '../panel/peekCardState'
 import type { VoiceState } from '../voice/ipcChannels'
-import { createTurnCardFold, NO_COMMAND, turnHistory, turnLive, turnStation, turnWords, type TurnCardFold } from './turnCard'
+import { createTurnCardFold, NO_COMMAND, turnCardShows, turnHistory, turnLive, turnStation, turnWords, type TurnCardFold } from './turnCard'
 
 // The Turn Card's fold (#474): which seam fills which row, what is live,
 // and when the card goes — 15 s after the later of `done` and the last
@@ -121,6 +121,115 @@ describe('the Turn Card fold', () => {
     expect(fold.state().retiresAt).toBe(5100 + PEEK_CARD_LINGER_MS)
     fold.dismiss()
     expect(fold.state().phase).toBe('hidden')
+  })
+
+  it('a tapped control\'s line brings no card over the control; its failure does, and the next line is its own', () => {
+    const fold = createTurnCardFold()
+    const tapped = (turnId: string, outcome: 'done' | 'failed'): void => {
+      fold.onControlTap(true)
+      fold.onEvent({ type: 'status', turnId, status: 'thinking', detail: 'pause', at: 1000 })
+      fold.onEvent({ type: 'command', turnId, text: 'pause', action: 'pause', at: 1001 })
+      fold.onEvent({ type: 'done', turnId, outcome, at: 1002 })
+      fold.onControlTap(false)
+    }
+    tapped('t-1', 'done')
+    expect(fold.state().phase).toBe('open')
+    expect(turnCardShows(fold.state())).toBe(false)
+
+    // A second tap straight after, over the first's hidden card.
+    tapped('t-2', 'done')
+    expect(turnCardShows(fold.state())).toBe(false)
+
+    tapped('t-3', 'failed')
+    expect(fold.state().end).toBe('failed')
+    expect(turnCardShows(fold.state())).toBe(true)
+
+    // The next line is not a tap's, and the card is up for it.
+    fold.onEvent({ type: 'status', turnId: 't-4', status: 'thinking', detail: 'open the news', at: 2000 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a tap whose line starts with its `command` still brings no card', () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'open the news', action: 'navigate', at: 500 })
+    fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 600 })
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-2', text: 'pause', action: 'pause', at: 1000 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('the ear opening over a tapped line still running brings the card up', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'youtube.com', at: 1000 })
+    fold.onControlTap(false)
+    expect(turnCardShows(fold.state())).toBe(false)
+    fold.onVoice(voice({ listening: true, reason: 'wake', since: 1500 }), 1500)
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a tap in a Hot Listen keeps its mark through the ear\'s next publish, and speech brings the card up', () => {
+    const fold = createTurnCardFold()
+    speak(fold, 'play coldplay')
+    fold.onEvent({ type: 'command', turnId: 't-0', text: 'play coldplay', action: 'play', at: 4500 })
+    fold.onEvent({ type: 'done', turnId: 't-0', outcome: 'done', at: 4600 })
+    fold.dismiss()
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'skip', action: 'skip', at: 5000 })
+    fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 5001 })
+    fold.onControlTap(false)
+    // Its Answer sounds, and main says the state again with the ear still open.
+    fold.onVoice(voice({ listening: true, reason: 'wake', speaking: true, since: 5002 }), 5002)
+    expect(turnCardShows(fold.state())).toBe(false)
+    fold.onVoice(voice({ listening: true, reason: 'wake', hearing: true, since: 5500 }), 5500)
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('an earlier tap\'s late event keeps the card down after the next tap\'s `command` moved on', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'previous', action: 'previous', at: 1000 })
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-2', text: 'pause', action: 'pause', at: 1100 })
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', hop: 0, detail: 'youtube.com', at: 1200 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('a tap whose submit settled with no line leaves the next line its card', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onControlTap(false)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'thinking', detail: 'pause', at: 1000 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a tap over a card showing a running line leaves that card up', () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'example.com', at: 1000 })
+    expect(turnCardShows(fold.state())).toBe(true)
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', detail: 'timer off', at: 1100 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a tap over a tap\'s running line keeps its mark', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'youtube.com', at: 1000 })
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', detail: 'pause', at: 1100 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('a typed line over a tap\'s running line shows its card from its first event', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'youtube.com', at: 1000 })
+    fold.onControlTap(false)
+    expect(turnCardShows(fold.state())).toBe(false)
+    // Its first event, the read, well before its `command`.
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', detail: 'open the news', at: 1100 })
+    expect(turnCardShows(fold.state())).toBe(true)
   })
 
   it('a failure ends on Failed, its Answer in the words row, the Read as row kept (AC3)', () => {
