@@ -1047,11 +1047,11 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /**
    * The element of a song just opened, read until it plays (#488): playing,
-   * by kind, is not paused, not ended, and its time moved {@link PLAYED_S} — a
-   * moment of play that stops is no start. Not playing by its bound, it is
+   * by kind, is not paused, not ended, and its time moved {@link PLAYED_S} no
+   * faster than the clock — a moment of play that stops is no start. Not playing by its bound, it is
    * pressed once with the element's own `play`, and read again to the same
    * bound. Still loading, on the watch page (#550), it is neither pressed nor
-   * given up on before {@link LOADING_START_MS}.
+   * given up on until {@link LOADING_START_MS} past its last sign of life.
    */
   async function startOf(song: Song, current: () => boolean, background: boolean, reopened: boolean): Promise<PlayerStart | 'superseded'> {
     leftOnAd = null
@@ -1059,18 +1059,20 @@ export function createPlayer(deps: PlayerDeps): Player {
     const from = now()
     let pressed = false
     // A bound passes on the clock, or on the reads' own waits where the clock does not move (a scripted page).
+    const waited = (mark: { at: number; read: number }, read: number): number => Math.max(now() - mark.at, (read - mark.read) * START_READ_MS)
     let phase = { at: from, read: 0, ms: SELF_START_MS }
-    const elapsed = (read: number): number => Math.max(now() - phase.at, (read - phase.read) * START_READ_MS)
     /** Where the element's time stood when this run of play began; null while it is not playing. */
     let since: number | null = null
     let last: StartRead | null = null
     /** The ad that held the start (#497): when it was first read, and how long it held it (ms) once the song's own read came. */
     let ad: { at: number; read: number; ms: number | null } | null = null
-    /** Since when the song has had to load (#550): a wall cleared buys it the bound again. */
+    /** Since when the song has had to load (#550): its last sign of life, an ad's or its own time moving, or a wall cleared. */
     let loadingFrom = { at: from, read: 0 }
-    /** No load has ended unseen: the first play after one renews the bound, once. */
-    let loaded = true
-    const adMs = (read: number): number | null => (ad === null ? null : (ad.ms ?? Math.round(Math.max(now() - ad.at, (read - ad.read) * START_READ_MS))))
+    /** The last read found it still loading. */
+    let wasLoading = false
+    /** When the last read came back. */
+    let lastRead = { at: from, read: 0 }
+    const adMs = (read: number): number | null => (ad === null ? null : (ad.ms ?? Math.round(waited(ad, read))))
     for (let read = 0; ; read += 1) {
       if (!current()) return 'superseded'
       const before = last
@@ -1106,37 +1108,39 @@ export function createPlayer(deps: PlayerDeps): Player {
         waitEnded(current)
         return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       }
-      // Time that moved since the last read is play, whatever `readyState` the read found: a slow host's sits at 2 between its segments (#550).
-      const moved = last !== null && before !== null && last.time > before.time
+      // An ad's read says nothing of the song's own time.
+      const prior = before?.ad === true ? null : before
+      const moved = last !== null && prior !== null ? last.time - prior.time : 0
+      // Time that moved no faster than the clock is play, whatever `readyState` the read found: a slow host's sits at 2 between its segments (#550).
+      // Faster is a seek or a start offset (`&t=`), which says nothing of whether data came; twice the clock, a read's own wait being no exact measure of it.
+      const played = moved > 0 && moved * 1000 <= 2 * waited(lastRead, read) + START_READ_MS
+      lastRead = { at: now(), read }
+      if (played || last?.ad === true) loadingFrom = { at: now(), read }
       // Still loading (#550), on the watch page: unpaused, not errored, no data to play yet. A slow host's player boots for 20 s and more; a press
       // changes nothing on an unpaused element and a reopen throws the load away, so neither comes before its bound. A stream on the audio road has no player to boot.
-      const loading = road === 'page' && last !== null && !moved && !last.ad && !last.paused && !last.ended && !last.failed && last.ready <= 2
-      const loadingOut = loading && Math.max(now() - loadingFrom.at, (read - loadingFrom.read) * START_READ_MS) >= LOADING_START_MS
-      if (loading && !loadingOut) phase = { ...phase, at: now(), read }
-      if (loading) loaded = false
+      const loading = road === 'page' && last !== null && !played && !last.ad && !last.paused && !last.ended && !last.failed && last.ready <= 2
+      const loadExpired = loading && waited(loadingFrom, read) >= LOADING_START_MS
+      // A slow host's reads stall for seconds: while it loads, and as a load ends, a read's own wait is no bound passed.
+      if ((loading && !loadExpired) || (wasLoading && !loading)) phase = { ...phase, at: now(), read }
+      wasLoading = loading
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
-      const playing = last !== null && !last.ad && !last.paused && !last.ended && (moved || (before === null && last.ready > 2))
-      // A slow host's reads stall for seconds (#550): the load just ended, and a read's own wait is no bound passed on the song's start.
-      if (playing && !loaded) {
-        phase = { ...phase, at: now(), read }
-        loaded = true
-      }
-      // From where it moved from: a slow read that finds it seconds on has seen those seconds played, and it may stall right after.
-      since = playing ? (since ?? (moved ? before!.time : last!.time)) : null
+      const playing = last !== null && !last.ad && !last.paused && !last.ended && (played || (last.ready > 2 && (prior === null || moved > 0)))
+      // From where it moved from: a slow read that finds it seconds on has seen those seconds played. A rebuffer keeps what it played.
+      since = playing ? (since ?? (played ? prior!.time : last!.time)) : loading ? since : null
       // The song sounds (#507): the Wait Card closes now, not once the start is proved.
       if (playing) waitEnded(current)
       const started = playing && last!.time - since! >= PLAYED_S
       // Playing at the bound, it has a start's play longer to show it is one.
-      const due = loadingOut || elapsed(read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)
+      const due = loadExpired || waited(phase, read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)
       // A wall cleared while it ran: the song plays once the sheet leaves, so it has a self-start's bound again, unpressed (#492).
-      if (due && !started && (await clearedSince(song, loadingOut ? loadingFrom.at : phase.at))) {
+      if (due && !started && (await clearedSince(song, loadExpired ? loadingFrom.at : phase.at))) {
         phase = { at: now(), read, ms: SELF_START_MS }
         loadingFrom = { at: now(), read }
         await sleep(START_READ_MS)
         if (!current()) return 'superseded'
         continue
       }
-      if (started || (due && pressed) || loadingOut) {
+      if (started || (due && pressed) || loadExpired) {
         // A seek asked over the ad (#497) lands as the song starts, not a poll later.
         if (started && last !== null) await applyHeldSeek(song, { elapsed: last.time, duration: last.duration })
         return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element: last === null ? null : elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })

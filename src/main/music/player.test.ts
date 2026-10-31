@@ -1464,11 +1464,14 @@ describe('a page-road start still loading (#550): a slow host is waited for, not
   })
 
   it('time moving is play, whatever `readyState` a slow host\'s read finds: Playing said, never given up on at the bound', async () => {
-    const { browser, youtube, starts, play, presses } = loading()
+    const { browser, youtube, starts, play, presses, tick } = loading()
     const answer = browser.evaluator!
     youtube.readyState = 2
     browser.evaluator = (expression) => {
-      if (expression.includes('/* YT_START */')) youtube.element = { ...youtube.element, currentTime: youtube.element.currentTime + 1 }
+      if (expression.includes('/* YT_START */')) {
+        tick(1_000)
+        youtube.element = { ...youtube.element, currentTime: youtube.element.currentTime + 1 }
+      }
       return answer(expression)
     }
     expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
@@ -1478,17 +1481,99 @@ describe('a page-road start still loading (#550): a slow host is waited for, not
   })
 
   it('a read that finds 7 s played has its proof, though the song then stalls: Playing said, the 7 s not thrown away and the page not reopened', async () => {
-    const { browser, youtube, starts, play } = loading()
+    const { browser, youtube, starts, play, tick } = loading()
     const answer = browser.evaluator!
     youtube.readyState = 2
     let reads = 0
     browser.evaluator = (expression) => {
-      if (expression.includes('/* YT_START */') && (reads += 1) === 3) youtube.element = { ...youtube.element, currentTime: 7 }
+      if (expression.includes('/* YT_START */') && (reads += 1) === 3) {
+        tick(7_000)
+        youtube.element = { ...youtube.element, currentTime: 7 }
+      }
       return answer(expression)
     }
     expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
     expect(browser.navigations).toHaveLength(1)
     expect(starts).toEqual([expect.objectContaining({ started: true, reopened: false, element: expect.objectContaining({ ready: 2, time: 7 }) })])
+  })
+
+  it('a jump in time faster than the clock is a seek, no play: holding no data it is still loading, never Playing over silence', async () => {
+    const { browser, youtube, starts, play } = loading()
+    const answer = browser.evaluator!
+    youtube.readyState = 1
+    let reads = 0
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */') && (reads += 1) === 3) youtube.element = { ...youtube.element, currentTime: 125 }
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ failure: true, unstarted: true })
+    expect(browser.navigations).toHaveLength(2)
+    expect(starts[0]).toMatchObject({ started: false, reopened: false, ms: 45_000 })
+  })
+
+  it('an ad\'s time is not the load\'s: a 60 s ad, then a read holding no data, waits on, with a load\'s own bound after the ad', async () => {
+    const { browser, youtube, starts, play, at } = loading()
+    youtube.preRollS = 60
+    const answer = browser.evaluator!
+    let held = 0
+    // The song's element, the ad over, holds no data for 20 reads (5 s).
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */')) {
+        const read = answer(expression) as { ad: boolean; ready: number; time: number } | null
+        if (read !== null && !read.ad && held < 20) {
+          held += 1
+          return { ...read, ready: 1, time: 0 }
+        }
+        return read
+      }
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(browser.navigations).toHaveLength(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, reopened: false })])
+    expect(at()).toBeGreaterThan(60_000)
+  })
+
+  it('a song that moved just before the bound and rebuffers at it is not given up on: 45 s from the last move', async () => {
+    const { browser, youtube, starts, play, at, tick } = loading()
+    const answer = browser.evaluator!
+    youtube.readyState = 0
+    let reads = 0
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */')) {
+        reads += 1
+        // Boots 44 s (176 reads), moves 0.75 s over 3 reads, then rebuffers past the first 45 s.
+        if (reads >= 177 && reads <= 179) {
+          tick(250)
+          youtube.element = { ...youtube.element, currentTime: youtube.element.currentTime + 0.25 }
+        }
+        // Back after 10 s more, and playing on.
+        if (reads >= 220) {
+          youtube.readyState = 4
+          tick(250)
+        }
+      }
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(browser.navigations).toHaveLength(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, reopened: false })])
+    expect(at()).toBeGreaterThan(45_000)
+  })
+
+  it('a load ending with its time still standing has a self-start\'s bound from there: no press on the read after it', async () => {
+    const { browser, youtube, play, presses, tick } = loading()
+    const answer = browser.evaluator!
+    youtube.bootsForS = 10
+    let reads = 0
+    browser.evaluator = (expression) => {
+      // The load ends across a read that stalls 6 s, the element then playing.
+      if (expression.includes('/* YT_START */') && (reads += 1) === 40) tick(6_000)
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(presses()).toBe(0)
+    expect(browser.navigations).toHaveLength(1)
   })
 
   it('an element that never loads is opened again at the bound, unpressed, and fails only past the second: said as not started', async () => {
