@@ -99,4 +99,8 @@ describe('GATES', () => {
     const named = GATES.flatMap((gate) => [gate.file, ...Object.keys(gate.env('/tmp/out'))]).join(' ')
     expect(named).not.toMatch(/applianceVerbs|mediaOps|applianceSpeed|sttCorpus|APPLIANCE_LIVE|MEDIA_OPS_LIVE|APPLIANCE_SPEED|ELEVENLABS|JEV/)
   })
+
+  it('never runs the throttle measure, a tool with no pass bar: vitest takes a gate\'s file as a substring of the path', () => {
+    for (const gate of GATES) expect('e2e/musicThrottle.e2e.test.ts').not.toContain(gate.file)
+  })
 })

@@ -2,8 +2,9 @@ import { join } from 'node:path'
 
 // The opt-in gates `pnpm gates` runs once each (#544). Left out on purpose: the
 // paid ones (applianceVerbs, mediaOps live, applianceSpeed, sttCorpus), on the
-// owner's word; and voiceChain, which needs a folder of utterance dumps and a
-// wake model. A gate's own variable is all that tells it to run;
+// owner's word; voiceChain, which needs a folder of utterance dumps and a wake
+// model; and musicThrottle, a measure with a chosen rate and no pass bar (#552).
+// A gate's own variable is all that tells it to run;
 // e2e/bin/no-network.sh reads the same variables, so a live gate reaches its host
 // and every other gate has no route out.
 
