@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { reportRendererFault } from './diagnostics'
 import { onCommandTap, tapCommand } from './tapCommand'
 
+vi.mock('./diagnostics', () => ({ reportRendererFault: vi.fn() }))
+
 // A tap's line reaches the Turn Card through these two: the fold hears each
-// tap, and hears again only of a tap whose submit says no line ran. A line
-// that ran says nothing as it settles: its reply can land before its events,
-// and those still have the mark to take (#532).
+// tap, and hears again only of a tap whose submit says no line ran or rejects.
+// A line that ran says nothing as it settles: its reply can land before its
+// events, and those still have the mark to take (#532).
 
 describe('tapCommand', () => {
-  const submits: { line: string; settle: (ran: boolean) => void }[] = []
+  const submits: { line: string; settle: (ran: boolean) => void; fail: (error: Error) => void }[] = []
   let told: boolean[] = []
   let unsubscribe: () => void
 
@@ -18,8 +21,8 @@ describe('tapCommand', () => {
       bingbong: {
         assistant: {
           submit: (line: string) =>
-            new Promise<boolean>((resolve) => {
-              submits.push({ line, settle: resolve })
+            new Promise<boolean>((resolve, reject) => {
+              submits.push({ line, settle: resolve, fail: reject })
             }),
         },
       },
@@ -68,6 +71,16 @@ describe('tapCommand', () => {
     submits[2]!.settle(false)
     await settled()
     expect(told).toEqual([true, true, true, false, false])
+  })
+
+  it('takes back the tap of a submit that rejects, and records the fault', async () => {
+    const threw = new Error('run threw')
+    tapCommand('previous')
+    tapCommand('pause')
+    submits[0]!.fail(threw)
+    await settled()
+    expect(told).toEqual([true, true, false])
+    expect(vi.mocked(reportRendererFault).mock.calls).toEqual([['tapCommand.submit', threw]])
   })
 
   it('stops telling a listener that unsubscribed', async () => {

@@ -124,7 +124,7 @@ export interface TurnCardFold {
   expire(now: number): void
   /** A tap: the card goes; the line it reported is not touched. */
   dismiss(): void
-  /** A control on the Idle Screen was tapped (`true`): one mark, for the next line to start; `false`: a tap ran no line, and its mark comes back. */
+  /** A control on the Idle Screen was tapped (`true`): one mark, for the next line to start; `false`: a tap ran no line or its submit rejected, and one mark comes back. */
   onControlTap(mark: boolean): void
   state(): TurnCardState
 }
