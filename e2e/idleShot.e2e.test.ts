@@ -250,7 +250,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
       expect(grown.down).toBeLessThanOrEqual(0.05)
       await shoot('idle-2560x1440', 'dark', size)
     } finally {
-      await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+      await fullSize()
     }
   })
 
@@ -380,11 +380,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
           expect.soft(await hourCollisions(), `${name} at ${size.width}×${size.height}`).toEqual([])
           if (size.width === 1920) await held(`hours-${name}`)
         }
-        await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+        await fullSize()
       }
     } finally {
       hourShape = null
-      await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+      await fullSize()
       await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: 'London' } }))`)
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     }
@@ -394,7 +394,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.idle-date')).fontSize`)).toBe('40px')
     // Inside the clock row the middle Column counts on (core/idle/columns CLOCK.plain, 209), and clear of the clock's figures:
     // the clock's baseline (its figures have no descenders) over the top of the date's capitals (Inter's cap height, 0.727 em).
-    const row = await harness.dashboardEval<{ height: number; gap: number }>(`(() => {
+    const row = await harness.dashboardEval<{ zoom: string; innerWidth: number; height: number; gap: number }>(`(() => {
       const baseline = (el) => {
         const mark = document.createElement('span')
         mark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
@@ -405,8 +405,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
       }
       const date = document.querySelector('.idle-date')
       const capTop = baseline(date) - 0.727 * parseFloat(getComputedStyle(date).fontSize)
-      return { height: document.querySelector('.idle-clock-row').getBoundingClientRect().height, gap: capTop - baseline(document.querySelector('.idle-clock')) }
+      return {
+        zoom: document.querySelector('.idle-screen').style.zoom,
+        innerWidth,
+        height: document.querySelector('.idle-clock-row').getBoundingClientRect().height,
+        gap: capTop - baseline(document.querySelector('.idle-clock')),
+      }
     })()`)
+    // Read at the appliance's size, or the two figures below are the fit zoom's: at 1280×800 the row is a smaller 138.67 and the gap 2.59 (#537).
+    expect({ zoom: row.zoom, innerWidth: row.innerWidth }).toEqual({ zoom: '', innerWidth: 1920 })
     expect(row.height).toBeLessThanOrEqual(209)
     expect(row.gap).toBeGreaterThanOrEqual(8)
   })
@@ -465,6 +472,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(geometry.smallestText, `${name} ${scheme}`).toBeGreaterThanOrEqual(16)
     // The colour floor (#437), read in dark, where the shot leaves the screen.
     expect(await harness.dashboardEval<string[]>(colourFloor(true)), `${name} ${scheme}`).toEqual([])
+  }
+
+  /**
+   * Back to the appliance's size, with the screen refitted to it: useFitZoom refits a moment after the resize, so a read
+   * straight after the override still gets the last size's zoom (#537).
+   */
+  async function fullSize(): Promise<void> {
+    await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`innerWidth === 1920 && document.querySelector('.idle-screen').style.zoom === ''`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
   }
 
   async function shoot(name: string, scheme: 'dark' | 'light' = 'dark', size = { width: 1920, height: 1080 }): Promise<void> {
