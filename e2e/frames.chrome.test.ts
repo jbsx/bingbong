@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
-import { createCdpBrowserController, type PageFrame } from '../src/main/browser/createCdpBrowserController.ts'
+import { createCdpBrowserController, FRAME_GRACE_MS, type PageFrame } from '../src/main/browser/createCdpBrowserController.ts'
 import { FRAME_PAUSE_ALL_JS } from '../src/main/browser/pageMediaScript.ts'
 import { createPaneDuck, type DuckedPane } from '../src/main/music/createPaneDuck.ts'
 import { DUCK_SHARE } from '../src/core/music/ducking.ts'
 import type { BrowserController } from '../src/core/ports/browser.ts'
+import { systemClock, type Clock } from '../src/core/ports/clock.ts'
 import type { PageSnapshot } from '../src/core/browser/snapshot.ts'
 import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrome } from './headlessChrome.ts'
 import { silentWav } from './fixtureServer.ts'
@@ -24,6 +25,16 @@ import { silentWav } from './fixtureServer.ts'
 // skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
 
 const SONG = silentWav(30)
+
+// These tests prove what a frame's answer puts on the page, not how fast it
+// came: the grace is held open, so each collect waits on the frame's answer
+// and a loaded machine cannot leave its opaque iframe in place of its refs
+// (#554). A frame that misses the grace is the unit case's, in
+// createCdpBrowserController.test.ts. A frame that never answers times the test out.
+const frameAnswersDecide: Clock = {
+  now: systemClock.now,
+  setTimer: (ms, fn) => (ms === FRAME_GRACE_MS ? () => {} : systemClock.setTimer(ms, fn)),
+}
 
 interface EvaluateReply {
   readonly result?: { readonly value?: unknown }
@@ -95,6 +106,7 @@ describe.skipIf(!canDriveChrome)('a cross-origin frame in a real Chrome (#377)',
       },
       collectScript: COLLECT_PAGE_SCRIPT,
       frames: { list: () => (frameSession === null ? [] : [frame]) },
+      clock: frameAnswersDecide,
     })
   }, 60_000)
 
