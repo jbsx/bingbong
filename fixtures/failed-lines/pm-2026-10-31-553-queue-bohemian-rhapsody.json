@@ -1,0 +1,13 @@
+{
+  "turnId": "pm-2026-10-31-553-queue-bohemian-rhapsody",
+  "transcript": "queue queen bohemian rhapsody",
+  "at": 1793464040000,
+  "source": "typed",
+  "stage": "player",
+  "happened": "pnpm gates run 2 at ef5d9839, the same launch as `queue daft punk around the world`: printed `no results data` and said \"YouTube didn't show its results.\" The same cause: the parser did not read the `yt-initial-data` element",
+  "meant": "The song joins the queue with the song playing left alone: `queued: id=… position=1`, whichever layout the results page came in",
+  "log": "music-gate-red.log (job c1dd51a3, copy of /tmp/bingbong-gates-pec3rH/music.log)",
+  "claimedBy": "#553",
+  "fixedBy": "580fa765",
+  "case": "src/core/music/youtubeSearch.test.ts: reads the results a page carries in its data element (#553)"
+}
