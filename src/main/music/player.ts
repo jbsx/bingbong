@@ -411,10 +411,10 @@ const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 /** The song is in its end's lead (END_LEAD_S): the end rule's to pause, never a resume's. */
 const atEnd = (status: Pick<WatchStatus, 'elapsed' | 'duration'>): boolean => status.duration !== null && status.elapsed >= status.duration - END_LEAD_S
 
-/** An Answer for a song the audio road could not play (#502): "Playing “X” on its watch page." */
 /** An ad in an element, as its read gives it (#497). */
 const adShowing = (read: Pick<StartRead, 'time' | 'duration' | 'skippable'>): AdShowing => ({ elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration), skippable: read.skippable })
 
+/** An Answer for a song the audio road could not play (#502): "Playing “X” on its watch page." */
 const onItsWatchPage = (answer: string): string => `${answer.replace(/\.$/, '')} on its watch page.`
 
 const NONE_HELD: HeldResumed = { held: 0, played: 0 }
@@ -1052,7 +1052,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (last !== null && last.failed && road === 'audio') return decided({ video: song.id, started: false, pressed, reopened, refused: last.refused, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       // An ad in the element, by the engine's own fact (#497): its time is the ad's, never the song's start. While it plays the
       // bound holds — no press, no reopen — and Now Playing counts it off the element; the line waits through it, narrated.
-      // A guess (#497 F2, the gate cannot force an ad): the line runs through the whole ad and says Playing once the song plays.
+      // A guess (#497 F2, the gate cannot force an ad): the line runs through the whole ad, up to its bound (#549), and says Playing once the song plays.
       // The kiosk's `media-start` records with `ad` settle it; saying "An ad first" at once instead is one line here.
       if (last !== null && last.ad) {
         // A pod of ads ("Sponsored 1 of 2") may drop the marker for a read between them: the hold runs on from the first.
@@ -1061,6 +1061,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         showAd(song, last)
         // An ad's moving time renews the bound below, so this road has its own (#549). The song is not given up on: it is left to play once the ad ends.
         if (adMs(read)! >= AD_START_MS) {
+          // The later line that overtook this one during the read owns the song and the pane.
+          if (!current()) return 'superseded'
           leftOnAd = song.id
           return decided({ video: song.id, started: false, pressed, reopened, refused: null, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read), onAd: adShowing(last) })
         }
@@ -1629,16 +1631,28 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /**
-   * The ad a line ended on (#549) is over and the song stands paused: pressed
-   * once, as its start would have, unless the person paused it meanwhile. True
-   * when it plays.
+   * The ad a line ended on (#549) is over and the song stands paused: pressed,
+   * as its start would have, unless the person paused it meanwhile (the Queue
+   * says so; `ownPause` may be left from the song before). A pod's next ad may
+   * follow this read, so it is watched until the song has played a start's
+   * worth; a press that does not take holds it paused, so the card says so and
+   * `resume` presses it. True when it plays.
    */
   async function pressLeftOnAd(song: Song, status: WatchStatus): Promise<boolean> {
     if (leftOnAd !== song.id) return false
-    leftOnAd = null
-    if (!status.paused || ownPause || state.paused) return false
+    if (state.paused) {
+      leftOnAd = null
+      return false
+    }
+    if (!status.paused) {
+      if (status.elapsed >= PLAYED_S) leftOnAd = null
+      return false
+    }
     const element = await control({ op: 'play' })
-    return element !== null && element.found && !element.paused
+    if (element !== null && element.found && !element.paused) return true
+    leftOnAd = null
+    holdUnstarted()
+    return false
   }
 
   /**

@@ -127,6 +127,7 @@ describe('songs by road (#502)', () => {
       lookupP95: 5_100,
       remembered: 0,
       rememberedRefused: 0,
+      onAd: 0,
       visionos: 0,
       defaultClients: 0,
       firstFailed: 0,

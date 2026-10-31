@@ -1472,9 +1472,61 @@ describe('a start held on an ad has a total bound (#549): the line ends at 120 s
     await player.check()
     expect(presses(youtube)).toBe(1)
     expect(player.nowPlaying()).toMatchObject({ paused: false })
+    // Played a start's worth, the watch is over: a pause from here is no business of the ad's.
+    youtube.element = { ...youtube.element, paused: false, currentTime: 2 }
+    await player.check()
     youtube.element = { ...youtube.element, paused: true, currentTime: 40 }
     await player.check()
     expect(presses(youtube)).toBe(1)
+  })
+
+  it('a pod\'s gap on the poll spends nothing: the song left paused by the last ad is still pressed', async () => {
+    const { youtube, player } = clocked()
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    // The marker off for a read between two ads, unpaused.
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 30, paused: false }
+    await player.check()
+    expect(presses(youtube)).toBe(0)
+    youtube.adShowing = true
+    youtube.element = { ...youtube.element, currentTime: 10, duration: 30 }
+    await player.check()
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 180, paused: true }
+    await player.check()
+    expect(presses(youtube)).toBe(1)
+  })
+
+  it('a pause left over from the song before does not stop the press', async () => {
+    const { youtube, player } = clocked()
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    await player.perform({ kind: 'pause' }, null, () => true)
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 180, paused: true }
+    await player.check()
+    expect(presses(youtube)).toBe(1)
+  })
+
+  it('a press that does not take holds the song paused, so the card says so', async () => {
+    const { youtube, player } = clocked()
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 180, paused: true }
+    youtube.starts = 'refuses'
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ paused: true })
+  })
+
+  it('a line overtaken during the read at the bound answers nothing', async () => {
+    const { youtube, player, starts } = clocked()
+    youtube.preRollS = 300
+    const live = (): boolean => !(youtube.adShowing && youtube.element.currentTime >= 120)
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', live)).toMatchObject({ superseded: true, answer: '' })
+    expect(starts).toEqual([])
   })
 
   it('a song the person paused over the ad stays paused when the ad ends', async () => {

@@ -178,6 +178,8 @@ export interface SongsReport {
   /** Starts on a remembered address (#516), and those it did not play. */
   remembered: number
   rememberedRefused: number
+  /** Starts whose line ended still on an ad (#549): not yet played, and not refused or unstarted either. */
+  onAd: number
   /** Starts by the client that answered their lookup (#516), and how many of them the first ask failed: a stream that would not start and its fallback are one lookup and two starts. */
   visionos: number
   defaultClients: number
@@ -224,7 +226,7 @@ export function buildAppReport(records: readonly PerfSpanRecord[]): AppReport {
       plays.push(detail as unknown as PlaybackRecord)
     } else if (record.stage === 'media-start') {
       const asked = detail.asked !== null && typeof detail.asked === 'object' ? (detail.asked as { client?: unknown; failedFirst?: unknown }) : null
-      starts.push({ road: detail.road === 'audio' ? 'audio' : 'page', started: detail.started === true, ms: record.durMs, lookup: typeof detail.lookup === 'number' ? detail.lookup : null, fallback: detail.fallback === true, remembered: detail.remembered === true, client: typeof asked?.client === 'string' ? asked.client : null, firstFailed: asked?.failedFirst != null })
+      starts.push({ road: detail.road === 'audio' ? 'audio' : 'page', started: detail.started === true, ms: record.durMs, lookup: typeof detail.lookup === 'number' ? detail.lookup : null, fallback: detail.fallback === true, remembered: detail.remembered === true, onAd: detail.onAd != null, client: typeof asked?.client === 'string' ? asked.client : null, firstFailed: asked?.failedFirst != null })
     }
   }
   return { runs: [...runs.values()], cpu: cpuReport(totals, byType, cpuCounts.size === 1 ? [...cpuCounts][0] : null), playback: playbackReport(plays), songs: songsReport(starts), lifecycle: buildLifecycleReport(records) }
@@ -237,6 +239,7 @@ interface SongStart {
   lookup: number | null
   fallback: boolean
   remembered: boolean
+  onAd: boolean
   client: string | null
   firstFailed: boolean
 }
@@ -252,7 +255,7 @@ function songsReport(starts: readonly SongStart[]): SongsReport | null {
   }
   const lookups = starts.flatMap((start) => (start.lookup === null || start.remembered ? [] : [start.lookup]))
   const remembered = starts.filter((start) => start.remembered)
-  return { page: onRoad('page'), audio: onRoad('audio'), lookupP50: percentileOf(lookups, 50), lookupP95: percentileOf(lookups, 95), remembered: remembered.length, rememberedRefused: remembered.filter((start) => !start.started).length, visionos: starts.filter((start) => start.client === 'visionos').length, defaultClients: starts.filter((start) => start.client === 'default').length, firstFailed: starts.filter((start) => start.firstFailed).length, fallbacks: starts.filter((start) => start.road === 'page' && start.fallback).length }
+  return { page: onRoad('page'), audio: onRoad('audio'), lookupP50: percentileOf(lookups, 50), lookupP95: percentileOf(lookups, 95), remembered: remembered.length, rememberedRefused: remembered.filter((start) => !start.started && !start.onAd).length, onAd: starts.filter((start) => start.onAd).length, visionos: starts.filter((start) => start.client === 'visionos').length, defaultClients: starts.filter((start) => start.client === 'default').length, firstFailed: starts.filter((start) => start.firstFailed).length, fallbacks: starts.filter((start) => start.road === 'page' && start.fallback).length }
 }
 
 function formatRoadStarts(name: string, road: RoadStarts): string {
@@ -323,7 +326,7 @@ export function formatAppReport(report: AppReport): string[] {
     const lookup = s.lookupP50 === null || s.lookupP95 === null ? '' : ` | lookup p50 ${formatMs(s.lookupP50)} p95 ${formatMs(s.lookupP95)}`
     const remembered = s.remembered === 0 ? '' : ` | remembered ${s.remembered} (${s.rememberedRefused} refused)`
     const clients = s.visionos + s.defaultClients === 0 ? '' : ` | answered by visionos ${s.visionos}, default ${s.defaultClients} (first ask failed ${s.firstFailed})`
-    lines.push(`songs by road: ${formatRoadStarts('page', s.page)} | ${formatRoadStarts('audio', s.audio)}${lookup}${remembered}${clients} | fell back to the page ${s.fallbacks}`)
+    lines.push(`songs by road: ${formatRoadStarts('page', s.page)} | ${formatRoadStarts('audio', s.audio)}${lookup}${remembered}${clients} | fell back to the page ${s.fallbacks}${s.onAd === 0 ? '' : ` | line ended on an ad ${s.onAd}`}`)
   }
   lines.push(...formatLifecycleReport(report.lifecycle))
   return lines
