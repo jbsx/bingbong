@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
@@ -55,7 +55,7 @@ describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
       wakeFromBootIdle: false,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song')) },
+      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav'), ...decisionScript(readingOf('play fixture song')) },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
@@ -70,6 +70,8 @@ describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
 
   it('a song playing under the Idle Screen', async () => {
     await cli(harness, 'play fixture song', /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
+    // The fixture's song runs 60 s and the samples end 72 s on, so it loops: the numbers must be a song's cost to the last second.
+    await cli(harness, 'loop', /^loop: /)
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card--playing')`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 250 })
     // Past the Task's park and Chromium's ten seconds before a hidden page's video stops decoding. The first sample still holds
     // the boot's own work on a constrained CPU (17 % of a core in the browser process on 2026-10-25), so it is kept apart.
@@ -77,5 +79,6 @@ describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
     await sample('boot tail')
     await sample('song under the Idle Screen')
     await sample('song under the Idle Screen, again')
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card--playing')`)).toBe(true)
   }, 240_000)
 })
