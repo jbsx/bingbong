@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GATES, gateLine, gateVerdict, type VitestReport } from './gates.ts'
+import { GATES, gateEnv, gateLine, gateVerdict, type VitestReport } from './gates.ts'
 
 const passed = { status: 'passed', fullName: 'the gate works', failureMessages: [] }
 const skipped = { status: 'skipped', fullName: 'the gate sat out', failureMessages: [] }
@@ -28,8 +28,15 @@ describe('gateVerdict', () => {
     expect(gateVerdict(report(passed, failed), { code: 1, timedOut: false })).toEqual({ green: false, passed: 1, failed: 1, skipped: 0, why: 'the gate broke: Error: expected 1 to be 2' })
   })
 
-  it('names a hook that failed before any test could, which counts no test as failed', () => {
-    const verdict = gateVerdict({ testResults: [{ message: 'Error: Xvfb exited with 1\n  at start', assertionResults: [skipped] }] }, { code: 1, timedOut: false })
+  it('names a file that failed by its message', () => {
+    const verdict = gateVerdict({ testResults: [{ message: 'Error: cannot import\n  at start', assertionResults: [] }] }, { code: 1, timedOut: false })
+    expect(verdict).toEqual({ green: false, passed: 0, failed: 0, skipped: 0, why: 'Error: cannot import' })
+  })
+
+  it('names a describe-level hook that failed from the log, since the report counts its tests as skipped and holds no error', () => {
+    // As vitest 4 prints it, colours and all.
+    const log = '\n RUN  v4\n\n\u001b[31m FAIL \u001b[39m e2e/music.e2e.test.ts > the Player\n\u001b[31mError: Xvfb exited with 1\u001b[39m\n ❯ e2e/music.e2e.test.ts:5:11\n'
+    const verdict = gateVerdict({ testResults: [{ message: '', assertionResults: [skipped] }] }, { code: 1, timedOut: false }, log)
     expect(verdict).toEqual({ green: false, passed: 0, failed: 0, skipped: 1, why: 'Error: Xvfb exited with 1' })
   })
 
@@ -60,8 +67,31 @@ describe('gateLine', () => {
   })
 })
 
+describe('gateEnv', () => {
+  const youtube = GATES.find((gate) => gate.name === 'youtube')!
+  const idleCpu = GATES.find((gate) => gate.name === 'idleCpu')!
+
+  it('gives a hermetic gate no live variable the caller left set, so no-network.sh still cuts its route', () => {
+    const env = gateEnv(idleCpu, '/tmp/out', { PATH: '/bin', BINGBONG_YOUTUBE_E2E: '1', BINGBONG_PLAY_TIMING: '/x', BINGBONG_APPLIANCE_LIVE: '1', BINGBONG_MEDIA_OPS_LIVE: '1', BINGBONG_APPLIANCE_SPEED: '1' })
+    expect(env).toEqual({ PATH: '/bin', BINGBONG_IDLE_CPU: '/tmp/out/idleCpu.json' })
+  })
+
+  it('leaves out what would change what a gate measures', () => {
+    const env = gateEnv(idleCpu, '/tmp/out', { BINGBONG_PLAY_TIMING_ADBLOCK: 'real', BINGBONG_EAR_PULSE_SERVER: '/s', BINGBONG_EAR_PULSE_PID: '1', BINGBONG_EAR_PULSE_MIC: '1' })
+    expect(env).toEqual({ BINGBONG_IDLE_CPU: '/tmp/out/idleCpu.json' })
+  })
+
+  it('switches a live gate on with its own variable', () => {
+    expect(gateEnv(youtube, '/tmp/out', {}).BINGBONG_YOUTUBE_E2E).toBe('1')
+  })
+
+  it('keeps the owner\'s word that this machine runs with the network', () => {
+    expect(gateEnv(idleCpu, '/tmp/out', { BINGBONG_E2E_NET: '1' }).BINGBONG_E2E_NET).toBe('1')
+  })
+})
+
 describe('GATES', () => {
-  it('holds every unpaid opt-in gate the issue names, once', () => {
+  it('holds the unpaid opt-in gates the issue names, once', () => {
     expect(GATES.map((gate) => gate.name)).toEqual(['idleCpu', 'paneTiming', 'earCapture', 'youtube', 'music', 'playTiming', 'speechEcho'])
   })
 
