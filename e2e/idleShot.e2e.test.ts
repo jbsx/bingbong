@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
+import { startApplianceScreen, type ApplianceScreen } from './applianceScreen'
 import { REST_HINT } from '../src/core/voice/voiceHint'
 import { cli } from './cliSupport'
 import { colourFloor } from './colourFloor'
@@ -12,22 +13,25 @@ import { startUsageStandIn, type UsageStandIn, PROVIDERS } from './usageStandIn'
 import { waitFor } from './waitFor'
 import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile } from './weighIns'
 
-// The Idle Screen's screenshot review (`pnpm shot:idle`, #360): the screen at
-// the appliance's 1920×1080 in F1 Headline's three Columns, every card
-// holding sample data — London's weather fulfilled over CDP (the renderer
-// fetches Open-Meteo itself), a stand-in usage dashboard with
-// BINGBONG_IDLE_SHOT_PROVIDERS providers (default 3), the Top Repos seeded as
-// repos.json, two People's Weigh-ins, a Last Page, and the Calendar's
-// stand-in source (BINGBONG_CALENDAR_FIXTURE) empty until a state fills it.
-// With BINGBONG_IDLE_SHOT_MUSIC=1 a song plays from the YouTube stand-in so
-// Now Playing takes its card over the AI Usage, then a Timer runs beside the clock. Each
-// state is shot into BINGBONG_IDLE_SHOT_DIR (default a temp folder,
-// printed) and held to the screen's rules: nothing overflows, no text under
-// 16 px, each card inside its home and each home inside its Column. The
-// states: the default in dark and light; the Calendar with events; a
-// ringing Timer; the weather unset; the Weigh-in pop-up live and settled;
-// each card hidden in turn; one Person; and no Weigh-ins. Gated:
-// BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
+// The Idle Screen's screenshot review (#360): the screen at the appliance's
+// 1920×1080 in F1 Headline's three Columns, every card holding sample data —
+// London's weather fulfilled over CDP (the renderer fetches Open-Meteo
+// itself), a stand-in usage dashboard with BINGBONG_IDLE_SHOT_PROVIDERS
+// providers (default 3), the Top Repos seeded as repos.json, two People's
+// Weigh-ins, a Last Page, and the Calendar's stand-in source
+// (BINGBONG_CALENDAR_FIXTURE) empty until a state fills it. It runs twice: as
+// it stands, and with a song playing from the YouTube stand-in so Now Playing
+// takes its card over the AI Usage, then a Timer runs beside the clock. Each
+// state is shot into BINGBONG_IDLE_SHOT_DIR (default a temp folder, printed;
+// the song's arm in `music` under it) and held to the screen's rules: nothing
+// overflows, no text under 16 px, each card inside its home and each home
+// inside its Column. The states: the default in dark and light; the Calendar
+// with events; a ringing Timer; the weather unset; the Weigh-in pop-up live
+// and settled; each card hidden in turn; one Person; and no Weigh-ins. It runs
+// in every `pnpm test:e2e` — the owner's ruling (2026-10-20): the e2e is the
+// source of truth, no screenshot is reviewed by hand — on an X screen of its
+// own at the appliance's size, since the suite's is a desk's; `pnpm shot:idle`
+// runs it alone, the way to keep the PNGs.
 
 /** The Top Repos a previous run read: the longest name and summary of the month's list among them. */
 function topRepos() {
@@ -124,7 +128,21 @@ interface Geometry {
   rings: number
 }
 
-describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review (#360)', () => {
+let screen: ApplianceScreen | null = null
+
+beforeAll(async () => {
+  screen = await startApplianceScreen()
+})
+
+afterAll(() => {
+  screen?.xvfb.kill()
+  screen = null
+})
+
+describe.each([
+  { arm: 'as it stands', music: false },
+  { arm: 'with a song playing', music: true },
+])('idle screen screenshot review (#360), $arm', ({ music }) => {
   let harness: Harness
   let usage: UsageStandIn | undefined
   let userDataDir: string
@@ -132,8 +150,9 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
   let fixture: FixtureServer | undefined
   const weatherCity = 'London'
   const detectedCity = 'Leeds'
-  const music = process.env.BINGBONG_IDLE_SHOT_MUSIC === '1'
-  const outDir = process.env.BINGBONG_IDLE_SHOT_DIR ?? join(tmpdir(), 'bingbong-idle-shot')
+  const shotsDir = process.env.BINGBONG_IDLE_SHOT_DIR ?? join(tmpdir(), 'bingbong-idle-shot')
+  // Most states shoot under the same name in both arms.
+  const outDir = music ? join(shotsDir, 'music') : shotsDir
   const count = Math.min(PROVIDERS.length, Math.max(1, Number(process.env.BINGBONG_IDLE_SHOT_PROVIDERS ?? 3)))
   const calendarFile = (): string => join(userDataDir, 'calendar.json')
 
@@ -150,7 +169,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'http://127.0.0.1:40415/lighthouse', title: 'The lighthouse', at: 1 })}\n`, 'utf8')
     await writeFile(calendarFile(), JSON.stringify({ events: [] }), 'utf8')
     // A wake ear that never fires, so the Voice Prompt waits for "Bing Bong" as the appliance does.
-    const ear = { BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile() }
+    const ear = { DISPLAY: screen?.display, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile() }
     if (music) {
       fixture = await startFixtureServer()
       harness = await startHarness({
@@ -265,7 +284,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await reenterIdle()
   })
 
-  it.runIf(music)('runs a Timer beside the clock, with Up Next and the Last Page, Now Playing stepped down to its smaller card over the rings and a short chart', async () => {
+  if (music) it('runs a Timer beside the clock, with Up Next and the Last Page, Now Playing stepped down to its smaller card over the rings and a short chart', async () => {
     await writeFile(calendarFile(), JSON.stringify(calendarEvents()), 'utf8')
     await harness.dashboardEval(`window.bingbong.assistant.submit('timer 25 minutes')`)
     await reenterIdle()

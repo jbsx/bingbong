@@ -41,7 +41,7 @@
     "wake:sweep": "uv run scripts/wake-sweep/wake_sweep.py",
     "wake:cpu": "node scripts/wake-cpu.ts",
     "shot": "pnpm build && xvfb-run -a -s '-screen 0 1920x1200x24' node scripts/screenshot.ts",
-    "shot:idle": "pnpm build && BINGBONG_IDLE_SHOT=1 e2e/bin/no-network.sh xvfb-run -a -s '-screen 0 1920x1080x24' vitest run --config vitest.e2e.config.ts e2e/idleShot.e2e.test.ts",
+    "shot:idle": "pnpm build && e2e/bin/no-network.sh xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.e2e.config.ts e2e/idleShot.e2e.test.ts",
     "shot:states": "pnpm build && e2e/bin/no-network.sh xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.e2e.config.ts e2e/stateShots.e2e.test.ts"
   },
   "dependencies": {

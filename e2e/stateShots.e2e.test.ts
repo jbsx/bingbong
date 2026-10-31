@@ -1,10 +1,11 @@
-import { execSync, spawn, type ChildProcess } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EAR_FAILED, EAR_FAILED_LINE, EAR_FAILED_MORE, REST_HINT } from '../src/core/voice/voiceHint'
+import { APPLIANCE_HEIGHT, APPLIANCE_WIDTH, startApplianceScreen, type ApplianceScreen } from './applianceScreen'
 import { colourFloor } from './colourFloor'
 import { startFixtureServer, YOUTUBE_FIXTURE_NOTHING, type FixtureServer } from './fixtureServer'
 import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
@@ -37,22 +38,8 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // the suite's is a desk's; `pnpm shot:states` runs it alone.
 
 const OUT = process.env.BINGBONG_STATE_SHOT_DIR ?? join(tmpdir(), 'bingbong-state-shots')
-const WIDTH = 1920
-const HEIGHT = 1080
 
-/** The appliance's screen: an Xvfb of its own, whatever size the suite's display is. */
-let screen: { display: string; xvfb: ChildProcess } | null = null
-
-async function startScreen(): Promise<{ display: string; xvfb: ChildProcess }> {
-  // -displayfd: the server picks a free display and writes its number to stdout.
-  const xvfb = spawn('Xvfb', ['-displayfd', '1', '-screen', '0', `${WIDTH}x${HEIGHT}x24`, '-nolisten', 'tcp'], { stdio: ['ignore', 'pipe', 'ignore'] })
-  const number = await new Promise<string>((resolve, reject) => {
-    xvfb.stdout?.once('data', (chunk: Buffer) => resolve(chunk.toString().trim()))
-    xvfb.once('error', reject)
-    xvfb.once('exit', (code) => reject(new Error(`Xvfb exited with ${String(code)}`)))
-  })
-  return { display: `:${number}`, xvfb }
-}
+let screen: ApplianceScreen | null = null
 
 /** A command run against the appliance's screen. */
 function onScreen(command: string): void {
@@ -262,7 +249,7 @@ interface Size {
   width: number
   height: number
 }
-const APPLIANCE: Size = { width: WIDTH, height: HEIGHT }
+const APPLIANCE: Size = { width: APPLIANCE_WIDTH, height: APPLIANCE_HEIGHT }
 
 async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = FAKE_MIC, size: Size = APPLIANCE): Promise<Run> {
   const fixture = await startFixtureServer()
@@ -942,7 +929,7 @@ const EAR_WAITS_ENV: Record<string, string> = {
 
 describe('the states screenshot review (#359)', () => {
   beforeAll(async () => {
-    screen = await startScreen()
+    screen = await startApplianceScreen()
   })
 
   afterAll(() => {
