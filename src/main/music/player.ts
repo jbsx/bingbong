@@ -2,6 +2,7 @@ import type { BrowserController, ConsentCleared, ConsentDrawn } from '../../core
 import type { MusicAction } from '../../core/music/musicWords'
 import type { PickedSong } from '../../core/command/jevReading'
 import type { PickSource } from '../../core/command/decisionRecord'
+import { cantBePlayedLine, quoted } from '../../core/music/songLines'
 import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
 import { QUEUED_SHOWN, adWait, type AdShowing, type NowPlaying } from '../../core/music/nowPlaying'
 import { isSeek, type MediaOpAction } from '../../core/browser/mediaOp'
@@ -245,6 +246,8 @@ export interface Player {
   onChange(listener: (nowPlaying: NowPlaying | null) => void): () => void
   /** Hears a queued video opening on the watch page in the background (#502), with no Command to show it: the dashboard is to wake over it. The returned function stops it. */
   onShown(listener: () => void): () => void
+  /** Hears a queued song that could not open in the background (#538), passed over with no Command to say so: once per song, on either road, whether or not the queue goes on. The returned function stops it. */
+  onPassedOver(listener: (song: Song) => void): () => void
   /** Ducks the music (on) or puts its volume back (off) (#344). Resolves when the element has it. */
   duck(on: boolean): Promise<void>
   /**
@@ -391,8 +394,6 @@ const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 /** The song is in its end's lead (END_LEAD_S): the end rule's to pause, never a resume's. */
 const atEnd = (status: Pick<WatchStatus, 'elapsed' | 'duration'>): boolean => status.duration !== null && status.elapsed >= status.duration - END_LEAD_S
 
-const quoted = (title: string): string => `“${title}”`
-
 /** An Answer for a song the audio road could not play (#502): "Playing “X” on its watch page." */
 const onItsWatchPage = (answer: string): string => `${answer.replace(/\.$/, '')} on its watch page.`
 
@@ -446,6 +447,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   browser.onConsentDrawn?.((drawn) => consentDrawn(drawn))
   const listeners = new Set<(nowPlaying: NowPlaying | null) => void>()
   const shownListeners = new Set<() => void>()
+  const passedOverListeners = new Set<(song: Song) => void>()
   const waitListeners = new Set<(wait: PlayerWait) => void>()
   const cardListeners = new Set<(wait: SongWait | null) => void>()
   /** The wait the Wait Card shows (#507), and the open it is for: only that open ends it — never one a later Command overtook. */
@@ -943,26 +945,31 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /** The watch page opened for a song the audio road could not play (#502, owner's ruling 3): told, and its start marked so. */
-  function fallBack(song: Song, current: () => boolean): void {
+  function fallBack(song: Song, current: () => boolean, background = false): void {
     fellBack = song.id
-    waitFor('fallback', song, current, false)
+    waitFor('fallback', song, current, background)
   }
 
   /**
    * Open a song on the road it asks for, leaving `leaving`; the queue moves
    * on to it only when it landed. A failed lookup or landing on the audio
    * road opens the watch page instead (#502, owner's ruling 3) — for a
-   * Command; in the `background`, with none waiting, the pane may hold a
-   * page of the person's own, so the song fails there and is passed over.
+   * Command; in the `background`, with none waiting, only when the pane is
+   * the Player's already: the song before it played on the watch page, and
+   * the pane is still there (#538). Otherwise it may hold a page of the
+   * person's own, so the song fails there and is passed over.
    */
   async function open(song: Song, current: () => boolean, leaving: Song | null, video = false, background = false): Promise<'opened' | 'failed' | 'superseded'> {
     const on = roadFor(video)
     fellBack = null
+    // Read before the try: a stream that will not load has moved the road by then, not the pane.
+    const fromPage = road === 'page'
     let first = await openOn(song, current, leaving, on, undefined, background)
     if (first === 'failed' && on === 'audio' && forgetRefused(song)) first = await openOn(song, current, leaving, on, undefined, background)
-    if (first !== 'failed' || on !== 'audio' || background) return first
-    fallBack(song, current)
-    return openOn(song, current, leaving, 'page')
+    if (first !== 'failed' || on !== 'audio') return first
+    if (background && !(fromPage && leaving !== null && videoIdOf(browser.state().url ?? '') === leaving.id)) return first
+    fallBack(song, current, background)
+    return openOn(song, current, leaving, 'page', undefined, background)
   }
 
   /** Open a song on this road; `at` (s), on the watch page, where it starts. */
@@ -1170,9 +1177,11 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (start !== 'superseded' && !start.started) holdUnstarted()
           return
         }
-        if (opened !== 'failed') return
+        // Overtaken, the song is no longer ours to drop or to say.
+        if (opened !== 'failed' || !current()) return
         state = dropCurrent(state)
         publish()
+        for (const listener of [...passedOverListeners]) listener(next)
       }
     })
     // The queued song sounds, or none will (#507): the Wait Card closes.
@@ -1183,7 +1192,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   function failedToOpen(song: Song): PlayerOutcome {
     state = dropCurrent(state)
     if (state.upNext.length > 0) advanceInBackground()
-    return { result: `not a watch page: ${watchUrl(song.id)}`, answer: `${quoted(song.title)} can't be played.`, failure: true, video: song.id }
+    return { result: `not a watch page: ${watchUrl(song.id)}`, answer: cantBePlayedLine(song.title), failure: true, video: song.id }
   }
 
   /**
@@ -1720,6 +1729,10 @@ export function createPlayer(deps: PlayerDeps): Player {
     onShown(listener) {
       shownListeners.add(listener)
       return () => shownListeners.delete(listener)
+    },
+    onPassedOver(listener) {
+      passedOverListeners.add(listener)
+      return () => passedOverListeners.delete(listener)
     },
     duck(on) {
       ducking = ducking.then(() => setDuck(on)).catch((error: unknown) => reportFault('music.player.duck', error))

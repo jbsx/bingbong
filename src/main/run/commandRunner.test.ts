@@ -21,6 +21,7 @@ import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner
 import type { AppChange, AppState } from '../../core/command/appOp'
 import type { UpdateCheck } from '../../core/update/updateCheck'
 import { defaultSettings } from '../../core/settings/settings'
+import { EMPTY_QUEUE } from '../../core/music/queue'
 import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, scriptedAudio, videoItem } from '../music/scriptedYouTube'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
@@ -848,6 +849,30 @@ describe('a Site Question (#423)', () => {
     siteQuestions.told('Saved.')
     expect(speech.spoken.map((line) => line.text)).toEqual(['The page says: Saved.'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'site_question', text: 'The page says: Saved.', alert: true }))
+  })
+
+  it('shows and says a queued song the Player passed over, in no turn, under the app\'s own turn id (#538)', () => {
+    const speech = new FakeSpeech()
+    let passOver = (_song: { id: string; title: string }): void => {}
+    const { events } = harness({
+      speech,
+      player: () => ({
+        perform: async () => ({ result: '', answer: '' }),
+        pauseAll: async () => false,
+        queue: () => EMPTY_QUEUE,
+        picked: () => null,
+        onPassedOver: (listener) => {
+          passOver = listener
+          return () => {}
+        },
+      }),
+    })
+    passOver({ id: 'bbbbbbbbbbb', title: 'Song B' })
+    const line = "“Song B” can't be played. Say play and its name to open its page."
+    expect(speech.spoken).toEqual([{ text: line, turnId: APP_TURN_ID }])
+    const told = events.filter((event) => event.type === 'speak')
+    expect(told).toEqual([expect.objectContaining({ text: line, failure: true })])
+    expect(told[0]).not.toHaveProperty('turnId')
   })
 
   // A line said with no turn id leaves no `tts-first-sound` or `tts-playback` span (#542): `pnpm speech:echo` times the alert by them.

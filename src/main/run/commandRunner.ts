@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { passedOverLine } from '../../core/music/songLines'
 import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import type { ShelfFile } from '../../core/shelf/shelf'
@@ -305,7 +306,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad' | 'nowPlaying' | 'onChange' | 'seekOverAd' | 'onWait'>>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue' | 'picked'> & Partial<Pick<Player, 'audioRoad' | 'nowPlaying' | 'onChange' | 'seekOverAd' | 'onWait' | 'onPassedOver'>>
   /** What the appliance knows (#402): each fact is an option on the card, and `say` speaks the one chosen; absent offers none. */
   facts?(): ApplianceFacts
   /** The app itself (#420, ADR 0091): its panel, views and settings, each op an option on the card; absent offers none. */
@@ -2423,6 +2424,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const said = alertLine(event.text)
       if (said !== null) tellSite(said, true)
     }
+  })
+
+  // A queued song that could not open (#538): shown and said outside any turn, as the page's own words are, since no Command asked for it.
+  deps.player?.onPassedOver?.((song) => {
+    const text = passedOverLine(song.title)
+    publish({ type: 'speak', text, failure: true, at: at() })
+    void deps.speech?.speak(text, { turnId: APP_TURN_ID }).catch((error: unknown) => reportFault('run.commandRunner.passedOverSpeak', error))
   })
 
   /**

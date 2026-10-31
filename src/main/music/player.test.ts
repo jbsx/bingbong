@@ -2110,6 +2110,155 @@ describe('the audio road', () => {
     expect(player.road()).toBe('audio')
   })
 
+  describe('a queued song the road refuses, heard at the end of the song before it (#538)', () => {
+    /** Song A on the watch page, the pane the Player's own by then; song B queued with its lookup refused. */
+    async function onThePage() {
+      const road = withAudio()
+      const shown: number[] = []
+      road.player.onShown(() => shown.push(1))
+      const passedOver: string[] = []
+      road.player.onPassedOver((song) => passedOver.push(song.id))
+      const cards: string[] = []
+      road.player.onSongWait((wait) => {
+        if (wait !== null) cards.push(wait.kind)
+      })
+      await road.perform({ kind: 'search', place: 'now', video: true }, 'song a')
+      await road.perform({ kind: 'search', place: 'end' }, 'song b')
+      road.audio.fails.add('bbbbbbbbbbb')
+      road.waits.length = 0
+      road.browser.navigations.length = 0
+      return { ...road, shown, passedOver, cards }
+    }
+
+    it('on the page road its watch page opens, since the pane is the Player\'s already: unshown, and nothing said', async () => {
+      const { browser, youtube, player, shown, passedOver, starts } = await onThePage()
+      youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(browser.navigations.at(-1)).toBe(`${WATCH}bbbbbbbbbbb`)
+      expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+      expect(player.road()).toBe('page')
+      expect(shown).toEqual([])
+      expect(passedOver).toEqual([])
+      expect(starts.at(-1)).toMatchObject({ video: 'bbbbbbbbbbb', road: 'page', fallback: true, background: true })
+    })
+
+    it('that wait is the Wait Card\'s alone: no Command is there for the Capsule to tell', async () => {
+      const { youtube, player, waits, cards } = await onThePage()
+      youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(cards).toContain('fallback')
+      expect(waits).toEqual([])
+    })
+
+    it('on the page road, one whose watch page fails too is passed over, told once, and the queue goes on', async () => {
+      const { audio, youtube, player, perform, passedOver } = await onThePage()
+      await perform({ kind: 'search', place: 'end' }, 'song c')
+      youtube.watches.set('bbbbbbbbbbb', { title: 'Song B', fails: 'notWatch' })
+      youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(passedOver).toEqual(['bbbbbbbbbbb'])
+      expect(player.queue().current?.id).toBe('ccccccccccc')
+      // Its own lookup answers, so it goes back to the road.
+      expect(audio.loaded.at(-1)?.id).toBe('ccccccccccc')
+      expect(player.road()).toBe('audio')
+    })
+
+    it('a stream that will not load after a song on the page still falls back: the road has moved, the pane has not', async () => {
+      const { audio, browser, youtube, player, passedOver } = await onThePage()
+      audio.fails.delete('bbbbbbbbbbb')
+      audio.surface.load = async () => {
+        throw new Error('the surface would not load it')
+      }
+      youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(browser.navigations.at(-1)).toBe(`${WATCH}bbbbbbbbbbb`)
+      expect(player.queue().current?.id).toBe('bbbbbbbbbbb')
+      expect(player.road()).toBe('page')
+      expect(passedOver).toEqual([])
+    })
+
+    it('a pane the person took during the lookup is theirs: the song is passed over and their page stays', async () => {
+      const pane = wired()
+      const audio = scriptedAudio(pane.youtube.watches)
+      let refuse = (): void => {}
+      let asked = (): void => {}
+      const lookingUp = new Promise<void>((resolve) => (asked = resolve))
+      const resolve = (): Promise<AudioStream> => {
+        asked()
+        return new Promise((_, reject) => (refuse = () => reject(new Error('refused'))))
+      }
+      const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve } })
+      const passedOver: string[] = []
+      player.onPassedOver((song) => passedOver.push(song.id))
+      await player.perform({ kind: 'search', place: 'now', video: true }, 'song a', () => true)
+      await player.perform({ kind: 'search', place: 'end' }, 'song b', () => true)
+      pane.youtube.endVideo()
+      const checked = player.check()
+      await lookingUp
+      await pane.browser.navigate('https://example.com/my-own-page')
+      refuse()
+      await checked
+      await player.settled()
+      expect(pane.browser.navigations.at(-1)).toBe('https://example.com/my-own-page')
+      expect(passedOver).toEqual(['bbbbbbbbbbb'])
+    })
+
+    it('on the audio road it is passed over and told, the queue going on, and told too with none left', async () => {
+      const { audio, browser, player, perform } = withAudio()
+      const passedOver: string[] = []
+      player.onPassedOver((song) => passedOver.push(song.id))
+      await perform({ kind: 'search', place: 'now' }, 'song a')
+      await perform({ kind: 'search', place: 'end' }, 'song b')
+      await perform({ kind: 'search', place: 'end' }, 'song c')
+      audio.fails.add('bbbbbbbbbbb')
+      audio.youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(passedOver).toEqual(['bbbbbbbbbbb'])
+      expect(player.queue().current?.id).toBe('ccccccccccc')
+      audio.fails.add('aaaaaaaaaaa')
+      await perform({ kind: 'search', place: 'end' }, 'song a')
+      audio.youtube.endVideo()
+      await player.check()
+      await player.settled()
+      expect(passedOver).toEqual(['bbbbbbbbbbb', 'aaaaaaaaaaa'])
+      expect(player.queue().current).toBeNull()
+      expect(browser.navigations).toEqual([])
+    })
+
+    it('an open a later line overtook is no pass-over: nothing is said and the line\'s song stays', async () => {
+      const pane = wired()
+      const audio = scriptedAudio(pane.youtube.watches)
+      let refuse = (): void => {}
+      let asked = (): void => {}
+      const lookingUp = new Promise<void>((resolve) => (asked = resolve))
+      const resolve = (id: string): Promise<AudioStream> => {
+        if (id !== 'bbbbbbbbbbb') return audio.resolve(id)
+        asked()
+        return new Promise((_, reject) => (refuse = () => reject(new Error('refused'))))
+      }
+      const player = createPlayer({ browser: pane.browser, fetchResults: (url) => pane.youtube.fetchResults(url), sleep: async () => {}, audio: { surface: audio.surface, resolve } })
+      const passedOver: string[] = []
+      player.onPassedOver((song) => passedOver.push(song.id))
+      const perform = (music: MusicAction, words: string): Promise<unknown> => player.perform(music, words, () => true)
+      await perform({ kind: 'search', place: 'now' }, 'song a')
+      await perform({ kind: 'search', place: 'end' }, 'song b')
+      audio.youtube.endVideo()
+      const checked = player.check()
+      await lookingUp
+      await perform({ kind: 'search', place: 'now' }, 'song c')
+      refuse()
+      await checked
+      await player.settled()
+      expect(passedOver).toEqual([])
+      expect(player.queue().current?.id).toBe('ccccccccccc')
+    })
+  })
+
   it('a song on the page, then music: the page\'s video is paused as the stream takes over', async () => {
     const { youtube, audio, player, perform } = withAudio()
     await perform({ kind: 'search', place: 'now', video: true }, 'song a')

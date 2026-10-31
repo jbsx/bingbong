@@ -337,6 +337,107 @@ describe('audio-only music e2e: a yt-dlp the app cannot find is said beside the 
   }, 90_000)
 })
 
+describe('audio-only music e2e: a queued song whose lookup is refused, heard at the end of the song before it (#538)', () => {
+  const ENDED = /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/
+  const QUEUED = /^(queued: id=|No videos|Couldn't search|error:)/
+  const SEEK = 'skip ahead 58 seconds'
+  /** What the fixture's search finds for these words: each `<queue words>` a song of its own. */
+  const SECOND = 'second song'
+  const THIRD = 'third song'
+  let harness: Harness
+  let fixture: FixtureServer
+  let userDataDir: string
+  let refuse: string
+  let spoken: string
+
+  const idleUp = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
+  const saidLines = async (): Promise<string[]> => (await readFile(spoken, 'utf8').catch(() => '')).split('\n').filter((line) => line.startsWith('piper-line ')).map((line) => line.slice('piper-line '.length))
+  const mediaStarts = async (): Promise<{ video?: string; road?: string; fallback?: boolean; background?: boolean; started?: boolean }[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('perf-')).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as { stage: string; detail?: Record<string, unknown> }).filter((record) => record.stage === 'media-start').map((record) => record.detail ?? {})
+  }
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-passed-over-'))
+    refuse = join(userDataDir, 'yt-dlp.refuse')
+    spoken = join(userDataDir, 'tts.log')
+    const voices = join(userDataDir, 'voices')
+    await mkdir(voices)
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx'), '')
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: true }))
+    fixture = await startFixtureServer()
+    harness = await startHarness({
+      userDataDir,
+      fixture,
+      launchArgs: ['--browser-cli', '--mute-audio'],
+      pipeStdio: true,
+      env: {
+        BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
+        BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav'),
+        BINGBONG_FAKE_YTDLP_FAIL: refuse,
+        BINGBONG_PIPER_VOICE_DIR: voices,
+        BINGBONG_FAKE_TTS_LOG: spoken,
+        ...decisionScript(readingOf(PLAY), readingOf(`queue ${SECOND}`), readingOf(PLAY), readingOf(`queue ${THIRD}`), readingOf(SEEK, 'media-forward', { amount: 'words' })),
+      },
+    })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close().catch(() => {})
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('on the watch page: the queued song opens there, with the Idle Screen left up and nothing said', async () => {
+    await writeFile(refuse, '')
+    // Its own lookup refused too: a `play` falls back to the watch page, so the pane is the Player's when the song ends.
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    expect(await harness.paneUrl()).toContain(`/watch?v=${YOUTUBE_FIXTURE_SONG.id}`)
+    const queued = await cli(harness, `queue ${SECOND}`, QUEUED)
+    expect(queued).toMatch(/^queued: id=\S+ position=1$/)
+    const nextId = /id=(\S+)/.exec(queued)![1]!
+    await harness.clickDashboardElement('.idle-toggle')
+    await waitFor(async () => ((await idleUp()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    const said = (await saidLines()).length
+    await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 3 })()`)
+    // With the setting off the next song plays within 3.5 s of this seek (measured on #538).
+    await waitFor(async () => {
+      const video = await harness.paneEval<{ id: string | null; playing: boolean }>(`(() => { const v = document.querySelector('#movie_player video'); return { id: new URLSearchParams(location.search).get('v'), playing: !!v && !v.paused && v.currentTime > 0 } })()`).catch(() => null)
+      return video !== null && video.id === nextId && video.playing ? true : undefined
+    }, { timeoutMs: 10_000, intervalMs: 100 })
+    const start = await waitFor(async () => (await mediaStarts()).find((each) => each.video === nextId), { timeoutMs: 10_000, intervalMs: 250 })
+    expect(start).toMatchObject({ road: 'page', fallback: true, background: true, started: true })
+    // No Command asked for it: the owner's audio-only choice holds, and the dashboard does not wake over it.
+    expect(await idleUp()).toBe(true)
+    expect((await saidLines()).slice(said)).toEqual([])
+    expect(await feedText(harness)).not.toContain(`“${SECOND}” can't be played`)
+  }, 90_000)
+
+  it('on the audio road: the pane on a page of its own stays there, and the song passed over is shown and said, once', async () => {
+    await rm(refuse, { force: true })
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    const start = await waitFor(async () => (await mediaStarts()).find((each) => each.road === 'audio' && each.started === true), { timeoutMs: 10_000, intervalMs: 250 })
+    expect(start).toMatchObject({ video: YOUTUBE_FIXTURE_SONG.id, fallback: false })
+    expect(await cli(harness, `queue ${THIRD}`, QUEUED)).toMatch(/^queued: id=\S+ position=1$/)
+    const own = fixture.url('/second')
+    expect(await cli(harness, `navigate ${own}`, /^(navigated|error)/)).toMatch(/^navigated/)
+    await writeFile(refuse, '')
+    expect(await cli(harness, SEEK, /^(forward \[\d+\]: |not a command: |error:|No response)/)).toMatch(/^forward \[\d+\]: /)
+    const sentence = `“${THIRD}” can't be played. Say play and its name to open its page.`
+    await waitFor(async () => ((await feedText(harness)).includes(sentence) ? true : undefined), { timeoutMs: 15_000, intervalMs: 250 })
+    await waitFor(async () => ((await saidLines()).includes('Say play and its name to open its page.') ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    // Longer than a repeat would take to reach the Feed and the voice.
+    await sleep(1_000)
+    expect((await saidLines()).filter((line) => line === `“${THIRD}” can't be played.`)).toHaveLength(1)
+    expect((await feedText(harness)).split(sentence)).toHaveLength(2)
+    expect(await harness.paneUrl()).toBe(own)
+  }, 90_000)
+})
+
 describe('audio-only music e2e: a refused stream gives up at once, and a repeat play runs no lookup (#516)', () => {
   let harness: Harness
   let fixture: FixtureServer
