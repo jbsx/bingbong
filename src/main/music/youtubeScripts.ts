@@ -261,6 +261,12 @@ export interface StartRead {
   readonly skippable: boolean
   /** The element gave up on its source (`error`, a 403 among them): it will not play again without a new one (#516). */
   readonly failed: boolean
+  /** The element's own `networkState` (#550): 0 empty, 1 idle, 2 loading, 3 no source. */
+  readonly networkState: number
+  /** The element has a source to load (#550): its `currentSrc` is set. */
+  readonly hasSrc: boolean
+  /** How many ranges the element has buffered (#550). */
+  readonly buffered: number
 }
 
 /**
@@ -278,7 +284,7 @@ export const START_SCRIPT = `(() => {
   if (!video) return null
   ${SKIP_FINDER}
   const ad = player.classList.contains('ad-showing')
-  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad, skippable: ad && skipButton(player) !== null, failed: video.error !== null }
+  return { paused: video.paused, ended: video.ended, ready: video.readyState, time: video.currentTime, duration: isFinite(video.duration) ? video.duration : null, refused: video.${REFUSED_MARK} || null, ad, skippable: ad && skipButton(player) !== null, failed: video.error !== null, networkState: video.networkState, hasSrc: !!video.currentSrc, buffered: video.buffered.length }
 })()`
 
 /** A duck the Player holds (#459): the volume it puts back, 0–100, and the floor's share of it. */

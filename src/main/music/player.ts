@@ -132,7 +132,7 @@ export interface PlayerStart {
   /** The press's `play()` rejection name (`NotAllowedError`, `AbortError`); null when none was refused. */
   readonly refused: string | null
   /** The element as last read (null for none): what tells a refused press from one the page paused again, and from a source it gave up on. */
-  readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time' | 'failed'> | null
+  readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time' | 'failed' | 'networkState' | 'hasSrc' | 'buffered'> | null
   /** From the landing to the start, or to giving up on it (ms). */
   readonly ms: number
   /** Where it played (#502): the watch page in the pane, or the audio road. */
@@ -187,6 +187,14 @@ export interface PlayerConsentTold extends ConsentDrawn {
   readonly road: ConsentToldRoad
   /** When the clear runs: at once, after the clear in flight, once custody settles; null for none. */
   readonly at: 'now' | 'queued' | 'withheld' | null
+}
+
+/** A song given up on that played after all (#550), as the poll read it: what the perf log's `media-late` keeps, so a mismeasured start shows itself. */
+export interface PlayerLate {
+  readonly video: string
+  /** From the give-up to the poll reading it playing. */
+  readonly ms: number
+  readonly road: Road
 }
 
 /** A seek that left the playing song paused (#505), as the poll read it: what the perf log's `media-seek` keeps. */
@@ -318,6 +326,8 @@ export interface PlayerDeps {
   onConsentTold?(told: PlayerConsentTold): void
   /** Hears every seek the poll read as having left the playing song paused (#505): the perf log's `media-seek`. */
   onSeekResume?(seek: PlayerSeekResume): void
+  /** Hears every song given up on that played after all (#550): the perf log's `media-late`. */
+  onLate?(late: PlayerLate): void
   /** Monotonic ms, for a start's duration; `performance.now()` when absent. */
   now?(): number
   /** Wall-clock ms, for when the audio road's stream is served (#502); `Date.now()` when absent. */
@@ -375,6 +385,13 @@ const SELF_START_MS = 2_500
  * records with `ad` settle it, none carrying one yet.
  */
 const AD_START_MS = 120_000
+/**
+ * How long an element still loading may take to play before its page is
+ * opened again (#550): unpaused, not errored, `readyState` 2 or under. A guess,
+ * about twice the worst kiosk read (2026-10-28/29, read began to first play:
+ * 18-25 s); the kiosk's `media-late` and `media-start` records settle it.
+ */
+const LOADING_START_MS = 45_000
 /** How long a pressed song may take to play before it is taken as unstarted: a guess, the self-start bound again; #488's perf `media-start` records settle it. */
 const PRESSED_START_MS = 2_500
 /**
@@ -515,6 +532,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   const addresses = createStreamMemory()
   /** The stream last handed to the audio road's element (#516), which plays on through the next song's lookup; what a stream's fault is about. */
   let onSurface: { id: string; remembered: boolean; refused: boolean } | null = null
+  /** The song last given up on (#550) and when, until the poll reads it playing or something else starts it: its `media-late`. */
+  let givenUp: { id: string; at: number; time: number } | null = null
   /** The queued song held unstarted with no refusal (#548): read on the poll, since a slow host may yet refuse it. */
   let heldSlow: HeldSlow | null = null
   /** The song the road could not play, opened on its watch page instead (#502); null once another opens on its own road. */
@@ -654,7 +673,11 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
   }
 
-  const control = (op: ElementOp, reach: ControlReach = 'page'): Promise<ElementState | null> => evaluate<ElementState>(controlScript(op, reach))
+  const control = (op: ElementOp, reach: ControlReach = 'page'): Promise<ElementState | null> => {
+    // A press or a restart is what started it, not the page getting there late (#550).
+    if (op.op === 'play' || op.op === 'restart') givenUp = null
+    return evaluate<ElementState>(controlScript(op, reach))
+  }
 
   /** The watch page for this song, once its player holds its video: true; 'elsewhere' off any watch page; false for any other landing. */
   async function landedOn(song: Song, current: () => boolean): Promise<boolean | 'elsewhere' | 'superseded'> {
@@ -1024,13 +1047,15 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /**
    * The element of a song just opened, read until it plays (#488): playing,
-   * by kind, is not paused, not ended, holding data (`readyState` > 2), and
-   * its time moved {@link PLAYED_S} — a moment of play that stops is no
-   * start. Not playing by its bound, it is pressed once with the element's
-   * own `play`, and read again to the same bound.
+   * by kind, is not paused, not ended, and its time moved {@link PLAYED_S} — a
+   * moment of play that stops is no start. Not playing by its bound, it is
+   * pressed once with the element's own `play`, and read again to the same
+   * bound. Still loading, on the watch page (#550), it is neither pressed nor
+   * given up on before {@link LOADING_START_MS}.
    */
   async function startOf(song: Song, current: () => boolean, background: boolean, reopened: boolean): Promise<PlayerStart | 'superseded'> {
     leftOnAd = null
+    givenUp = null
     const from = now()
     let pressed = false
     // A bound passes on the clock, or on the reads' own waits where the clock does not move (a scripted page).
@@ -1041,6 +1066,10 @@ export function createPlayer(deps: PlayerDeps): Player {
     let last: StartRead | null = null
     /** The ad that held the start (#497): when it was first read, and how long it held it (ms) once the song's own read came. */
     let ad: { at: number; read: number; ms: number | null } | null = null
+    /** Since when the song has had to load (#550): a wall cleared buys it the bound again. */
+    let loadingFrom = { at: from, read: 0 }
+    /** No load has ended unseen: the first play after one renews the bound, once. */
+    let loaded = true
     const adMs = (read: number): number | null => (ad === null ? null : (ad.ms ?? Math.round(Math.max(now() - ad.at, (read - ad.read) * START_READ_MS))))
     for (let read = 0; ; read += 1) {
       if (!current()) return 'superseded'
@@ -1077,22 +1106,37 @@ export function createPlayer(deps: PlayerDeps): Player {
         waitEnded(current)
         return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       }
+      // Time that moved since the last read is play, whatever `readyState` the read found: a slow host's sits at 2 between its segments (#550).
+      const moved = last !== null && before !== null && last.time > before.time
+      // Still loading (#550), on the watch page: unpaused, not errored, no data to play yet. A slow host's player boots for 20 s and more; a press
+      // changes nothing on an unpaused element and a reopen throws the load away, so neither comes before its bound. A stream on the audio road has no player to boot.
+      const loading = road === 'page' && last !== null && !moved && !last.ad && !last.paused && !last.ended && !last.failed && last.ready <= 2
+      const loadingOut = loading && Math.max(now() - loadingFrom.at, (read - loadingFrom.read) * START_READ_MS) >= LOADING_START_MS
+      if (loading && !loadingOut) phase = { ...phase, at: now(), read }
+      if (loading) loaded = false
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
-      const playing = last !== null && !last.ad && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
-      since = playing ? (since ?? last!.time) : null
+      const playing = last !== null && !last.ad && !last.paused && !last.ended && (moved || (before === null && last.ready > 2))
+      // A slow host's reads stall for seconds (#550): the load just ended, and a read's own wait is no bound passed on the song's start.
+      if (playing && !loaded) {
+        phase = { ...phase, at: now(), read }
+        loaded = true
+      }
+      // From where it moved from: a slow read that finds it seconds on has seen those seconds played, and it may stall right after.
+      since = playing ? (since ?? (moved ? before!.time : last!.time)) : null
       // The song sounds (#507): the Wait Card closes now, not once the start is proved.
       if (playing) waitEnded(current)
       const started = playing && last!.time - since! >= PLAYED_S
       // Playing at the bound, it has a start's play longer to show it is one.
-      const due = elapsed(read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)
+      const due = loadingOut || elapsed(read) >= phase.ms + (playing ? PLAYED_S * 1000 : 0)
       // A wall cleared while it ran: the song plays once the sheet leaves, so it has a self-start's bound again, unpressed (#492).
-      if (due && !started && (await clearedSince(song, phase.at))) {
+      if (due && !started && (await clearedSince(song, loadingOut ? loadingFrom.at : phase.at))) {
         phase = { at: now(), read, ms: SELF_START_MS }
+        loadingFrom = { at: now(), read }
         await sleep(START_READ_MS)
         if (!current()) return 'superseded'
         continue
       }
-      if (started || (due && pressed)) {
+      if (started || (due && pressed) || loadingOut) {
         // A seek asked over the ad (#497) lands as the song starts, not a poll later.
         if (started && last !== null) await applyHeldSeek(song, { elapsed: last.time, duration: last.duration })
         return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element: last === null ? null : elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
@@ -1131,7 +1175,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   }
 
   /** What a start keeps of the element as last read. */
-  const elementOf = ({ paused, ended, ready, time, failed }: StartRead): NonNullable<PlayerStart['element']> => ({ paused, ended, ready, time, failed })
+  const elementOf = ({ paused, ended, ready, time, failed, networkState, hasSrc, buffered }: StartRead): NonNullable<PlayerStart['element']> => ({ paused, ended, ready, time, failed, networkState, hasSrc, buffered })
 
   /** A start, decided: its page's watch told a wall cleared from here on comes after it, and the start recorded. */
   function decided(start: Omit<PlayerStart, 'consent' | 'road' | 'lookup' | 'served' | 'fallback' | 'remembered' | 'asked'>): PlayerStart {
@@ -1154,9 +1198,10 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /**
    * A song just opened, played (#488): read and pressed once; a page whose
-   * element a press did not start — on a fresh profile it holds no data,
-   * `readyState` 0, the page never feeding it — is opened again once in
-   * full, which dismisses what walls it can, and read and pressed once more.
+   * element did not start — on a fresh profile it holds no data, `readyState`
+   * 0, the page never feeding it, until {@link LOADING_START_MS} (#550) — is
+   * opened again once in full, which dismisses what walls it can, and read
+   * and pressed once more.
    * Each try is its own `media-start`. `paneIsOurs`, for a song opened in the
    * background: the pane may be taken for a stream that refused it (#548).
    */
@@ -1202,8 +1247,9 @@ export function createPlayer(deps: PlayerDeps): Player {
    */
   const hasRefused = (start: PlayerStart): boolean => start.element?.failed === true || (start.road === 'audio' && onSurface?.id === start.video && onSurface.refused)
 
-  /** A song the Queue holds whose element never played (#488): held paused, so the card says so and `resume` presses it. */
-  function holdUnstarted(): void {
+  /** A song the Queue holds whose element never played (#488): held paused, so the card says so and `resume` presses it. `time`: where the element stood. */
+  function holdUnstarted(time: number): void {
+    givenUp = state.current === null ? null : { id: state.current.id, at: now(), time }
     state = pause(state)
     publish()
   }
@@ -1222,7 +1268,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       return false
     }
     if (hasRefused(start)) return true
-    holdUnstarted()
+    holdUnstarted(start.element?.time ?? 0)
     heldSlow = { song, paneIsOurs }
     return false
   }
@@ -1343,7 +1389,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (start === 'superseded') return superseded
     if (start.onAd !== undefined) return { result: `on-ad: id=${song.id} title=${JSON.stringify(song.title)}`, answer: `${adWait(start.onAd)}, then ${quoted(song.title)}.`, video: song.id }
     if (!start.started) {
-      holdUnstarted()
+      holdUnstarted(start.element?.time ?? 0)
       const tried = [start.pressed ? ' pressed' : '', start.reopened ? ' reopened' : '', start.refused === null ? '' : ` refused=${start.refused}`].join('')
       return { result: `unstarted: id=${song.id} title=${JSON.stringify(song.title)}${tried}`, answer: `${quoted(song.title)} opened but didn't start.`, failure: true, unstarted: true, video: song.id }
     }
@@ -1611,6 +1657,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (song === null || !showsSong(status, song)) return
     await applyHeldSeek(song, status)
     const pressed = await pressLeftOnAd(song, status)
+    heardLate(song, status)
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
@@ -1628,6 +1675,13 @@ export function createPlayer(deps: PlayerDeps): Player {
     const continued = status.paused && !ownPause && status.prompt && (await evaluate<boolean>(CONTINUE_SCRIPT)) === true
     const resumed = !continued && (await resumeSeeked(status, readAt))
     adoptElementFlags(continued || resumed || pressed ? { ...status, paused: false } : status)
+  }
+
+  /** The song given up on plays after all (#550), its time past where it stood: the moment recorded, once. Unpaused and standing still is a stall, no start. */
+  function heardLate(song: Song, status: WatchStatus): void {
+    if (givenUp?.id !== song.id || status.paused || status.elapsed <= givenUp.time) return
+    deps.onLate?.({ video: song.id, ms: Math.round(now() - givenUp.at), road })
+    givenUp = null
   }
 
   /**
@@ -1651,7 +1705,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const element = await control({ op: 'play' })
     if (element !== null && element.found && !element.paused) return true
     leftOnAd = null
-    holdUnstarted()
+    holdUnstarted(status.elapsed)
     return false
   }
 

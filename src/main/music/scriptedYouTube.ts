@@ -97,6 +97,18 @@ export class ScriptedYouTube {
   starts: ScriptedStart = 'itself'
   /** The element's `readyState`: 4 holds enough to play through. */
   readyState = 4
+  /**
+   * The next watch page's player boots this long (s, #550), as a slow host's
+   * does: its element unpaused, `readyState` 0, its source set and loading, a
+   * press changing nothing; then it plays by itself. Null for none.
+   */
+  bootsForS: number | null = null
+  /** How far the element's time moves between two start reads (s): more on a slow host, whose single reads stall for seconds (#550). */
+  startStepS = START_STEP_S
+  /** The boot on this page, in start reads left. */
+  private booting = 0
+  /** The facts of the element's load (#550): what `networkState` and `currentSrc` say. */
+  loadFacts: { networkState: number; hasSrc: boolean; buffered: number } = { networkState: 2, hasSrc: true, buffered: 0 }
   /** The last press's refusal, as the element keeps it. */
   private refused: string | null = null
   /** A stalling element was pressed: it plays on. */
@@ -210,6 +222,14 @@ export class ScriptedYouTube {
       const pod = this.preRollS === null ? [] : typeof this.preRollS === 'number' ? [this.preRollS] : [...this.preRollS]
       this.ad = pod.length === 0 ? null : { lengthS: pod[0]!, next: pod.slice(1), song: this.ad?.song ?? this.element.duration, between: false }
       this.preRollS = null
+      if (this.bootsForS !== null) {
+        this.booting = Math.round(this.bootsForS / START_STEP_S)
+        this.bootsForS = null
+      }
+      if (this.booting > 0) {
+        this.readyState = 0
+        this.element = { ...this.element, paused: false }
+      }
       // A new page's element holds no ad but its own pre-roll: the last page's marker is gone with it.
       this.adShowing = this.ad !== null
       if (this.ad !== null) this.element = { ...this.element, paused: false, duration: this.ad.lengthS }
@@ -264,17 +284,18 @@ export class ScriptedYouTube {
       this.adShowing = true
       this.element = { ...this.element, currentTime: 0, duration: this.ad.lengthS }
     }
+    if (this.booting > 0 && (this.booting -= 1) === 0) this.readyState = 4
     // Time moves only on an element holding data to play.
     if (!this.element.paused && this.readyState > 2) {
-      const time = this.element.currentTime + START_STEP_S
+      const time = this.element.currentTime + this.startStepS
       const stalls = this.starts === 'stalls' && !this.pressed && time >= STALLS_AT_S
       this.element = { ...this.element, currentTime: stalls ? STALLS_AT_S : time, paused: stalls }
       // An ad ran out: the pod's next is up, its marker off for this one read, or the song plays (`adEnds`).
       if (this.ad !== null && !this.ad.between && time >= this.ad.lengthS) this.adEnds()
     }
-    if (this.streamFailed) return { paused: true, ended: false, ready: 0, time: 0, duration: null, refused: null, ad: false, skippable: false, failed: true }
+    if (this.streamFailed) return { paused: true, ended: false, ready: 0, time: 0, duration: null, refused: null, ad: false, skippable: false, failed: true, networkState: 3, hasSrc: true, buffered: 0 }
     const { paused, currentTime, duration } = this.element
-    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing, skippable: this.skippable(), failed: false }
+    return { paused, ended: false, ready: this.readyState, time: currentTime, duration, refused: this.refused, ad: this.adShowing, skippable: this.skippable(), failed: false, ...this.loadFacts }
   }
 
   /** The ad ends — run out, or skipped: the pod's next one is up for its first read, else the song plays in the same element from 0 by itself, the marker off. */

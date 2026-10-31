@@ -7,7 +7,7 @@ import type { NowPlaying } from '../../core/music/nowPlaying'
 import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
 import { loudnessFactor } from '../../core/music/loudness'
 import { waitedFor, type SongWait } from '../../core/music/songWait'
-import { createPlayer, type Player, type PlayerConsent, type PlayerConsentTold, type PlayerOutcome, type PlayerSeekResume, type PlayerStart, type SongMemory } from './player'
+import { createPlayer, type Player, type PlayerConsent, type PlayerConsentTold, type PlayerLate, type PlayerOutcome, type PlayerSeekResume, type PlayerStart, type SongMemory } from './player'
 import { SEEK_SETTLE_MS, type ElementOp } from './youtubeScripts'
 import type { MediaOpAction } from '../../core/browser/mediaOp'
 import { SHEET_DISMISSAL, ScriptedYouTube, scriptedAudio, videoItem } from './scriptedYouTube'
@@ -1175,15 +1175,15 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     expect(starts).toEqual([expect.objectContaining({ video: 'aaaaaaaaaaa', started: true, pressed: false, refused: null, background: false })])
   })
 
-  it('a page whose element a press left holding no data is opened again once, in full, and the song plays there', async () => {
+  it('a page whose element still holds no data at the load bound is opened again once, in full, unpressed, and the song plays there', async () => {
     const { youtube, perform, presses, starts } = starting()
     youtube.starts = 'reopen'
     const played = await perform({ kind: 'search', place: 'now' }, 'song a')
     expect(played).toMatchObject({ answer: 'Playing “Song A”.' })
     expect(played.failure).toBeUndefined()
-    expect(presses()).toBe(1)
+    expect(presses()).toBe(0)
     expect(starts).toEqual([
-      expect.objectContaining({ started: false, pressed: true, reopened: false, element: expect.objectContaining({ ready: 0 }) }),
+      expect.objectContaining({ started: false, pressed: false, reopened: false, element: expect.objectContaining({ ready: 0 }) }),
       expect.objectContaining({ started: true, pressed: false, reopened: true }),
     ])
   })
@@ -1217,12 +1217,12 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     expect(starts).toEqual([expect.objectContaining({ started: false, pressed: true, reopened: false, refused: 'NotAllowedError' }), expect.objectContaining({ started: false, pressed: true, reopened: true, refused: 'NotAllowedError' })])
   })
 
-  it('an element holding no data to play is not playing, however unpaused: pressed once on each page, then unstarted with no refusal', async () => {
+  it('an element holding no data to play is not playing, however unpaused: unpressed on each page, then unstarted with no refusal', async () => {
     const { youtube, perform, presses, starts } = starting()
     youtube.readyState = 2
     expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ failure: true, unstarted: true })
-    expect(presses()).toBe(2)
-    expect(starts.at(-1)).toMatchObject({ started: false, pressed: true, reopened: true, refused: null, element: { paused: false, ended: false, ready: 2, time: 0 } })
+    expect(presses()).toBe(0)
+    expect(starts.at(-1)).toMatchObject({ started: false, pressed: false, reopened: true, refused: null, element: { paused: false, ended: false, ready: 2, time: 0 } })
   })
 
   it('a song already at its end during its start has played: no press, and never opened again from the top (#538)', async () => {
@@ -1420,6 +1420,194 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
   })
 })
 
+describe('a page-road start still loading (#550): a slow host is waited for, not reopened and called failed', () => {
+  /** The Player on a clock only its own waits move: the bound is the clock's, not the reads'. */
+  function loading(onLate?: (late: PlayerLate) => void) {
+    let clock = 0
+    const browser = new FakeBrowser()
+    const youtube = new ScriptedYouTube(browser)
+    youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
+    youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
+    const starts: PlayerStart[] = []
+    const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep: async (ms) => { clock += ms }, now: () => clock, onStart: (start) => starts.push(start), ...(onLate !== undefined ? { onLate } : {}) })
+    const play = () => player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    const presses = (): number => youtube.controls.filter((op) => op.op === 'play').length
+    return { browser, youtube, player, starts, play, presses, at: () => clock, tick: (ms: number) => { clock += ms } }
+  }
+
+  it('an element loading for 20 s, as on the kiosk: one navigation, no press, Playing said', async () => {
+    const { browser, youtube, starts, play, presses, at } = loading()
+    youtube.bootsForS = 20
+    const played = await play()
+    expect(played).toMatchObject({ answer: 'Playing “Song A”.', result: 'playing: id=aaaaaaaaaaa title="Song A"' })
+    expect(played.failure).toBeUndefined()
+    expect(browser.navigations).toHaveLength(1)
+    expect(presses()).toBe(0)
+    expect(at()).toBeGreaterThanOrEqual(20_000)
+    expect(at()).toBeLessThan(25_000)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, road: 'page' })])
+  })
+
+  it('reads that stall for seconds, as a slow host\'s do: the load ending is no press, and the song proves itself on the next read', async () => {
+    const { browser, youtube, starts, play, presses, tick } = loading()
+    const answer = browser.evaluator!
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */')) tick(5_000)
+      return answer(expression)
+    }
+    youtube.bootsForS = 1
+    youtube.startStepS = 5
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(presses()).toBe(0)
+    expect(browser.navigations).toHaveLength(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false })])
+  })
+
+  it('time moving is play, whatever `readyState` a slow host\'s read finds: Playing said, never given up on at the bound', async () => {
+    const { browser, youtube, starts, play, presses } = loading()
+    const answer = browser.evaluator!
+    youtube.readyState = 2
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */')) youtube.element = { ...youtube.element, currentTime: youtube.element.currentTime + 1 }
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(presses()).toBe(0)
+    expect(browser.navigations).toHaveLength(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false, element: expect.objectContaining({ ready: 2 }) })])
+  })
+
+  it('a read that finds 7 s played has its proof, though the song then stalls: Playing said, the 7 s not thrown away and the page not reopened', async () => {
+    const { browser, youtube, starts, play } = loading()
+    const answer = browser.evaluator!
+    youtube.readyState = 2
+    let reads = 0
+    browser.evaluator = (expression) => {
+      if (expression.includes('/* YT_START */') && (reads += 1) === 3) youtube.element = { ...youtube.element, currentTime: 7 }
+      return answer(expression)
+    }
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(browser.navigations).toHaveLength(1)
+    expect(starts).toEqual([expect.objectContaining({ started: true, reopened: false, element: expect.objectContaining({ ready: 2, time: 7 }) })])
+  })
+
+  it('an element that never loads is opened again at the bound, unpressed, and fails only past the second: said as not started', async () => {
+    const { browser, youtube, starts, play, presses, at } = loading()
+    youtube.readyState = 0
+    const played = await play()
+    expect(played).toMatchObject({ failure: true, unstarted: true, answer: "“Song A” opened but didn't start." })
+    expect(browser.navigations).toHaveLength(2)
+    expect(presses()).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: false, reopened: false, ms: 45_000 }), expect.objectContaining({ started: false, pressed: false, reopened: true, ms: 45_000 })])
+    expect(at()).toBeLessThan(95_000)
+  })
+
+  it('a stall that a reopen heals plays at the bound\'s far side: one reopen, no press, Playing said', async () => {
+    const { browser, youtube, starts, play, presses } = loading()
+    youtube.starts = 'reopen'
+    expect(await play()).toMatchObject({ answer: 'Playing “Song A”.' })
+    expect(browser.navigations).toHaveLength(2)
+    expect(presses()).toBe(0)
+    expect(starts[0]).toMatchObject({ started: false, reopened: false, ms: 45_000 })
+    expect(starts[1]).toMatchObject({ started: true, reopened: true })
+  })
+
+  it('a paused element keeps today\'s bound and its press: 2.5 s, no load\'s wait', async () => {
+    const { youtube, starts, play, presses, at } = loading()
+    youtube.starts = 'refuses'
+    youtube.readyState = 0
+    await play()
+    expect(presses()).toBe(2)
+    expect(starts[0]!.ms).toBeLessThan(6_000)
+    expect(at()).toBeLessThan(12_000)
+  })
+
+  it('a start records the element\'s load: its `networkState`, its source and what it buffered', async () => {
+    const { youtube, starts, play } = loading()
+    youtube.loadFacts = { networkState: 2, hasSrc: true, buffered: 1 }
+    await play()
+    expect(starts[0]!.element).toMatchObject({ networkState: 2, hasSrc: true, buffered: 1 })
+  })
+
+  describe('a song given up on that plays after all: its `media-late`, so a mismeasure shows itself', () => {
+    function givenUp() {
+      const lates: PlayerLate[] = []
+      const held = loading((late) => lates.push(late))
+      held.youtube.readyState = 0
+      return { ...held, lates }
+    }
+
+    /** The page's player gets there, past both bounds, and the poll reads it playing. */
+    function plays(youtube: ScriptedYouTube): void {
+      youtube.readyState = 4
+      youtube.element = { ...youtube.element, paused: false, currentTime: 3 }
+    }
+
+    it('the poll writes one, with how long after the give-up it played, and the card unpauses', async () => {
+      const { youtube, player, play, lates, tick } = givenUp()
+      await play()
+      expect(player.queue().paused).toBe(true)
+      tick(17_000)
+      plays(youtube)
+      await player.check()
+      await player.check()
+      expect(lates).toEqual([{ video: 'aaaaaaaaaaa', ms: 17_000, road: 'page' }])
+      expect(player.queue().paused).toBe(false)
+    })
+
+    it('unpaused with its time standing where it was given up on is no late start: a stall, none is written', async () => {
+      const { browser, youtube, player, play, lates, tick } = givenUp()
+      const answer = browser.evaluator!
+      // It played to 7 s and ran out of data: every start read finds it there.
+      browser.evaluator = (expression) => {
+        youtube.element = { ...youtube.element, currentTime: 7 }
+        return answer(expression)
+      }
+      await play()
+      browser.evaluator = answer
+      tick(5_000)
+      await player.check()
+      expect(lates).toEqual([])
+      youtube.element = { ...youtube.element, paused: false, currentTime: 9 }
+      await player.check()
+      expect(lates).toEqual([{ video: 'aaaaaaaaaaa', ms: 5_000, road: 'page' }])
+    })
+
+    it('still not playing, none is written', async () => {
+      const { player, play, lates } = givenUp()
+      await play()
+      await player.check()
+      expect(lates).toEqual([])
+    })
+
+    it('a `resume` that starts it is the person\'s, not a late start: none is written', async () => {
+      const { youtube, player, play, lates } = givenUp()
+      await play()
+      await player.perform({ kind: 'unpause' }, null, () => true)
+      plays(youtube)
+      await player.check()
+      expect(lates).toEqual([])
+    })
+
+    it('the same song asked again and started on its new page writes none', async () => {
+      const { youtube, player, play, lates } = givenUp()
+      await play()
+      youtube.readyState = 4
+      await play()
+      await player.check()
+      expect(lates).toEqual([])
+    })
+
+    it('a song that started writes none', async () => {
+      const { youtube, player, play, lates } = givenUp()
+      youtube.readyState = 4
+      await play()
+      await player.check()
+      expect(lates).toEqual([])
+    })
+  })
+})
+
 describe('a start held on an ad has a total bound (#549): the line ends at 120 s, and the song is not abandoned', () => {
   /** The Player on a clock only its own waits move: the bound is the clock's, not the reads'. */
   function clocked() {
@@ -1567,8 +1755,10 @@ describe('a start held on an ad has a total bound (#549): the line ends at 120 s
     youtube.preRollS = 300
     youtube.readyState = 2
     expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).toMatchObject({ failure: true, unstarted: true })
-    expect(at()).toBeLessThan(15_000)
-    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: true, reopened: false, ad: expect.any(Number) }), expect.objectContaining({ started: false, pressed: true, reopened: true })])
+    // The reopened page holds no ad and no data: a load, with a load's bound (#550).
+    expect(starts[0]!.ms).toBeLessThan(15_000)
+    expect(at()).toBeLessThan(55_000)
+    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: true, reopened: false, ad: expect.any(Number) }), expect.objectContaining({ started: false, pressed: false, reopened: true })])
   })
 })
 
