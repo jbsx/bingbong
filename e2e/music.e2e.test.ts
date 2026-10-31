@@ -2,7 +2,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { DEFAULT_ADBLOCK_LISTS, DEFAULT_ADBLOCK_RESOURCES_URL } from '../src/core/adblock/adblockConfig'
 import { loudnessFactor } from '../src/core/music/loudness'
+import { startFixtureServer, YOUTUBE_FIXTURE_SONG, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS } from './cliSupport'
 import { decisionScript, readingOf } from './scriptedJev'
@@ -260,4 +262,143 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
     // The issue's tracks at 5.22 and 5.25 dB: about 19.9.
     if (before.loudnessDb !== null && after.loudnessDb !== null && Math.abs(before.loudnessDb - 5.22) < 0.05 && Math.abs(after.loudnessDb - 5.25) < 0.05) expect(after.volume).toBeCloseTo(19.9, 0)
   }, 420_000)
+})
+
+// A slow host's page road (#550), hermetic: the fixture's watch page with its
+// stream held, so its element reads unpaused and `readyState` 0 for as long as
+// the test says, as the kiosk's does for about 20 s. Past today's 5 s the song
+// is waited for; only past the 45 s load bound is the page opened again.
+describe('a song still loading on the watch page (#550)', () => {
+  const PLAY = 'play fixture song'
+  let harness: Harness
+  let fixture: FixtureServer
+  let userDataDir = ''
+
+  interface Start {
+    durMs: number
+    detail: { started: boolean; pressed: boolean; reopened: boolean; road: string; element: { paused: boolean; ready: number; networkState: number; hasSrc: boolean; buffered: number } | null }
+  }
+  const mediaStarts = async (): Promise<Start[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('perf-')).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as Start & { stage: string }).filter((record) => record.stage === 'media-start')
+  }
+  /** The element reads as the kiosk's did: unpaused, no data yet. */
+  const stillLoading = (): Promise<unknown> =>
+    waitFor(async () => {
+      const video = await harness.paneEval<{ paused: boolean; ready: number } | null>(`(() => { const v = document.querySelector('#movie_player video'); return v ? { paused: v.paused, ready: v.readyState } : null })()`).catch(() => null)
+      return video !== null && !video.paused && video.ready === 0 ? true : undefined
+    }, { timeoutMs: 10_000, intervalMs: 100 })
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-loading-'))
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: false }))
+    fixture = await startFixtureServer()
+    harness = await startHarness({ userDataDir, fixture, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf(PLAY), readingOf(PLAY)) } })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close().catch(() => {})
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('a song loading past today\'s 5 s plays on its one page: one navigation, no press, Playing said, nothing about not starting', async () => {
+    const release = fixture.holdStream('song.wav')
+    const since = harness.cliMark()
+    harness.cliWrite(PLAY)
+    await stillLoading()
+    await harness.paneEval(`window.__samePage = true`)
+    await new Promise((resolve) => setTimeout(resolve, 8_000))
+    expect(await mediaStarts()).toEqual([])
+    release()
+    const line = await harness.waitForCliOutput(LIVE_PLAY_ANSWER, { since, timeoutMs: 20_000 })
+    expect(line).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    // The page the load began on: never navigated again.
+    expect(await harness.paneEval<boolean>('window.__samePage === true')).toBe(true)
+    const starts = await waitFor(async () => {
+      const all = await mediaStarts()
+      return all.length > 0 ? all : undefined
+    }, { timeoutMs: 5_000, intervalMs: 100 })
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.detail).toMatchObject({ started: true, pressed: false, reopened: false, road: 'page' })
+    expect(starts[0]!.durMs).toBeGreaterThan(8_000)
+    expect(harness.cliOutput()).not.toMatch(/unstarted:|didn't start/)
+  }, 60_000)
+
+  it('a real stall is opened again at the load bound, unpressed, and plays there', async () => {
+    const before = (await mediaStarts()).length
+    const release = fixture.holdStream('song.wav')
+    const since = harness.cliMark()
+    harness.cliWrite(PLAY)
+    await stillLoading()
+    const given = await waitFor(async () => (await mediaStarts()).slice(before)[0], { timeoutMs: 55_000, intervalMs: 250 })
+    expect(given.detail).toMatchObject({ started: false, pressed: false, reopened: false, road: 'page', element: { paused: false, ready: 0, hasSrc: true, buffered: 0 } })
+    expect(given.durMs).toBeGreaterThanOrEqual(45_000)
+    expect(given.durMs).toBeLessThan(50_000)
+    release()
+    const line = await harness.waitForCliOutput(LIVE_PLAY_ANSWER, { since, timeoutMs: 20_000 })
+    expect(line).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    expect((await mediaStarts()).slice(before)[1]!.detail).toMatchObject({ started: true, pressed: false, reopened: true, road: 'page' })
+  }, 90_000)
+})
+
+// A slow host's page road (#550), measured: the pane under CDP's CPU throttle,
+// standing in for the kiosk, whose player takes about 20 s from landing to first
+// play. Counts reopens and false failures. Measured, not asserted. Opt-in:
+//   BINGBONG_YOUTUBE_E2E=1 BINGBONG_PLAY_THROTTLE=<rate> BINGBONG_PLAY_THROTTLE_OUT=<file> pnpm test:e2e e2e/music.e2e.test.ts -t 'slow host'
+// The real adblock lists, as a production launch has them; BINGBONG_ADBLOCK=off gives the adblocker's share.
+const THROTTLE = Number(process.env.BINGBONG_PLAY_THROTTLE ?? 0)
+const THROTTLED_SONGS = ['play tum se tum tak', 'play kanye west runaway', 'play arijit singh kesariya', 'play fleetwood mac dreams', 'play daft punk get lucky', 'play radiohead let down']
+
+describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E || THROTTLE === 0)('a slow host\'s page road under a CPU throttle (#550, network)', () => {
+  let harness: Harness
+  const runs: unknown[] = []
+
+  beforeAll(async () => {
+    const adblock = process.env.BINGBONG_ADBLOCK === 'off' ? { BINGBONG_ADBLOCK: 'off' } : { BINGBONG_ADBLOCK_LISTS: DEFAULT_ADBLOCK_LISTS.join(','), BINGBONG_ADBLOCK_RESOURCES: DEFAULT_ADBLOCK_RESOURCES_URL }
+    harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: { ...decisionScript(...THROTTLED_SONGS.map((line) => readingOf(line))), ...adblock } })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+    await cli(harness, 'navigate https://www.youtube.com/', /^(navigated|error)/)
+    await harness.cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE }, harness.paneSessionId()!)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+  })
+
+  /** Kept after every song: a run cut short keeps what it measured. */
+  async function keep(): Promise<void> {
+    const dir = join(harness.userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('perf-')).sort()
+    const records = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('').split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as { stage: string })
+    const out = process.env.BINGBONG_PLAY_THROTTLE_OUT
+    if (out) await writeFile(out, `${JSON.stringify({ rate: THROTTLE, runs, starts: records.filter((record) => record.stage === 'media-start' || record.stage === 'media-late') }, null, 2)}\n`)
+  }
+
+  for (const line of THROTTLED_SONGS) {
+    it(line, async () => {
+      const from = Date.now()
+      /** When each video in the pane first played, by id: the song before this line's goes on moving until its page is left. */
+      const played = new Map<string, number>()
+      let adSeen = false
+      const watching = setInterval(() => {
+        facts(harness).then((video) => {
+          if (video.ad) adSeen = true
+          if (video.id !== null && !played.has(video.id) && video.found && !video.ad && !video.paused && video.currentTime > 0) played.set(video.id, Date.now() - from)
+        }).catch(() => {})
+      }, 500)
+      // Past a live line's own wait: two load bounds on a host this slow, kept to the line it belongs to.
+      const answer = await cli(harness, line, LIVE_PLAY_ANSWER, 230_000)
+      const answeredMs = Date.now() - from
+      // A song given up on may still play: how late is what a false failure is.
+      const id = /id=(\S+)/.exec(answer)?.[1] ?? ''
+      await waitFor(async () => (played.has(id) ? true : undefined), { timeoutMs: 60_000, intervalMs: 500 }).catch(() => {})
+      clearInterval(watching)
+      runs.push({ line, answer, answeredMs, firstPlayMs: played.get(id) ?? null, adSeen })
+      await keep()
+    }, 320_000)
+  }
 })

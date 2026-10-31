@@ -157,6 +157,8 @@ function youtubeWatchPage(id: string, comments = 0): string {
     player.setVolume = () => {}
     player.mute = () => {}
     player.unMute = () => {}
+    // YouTube's own player asks to play as it boots, so its element reads unpaused from the first, holding no data while its source loads (#550); \`autoplay\` alone stays paused until the data comes.
+    video.play().catch(() => {})
   </script>
 </body></html>`
 }
