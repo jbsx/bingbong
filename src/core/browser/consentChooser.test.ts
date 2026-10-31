@@ -74,3 +74,10 @@ describe('the consent chooser', () => {
     expect(await createConsentChooser(() => model({ choice: 'c-0', confidence: 0.99 }), 0.7)('x', LABELS)).toBeNull()
   })
 })
+
+describe('a malformed answer to the consent ask (#547)', () => {
+  it('is no pick: the wall stays with the rule, as on any unavailable ask', async () => {
+    const malformed = { model: 'jev-test', ask: async () => ({ status: 'answered', answers: {}, latencyMs: 1, model: 'jev-test' }) } as unknown as DecisionModel
+    await expect(createConsentChooser(() => malformed, 0.7)('We use cookies', LABELS)).resolves.toBeNull()
+  })
+})

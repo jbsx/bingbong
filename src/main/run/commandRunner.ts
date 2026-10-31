@@ -5,7 +5,7 @@ import type { ShelfFile } from '../../core/shelf/shelf'
 import type { KeepCapture } from '../shelf/keepCapture'
 import { captureFileName } from '../../core/command/captureOp'
 import { fitShelfAsk, readShelfAnswer, type ShelfAsk, type ShelfQuestions } from '../../core/command/shelfAsk'
-import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, malformedAsUnavailable, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import { askImageFile, type AskKind, type AskRecord } from '../../core/decision/askRecord'
 import type { AskLogSink } from './askLogSink'
 import type { PipelineEvent } from '../../core/pipeline/events'
@@ -662,6 +662,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     end: LineEnd
     readonly close: () => void
   }
+  /** What a throw reads of the line it ends (#547): a live line's own, or an Early Fire's or a Site Question's answer's, which have none. */
+  type ThrownLine = Pick<LiveLine, 'turnId' | 'words' | 'submission' | 'hops' | 'fired' | 'task'> & {
+    /** A Site Question's answer takes no submission: `submission` is the one it arrived under, what a stop is read against, and what holds the run state is that line's, left alone. */
+    readonly answersOver?: true
+  }
   /** The lines given and not yet ended, by their turn (#489): the running Command the Appliance Card carries, and what a `waits` waits on. */
   const live = new Map<string, LiveLine>()
   /** Each hop's and Step's turn to its line's (#489): a stage published on a later hop is its line's. */
@@ -894,7 +899,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
     const askedAt = at()
     const askId = ownId ?? turnId
-    const result = await model.ask({ state, questions, ...(images !== undefined ? { images } : {}) })
+    // Every ask of a line passes here: an answer the readers could not read is a refused ask's road from here on (#547), never a throw in them.
+    const result = malformedAsUnavailable(questions, await model.ask({ state, questions, ...(images !== undefined ? { images } : {}) }))
     // A host that refused the ask (#406, ADR 0088) — a card over its prompt, a key it turned away — is a fault, not only a slow round; so is each attempt a host refused on the way to an answer (#477).
     const refusals = result.attempts?.filter((attempt) => attempt.outcome === 'http') ?? (result.status === 'unavailable' && result.httpStatus !== undefined ? [{ model: result.model, httpStatus: result.httpStatus }] : [])
     for (const refused of refusals) {
@@ -3166,6 +3172,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** The first effect seen before the Endpoint: the Reaction closes on it, at 0, once the Endpoint comes. */
     effect: { detail: Record<string, unknown>; at: number } | null
     settled: boolean
+    /** Its action threw (#547) and that ended the line, its record and Reaction with it: its Endpoint closes nothing more. */
+    threw: boolean
   }
   let early: EarlyFired | null = null
 
@@ -3210,8 +3218,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(endpoint?.truncated ? { truncated: true } : {}),
       earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}) },
     }
-    if (ended !== 'deferred') log({ ...record, ended })
-    if (endpoint !== null && fired.effect !== null) {
+    if (ended !== 'deferred' && !fired.threw) log({ ...record, ended })
+    if (endpoint !== null && fired.effect !== null && !fired.threw) {
       span(fired.turnId, Math.max(0, fired.effect.at - endpoint.at), { ...fired.effect.detail, earlyFire: true, leadMs: leadOf(fired) })
     }
     if (fired.settled) summarize(fired.turnId)
@@ -3303,10 +3311,31 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       endpointAt: null,
       effect: null,
       settled: false,
+      threw: false,
     }
     early = fired
     noteFired(turnId, words, submission, fired.firedMono)
-    fired.outcome = fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired), hop0)
+    // Its action runs outside any `run`, and its Endpoint may never come: a throw in it ends the line here (#547), never by the Endpoint.
+    const firing = async (): Promise<FireResult> => {
+      let result: FireResult = { outcome: 'wall' }
+      fired.threw = !(await endingOnThrow(
+        [turnId],
+        { turnId, submission, words, fired: command, hops: 0 },
+        {
+          transcript: words,
+          source: 'spoken',
+          get endpointAt() {
+            return fired.endpointAt ?? fired.firedMono
+          },
+          truncated: false,
+        },
+        async () => {
+          result = await fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired), hop0)
+        },
+      ))
+      return result
+    }
+    fired.outcome = firing()
     return { action: fired.outcome.then(() => {}) }
   }
 
@@ -3749,11 +3778,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * `done`. What would settle it: such a fault in a kiosk log, read against
    * what the owner saw.
    */
-  function endThrown(own: LiveLine, scope: LineScope, error: unknown, line: { readonly transcript: string; readonly source: CommandSource; readonly endpointAt: number; readonly truncated: boolean }): void {
+  function endThrown(own: ThrownLine, scope: LineScope, error: unknown, line: { readonly transcript: string; readonly source: CommandSource; readonly endpointAt: number; readonly truncated: boolean }): void {
     const { turnId, submission } = own
     reportFault('run.commandRunner.line', error, { turnId })
-    if (reading?.submission === submission) reading = null
-    if (errand?.submission === submission) endErrand()
+    if (own.answersOver !== true && reading?.submission === submission) reading = null
+    if (own.answersOver !== true && errand?.submission === submission) endErrand()
     const open = [...scope.open]
     for (const [key, entry] of inFlight) if (open.includes(entry.turnId)) inFlight.delete(key)
     const stopped = isEnded(submission)
@@ -3767,6 +3796,28 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (!stopped && last !== undefined) answerFailure(last, SPOKEN_FAILURES.failed, { command: own.fired ?? null, words: own.words })
     for (const turn of open) publish({ type: 'done', turnId: turn, outcome: stopped ? 'cancelled' : 'failed', at: at() })
     for (const turn of new Set([turnId, ...open])) summarize(turn)
+  }
+
+  /**
+   * Runs what a line has opened under its own scope (#546, #547): a throw out
+   * of it ends the line (`endThrown`) and goes no further, on every road with
+   * an opened turn. `open` are the turns already its own with no `done` yet;
+   * `reacted`, when its Reaction is another road's to close. Resolves whether
+   * the work finished.
+   */
+  async function endingOnThrow(open: readonly string[], own: ThrownLine, line: Parameters<typeof endThrown>[3], work: () => Promise<void>, reacted = false): Promise<boolean> {
+    const scope: LineScope = { open: new Set(open), reacted, endedRecord: null, ask: null, over: false }
+    for (const turn of open) turnScopes.set(turn, scope)
+    try {
+      await lineScope.run(scope, work)
+      return true
+    } catch (error) {
+      endThrown(own, scope, error, line)
+      return false
+    } finally {
+      scope.over = true
+      for (const [turn, owner] of turnScopes) if (owner === scope) turnScopes.delete(turn)
+    }
   }
 
   /** The running line's doing sentence (#504), left to be said as its stop line would be: a line no host read let it go on. */
@@ -3883,9 +3934,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
-        const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
-        if (ended !== null) endTask(task, ended, 1)
-        else await continueTask(task, 1)
+        // A throw in its action ended the line where it fired; one here finds its hop 0 and its Reaction already closed by that road (#547).
+        await endingOnThrow([], { turnId: fired.turnId, submission: fired.submission, words: trimmed, fired: fired.command, task, hops: 1 }, { transcript: trimmed, source, endpointAt, truncated }, async () => {
+          const result = lands ? await fired.outcome : null
+          if (fired.threw) return
+          const ended = result !== null ? settleHop(task, record, ending, fired.command, fired.page, result) : ending
+          if (ended !== null) endTask(task, ended, 1)
+          else await continueTask(task, 1)
+        }, true)
         return true
       }
       // A spoken Endpoint of another Utterance: the Early Fire never reached its own. A typed line leaves it waiting for its Endpoint.
@@ -3915,9 +3971,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A Site Question open (#423): this line answers it before anything else reads it, and the Task that raised it is left in flight.
       const question = deps.siteQuestions?.open() ?? null
       if (question !== null) thinking()
-      if (question !== null && (await answerSite(turnId, trimmed, source, endpointAt, question))) {
-        if (options?.turnId !== undefined) summarize(options.turnId)
-        return true
+      if (question !== null) {
+        // A throw here ends this line alone (#547): the Task that raised the question stays in flight, and the question stays open for the next line.
+        let spent = true
+        await endingOnThrow([turnId], { turnId, submission: submitted, answersOver: true, words: trimmed, hops: 0 }, { transcript: lineRead, source, endpointAt, truncated }, async () => {
+          spent = await answerSite(turnId, trimmed, source, endpointAt, question)
+        })
+        if (spent) {
+          if (options?.turnId !== undefined) summarize(options.turnId)
+          return true
+        }
       }
       // A Flag (#421) leaves what is in flight alone: no submission, no overrun, no Command — and no stage of its own, so the pill stays on the Task it leaves.
       const flagged = readFlagLine(lineRead)
@@ -4008,15 +4071,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
       // Its first stage was published before its run began: the line's own turn is open from here.
-      const scope: LineScope = { open: new Set([turnId]), reacted: false, endedRecord: null, ask: null, over: false }
-      turnScopes.set(turnId, scope)
       try {
-        await lineScope.run(scope, () => deps.subspans?.runInTurn(turnId, perform) ?? perform())
-      } catch (error) {
-        endThrown(own, scope, error, { transcript: lineRead, source, endpointAt, truncated })
+        await endingOnThrow([turnId], own, { transcript: lineRead, source, endpointAt, truncated }, () => deps.subspans?.runInTurn(turnId, perform) ?? perform())
       } finally {
-        scope.over = true
-        for (const [turn, owner] of turnScopes) if (owner === scope) turnScopes.delete(turn)
         overSpeechLines.delete(turnId)
         settleLine(own)
         // An ended Command's stop line its ender never said a sentence after (#489): said alone.

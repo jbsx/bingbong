@@ -202,3 +202,34 @@ export function readDecisionAnswers<Q extends DecisionQuestions>(questions: Q, r
   }
   return answers as DecisionAnswers<Q>
 }
+
+/** Whether an answer has its question's shape: its own primitive's, whichever labels it names. */
+function shapedAs(question: DecisionQuestion, raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false
+  const answer = raw as Record<string, unknown>
+  if (answer.type !== question.type) return false
+  if (question.type === 'noul') return isProbability(answer.noul)
+  return typeof answer.choice === 'string' && isProbability(answer.confidence) && typeof answer.probabilities === 'object' && answer.probabilities !== null
+}
+
+/**
+ * The door an answer passes before anything reads it (#547): an answered
+ * result the readers could not read is `unavailable`, `malformed`, the road
+ * of a refused ask, never a throw in a reader. A host's adapter has already
+ * held its answer to {@link readDecisionAnswers}; this holds any model to the
+ * shape the readers rely on: the lead question, the one an ask's reader acts
+ * on, and the Slot when asked, which every reader of an action reads, both
+ * answered; and every answer given its own question's shape. Any other
+ * question left out reads as not asked, as each reader of one allows.
+ */
+export function malformedAsUnavailable<Q extends DecisionQuestions>(questions: Q, result: DecisionResult<Q>): DecisionResult<Q> {
+  if (result.status !== 'answered') return result
+  const raw: unknown = result.answers
+  const entries = Object.entries(questions)
+  const given = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : null
+  const answered = (key: string): boolean => given !== null && key in given
+  const readable = given !== null && entries.every(([key, question], index) => (answered(key) ? shapedAs(question, given[key]) : index > 0 && key !== 'slot'))
+  if (readable) return result
+  const { latencyMs, model, attempts } = result
+  return { status: 'unavailable', reason: 'malformed', message: 'the answers did not match the questions asked', latencyMs, model, ...(attempts !== undefined ? { attempts } : {}) }
+}

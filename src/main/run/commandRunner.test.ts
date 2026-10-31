@@ -16,6 +16,7 @@ import { type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { NONE_SAID } from '../../core/command/answer'
+import { SITE_ANSWERS } from '../../core/command/siteQuestion'
 import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type AppControl, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import type { AppChange, AppState } from '../../core/command/appOp'
 import type { UpdateCheck } from '../../core/update/updateCheck'
@@ -102,6 +103,14 @@ function withVerdict(questions: DecisionQuestions, answers: Record<string, Decis
 
 function choice(label: string, confidence = 0.9, probabilities: Record<string, number> = { [label]: confidence }): DecisionAnswer {
   return { type: 'choice', choice: label, confidence, probabilities }
+}
+
+/** A Choice of the right shape whose probabilities throw when read: a fault in the reading (#547), no malformed answer. */
+function readingThrows(label: string): DecisionAnswer {
+  const fault = (): never => {
+    throw new Error('the reading broke')
+  }
+  return { type: 'choice', choice: label, confidence: 0.9, probabilities: new Proxy({}, { get: fault, ownKeys: fault }) }
 }
 
 /** A results page's ad redirect (#495): a kilobyte of opaque query, the destination host named in it. */
@@ -6429,13 +6438,13 @@ describe('a line whose run throws (#546): it ends, and says so', () => {
   }
   const dones = (events: PipelineEvent[]) => events.filter((event) => event.type === 'done')
   const displays = (events: PipelineEvent[]) => events.filter((event) => event.type === 'display')
-  /** An answer with none of the questions asked: the reading throws on it, past the line's first event. */
-  const MALFORMED = { answers: {} }
+  /** An answer of the right shape whose reading throws, past the line's first event (#547: a malformed answer no longer does). */
+  const READING_THROWS = { answers: { action: readingThrows('click-1'), slot: choice('none') } }
 
   it('a throw inside the run ends the line: one failed `done`, said and shown, one fault, its record and Reaction closed, and `run` resolved', faulted(async (faults) => {
     const speech = new FakeSpeech()
     const { events, records, perf, decision, runner } = harness({ speech })
-    decision.script.push(MALFORMED)
+    decision.script.push(READING_THROWS)
     await expect(runner.run('find the blue one', { source: 'spoken' })).resolves.toBe(true)
     expect(events[0]).toMatchObject({ type: 'status', status: 'thinking' })
     const turnId = events[0]!.type === 'status' ? events[0]!.turnId : ''
@@ -6465,7 +6474,7 @@ describe('a line whose run throws (#546): it ends, and says so', () => {
   it('a throw at a later hop ends that hop\'s own turn: the hop before keeps its one `done`', faulted(async (faults) => {
     const speech = new FakeSpeech()
     const { events, records, perf, decision, runner } = harness({ speech })
-    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, MALFORMED)
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, READING_THROWS)
     await expect(runner.run('open the home page', { source: 'spoken' })).resolves.toBe(true)
     const turns = dones(events).map((event) => event.turnId)
     expect(new Set(turns).size).toBe(turns.length)
@@ -6480,7 +6489,7 @@ describe('a line whose run throws (#546): it ends, and says so', () => {
 
   it('a throw in a later Step records the line as unavailable, whatever the Step before it recorded', faulted(async () => {
     const { events, records, decision, runner } = harness()
-    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), steps: choice('w3') } }, MALFORMED)
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), steps: choice('w3') } }, READING_THROWS)
     await expect(runner.run('click sign in then find the blue one')).resolves.toBe(true)
     expect(dones(events).map((event) => (event.type === 'done' ? event.outcome : null))).toEqual(['done', 'failed'])
     expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ turnId: dones(events)[1]!.turnId, verb: 'none', ended: 'unavailable' })
@@ -6507,7 +6516,7 @@ describe('a line whose run throws (#546): it ends, and says so', () => {
     const speech = new FakeSpeech()
     const { events, records, decision, runner } = harness({ speech })
     const release = decision.hold(0)
-    decision.script.push(MALFORMED)
+    decision.script.push(READING_THROWS)
     const line = runner.run('find the blue one', { source: 'spoken' })
     await flushMicrotasks()
     runner.abort()
@@ -6516,5 +6525,238 @@ describe('a line whose run throws (#546): it ends, and says so', () => {
     expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'cancelled' })])
     expect(speech.spoken.map((spoken) => spoken.text).join(' ')).not.toContain(SPOKEN_FAILURES.failed)
     expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ ended: 'superseded' })
+  }))
+})
+
+describe('a malformed answer is not a throw (#547): it reads as unavailable, and a throw on any road with an open turn ends its line', () => {
+  const faulted = (run: (faults: FaultReport[]) => Promise<void>) => async (): Promise<void> => {
+    const faults: FaultReport[] = []
+    setFaultSink((fault) => faults.push(fault))
+    try {
+      await run(faults)
+    } finally {
+      setFaultSink(null)
+    }
+  }
+  const dones = (events: PipelineEvent[]) => events.filter((event) => event.type === 'done')
+  const lineFaults = (faults: FaultReport[]) => faults.filter((fault) => fault.site === 'run.commandRunner.line')
+  const decisions = (records: CommandLogRecord[]) => records.filter((record) => record.type === 'decision')
+  /** The answers that miss the questions, or are not their shape: each reads as an unavailable ask. */
+  const MALFORMED: readonly [string, Record<string, unknown>][] = [
+    ['no answers', {}],
+    ['the lead question left out', { slot: choice('none') }],
+    ['the Slot left out', { action: choice('click-1') }],
+    ['an answer of the wrong type', { action: { type: 'noul', noul: 0.9 }, slot: choice('none') }],
+    ['a choice that is no word', { action: { type: 'choice', choice: 7, confidence: 0.9, probabilities: {} }, slot: choice('none') }],
+    ['an answer that is no object', { action: 'click-1', slot: choice('none') }],
+  ]
+  const script = (answers: Record<string, unknown>) => ({ answers: answers as Record<string, DecisionAnswer> })
+
+  it.each(MALFORMED)('%s at hop 0 takes the road of a refused ask: the reason shown, no fault, nothing thrown', (_name, answers) => faulted(async (faults) => {
+    const { events, records, decision, runner } = harness()
+    decision.script.push(script(answers))
+    await expect(runner.run('find the blue one', { source: 'spoken' })).resolves.toBe(true)
+    expect(lineFaults(faults)).toEqual([])
+    expect(decisions(records).at(-1)).toMatchObject({ verb: 'none', reading: 'best_guess', jevAsked: true, jev: { reason: 'malformed' } })
+    expect(events.filter((event) => event.type === 'display').map((event) => (event as { text: string }).text).join(' ')).toContain("The words couldn't be read.")
+    expect(dones(events)).toHaveLength(1)
+    expect(runner.getState()).toBe('idle')
+  })())
+
+  it('an Instant line with a malformed answer fires on the Local Match\'s best guess, as on any failed host (reliability.md rule 3)', faulted(async (faults) => {
+    const { browser, records, decision, runner } = harness({ applianceCard: { asks: 'sequential' } })
+    browser.inHand = { ...browser.snapshot, refs: [...PAGE_REFS, ref(9, 'button', 'scroll down')] }
+    decision.script.push(script({}))
+    await runner.run('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
+    expect(browser.collects).toBe(0)
+    expect(decisions(records).at(0)).toMatchObject({ verb: 'scroll_down', jevAsked: true })
+    expect(lineFaults(faults)).toEqual([])
+  }))
+
+  it('a malformed answer at a later hop ends the Task unavailable, as an unavailable hop does', faulted(async (faults) => {
+    const { events, records, decision, runner } = harness()
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, script({}))
+    await expect(runner.run('open the home page', { source: 'spoken' })).resolves.toBe(true)
+    expect(decisions(records).at(-1)).toMatchObject({ verb: 'none', ended: 'unavailable', jev: { reason: 'malformed' }, task: { hop: 1 } })
+    expect(lineFaults(faults)).toEqual([])
+    expect(dones(events).map((event) => (event.type === 'done' ? event.outcome : null))).not.toContain('failed')
+  }))
+
+  describe('a throw in an Early Fire\'s action', () => {
+    /** A subscriber throws on the fired Command, once: the action's own run rejects, its turn left open. */
+    function throwingFire(speech: FakeSpeech) {
+      const world = harness({ speech })
+      const push = world.events.push.bind(world.events)
+      let broken = true
+      world.events.push = (...items) => {
+        if (broken && items[0]?.type === 'command') {
+          broken = false
+          throw new Error('the pane is gone')
+        }
+        return push(...items)
+      }
+      void world.runner.prepare()
+      return world
+    }
+
+    it.each(['reload', 'help'])('"%s" ends where it fired, with no Endpoint: one failed `done`, said, one fault, idle, `consider` resolved', (line) => faulted(async (faults) => {
+      const speech = new FakeSpeech()
+      const { events, records, perf, runner } = throwingFire(speech)
+      await expect(runner.consider(line)).resolves.toBeUndefined()
+      expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'failed' })])
+      const turnId = dones(events)[0]!.turnId
+      expect(speech.spoken.at(-1)!.text).toContain(SPOKEN_FAILURES.failed)
+      expect(lineFaults(faults)).toEqual([expect.objectContaining({ turnId })])
+      expect(decisions(records)).toEqual([expect.objectContaining({ turnId, verb: 'none', ended: 'unavailable', task: { id: turnId, hop: 0 } })])
+      expect(perf.records.filter((record) => record.stage === 'reaction' && record.turnId === turnId)).toHaveLength(1)
+      speech.stop()
+      await flushMicrotasks()
+      expect(runner.getState()).toBe('idle')
+    })())
+
+    it('its Endpoint then closes nothing more: no second `done`, record, Reaction or Task span, and `run` resolved', faulted(async (faults) => {
+      const speech = new FakeSpeech()
+      const { events, records, perf, runner } = throwingFire(speech)
+      await runner.consider('reload')
+      await expect(runner.run('reload', { source: 'spoken', endpointAt: 0 })).resolves.toBe(true)
+      expect(dones(events)).toHaveLength(1)
+      expect(decisions(records)).toHaveLength(1)
+      expect(lineFaults(faults)).toHaveLength(1)
+      expect(perf.records.filter((record) => record.stage === 'reaction')).toHaveLength(1)
+      expect(perf.records.filter((record) => record.stage === 'task')).toHaveLength(1)
+    }))
+
+    it('an Utterance dropped after it leaves the line ended: no record of the Early Fire over the throw\'s', faulted(async () => {
+      const speech = new FakeSpeech()
+      const { events, records, runner } = throwingFire(speech)
+      await runner.consider('reload')
+      void runner.prepare()
+      expect(dones(events)).toHaveLength(1)
+      expect(decisions(records)).toHaveLength(1)
+    }))
+
+    it('an effect seen before the throw does not close its Reaction twice at the Endpoint', faulted(async () => {
+      const speech = new FakeSpeech()
+      const { browser, events, perf, runner } = harness({ speech })
+      browser.reload = async () => {
+        throw new Error('it would not load')
+      }
+      const push = events.push.bind(events)
+      let broken = true
+      events.push = (...items) => {
+        if (broken && items[0]?.type === 'tool_result') {
+          broken = false
+          throw new Error('the pane is gone')
+        }
+        return push(...items)
+      }
+      void runner.prepare()
+      await runner.consider('reload')
+      expect(broken).toBe(false)
+      await runner.run('reload', { source: 'spoken', endpointAt: 0 })
+      expect(perf.records.filter((record) => record.stage === 'reaction')).toHaveLength(1)
+    }))
+  })
+
+  it('an Early Fire that landed and ends as usual adds no fault and no second `done`', faulted(async (faults) => {
+    const { events, runner } = harness()
+    void runner.prepare()
+    await runner.consider('reload')
+    await expect(runner.run('reload', { source: 'spoken', endpointAt: 0 })).resolves.toBe(true)
+    expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'done' })])
+    expect(lineFaults(faults)).toEqual([])
+  }))
+
+  /** A Site Question the page raised with no line running: the desk open, nothing in flight. */
+  function asking(speech?: FakeSpeech) {
+    const siteQuestions = createSiteQuestionDesk()
+    const world = harness({ siteQuestions, ...(speech !== undefined ? { speech } : {}) })
+    const answered: boolean[] = []
+    siteQuestions.raise({ kind: 'confirm', text: 'Delete this video?' }, (accept) => {
+      answered.push(accept)
+      return Promise.resolve()
+    })
+    return { ...world, siteQuestions, answered }
+  }
+
+  it('a Site Question\'s malformed answer is refused aloud, as Jev unavailable is: one `done`, no fault, the record naming why', faulted(async (faults) => {
+    const speech = new FakeSpeech()
+    const { events, records, decision, runner, answered } = asking(speech)
+    decision.script.push(script({}))
+    await expect(runner.run('hmm maybe', { source: 'spoken' })).resolves.toBe(true)
+    expect(answered).toEqual([false])
+    expect(speech.spoken.map((line) => line.text)).toContain(SITE_ANSWERS.fallback)
+    expect(records.filter((record) => record.type === 'site_answer')).toEqual([expect.objectContaining({ answer: 'refuse', reading: 'best_guess', jev: expect.objectContaining({ reason: 'malformed' }) })])
+    expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'done' })])
+    expect(lineFaults(faults)).toEqual([])
+  }))
+
+  it('a throw reading a Site Question\'s answer ends the line: one failed `done`, said, one fault, its record, `run` resolved and idle', faulted(async (faults) => {
+    const speech = new FakeSpeech()
+    const { events, records, decision, runner, answered } = asking(speech)
+    decision.script.push({ answers: { answer: readingThrows('accept') } })
+    await expect(runner.run('hmm maybe', { source: 'spoken' })).resolves.toBe(true)
+    const thinking = events.find((event) => event.type === 'status')
+    expect(thinking).toMatchObject({ status: 'thinking' })
+    const turnId = (thinking as { turnId: string }).turnId
+    expect(dones(events)).toEqual([expect.objectContaining({ turnId, outcome: 'failed' })])
+    expect(speech.spoken.at(-1)!.text).toContain(SPOKEN_FAILURES.failed)
+    expect(lineFaults(faults)).toEqual([expect.objectContaining({ turnId })])
+    expect(decisions(records).at(-1)).toMatchObject({ turnId, verb: 'none', ended: 'unavailable', jevAsked: true })
+    // The page's question stays open: nothing answered it, so the next line can.
+    expect(answered).toEqual([])
+    speech.stop()
+    await flushMicrotasks()
+    expect(runner.getState()).toBe('idle')
+  }))
+
+  it('a stop during a Site Question\'s reading that then throws ends it cancelled, with no failure said over the stop', faulted(async () => {
+    const speech = new FakeSpeech()
+    const { events, decision, runner } = asking(speech)
+    const release = decision.hold(0)
+    decision.script.push({ answers: { answer: readingThrows('accept') } })
+    const line = runner.run('hmm maybe', { source: 'spoken' })
+    await flushMicrotasks()
+    runner.abort()
+    release()
+    await expect(line).resolves.toBe(true)
+    expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'cancelled' })])
+    expect(speech.spoken.map((spoken) => spoken.text).join(' ')).not.toContain(SPOKEN_FAILURES.failed)
+  }))
+
+  it('a throw reading a Site Question\'s answer leaves the Task that raised it running', faulted(async () => {
+    const siteQuestions = createSiteQuestionDesk()
+    const { browser, events, decision, runner } = harness({ siteQuestions })
+    const answered: boolean[] = []
+    const click = browser.click.bind(browser)
+    browser.click = (target) =>
+      new Promise((resolve) =>
+        siteQuestions.raise({ kind: 'confirm', text: 'Delete this video?' }, async (accept) => {
+          answered.push(accept)
+          resolve(click(target))
+        }),
+      )
+    const task = runner.run('click 2')
+    for (let i = 0; i < 20 && siteQuestions.open() === null; i += 1) await flushMicrotasks()
+    decision.script.push({ answers: { answer: readingThrows('accept') } })
+    await expect(runner.run('hmm maybe', { source: 'spoken' })).resolves.toBe(true)
+    expect(runner.getState()).toBe('running')
+    expect(events.filter((event) => event.type === 'status' && event.status === 'cancelled')).toEqual([])
+    await runner.run('yes', { source: 'spoken' })
+    await task
+    expect(answered).toEqual([true])
+  }))
+
+  it('a throw in a Flag stays as it is: nothing opened to end on its road, so `run` rejects with no `done` invented', faulted(async (faults) => {
+    const { browser, events, runner } = harness()
+    await runner.run('scroll down')
+    const before = dones(events).length
+    browser.state = () => {
+      throw new Error('the pane is gone')
+    }
+    await expect(runner.run('flag that')).rejects.toThrow('the pane is gone')
+    expect(dones(events)).toHaveLength(before)
+    expect(lineFaults(faults)).toEqual([])
   }))
 })

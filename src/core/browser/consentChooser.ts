@@ -1,5 +1,5 @@
 import type { AskRecord } from '../decision/askRecord'
-import { choiceProbability, type DecisionChoiceQuestion, type DecisionModel } from '../ports/decisionModel'
+import { choiceProbability, malformedAsUnavailable, type DecisionChoiceQuestion, type DecisionModel } from '../ports/decisionModel'
 import { reportFault } from '../trace/fault'
 import { costsAWayThrough, isAcceptStyle, type ConsentChooser } from './dialogPolicy'
 
@@ -43,7 +43,7 @@ export function createConsentChooser(model: () => DecisionModel | null, sureAbov
     const ask = consentQuestion(dialogText, controlLabels)
     if (ask === null) return null
     const askedAt = (askLog?.now ?? Date.now)()
-    const result = await jev.ask(ask)
+    const result = malformedAsUnavailable(ask.questions, await jev.ask(ask))
     try {
       // No turn owns a consent wall: the ask carries its own id, as a partial's does.
       askLog?.write({ type: 'ask', id: `consent-${askedAt.toString(36)}-${(asked += 1)}`, at: askedAt, kind: 'consent', model: jev.model, state: ask.state, questions: ask.questions })
