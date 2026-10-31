@@ -6416,3 +6416,105 @@ describe('an ad before the song, on the runner (#497)', () => {
     expect(youtube().adsSkipped).toBe(1)
   })
 })
+
+describe('a line whose run throws (#546): it ends, and says so', () => {
+  const faulted = (run: (faults: FaultReport[]) => Promise<void>) => async (): Promise<void> => {
+    const faults: FaultReport[] = []
+    setFaultSink((fault) => faults.push(fault))
+    try {
+      await run(faults)
+    } finally {
+      setFaultSink(null)
+    }
+  }
+  const dones = (events: PipelineEvent[]) => events.filter((event) => event.type === 'done')
+  const displays = (events: PipelineEvent[]) => events.filter((event) => event.type === 'display')
+  /** An answer with none of the questions asked: the reading throws on it, past the line's first event. */
+  const MALFORMED = { answers: {} }
+
+  it('a throw inside the run ends the line: one failed `done`, said and shown, one fault, its record and Reaction closed, and `run` resolved', faulted(async (faults) => {
+    const speech = new FakeSpeech()
+    const { events, records, perf, decision, runner } = harness({ speech })
+    decision.script.push(MALFORMED)
+    await expect(runner.run('find the blue one', { source: 'spoken' })).resolves.toBe(true)
+    expect(events[0]).toMatchObject({ type: 'status', status: 'thinking' })
+    const turnId = events[0]!.type === 'status' ? events[0]!.turnId : ''
+    expect(dones(events)).toEqual([expect.objectContaining({ turnId, outcome: 'failed' })])
+    expect(displays(events).at(-1)).toMatchObject({ turnId, failure: true })
+    expect((displays(events).at(-1) as { text: string }).text).toContain(SPOKEN_FAILURES.failed)
+    expect(speech.spoken.at(-1)!.text).toContain(SPOKEN_FAILURES.failed)
+    expect(events.at(-1)).toMatchObject({ type: 'done' })
+    expect(faults.filter((fault) => fault.site === 'run.commandRunner.line')).toEqual([expect.objectContaining({ turnId })])
+    // Jev was asked, and the record names the ask whose answer broke it.
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ turnId, verb: 'none', ended: 'unavailable', jevAsked: true, ask: turnId, task: { id: turnId, hop: 0 } })
+    expect(perf.records.filter((record) => record.stage === 'task' && record.turnId === turnId)).toEqual([expect.objectContaining({ detail: expect.objectContaining({ ended: 'unavailable', hops: 1, actions: 0 }) })])
+    expect(perf.records.filter((record) => record.stage === 'reaction' && record.turnId === turnId)).toHaveLength(1)
+    speech.stop()
+    await flushMicrotasks()
+    expect(runner.getState()).toBe('idle')
+  }))
+
+  it('a throw before the line\'s first event still rejects: nothing was opened, so no `done` is invented (#545)', faulted(async (faults) => {
+    const broken: SiteQuestionDesk = { ...createSiteQuestionDesk(), open: () => { throw new Error('the desk is gone') } }
+    const { events, runner } = harness({ siteQuestions: broken })
+    await expect(runner.run('find the blue one')).rejects.toThrow('the desk is gone')
+    expect(events).toEqual([])
+    expect(faults).toEqual([])
+  }))
+
+  it('a throw at a later hop ends that hop\'s own turn: the hop before keeps its one `done`', faulted(async (faults) => {
+    const speech = new FakeSpeech()
+    const { events, records, perf, decision, runner } = harness({ speech })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, MALFORMED)
+    await expect(runner.run('open the home page', { source: 'spoken' })).resolves.toBe(true)
+    const turns = dones(events).map((event) => event.turnId)
+    expect(new Set(turns).size).toBe(turns.length)
+    expect(turns).toHaveLength(2)
+    expect(dones(events).map((event) => (event.type === 'done' ? event.outcome : null))).toEqual(['done', 'failed'])
+    expect(speech.spoken.at(-1)!.text).toContain(SPOKEN_FAILURES.failed)
+    expect(faults.filter((fault) => fault.site === 'run.commandRunner.line')).toHaveLength(1)
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ turnId: turns[1], ended: 'unavailable', task: { hop: 1 } })
+    // The hop before closed the Reaction: the throw adds none.
+    expect(perf.records.filter((record) => record.stage === 'reaction')).toHaveLength(1)
+  }))
+
+  it('a throw in a later Step records the line as unavailable, whatever the Step before it recorded', faulted(async () => {
+    const { events, records, decision, runner } = harness()
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), steps: choice('w3') } }, MALFORMED)
+    await expect(runner.run('click sign in then find the blue one')).resolves.toBe(true)
+    expect(dones(events).map((event) => (event.type === 'done' ? event.outcome : null))).toEqual(['done', 'failed'])
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ turnId: dones(events)[1]!.turnId, verb: 'none', ended: 'unavailable' })
+  }))
+
+  it('a throw after every turn has its end adds only the fault: no second `done`, nothing said', faulted(async (faults) => {
+    const speech = new FakeSpeech()
+    const { events, perf, decision, runner } = harness({ speech })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } })
+    const mint = perf.tracer.mintTurnId.bind(perf.tracer)
+    let minted = 0
+    perf.tracer.mintTurnId = () => {
+      minted += 1
+      if (minted > 1) throw new Error('no more turns')
+      return mint()
+    }
+    await expect(runner.run('open the home page', { source: 'spoken' })).resolves.toBe(true)
+    expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'done' })])
+    expect(speech.spoken.map((line) => line.text).join(' ')).not.toContain(SPOKEN_FAILURES.failed)
+    expect(faults.filter((fault) => fault.site === 'run.commandRunner.line')).toHaveLength(1)
+  }))
+
+  it('a line a stop already ended that then throws ends cancelled and says no failure over the stop', faulted(async () => {
+    const speech = new FakeSpeech()
+    const { events, records, decision, runner } = harness({ speech })
+    const release = decision.hold(0)
+    decision.script.push(MALFORMED)
+    const line = runner.run('find the blue one', { source: 'spoken' })
+    await flushMicrotasks()
+    runner.abort()
+    release()
+    await expect(line).resolves.toBe(true)
+    expect(dones(events)).toEqual([expect.objectContaining({ outcome: 'cancelled' })])
+    expect(speech.spoken.map((spoken) => spoken.text).join(' ')).not.toContain(SPOKEN_FAILURES.failed)
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ ended: 'superseded' })
+  }))
+})

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import type { ShelfFile } from '../../core/shelf/shelf'
@@ -569,13 +570,40 @@ interface PreparedPage {
   readonly media?: Promise<ApplianceMedia | null>
 }
 
+/** What one line's run has opened and closed so far (#546): what a throw out of it has left to end. Read by async context, so a line overlapping it keeps its own. */
+interface LineScope {
+  /** Its turns with a stage or a Command and no `done` yet, oldest first. */
+  readonly open: Set<string>
+  reacted: boolean
+  /** The turn of the last decision record that ended something: a finished Step's says nothing of the Step after it. */
+  endedRecord: string | null
+  /** The last ask a turn of it put to Jev, which the record of a throw names. */
+  ask: string | null
+  /** Its run is over: work it left detached opens nothing. */
+  over: boolean
+}
+
 export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   // A bare word the app's own surfaces carry ("open settings") has two readings (#420, ADR 0089): never a Known Address, Jev's.
   const ownWords = appWords()
   const knownAddress = (word: string): string | null => (deps.app !== undefined && ownWords.has(word.toLowerCase()) ? null : (deps.knownAddress?.(word) ?? null))
   const { browser, tracer } = deps
+  const lineScope = new AsyncLocalStorage<LineScope>()
+  /** Which line's run first opened each turn (#546). A turn stays here past its `done`, so a late stage on it never reads as open again. */
+  const turnScopes = new Map<string, LineScope>()
+  /** A turn's stage or Command opens it for the line whose run published it, and its `done`, whoever publishes that, ends it. */
+  function noteTurn(event: PipelineEvent): void {
+    if (event.type === 'done') turnScopes.get(event.turnId)?.open.delete(event.turnId)
+    else if ((event.type === 'command' || (event.type === 'status' && event.status !== 'cancelled')) && !turnScopes.has(event.turnId)) {
+      const scope = lineScope.getStore()
+      if (scope === undefined || scope.over) return
+      turnScopes.set(event.turnId, scope)
+      scope.open.add(event.turnId)
+    }
+  }
   /** Every event the runner publishes, the live lines' stages read off it on the way (#489). */
   const publish = (event: PipelineEvent): void => {
+    noteTurn(event)
     track(event)
     deps.publish(event)
   }
@@ -828,6 +856,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   function log(record: CommandLogRecord): void {
+    if (record.type === 'decision' && record.ended !== undefined) {
+      const scope = turnScopes.get(record.turnId)
+      if (scope !== undefined) scope.endedRecord = record.turnId
+    }
     if (record.type === 'decision' && record.flagged !== true) taskSeen(record.task?.id ?? record.turnId, record.at, record.verb)
     // An Errand (#467) is what "flag that" means after it, as a Task is.
     if (record.type === 'errand') taskSeen(record.turnId, record.at, 'none')
@@ -875,6 +907,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     } catch (error) {
       reportFault('run.commandRunner.askLog', error, { turnId })
     }
+    const scope = turnScopes.get(turnId)
+    if (scope !== undefined) scope.ask = askId
     return { ...result, askId }
   }
 
@@ -941,6 +975,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   function span(turnId: string, durMs: number, detail: Record<string, unknown>): void {
+    // By its turn, not by async context: a Reaction often closes on a browser event, outside the line's run.
+    const scope = turnScopes.get(turnId)
+    if (scope !== undefined) scope.reacted = true
     try {
       tracer?.span(turnId, 'reaction', durMs, detail)
     } catch (error) {
@@ -2659,17 +2696,21 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return null
   }
 
+  function taskSpan(taskId: string, endpointAt: number, detail: { ended: TaskEnded; hops: number; actions: number; source: CommandSource }): void {
+    try {
+      tracer?.span(taskId, 'task', Math.max(0, monotonic() - endpointAt), detail)
+    } catch (error) {
+      reportFault('run.commandRunner.taskSpan', error, { turnId: taskId })
+    }
+  }
+
   /**
    * A Task's end (#328): the `task` span, from its Endpoint, on hop 0's
    * turn, and its end line spoken (#399) — on the turn last answered, whose
    * Card the Feed already shows, so the line adds no entry of its own.
    */
   function endTask(task: Task, ended: TaskEnded, hops: number): TaskEnded {
-    try {
-      tracer?.span(task.id, 'task', Math.max(0, monotonic() - task.endpointAt), { ended, hops, actions: task.actions.length, source: task.source })
-    } catch (error) {
-      reportFault('run.commandRunner.taskSpan', error, { turnId: task.id })
-    }
+    taskSpan(task.id, task.endpointAt, { ended, hops, actions: task.actions.length, source: task.source })
     summarize(task.id)
     const line = endLineOf(task, ended, hops)
     if (line !== null && deps.speech !== undefined) {
@@ -3696,6 +3737,38 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /**
+   * A line's run threw (#546, reliability.md rule 5: every line is
+   * answered). Whatever the throw left holding the run state goes, and each
+   * of its turns still open ends: failed, the last one saying so as any
+   * failed action does, or cancelled on a line already ended, whose ender's
+   * words stand. The record, Reaction and Task span close as on any ended
+   * line, unless the run closed them itself. A throw after every turn has
+   * its end says nothing: a guess, the arm cheapest to reverse, since a line
+   * may have finished or stopped short by then and both have told their
+   * `done`. What would settle it: such a fault in a kiosk log, read against
+   * what the owner saw.
+   */
+  function endThrown(own: LiveLine, scope: LineScope, error: unknown, line: { readonly transcript: string; readonly source: CommandSource; readonly endpointAt: number; readonly truncated: boolean }): void {
+    const { turnId, submission } = own
+    reportFault('run.commandRunner.line', error, { turnId })
+    if (reading?.submission === submission) reading = null
+    if (errand?.submission === submission) endErrand()
+    const open = [...scope.open]
+    for (const [key, entry] of inFlight) if (open.includes(entry.turnId)) inFlight.delete(key)
+    const stopped = isEnded(submission)
+    const last = open.at(-1)
+    const ended: TaskEnded = stopped ? 'superseded' : 'unavailable'
+    if (!stopped && !scope.reacted) span(turnId, Math.max(0, monotonic() - line.endpointAt), { verb: 'none', effect: 'failed', reading: 'best_guess', source: line.source })
+    if (last === undefined ? scope.endedRecord === null : scope.endedRecord !== last) {
+      log({ type: 'decision', turnId: last ?? turnId, at: at(), source: line.source, transcript: line.transcript, reading: 'best_guess', verb: 'none', target: null, slot: null, ...heardAs(turnId), jevAsked: scope.ask !== null, ...(scope.ask !== null ? { ask: scope.ask } : {}), ...(line.truncated ? { truncated: true } : {}), task: { id: turnId, hop: own.hops }, ended })
+    }
+    if (last !== undefined) taskSpan(turnId, line.endpointAt, { ended, hops: own.hops + 1, actions: own.task?.actions.length ?? 0, source: line.source })
+    if (!stopped && last !== undefined) answerFailure(last, SPOKEN_FAILURES.failed, { command: own.fired ?? null, words: own.words })
+    for (const turn of open) publish({ type: 'done', turnId: turn, outcome: stopped ? 'cancelled' : 'failed', at: at() })
+    for (const turn of new Set([turnId, ...open])) summarize(turn)
+  }
+
   /** The running line's doing sentence (#504), left to be said as its stop line would be: a line no host read let it go on. */
   function goesOnSaid(turnId: string, submission: number): void {
     const running = runningBefore(submission)
@@ -3934,9 +4007,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (heard.overTimeout === true && heard.fate === 'goes_on' && !isEnded(submission)) goesOnSaid(turnId, submission)
         if (end !== null && !isEnded(submission) && handsOff(end.ended) && !quietOver(turnId, end.actions)) await startErrand({ id: turnId, goalLine: lineRead, source, handOff: { actions: end.actions ?? [], ended: end.ended, ...(lastAnswer !== null ? { said: lastAnswer } : {}) } }, submission)
       }
+      // Its first stage was published before its run began: the line's own turn is open from here.
+      const scope: LineScope = { open: new Set([turnId]), reacted: false, endedRecord: null, ask: null, over: false }
+      turnScopes.set(turnId, scope)
       try {
-        await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
+        await lineScope.run(scope, () => deps.subspans?.runInTurn(turnId, perform) ?? perform())
+      } catch (error) {
+        endThrown(own, scope, error, { transcript: lineRead, source, endpointAt, truncated })
       } finally {
+        scope.over = true
+        for (const [turn, owner] of turnScopes) if (owner === scope) turnScopes.delete(turn)
         overSpeechLines.delete(turnId)
         settleLine(own)
         // An ended Command's stop line its ender never said a sentence after (#489): said alone.
