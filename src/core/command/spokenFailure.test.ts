@@ -117,9 +117,13 @@ describe('failureLineOf', () => {
     expect(failureLineOf('back', 'cannot go back: no history')).toBe("There's no page to go back to.")
   })
 
-  it('says a missing ref is no item on this page, whether it never existed or the page moved on', () => {
-    expect(failureLineOf('click', 'ref 999 refused: it no longer names the element you were shown. Continue from the page below\n# Page — https://example.com/')).toBe("There's no item 999 on this page.")
-    expect(failureLineOf('type', 'ref 4 refused: it no longer names the element you were shown; the page could not be re-read')).toBe("There's no item 4 on this page.")
+  it('a refused number says it cannot be used and what to say instead: the item may well be on the page, unshown (ADR 0033)', () => {
+    const line = "That number isn't one I can use here. Say what it's called."
+    expect(failureLineOf('click', 'ref 999 refused: it no longer names the element you were shown. Continue from the page below\n# Page — https://example.com/')).toBe(line)
+    expect(failureLineOf('type', 'ref 4 refused: it no longer names the element you were shown; the page could not be re-read')).toBe(line)
+  })
+
+  it('a number that no longer resolves says there is no such item', () => {
     expect(failureLineOf('click', 'ref 7 no longer resolves at the visually grounded point')).toBe("There's no item 7 on this page.")
   })
 

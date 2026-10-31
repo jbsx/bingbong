@@ -66,8 +66,12 @@ export function notHereLine(words: string): string {
   return said === '' ? SPOKEN_FAILURES.notHere : `I couldn't find ${said} here.`
 }
 
-/** A ref the controller refused (ADR 0033) or could not reach: the number, whatever the protocol wording around it. */
-const MISSING_REF_RE = /^ref (\d+) (?:refused|no longer resolves)\b/
+/** A number the controller refused (ADR 0033): one no Command's outcome showed, so the item may well be on the page. */
+const REFUSED_REF_RE = /^ref \d+ refused\b/
+export const REFUSED_REF_LINE = "That number isn't one I can use here. Say what it's called."
+
+/** A ref the controller could not reach: the number, whatever the protocol wording around it. */
+const MISSING_REF_RE = /^ref (\d+) no longer resolves\b/
 
 /** A Chromium net error on a load, by its name; the plain sentence for the common ones. */
 const NET_ERROR_RE = /\bERR_([A-Z_]+)/
@@ -86,6 +90,7 @@ const NET_FAILURES: Readonly<Record<string, string>> = {
  * written for a model, nor a Chromium code.
  */
 export function failureLineOf(tool: string, error: string): string {
+  if (REFUSED_REF_RE.test(error)) return REFUSED_REF_LINE
   const ref = MISSING_REF_RE.exec(error)
   if (ref !== null) return `There's no item ${ref[1]} on this page.`
   if (tool === 'navigate') {

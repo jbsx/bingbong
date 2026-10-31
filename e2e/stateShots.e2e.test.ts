@@ -402,9 +402,9 @@ async function walkTheShell(run: Run): Promise<void> {
   await clickPanel(run, '[aria-label="Collapse the feed panel"]')
   const kept = await waitFor(async () => {
     const words = await harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`)
-    return /no item 999/i.test(words) ? words : undefined
+    return /number isn't one I can use/i.test(words) ? words : undefined
   }, { timeoutMs: 10_000, intervalMs: 100 }).catch(async () => harness.dashboardEval<string>(`document.querySelector('.status-capsule')?.textContent ?? ''`))
-  expect.soft(kept, 'the capsule keeps the failure sentence with the panel shut').toMatch(/no item 999/i)
+  expect.soft(kept, 'the capsule keeps the failure sentence with the panel shut').toMatch(/number isn't one I can use/i)
   await harness.ensurePanelOpen()
   await shoot(run, '10-failure')
   await expectNextLine(run, '10-failure')

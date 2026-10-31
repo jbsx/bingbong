@@ -33,7 +33,8 @@ describe('nextLine', () => {
   })
 
   it('an item the page lacks, or a Task not sure it is done, names help: the Page Read is gone (#513)', () => {
-    expect(nextLine(failureLineOf('click', 'ref 999 refused'), command('click'))).toBe('help')
+    expect(nextLine(failureLineOf('click', 'ref 999 refused'), command('click'), 'click 999')).toBe('help')
+    expect(nextLine(failureLineOf('click', 'ref 999 no longer resolves'), command('click'), 'click 999')).toBe('help')
     expect(nextLine(SPOKEN_FAILURES.unsure)).toBe('help')
   })
 

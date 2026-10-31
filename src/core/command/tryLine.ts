@@ -1,6 +1,6 @@
 import type { Command, CommandVerb } from './command'
 import { isAddressShaped } from './openAddress'
-import { SPOKEN_FAILURES } from './spokenFailure'
+import { REFUSED_REF_LINE, SPOKEN_FAILURES } from './spokenFailure'
 
 // The next line after a failure (#438, principles 9 and 10): an error says
 // what happened and what to say next, since voice has no menu to discover
@@ -45,6 +45,7 @@ export const BY_FAILURE: ReadonlyMap<string, string | null> = new Map([
   [SPOKEN_FAILURES.unsure, TRY_LINES.help],
   [SPOKEN_FAILURES.notFinished, TRY_LINES.help],
   [SPOKEN_FAILURES.noShelfFile, null],
+  [REFUSED_REF_LINE, TRY_LINES.help],
 ])
 
 /**

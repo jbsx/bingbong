@@ -75,8 +75,8 @@ describe('speech e2e', () => {
 
   it('speaks a failed action\'s one line and never its error', async () => {
     await cli(harness, 'click 999', /^error: /)
-    // The item named in the person's words, never the action's error ("ref 999 …").
-    const lines = await heard(/^piper-line There's no item 999 on this page\.$/)
+    // In the person's words, never the action's error ("ref 999 …").
+    const lines = await heard(/^piper-line That number isn't one I can use here\./)
     expect(lines.some((line) => /\bref\b/.test(line) && line.startsWith('piper-line'))).toBe(false)
   })
 })

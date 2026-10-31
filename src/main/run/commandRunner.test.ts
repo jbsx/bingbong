@@ -4878,8 +4878,8 @@ describe('the one Answer every Command leaves (#333)', () => {
         throw new Error('ref 9 refused')
       }
       await runner.run('click 9')
-      expect(displays(events)).toEqual([expect.objectContaining({ text: shown("There's no item 9 on this page.", 'help'), failure: true })])
-      expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? [said("There's no item 9 on this page.", 'help')] : [])
+      expect(displays(events)).toEqual([expect.objectContaining({ text: shown("That number isn't one I can use here. Say what it's called.", 'help'), failure: true })])
+      expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? [said("That number isn't one I can use here. Say what it's called.", 'help')] : [])
     }
   })
 
@@ -5949,6 +5949,21 @@ describe('an Overlap (#489): a line given while another runs is read against it'
     await first
     expect(doneOf(events, turnId)).toBe('cancelled')
     expect(said(events)).toEqual(['Stopped opening bbc.com.'])
+  })
+
+  it("a line that moves the pane over two Commands in flight: the running line's entry has its sentence, the other `Stopped.`, and one sentence is said", async () => {
+    const { browser, events, runner, first, turnId, land } = await running()
+    browser.click = () => new Promise<string>(() => {})
+    void runner.run('click 999')
+    await flushMicrotasks()
+    const clicking = events.filter((event) => event.type === 'command')[1]!.turnId
+    await runner.run('back')
+    land()
+    await first
+    const shownFor = (turn: string): string[] => events.flatMap((event) => (event.type === 'display' && event.turnId === turn ? [event.text] : []))
+    expect(shownFor(clicking)).toEqual(['Stopped clicking item 999.'])
+    expect(shownFor(turnId)).toEqual(['Stopped.'])
+    expect(said(events)).toEqual(['Stopped clicking item 999.'])
   })
 
   it('stop ends it and is said: "Stopped."', async () => {

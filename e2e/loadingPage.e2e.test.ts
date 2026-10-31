@@ -113,6 +113,28 @@ describe('a page still loading e2e', () => {
     expect(displays).toEqual(['Stopped.', expect.stringMatching(/^Opened .*\/second\.$/)])
   }, 30_000)
 
+  it('an exact line over a loading page, ended in flight by a line that takes the pane: the Feed keeps the order given and one entry says what it was doing', async () => {
+    const before = (await commandEntries()).length
+    const shown = (await feedDisplays(harness)).split('\n---\n').length
+    await startHeldNavigation()
+    expect(await harness.submitCommand('click 999')).toBe('submitted')
+    await sleep(300)
+    expect(await harness.submitCommand(`navigate ${harness.fixture.url('/second')}`)).toBe('submitted')
+    await waitFor(async () => ((await commandEntries()).length - before >= 3 ? true : undefined), { timeoutMs: HELD_RESPONSE_MS + 5_000, intervalMs: 250 })
+    const entries = (await commandEntries()).slice(before).map((entry) => entry.text)
+    expect(entries).toEqual([expect.stringMatching(/^navigate .*\/held-response/), expect.stringMatching(/^click 999/), expect.stringMatching(/^navigate .*\/second/)])
+    // `Opened` comes from a separate navigate: nothing promises it lands before the third Feed entry.
+    const displays = await waitFor(
+      async () => {
+        const all = (await feedDisplays(harness)).split('\n---\n').slice(shown).map((display) => display.replace(/^\d\d:\d\d:\d\dBing Bong/, ''))
+        return /^Opened .*\/second\.$/.test(all.at(-1) ?? '') ? all : undefined
+      },
+      { timeoutMs: 5_000, intervalMs: 100 },
+    )
+    expect(displays.filter((display) => display === 'Stopped clicking item 999.')).toHaveLength(1)
+    expect(displays.filter((display) => display === 'Stopped.')).toHaveLength(1)
+  }, 30_000)
+
   it('shows the address that failed after a failed navigation', async () => {
     const failing = 'http://127.0.0.1:1/nowhere'
     expect(await harness.submitCommand(`navigate ${failing}`)).toBe('submitted')

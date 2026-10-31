@@ -984,9 +984,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * End the Command in flight: its turn ends cancelled now, answered as a
    * Stop ended it or as a later Command did (#333) unless it already has
    * its Answer, and whatever its action answers later reaches nothing.
+   * `said` is one line's stop sentence: only that line's turns are answered with it.
    * With a Task, only that line's own turns end (#510): a later line's action goes on.
    */
-  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS, said?: string, taskId?: string): boolean {
+  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS, said?: { readonly line: string; readonly text: string }, taskId?: string): boolean {
     const cancelled: { turnId: string }[] = []
     for (const [key, entry] of inFlight) {
       if (taskId !== undefined && (lineOfTurn.get(entry.turnId) ?? entry.turnId) !== taskId) continue
@@ -996,7 +997,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (cancelled.length === 0) return false
     for (const { turnId } of cancelled) {
       publish({ type: 'status', turnId, status: 'cancelled', at: at() })
-      answer(turnId, said ?? STOPPED_ANSWERS[by], 'muted')
+      answer(turnId, said !== undefined && (lineOfTurn.get(turnId) ?? turnId) === said.line ? said.text : STOPPED_ANSWERS[by], 'muted')
       publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
     }
     return true
@@ -1025,7 +1026,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const errandMedia = heldByErrand && errand?.acted === true
     floor = Math.max(floor, submission)
     endErrand()
-    const said = how === 'ends' && running !== null ? stoppedLine(acting) : undefined
+    const said = how === 'ends' && running !== null ? { line: lineOfTurn.get(running.turnId) ?? running.turnId, text: stoppedLine(acting) } : undefined
     // A line ended while its sentence sounds is silenced with it (#490): "move on" over its sentence. A join on a line that fired, or
     // whose Task is over, leaves it to the joined line's reading (#494, #510): one that stands on it lets it finish, one that fires cuts it.
     const leftToJoined = how === 'joins' && running !== null && (running.settled || running.fired !== undefined)
@@ -1038,8 +1039,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       running.end.gaveWay = true
       publish({ type: 'done', turnId: running.turnId, outcome: 'cancelled', at: at() })
     }
-    if (!actionLeft) cancelInFlight(how === 'stop' ? 'stopped' : 'superseded', said)
-    if (said !== undefined) stopSaid = { text: said, by }
+    // Beside the running line's own sentence, any other Command in flight has only "Stopped." (#531): it was doing something else.
+    if (!actionLeft) cancelInFlight(how === 'stop' || said !== undefined ? 'stopped' : 'superseded', said)
+    if (said !== undefined) stopSaid = { text: said.text, by }
     // An ended `play` takes its media with it (the overlap gate's 1-replace, after #492): its watch page, left
     // loading under a line that keeps the pane, would land and play. The pane stops where it stands and pauses.
     if (how !== 'joins' && (running?.verb === 'play' || errandMedia) && !paneTaken) {

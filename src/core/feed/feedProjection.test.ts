@@ -185,13 +185,13 @@ describe('feed projection', () => {
       { type: 'command', turnId: 't1', text: 'click 3', at: 1 },
       { type: 'tool_call', turnId: 't1', callId: 'c1', name: 'click', args: { ref: 3 }, at: 2 },
       { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'click', ok: false, error: 'ref 3 refused: it no longer names the element you were shown. Continue from the page below', at: 3 },
-      { type: 'display', turnId: 't1', text: "There's no item 3 on this page.", failure: true, at: 4 },
-      { type: 'speak', turnId: 't1', text: "There's no item 3 on this page.", failure: true, at: 5 },
+      { type: 'display', turnId: 't1', text: "That number isn't one I can use here. Say what it's called.", failure: true, at: 4 },
+      { type: 'speak', turnId: 't1', text: "That number isn't one I can use here. Say what it's called.", failure: true, at: 5 },
     ]).entries()
     expect(feed.map((entry) => [entry.kind, entry.text, entry.runId, entry.failure])).toEqual([
       ['command', 'click 3', undefined, undefined],
       ['tool', 'click [3]', 't1', undefined],
-      ['display', "There's no item 3 on this page.", undefined, true],
+      ['display', "That number isn't one I can use here. Say what it's called.", undefined, true],
     ])
   })
 
