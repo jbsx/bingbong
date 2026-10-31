@@ -84,7 +84,7 @@ const BUSY_ON_THE_BARS_FIRST_FRAME = `(() => {
  * against when this renderer learned the ear opened (#441's recipe), both on the renderer's clock.
  */
 const WATCH = `(() => {
-  window.__turn = { shownAt: null, listenAt: null, heardAt: null, heardShownAt: null, states: {}, order: [], partials: [] }
+  window.__turn = { shownAt: null, listenAt: null, heardAt: null, heardShownAt: null, states: {}, order: [], partials: [], heardRows: [] }
   window.bingbong.voice.onState((state) => { if (state.listening && window.__turn.listenAt === null) window.__turn.listenAt = performance.timeOrigin + performance.now() })
   window.bingbong.voice.onHeard(() => { if (window.__turn.heardAt === null) window.__turn.heardAt = performance.timeOrigin + performance.now() })
   const r = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)] }
@@ -95,6 +95,10 @@ const WATCH = `(() => {
     if (window.__turn.heardShownAt === null && (card.textContent ?? '').includes('Heard“')) window.__turn.heardShownAt = performance.timeOrigin + performance.now()
     const words = card.querySelector('.turn-words')?.textContent ?? ''
     if (card.dataset.state === 'listening' && words.startsWith('“') && !window.__turn.partials.includes(words)) window.__turn.partials.push(words)
+    for (const row of card.querySelectorAll('.turn-step')) {
+      const text = row.querySelector('.turn-step-text')?.textContent ?? ''
+      if (row.querySelector('.turn-step-label')?.textContent === 'Heard' && !window.__turn.heardRows.includes(text)) window.__turn.heardRows.push(text)
+    }
     const state = card.dataset.state
     if (window.__turn.states[state]) return
     window.__turn.states[state] = {
@@ -121,6 +125,7 @@ interface Seen {
   states: Record<string, { cells: number[][]; wordLeft: number; markRight: number; words: number[]; rows: number[][]; text: string }>
   order: string[]
   partials: string[]
+  heardRows: string[]
 }
 
 describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
@@ -174,6 +179,9 @@ describe('the Turn Card (#474): spoken lines over the Idle Screen', () => {
       expect(seen.states.dropped?.text).toContain('No response')
       if (seen.states.speaking !== undefined) expect(seen.states.speaking.text).toContain('Speaking…')
       if (seen.states.acting !== undefined) expect(seen.states.acting.text).toContain('Playing…')
+      // Each line's transcript drew its Heard row (AC1). Read as it was drawn, never off the ended card: a line with more
+      // steps than the six rows rolls its oldest off, and since #507 a failed play's Heard row is one of them.
+      expect(seen.heardRows).toEqual([`“${NONE}”`, `“${PLAY}”`])
       expect(seen.states.failed?.text).toContain('Read asplay')
       expect(seen.states.failed?.text).toContain('SpeakingNo videos found')
       expect(seen.states.failed?.text).toContain('FailedNo videos found')
