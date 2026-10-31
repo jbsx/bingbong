@@ -108,3 +108,29 @@ export const colourFloor = (rest: boolean): string => `(() => {
   }
   return issues
 })()`
+
+/**
+ * A read of a surface at the paint it settles to (#555): the read runs in the
+ * task that found no brief motion left, so nothing can start between the two,
+ * and a motion that starts during the wait is waited for too. Going live washes
+ * the Voice Prompt at once while Run's quiet grey takes its 120 ms to step up, so
+ * a read in that first frame measured the old grey on the new wash (5.77:1).
+ * Three kinds never end in the state being read, and hold nothing: a loop, a
+ * paused one, and motion of `transform` alone (the Turn Card's countdown runs
+ * until the card leaves). A paint still moving at the bound is an issue, so the
+ * guard never passes on what it did not check. The bound's 5 s is a guess: the
+ * longest brief motion in the app is 240 ms (principle 4 keeps them under 300), so
+ * it only has to outlast a starved renderer; a loaded machine reading it would settle it.
+ */
+export const settledPaint = (read: string, boundMs = 5000): string => `(async () => {
+  const until = performance.now() + ${boundMs}
+  const timing = new Set(['offset', 'computedOffset', 'easing', 'composite', 'transform'])
+  const brief = () => document.getAnimations().filter((animation) => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity && animation.effect?.getKeyframes().some((frame) => Object.keys(frame).some((key) => !timing.has(key))))
+  for (;;) {
+    const moving = brief()
+    if (moving.length === 0) return ${read}
+    const left = until - performance.now()
+    if (left <= 0) return [...new Set(moving.map((animation) => animation.effect?.target))].map((el) => 'paint not settled after ${boundMs} ms: ' + (typeof el?.className === 'string' && el.className !== '' ? '.' + el.className.split(' ')[0] : el?.tagName.toLowerCase()) + ' "' + String(el?.textContent ?? '').trim().replace(/\\s+/g, ' ').slice(0, 40) + '"')
+    await Promise.race([Promise.allSettled(moving.map((animation) => animation.finished)), new Promise((resolve) => setTimeout(resolve, left))])
+  }
+})()`

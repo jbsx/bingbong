@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EAR_FAILED, EAR_FAILED_LINE, EAR_FAILED_MORE, REST_HINT } from '../src/core/voice/voiceHint'
 import { APPLIANCE_HEIGHT, APPLIANCE_WIDTH, startApplianceScreen, type ApplianceScreen } from './applianceScreen'
-import { colourFloor } from './colourFloor'
+import { colourFloor, settledPaint } from './colourFloor'
 import { startFixtureServer, YOUTUBE_FIXTURE_NOTHING, type FixtureServer } from './fixtureServer'
 import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
@@ -306,13 +306,13 @@ async function shoot(run: Run, state: string, rest = true): Promise<void> {
   // A surface that cannot be read is a failure too: the guard never passes on what it did not check.
   const read = async (surface: string, evaluate: (expression: string) => Promise<string[]>): Promise<void> => {
     for (const script of [CHECK_SCRIPT, colourFloor(rest)]) {
-      for (const issue of await evaluate(script).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
+      for (const issue of await evaluate(settledPaint(script)).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
     }
     tinted.push(...(await evaluate(LIVE_TINTED).catch((error: unknown) => (found.push(`${surface}: tint not read: ${String(error)}`), []))))
   }
   for (const [surface, evaluate] of surfaces) await read(surface, evaluate)
-  for (const issue of await run.harness.overlayEval<string[]>(FEED_CHECK).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`panel: ${issue}`)
-  for (const issue of await run.harness.dashboardEval<string[]>(SHELL_SCRIPT).catch((error: unknown) => [`shell not read: ${String(error)}`])) found.push(`dashboard: ${issue}`)
+  for (const issue of await run.harness.overlayEval<string[]>(settledPaint(FEED_CHECK)).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`panel: ${issue}`)
+  for (const issue of await run.harness.dashboardEval<string[]>(settledPaint(SHELL_SCRIPT)).catch((error: unknown) => [`shell not read: ${String(error)}`])) found.push(`dashboard: ${issue}`)
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
   const riding = await run.harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open .weighin-popup')`).catch(() => false)
   if (!riding && (await run.harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup')`).catch(() => false))) {
@@ -995,8 +995,10 @@ describe('the states screenshot review (#359)', () => {
           BINGBONG_WAKE_SCRIPT: JSON.stringify([QUIET, QUIET, QUIET, 0.99, QUIET]),
           BINGBONG_VAD_LOAD_MS: '20000',
           // Two Utterances in one Hot Listen: the page collected at the first speech start comes back empty (see
-          // #359's report), so the words shown are the second's, taken over the page with its Page Terms.
-          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 40), ...frames(QUIET, 40), SPEECH]),
+          // #359's report), so the words shown are the second's, taken over the page with its Page Terms. The first runs
+          // about 5 s at the mic's ~14 ms a frame: 29-listening takes ~1 s to shoot under load, and 80 frames ended it in
+          // that very second, so a read could land on the ear reading those words instead of the state it is named for (#555).
+          BINGBONG_VAD_SCRIPT: JSON.stringify([...frames(SPEECH, 360), ...frames(QUIET, 40), SPEECH]),
           BINGBONG_STT_SCRIPT: JSON.stringify(['what about', { text: WORDS, partials: ['what about', 'what about the Fixture', ...frames(0, 200).map(() => WORDS)] }]),
         },
         FAKE_MIC,

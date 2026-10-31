@@ -7,7 +7,7 @@ import { startHarness, type Harness } from './harness'
 import { startApplianceScreen, type ApplianceScreen } from './applianceScreen'
 import { REST_HINT } from '../src/core/voice/voiceHint'
 import { cli } from './cliSupport'
-import { colourFloor } from './colourFloor'
+import { colourFloor, settledPaint } from './colourFloor'
 import { decisionScript, readingOf } from './scriptedJev'
 import { startUsageStandIn, type UsageStandIn, PROVIDERS } from './usageStandIn'
 import { waitFor } from './waitFor'
@@ -245,7 +245,7 @@ describe.each([
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
-    expect(await harness.dashboardEval<string[]>(colourFloor(true))).toEqual([])
+    expect(await harness.dashboardEval<string[]>(settledPaint(colourFloor(true)))).toEqual([])
   })
 
   it('grows to fill a window larger than the appliance’s display, edge to edge rather than framed in empty ground', async () => {
@@ -490,7 +490,7 @@ describe.each([
     expect(geometry.overflowing, `${name} ${scheme}`).toEqual([])
     expect(geometry.smallestText, `${name} ${scheme}`).toBeGreaterThanOrEqual(16)
     // The colour floor (#437), read in dark, where the shot leaves the screen.
-    expect(await harness.dashboardEval<string[]>(colourFloor(true)), `${name} ${scheme}`).toEqual([])
+    expect(await harness.dashboardEval<string[]>(settledPaint(colourFloor(true))), `${name} ${scheme}`).toEqual([])
   }
 
   /**

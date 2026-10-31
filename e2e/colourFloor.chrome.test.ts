@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { colourFloor } from './colourFloor.ts'
+import { colourFloor, settledPaint } from './colourFloor.ts'
 import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // The colour floor's own guard (#437): the check stateShots and shot:idle
@@ -37,6 +37,10 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
         '/tint-stray': page(`<div class="status-capsule" style="height:40px;background:var(--accentq)"></div>`),
         '/tint-unruled': page(`<div class="status-capsule live-tint" style="height:40px;background:var(--accentq)"></div>`),
         '/running': page(`<section class="idle-timer"><p style="color:var(--accent)">24:59</p></section>`),
+        // The Prompt Bar's Run, empty, under the Voice Prompt going live (#555): the wash lands at once, the quiet grey it steps to in 120 ms.
+        '/verb': page(`<style>.live-tint { background: var(--accentq); --fg3: var(--fg2) }</style><div id="host" class="status-capsule"><button class="verb" style="font:inherit;border:0;background:transparent;color:var(--fg3);transition:background 120ms ease, color 120ms ease">Run</button></div>`),
+        '/two-fades': page(`<p id="a" style="color:#000;transition:color 1000ms linear">London</p><p id="b" style="color:#000;transition:color 1500ms linear">Paris</p>`),
+        '/still-going': page(`<p id="a" style="color:#000;transition:color 60s linear">London</p>`),
       },
       'bingbong-colour-floor-chrome-',
     )
@@ -88,5 +92,47 @@ describe.skipIf(!canDriveChrome)('the colour floor (#437)', () => {
 
   it('reads text on a mark drawn behind it against that mark', async () => {
     expect(await floor('/today')).toEqual([])
+  })
+
+  describe('a settled paint (#555)', () => {
+    /** The Voice Prompt going live in the same task as the read: the state the kiosk's own frame shows for 120 ms. */
+    const GO_LIVE = `getComputedStyle(document.querySelector('.verb')).color; document.querySelector('#host').classList.add('live-tint')`
+    const opened = async (path: string): Promise<void> => {
+      await fixtures.open(path)
+      // A transition runs only from a style already computed.
+      await fixtures.chrome.evaluate(`new Promise((resolve) => requestAnimationFrame(() => resolve(true)))`)
+    }
+
+    it('reads what the screen settles to, not a colour on its way there', async () => {
+      await opened('/verb')
+      expect(await fixtures.chrome.evaluate<string[]>(`(() => { ${GO_LIVE}; return ${colourFloor(false)} })()`)).toEqual([expect.stringMatching(/^contrast 5\.77:1 \(rgb\(149, 149, 149\) on rgb\(36, 24, 18\)\): \.verb "Run"/)])
+      await opened('/verb')
+      expect(await fixtures.chrome.evaluate<string[]>(`(() => { ${GO_LIVE}; return ${settledPaint(colourFloor(false))} })()`)).toEqual([])
+    })
+
+    it('still finds what settles under the bar', async () => {
+      await opened('/quiet')
+      expect(await fixtures.chrome.evaluate<string[]>(settledPaint(colourFloor(false)))).toEqual([expect.stringMatching(/^contrast 5\.\d\d:1 .*"London"/)])
+    })
+
+    it('waits out a fade that starts while it waits', async () => {
+      await opened('/two-fades')
+      const read = `(() => { const white = (id) => { document.getElementById(id).style.color = '#fff' }; getComputedStyle(document.getElementById('a')).color; getComputedStyle(document.getElementById('b')).color; white('a'); setTimeout(() => white('b'), 30); return ${settledPaint(colourFloor(false))} })()`
+      expect(await fixtures.chrome.evaluate<string[]>(read)).toEqual([])
+    })
+
+    it('is held by neither a loop nor a countdown that only moves: neither ends in the state being shot', async () => {
+      await opened('/clean')
+      const started = Date.now()
+      const read = `(() => { const p = document.querySelector('p'); p.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: 60000 }); p.animate([{ opacity: 1 }, { opacity: 0.9 }], { duration: 1000, iterations: Infinity }); return ${settledPaint(colourFloor(false))} })()`
+      expect(await fixtures.chrome.evaluate<string[]>(read)).toEqual([])
+      expect(Date.now() - started).toBeLessThan(10_000)
+    })
+
+    it('says so when the paint never settles, rather than read it mid-way or hang', async () => {
+      await opened('/still-going')
+      const read = `(() => { const a = document.getElementById('a'); getComputedStyle(a).color; a.style.color = '#fff'; return ${settledPaint(colourFloor(false), 100)} })()`
+      expect(await fixtures.chrome.evaluate<string[]>(read)).toEqual([expect.stringMatching(/^paint not settled after 100 ms: p "London"/)])
+    })
   })
 })
