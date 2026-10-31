@@ -635,7 +635,7 @@ async function createWindow(): Promise<BrowserWindow> {
         throw error
       }), on: () => settingsStore.get().audioOnlyMusic })
   // The surface's own session sees only its streams.
-  watchStreamFaults(session.fromPartition('bingbong-audio').webRequest, () => music.player.streamRefused(), () => ytDlpUpkeep?.failed())
+  watchStreamFaults(session.fromPartition('bingbong-audio').webRequest, (status) => music.player.streamRefused(status), () => ytDlpUpkeep?.failed())
   onWindowClosed(win, music.stop)
   // How each piece of media in the pane played: its start, stalls and dropped frames (kiosk telemetry 2026-10-25).
   onWindowClosed(win, attachPlaybackWatch(perfTracer, pane.view.webContents))

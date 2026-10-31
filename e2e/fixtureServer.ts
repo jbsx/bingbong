@@ -1332,6 +1332,13 @@ const LEDGERS = [
 const LEDGER_REVISION_DELAY_MS = 18_000
 
 /** The delay in force — the constant above, or the coverage override; an empty or malformed value never disarms it. */
+function ledgerRevisionDelayMs(): number {
+  const declared = process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS
+  if (declared === undefined || declared.trim() === '') return LEDGER_REVISION_DELAY_MS
+  const override = Number(declared)
+  return Number.isFinite(override) && override >= 0 ? override : LEDGER_REVISION_DELAY_MS
+}
+
 /** The fixture's sound, in ranges as a real host serves it: without them Chromium takes the file for a stream of no known length. */
 function serveSong(req: IncomingMessage, res: ServerResponse): void {
   const wav = silentWav(60)
@@ -1345,13 +1352,6 @@ function serveSong(req: IncomingMessage, res: ServerResponse): void {
   const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1
   res.writeHead(206, { 'Content-Type': 'audio/wav', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${wav.length}`, 'Accept-Ranges': 'bytes' })
   res.end(wav.subarray(start, end + 1))
-}
-
-function ledgerRevisionDelayMs(): number {
-  const declared = process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS
-  if (declared === undefined || declared.trim() === '') return LEDGER_REVISION_DELAY_MS
-  const override = Number(declared)
-  return Number.isFinite(override) && override >= 0 ? override : LEDGER_REVISION_DELAY_MS
 }
 
 /** The provisional figure revision `n` of a ledger states — distinct per hop, never certified. */

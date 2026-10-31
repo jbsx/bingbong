@@ -114,6 +114,12 @@ export type PlayerWait = SongWait
 /** Where the Player's song plays (#502): the watch page in the pane, or the audio road. */
 export type Road = 'page' | 'audio'
 
+/** A queued song held as only slow (#548), and whether the pane would still be the Player's to open it in. */
+interface HeldSlow {
+  readonly song: Song
+  readonly paneIsOurs: () => boolean
+}
+
 /** How a song opened came to play (#488): what the perf log keeps of each start. */
 export interface PlayerStart {
   readonly video: string
@@ -263,9 +269,10 @@ export interface Player {
    * The stream last handed to the audio road was refused or cut (#516): its
    * address is forgotten, so no repeat play is handed it again. True when
    * that address came from memory: the fault is the address's, not a yt-dlp's
-   * that failed.
+   * that failed. `status`, the host's answer when it gave one (#548): only
+   * that says the host refused it; a request cut by the network may yet retry.
    */
-  streamRefused(): boolean
+  streamRefused(status?: number): boolean
   /** The audio road is taken now (#502), its setting read as this is: a song not read as a video opens there, and leaves the pane alone. */
   readonly audioRoad: boolean
   /** Hears each wait a song opened for a Command is in before it plays (#502): the lookup, the fallback. The returned function stops it. */
@@ -495,6 +502,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   const addresses = createStreamMemory()
   /** The stream last handed to the audio road's element (#516), which plays on through the next song's lookup; what a stream's fault is about. */
   let onSurface: { id: string; remembered: boolean; refused: boolean } | null = null
+  /** The queued song held unstarted with no refusal (#548): read on the poll, since a slow host may yet refuse it. */
+  let heldSlow: HeldSlow | null = null
   /** The song the road could not play, opened on its watch page instead (#502); null once another opens on its own road. */
   let fellBack: string | null = null
   let published = 'null'
@@ -1175,12 +1184,48 @@ export function createPlayer(deps: PlayerDeps): Player {
     publish()
   }
 
-  /** The next queued song opens in the background, a failed or refused one passed over, until one lands or none is left. */
-  function advanceInBackground(): void {
+  /**
+   * A queued song just opened, played with no Command waiting: true when it
+   * refused, for the caller to pass over. Slow, it is held; `again` when it
+   * was held already, and so paused until it plays.
+   */
+  async function playQueued(song: Song, current: () => boolean, paneIsOurs: () => boolean, again = false): Promise<boolean> {
+    const start = await playOn(song, current, true, paneIsOurs)
+    // Overtaken while its start was read, the song and the Queue are the later line's.
+    if (start === 'superseded' || !current()) return false
+    if (start.started) {
+      if (again) state = unpause(state)
+      return false
+    }
+    if (hasRefused(start)) return true
+    holdUnstarted()
+    heldSlow = { song, paneIsOurs }
+    return false
+  }
+
+  /**
+   * The next queued song opens in the background, a failed or refused one
+   * passed over, until one lands or none is left. `refused`: a song held slow
+   * has refused since (#548), and takes its road first.
+   */
+  function advanceInBackground(refused: HeldSlow | null = null): void {
     const mine = (generation += 1)
     const current = (): boolean => generation === mine
+    heldSlow = null
     background = background.then(async () => {
+      let passing = refused === null ? null : (await playQueued(refused.song, current, refused.paneIsOurs, true)) ? refused.song : null
+      if (refused !== null && passing === null) return
       for (;;) {
+        if (passing !== null) {
+          // Overtaken, the song is no longer ours to drop or to say.
+          if (!current()) return
+          // On the road, what is on the surface is no media for the Appliance Card to read (#548).
+          if (road === 'audio') await letGoOfStream()
+          if (!current()) return
+          state = dropCurrent(state)
+          publish()
+          for (const listener of [...passedOverListeners]) listener(passing)
+        }
         const was = state.current
         const { queue, next } = advance(state)
         state = queue
@@ -1197,28 +1242,40 @@ export function createPlayer(deps: PlayerDeps): Player {
         if (opened === 'opened') {
           // A video queued by Jev's reading (#502) opens on the watch page, and is shown as a `play` of one is.
           if (roadOn() && next.video === true) for (const listener of shownListeners) listener()
-          const start = await playOn(next, current, true, () => fromPage && paneHolds(was))
-          if (start === 'superseded' || start.started) return
-          if (!hasRefused(start)) {
-            holdUnstarted()
-            return
-          }
+          if (!(await playQueued(next, current, () => fromPage && paneHolds(was)))) return
         }
-        // Overtaken, the song is no longer ours to drop or to say.
-        if (!current()) return
-        // Refused on the road, its dead element is no media for the Appliance Card to read (#548).
-        if (opened === 'opened' && road === 'audio') await letGoOfStream()
-        state = dropCurrent(state)
-        publish()
-        for (const listener of [...passedOverListeners]) listener(next)
+        passing = next
       }
     })
     // The queued song sounds, or none will (#507): the Wait Card closes.
     background = background.finally(() => waitEnded(current))
   }
 
+  /**
+   * A song held slow, read on the poll (#548): true once it has refused since
+   * and taken its road. It stops being watched once it plays, or goes.
+   */
+  async function refusedSinceHeld(): Promise<boolean> {
+    const held = heldSlow
+    if (held === null) return false
+    if (state.current?.id !== held.song.id || road !== 'audio') {
+      heldSlow = null
+      return false
+    }
+    const read = await evaluate<StartRead>(START_SCRIPT)
+    if (read === null) return false
+    if (!read.failed && !(onSurface?.id === held.song.id && onSurface.refused)) {
+      if (!read.paused && read.time > 0) heldSlow = null
+      return false
+    }
+    advanceInBackground(held)
+    await background
+    return true
+  }
+
   /** The surface emptied, the road kept: nothing plays there, and the next song on it loads as ever. */
   async function letGoOfStream(): Promise<void> {
+    onSurface = null
     try {
       await deps.audio!.surface.stop()
     } catch (error) {
@@ -1665,6 +1722,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         })
       case 'unpause': {
         const again = state.current === null ? ended : null
+        // The last song passed over and its stream let go: the empty element would take a press and play nothing.
+        if (again === null && state.current === null && road === 'audio' && onSurface === null) return { result: 'no song on the road', answer: 'Nothing is playing.', failure: true }
         if (again !== null) return onElement({ op: 'restart' }, () => `Playing ${quoted(again.title)}.`, (queue) => replay(queue, again))
         return onElement({ op: 'play' }, (element) => (element.title === '' ? 'Playing.' : `Playing ${quoted(element.title)}.`), unpause)
       }
@@ -1735,6 +1794,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         if (status === null) return
         if (state.current === null && !resumeEnded(status)) return
         hearStay(status)
+        if (await refusedSinceHeld()) return
         const end = status.ended
         // An ad plays in the same element: its end is not the song's.
         if (end === null || end.ad || end.id !== state.current?.id) {
@@ -1786,9 +1846,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       return { result: `${action.op} held over an ad: ${seek} once the song plays`, answer: `${adWait(over.ad)}: the song will ${seek} once it plays.`, video: over.song.id }
     },
     road: () => road,
-    streamRefused() {
+    streamRefused(status) {
       if (onSurface === null) return false
-      onSurface.refused = true
+      if (status !== undefined) onSurface.refused = true
       addresses.forget(onSurface.id)
       return onSurface.remembered
     },

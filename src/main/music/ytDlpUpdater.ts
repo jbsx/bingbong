@@ -224,10 +224,10 @@ export interface StreamRequests {
  * can be refused after the IP changes, with no yt-dlp at fault. `refused`
  * tells the Player, which forgets the address and says whether it was one.
  */
-export function watchStreamFaults(requests: StreamRequests, refused: () => boolean, failed: () => void): void {
+export function watchStreamFaults(requests: StreamRequests, refused: (status?: number) => boolean, failed: () => void): void {
   const urls = ['*://*.googlevideo.com/*']
   requests.onCompleted({ urls }, (details) => {
-    if (details.statusCode === 403 && !refused()) failed()
+    if (details.statusCode === 403 && !refused(details.statusCode)) failed()
   })
   requests.onErrorOccurred({ urls }, (details) => {
     if (details.error !== 'net::ERR_ABORTED' && !refused()) failed()
