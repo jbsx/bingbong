@@ -151,7 +151,8 @@ export interface PageFrames {
  * How long a collect waits for its frames after the top document has
  * answered (#377, ADR 0081: 50 ms to start, set by measurement): a frame
  * that has not answered by then stays its opaque iframe for that read, so
- * no frame ever holds up the read.
+ * no frame ever holds up the read. The `browser-collect` span's `framesLate`
+ * counts those frames (#554); `pnpm perf:report` totals them.
  */
 export const FRAME_GRACE_MS = 50
 
@@ -990,10 +991,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * Start reading every frame below the top (#377, ADR 0081), each in its
    * own context, all at once; the returned wait hands over those that have
    * answered by the grace after it is called. A frame that throws, or
-   * answers what is no page, is a frame not read.
+   * answers what is no page, is a frame not read; `late` is those that had
+   * neither answered nor failed when the grace ended (#554).
    */
-  function fanOut<T>(read: (frame: PageFrame) => Promise<T>): { listed: number; answered: () => Promise<T[]> } {
+  function fanOut<T>(read: (frame: PageFrame) => Promise<T>): { listed: number; late: () => number; answered: () => Promise<T[]> } {
     let listed: readonly PageFrame[] = []
+    let settled = 0
+    let late = 0
     try {
       listed = deps.frames?.list() ?? []
     } catch (error) {
@@ -1007,20 +1011,24 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         } catch (error) {
           // A frame gone, still loading, or holding no page: it has no answer, and a collect leaves it its opaque iframe.
           reportFault('browser.createCdpBrowserController.frameAnswer', error)
+        } finally {
+          settled += 1
         }
       }),
     )
     return {
       listed: listed.length,
+      late: () => late,
       async answered() {
         if (listed.length > 0) await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(FRAME_GRACE_MS, resolve))])
+        late = listed.length - settled
         return [...answers]
       },
     }
   }
 
   /** Every frame's own collect, started now (#377). */
-  function readFrames(): { listed: number; answered: () => Promise<CollectedFrame[]> } {
+  function readFrames(): { listed: number; late: () => number; answered: () => Promise<CollectedFrame[]> } {
     return fanOut(async (frame) => ({ key: frame.key, parentKey: frame.parentKey, page: parseCollectedPage(await frame.evaluate<unknown>(collectScript)) }))
   }
 
@@ -1036,8 +1044,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
     const snapshot = buildPageSnapshot(await withRefStates(await withFramedDialogText(merged, answered)))
     lastFrames = answered.map(({ key, page }) => ({ key, host: frameHostOfPage(page), scrollX: page.viewport.scrollX ?? 0, scrollY: page.viewport.scrollY }))
-    // Every collect, timed (#377): what the frames' fan-out costs is read off these.
-    if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
+    // Every collect, timed (#377): what the frames' fan-out costs is read off these, and how often FRAME_GRACE_MS leaves a frame out (#554).
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length, framesAsked: frames.listed, framesLate: frames.late() })
     visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot

@@ -2971,7 +2971,7 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
       ['browser-settle', { action: 'landing-retry', ms: 100 }],
       // The first collect threw and was never timed; the retry's is, its Ref States read inside it (#432).
       ['browser-ref-states', { asked: 20, read: 0 }],
-      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
       ['browser-recollection', { reason: 'landing-retry' }],
     ])
   })
@@ -3023,13 +3023,13 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
 
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
       ['browser-ref-states', { asked: 20, read: 0 }],
-      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
       ['browser-ref-states', { asked: 20, read: 0 }],
-      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
       ['browser-ref-states', { asked: 20, read: 0 }],
-      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
     ])
   })
@@ -3157,7 +3157,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
 
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
       ['browser-ref-states', { asked: 20, read: 1 }],
-      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
     ])
   })
 
@@ -3169,7 +3169,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
 
     expect(records).toEqual([
       { turnId: 'turn-1', stage: 'browser-ref-states', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { asked: 20, read: 0 } },
-      { turnId: 'turn-1', stage: 'browser-collect', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { refs: 20, frames: 0, unread: 0 } },
+      { turnId: 'turn-1', stage: 'browser-collect', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 } },
       { turnId: 'turn-1', stage: 'browser-recollection', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { reason: 'settled-state' } },
     ])
   })
@@ -3187,7 +3187,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
 
     expect(records.map((record) => [record.turnId, record.stage, record.detail])).toEqual([
       ['turn-1', 'browser-ref-states', { asked: 20, read: 0 }],
-      ['turn-1', 'browser-collect', { refs: 20, frames: 0, unread: 0 }],
+      ['turn-1', 'browser-collect', { refs: 20, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }],
       ['turn-1', 'browser-recollection', { reason: 'resolve-ref' }],
       ['turn-1', 'browser-safety', { kind: 'click-prep' }],
       ['turn-1', 'browser-ready', { action: 'click', outcome: 'mutation' }],
@@ -3939,6 +3939,32 @@ describe('frames (#377, ADR 0081)', () => {
     const page = await controller.readPage()
 
     expect(page).toContain('[2] iframe src="https://www.youtube.com/embed/x"\n[3] button "Comments"')
+  })
+
+  it('counts on the collect span the frames it asked and those that missed the grace, and the late one keeps its opaque iframe ref (#554)', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    const embed = new FakeFrame('7:3', null, EMBED)
+    embed.hangs = true
+    const { controller } = makeController({ cdp: new FakeCdp(TOP), frames: { list: () => [embed] }, subspans })
+
+    const page = await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    expect(page).toContain('[2] iframe src="https://www.youtube.com/embed/x"\n[3] button "Comments"')
+    expect(records.find((record) => record.stage === 'browser-collect')?.detail).toEqual({ refs: 3, frames: 0, unread: 1, framesAsked: 1, framesLate: 1 })
+  })
+
+  it('counts a frame that failed in time as unread but not late: only a miss of the grace is the bound\'s to answer for (#554)', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    const gone = new FakeFrame('7:3', null, EMBED)
+    gone.gone = true
+    const answering = new FakeFrame('9:1', null, EMBED)
+    const { controller } = makeController({ cdp: new FakeCdp(TOP), frames: { list: () => [gone, answering] }, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    expect(records.find((record) => record.stage === 'browser-collect')?.detail).toMatchObject({ frames: 1, unread: 1, framesAsked: 2, framesLate: 0 })
   })
 
   it("clicks a frame's ref at its own point plus the iframe's content-box origin, one mouse press on the page", async () => {

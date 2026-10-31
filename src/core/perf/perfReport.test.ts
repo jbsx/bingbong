@@ -267,6 +267,20 @@ describe('formatPerfReport', () => {
     expect(buildPerfReport([span('t1', 'stt', 100)]).listensClosed).toBeNull()
   })
 
+  it('counts the frames that missed the grace, over the collects that asked any: the read that settles the bound (#554)', () => {
+    const collect = (turnId: string, detail: Record<string, unknown>): PerfSpanRecord => ({ ...span(turnId, 'browser-collect', 100), detail })
+    const report = buildPerfReport([
+      collect('t1', { refs: 5, frames: 2, unread: 0, framesAsked: 2, framesLate: 0 }),
+      collect('t2', { refs: 3, frames: 1, unread: 2, framesAsked: 3, framesLate: 1 }),
+      // No frames on the page, and a span logged before the count: neither says anything about the grace.
+      collect('t3', { refs: 9, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 }),
+      collect('t4', { refs: 9, frames: 1, unread: 0 }),
+    ])
+    expect(report.frameGrace).toEqual({ collects: 2, collectsLate: 1, asked: 5, late: 1 })
+    expect(formatPerfReport(report, CONTEXT).split('\n')).toContain('frame grace: 1 of 5 frames late | 1 of 2 collects with frames')
+    expect(buildPerfReport([collect('t1', { refs: 9, frames: 0, unread: 0, framesAsked: 0, framesLate: 0 })]).frameGrace).toBeNull()
+  })
+
   it('lists every mismatch problem under the self-check line', () => {
     const text = formatPerfReport(
       buildPerfReport([

@@ -50,6 +50,8 @@ export interface PerfReport {
   sttEngines: SttEngineStats[]
   /** The wake listens their silence closed (#483), from the `listen-closed` spans; null when none did. */
   listensClosed: ListensClosedReport | null
+  /** The frames that missed a collect's grace (#554), from the `browser-collect` spans; null when no collect asked a frame. */
+  frameGrace: FrameGraceReport | null
   /** The app's own records: the runs' builds and machines, CPU samples, playback. */
   app: AppReport
   /** The Planner's spans (#465): `planner-step` and `errand`. */
@@ -92,6 +94,16 @@ export interface ListensClosedReport {
   afterLine: number
   /** Ms a no-words listen stood open; null when none. */
   noWordsP50: number | null
+}
+
+/** A collect's frames against its grace (#554): a late frame stays its opaque iframe for that card, which is what would settle the bound. */
+export interface FrameGraceReport {
+  /** Collects that asked at least one frame, and those that had a frame miss the grace. */
+  collects: number
+  collectsLate: number
+  /** Frames asked over those collects, and those that missed the grace. */
+  asked: number
+  late: number
 }
 
 export interface ReportContext {
@@ -169,6 +181,25 @@ function buildListensClosed(records: readonly PerfSpanRecord[]): ListensClosedRe
   if (noWords.length === 0 && afterLine === 0) return null
   noWords.sort((a, b) => a - b)
   return { noWords: noWords.length, afterLine, noWordsP50: noWords.length > 0 ? nearestRankPercentile(noWords, 50) : null }
+}
+
+/** The browser-collect spans that asked a frame; a span logged before the count (#554) says nothing about the grace. */
+function buildFrameGrace(records: readonly PerfSpanRecord[]): FrameGraceReport | null {
+  const report: FrameGraceReport = { collects: 0, collectsLate: 0, asked: 0, late: 0 }
+  for (const record of records) {
+    const asked = record.detail?.framesAsked
+    const late = record.detail?.framesLate
+    if (record.stage !== 'browser-collect' || typeof asked !== 'number' || asked === 0 || typeof late !== 'number') continue
+    report.collects += 1
+    report.asked += asked
+    report.late += late
+    if (late > 0) report.collectsLate += 1
+  }
+  return report.collects === 0 ? null : report
+}
+
+function formatFrameGraceLine(grace: FrameGraceReport): string {
+  return `frame grace: ${grace.late} of ${grace.asked} frames late | ${grace.collectsLate} of ${grace.collects} collects with frames`
 }
 
 function formatListensClosedLine(closed: ListensClosedReport): string {
@@ -317,6 +348,7 @@ export function buildPerfReport(all: readonly PerfSpanRecord[], decisions: reado
     endpoints: buildEndpointReport(records),
     sttEngines: buildSttEngines(records),
     listensClosed: buildListensClosed(records),
+    frameGrace: buildFrameGrace(records),
     app: buildAppReport(all),
     planner: buildPlannerReport(records),
   }
@@ -378,6 +410,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
   if (report.sttEngines.length > 0) lines.push(formatSttEngineLine(report.sttEngines))
   if (report.listensClosed !== null) lines.push(formatListensClosedLine(report.listensClosed))
+  if (report.frameGrace !== null) lines.push(formatFrameGraceLine(report.frameGrace))
   lines.push(...formatAppReport(report.app))
   lines.push(...formatPlannerReport(report.planner))
   appendCommandLines(lines, report, context)
