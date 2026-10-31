@@ -1597,7 +1597,10 @@ yt-dlp, in an `<audio>` outside the pane, so the pane stays free and the
 Idle Screen up. Taken while **audio-only music** is on in Settings (on
 by default; only an explicit off keeps it off), read at each song; off,
 every play opens the watch page. A
-video, or a road that fails, opens the watch page, shown.
+video, or a road that fails a `play`, opens the watch page, shown. A queued
+song whose road fails at a song's end opens its watch page, unshown, when the
+song before it played there and the pane is still on it; otherwise it is
+passed over, and said.
 `BINGBONG_AUDIO_ROAD` names only which yt-dlp runs.
 
 **Kind**:

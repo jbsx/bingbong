@@ -283,10 +283,20 @@ Launch the app only through the harness or a `pnpm` script (`test:e2e`,
 `shot`, `cli`). A process you start by hand — `xvfb-run`, `electron`, a
 backgrounded command — is yours to kill by its PID before the session ends.
 
-The e2e suite on this branch covers the shell only: the pane, the CLI
-harness, settings, the adblocker, kiosk mode, and the YouTube snapshot gate
-(`BINGBONG_YOUTUBE_E2E=1`). Every suite that scripted an orchestrator run
-was removed with the orchestrator.
+The e2e suite covers the shell, music, the Idle Screen and the ask road on
+the scripted stand-in. Every suite that scripted an orchestrator run was
+removed with the orchestrator.
+
+`pnpm test:e2e`, `shot:idle` and `shot:states` run with no route out
+(`e2e/bin/no-network.sh`): no default test needs a host. A live gate's own
+variable lets a run out, and `BINGBONG_E2E_NET=1` does so on a machine whose
+kernel refuses the namespace, and says so. A direct `xvfb-run` keeps the
+route; only its model downloads stop.
+
+`pnpm gates` runs the opt-in gates that need no paid key once each and prints
+one line per gate; a skip is red. It is run once at the end of a batch of
+work, so a gate gone stale is seen in the batch that made it stale. The paid
+gates stay on the owner's word.
 
 `e2e/sttCorpus.elevenlabs.test.ts` runs in the unit suite and skips
 without `ELEVENLABS_API_KEY`; it is `pnpm stt:gate` as a test and opens
