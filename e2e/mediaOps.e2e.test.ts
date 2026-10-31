@@ -11,7 +11,8 @@ import { waitFor } from './waitFor'
 // Media Ops (#372, ADR 0080) on a site the Player never touches: a fixture
 // page with a native `<video>`, driven from the CLI harness. Each line is
 // Jev's to read — no grammar line says "skip ahead" — and the reading is
-// one op on the ref's own element: one ask, one action, the Task over.
+// one op on the element, by kind on the Appliance Card (#485) or by ref on
+// the page card: one action, the Task over.
 // The stand-in reads each line as the op a real Jev picks for it (the
 // gated suite below asks the real one); what the suite proves is the road
 // from the card's label to the element: the op fired, the amount read,
@@ -37,6 +38,8 @@ interface DecisionLine {
   readonly verb?: string
   readonly target?: number | null
   readonly mediaOp?: { op: string; rung?: string; seconds?: number }
+  readonly card?: string
+  readonly appliance?: { chose?: string }
   readonly ended?: string
 }
 
@@ -74,13 +77,16 @@ describe('media ops e2e: a native video on a fixture page, read by the scripted 
       fixture,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      // The one video is ref 1 on the one-video page; on the two-video page the named one is second.
+      // A line is read on the Appliance Card first (#485), whose ops reach the video by kind; a line that goes on to the page card finds the one video as ref 1, and on the two-video page the named one as ref 2.
       env: decisionScript(
-        readingOf('skip 10 seconds ahead', 'forward-1', { amount: 'words' }),
-        readingOf('go back a minute', 'back-1', { amount: 'words' }),
-        readingOf('pause the video', 'pause-1'),
-        readingOf('mute it', 'mute-1'),
-        readingOf('turn on the captions', 'captions-1'),
+        readingOf('skip 10 seconds ahead', 'media-forward', { amount: 'words' }),
+        readingOf('skip this video ahead 10 seconds', 'page'),
+        readingOf('skip this video ahead 10 seconds', 'forward-1', { amount: 'words' }),
+        readingOf('go back a minute', 'media-back', { amount: 'words' }),
+        readingOf('pause the video', 'media-pause'),
+        readingOf('mute it', 'media-mute'),
+        readingOf('turn on the captions', 'media-captions'),
+        readingOf('pause the kanye one', 'page'),
         readingOf('pause the kanye one', 'pause-2'),
       ),
     })
@@ -96,16 +102,38 @@ describe('media ops e2e: a native video on a fixture page, read by the scripted 
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('"skip 10 seconds ahead": the card offers the video\'s ops with its state on the line and the Amount beside them; forward-1 with the words rung moves it 10 s, one action, one ask', async () => {
+  it('"skip 10 seconds ahead": the card offers the video\'s ops with its state on the line and the Amount beside them; media-forward with the words rung moves it 10 s, one action, one ask', async () => {
     const before = await playing()
-    const line = await cli(harness, 'skip 10 seconds ahead', /^(forward \[1\]: |error:|No response)/)
-    expect(line).toMatch(/^forward \[1\]: 0:0\d → 0:1\d$/)
+    const line = await cli(harness, 'skip 10 seconds ahead', /^(forward \[0\]: |not a command: |error:|No response)/)
+    expect(line).toMatch(/^forward \[0\]: 0:0\d → 0:1\d$/)
     const after = await facts()
     expect(after.currentTime).toBeGreaterThanOrEqual(before.currentTime + 9)
     expect(after.paused).toBe(false)
 
+    // One ask: the pick fires there, with no page card.
+    expect((await logLines<AskLine>(userDataDir, 'asks-')).filter((record) => record.state.includes(JSON.stringify('skip 10 seconds ahead')))).toHaveLength(1)
     const ask = await askOf('skip 10 seconds ahead')
-    expect(ask.state).toMatch(new RegExp(`^\\[1\\] media "${MEDIA_FIXTURE_TITLES.one}" playing 0:0\\d/1:00 volume 100% loop off captions off$`, 'm'))
+    expect(ask.state).toMatch(new RegExp(`^Playing: "${MEDIA_FIXTURE_TITLES.one}" playing 0:0\\d/1:00 volume 100% loop off captions off$`, 'm'))
+    const card = Object.keys(ask.questions.action!.options!)
+    expect(card).toEqual(expect.arrayContaining(['media-play', 'media-pause', 'media-forward', 'media-back', 'media-restart', 'media-volume', 'media-mute', 'media-unmute', 'media-loop', 'media-unloop', 'media-rate', 'media-captions', 'media-uncaptions', 'page']))
+    expect(card.some((label) => /-\d+$/.test(label))).toBe(false)
+    expect(ask.questions).toHaveProperty('amount')
+
+    const records = await recordsOf('skip 10 seconds ahead')
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ reading: 'jev', verb: 'media', target: null, card: 'appliance', mediaOp: { op: 'forward', rung: 'words', seconds: 10 }, ended: 'terminal' })
+  }, 30_000)
+
+  it('a line Jev sends on with `page` is asked on the page card: the video\'s whole op list on its ref, its state on the line and the Amount beside them, none on the link, and the seek lands (ADR 0080, #485)', async () => {
+    const before = await playing()
+    const line = await cli(harness, 'skip this video ahead 10 seconds', /^(forward \[\d+\]: |not a command: |error:|No response)/)
+    expect(line).toMatch(/^forward \[1\]: \d:\d\d → \d:\d\d$/)
+    const after = await facts()
+    expect(after.currentTime).toBeGreaterThanOrEqual(before.currentTime + 9)
+    expect(after.paused).toBe(false)
+
+    const ask = await askOf('skip this video ahead 10 seconds')
+    expect(ask.state).toMatch(new RegExp(`^\\[1\\] media "${MEDIA_FIXTURE_TITLES.one}" playing 0:\\d\\d/1:00 volume 100% loop off captions off$`, 'm'))
     const card = Object.keys(ask.questions.action!.options!)
     expect(card).toEqual(expect.arrayContaining(['click-1', 'play-1', 'pause-1', 'forward-1', 'back-1', 'restart-1', 'volume-1', 'mute-1', 'unmute-1', 'loop-1', 'unloop-1', 'rate-1', 'captions-1', 'uncaptions-1']))
     // The link offers no op, and the Player's song ops are withheld beside a media ref (AC6).
@@ -113,29 +141,29 @@ describe('media ops e2e: a native video on a fixture page, read by the scripted 
     for (const op of ['loop', 'pause', 'mute', 'volume']) expect(card).not.toContain(op)
     expect(ask.questions).toHaveProperty('amount')
 
-    const records = await recordsOf('skip 10 seconds ahead')
+    const records = await recordsOf('skip this video ahead 10 seconds')
     expect(records).toHaveLength(1)
-    expect(records[0]).toMatchObject({ reading: 'jev', verb: 'media', target: 1, mediaOp: { op: 'forward', rung: 'words', seconds: 10 }, ended: 'terminal' })
+    expect(records[0]).toMatchObject({ reading: 'jev', verb: 'media', card: 'page', target: 1, appliance: { chose: 'page' }, mediaOp: { op: 'forward', rung: 'words', seconds: 10 }, ended: 'terminal' })
   }, 30_000)
 
-  it('"go back a minute": back-1 with the words rung reads 60 s, and the seek lands at the start', async () => {
-    const line = await cli(harness, 'go back a minute', /^(back \[1\]: |error:|No response)/)
-    expect(line).toMatch(/^back \[1\]: 0:\d\d → 0:00$/)
+  it('"go back a minute": media-back with the words rung reads 60 s, and the seek lands at the start', async () => {
+    const line = await cli(harness, 'go back a minute', /^(back \[0\]: |not a command: |error:|No response)/)
+    expect(line).toMatch(/^back \[0\]: 0:\d\d → 0:00$/)
     expect((await facts()).currentTime).toBeLessThan(3)
-    expect((await recordsOf('go back a minute'))[0]).toMatchObject({ verb: 'media', mediaOp: { op: 'back', rung: 'words', seconds: 60 }, ended: 'terminal' })
+    expect((await recordsOf('go back a minute'))[0]).toMatchObject({ verb: 'media', target: null, card: 'appliance', mediaOp: { op: 'back', rung: 'words', seconds: 60 }, ended: 'terminal' })
   }, 30_000)
 
   it('"pause the video", "mute it", "turn on the captions": each one op on the element, told in its own words', async () => {
-    expect(await cli(harness, 'pause the video', /^(pause \[1\]: |error:|No response)/)).toBe('pause [1]: paused')
+    expect(await cli(harness, 'pause the video', /^(pause \[0\]: |not a command: |error:|No response)/)).toBe('pause [0]: paused')
     expect((await facts()).paused).toBe(true)
-    expect(await cli(harness, 'mute it', /^(mute \[1\]: |error:|No response)/)).toBe('mute [1]: muted')
+    expect(await cli(harness, 'mute it', /^(mute \[0\]: |not a command: |error:|No response)/)).toBe('mute [0]: muted')
     expect((await facts()).muted).toBe(true)
-    expect(await cli(harness, 'turn on the captions', /^(captions \[1\]: |error:|No response)/)).toBe('captions [1]: captions en')
+    expect(await cli(harness, 'turn on the captions', /^(captions \[0\]: |not a command: |error:|No response)/)).toBe('captions [0]: captions en')
     expect((await facts()).captions).toBe('en')
     const records = await logLines<DecisionLine>(userDataDir, 'decision-')
     // One record each, the Task over on the op: the CLI prints the op's own line, and the Answer ("Paused.") is the Feed's (unit-tested).
     for (const line of ['pause the video', 'mute it', 'turn on the captions']) {
-      expect(records.filter((record) => record.type === 'decision' && record.transcript === line)).toMatchObject([{ verb: 'media', ended: 'terminal' }])
+      expect(records.filter((record) => record.type === 'decision' && record.transcript === line)).toMatchObject([{ verb: 'media', target: null, card: 'appliance', ended: 'terminal' }])
     }
   }, 30_000)
 
@@ -145,12 +173,14 @@ describe('media ops e2e: a native video on a fixture page, read by the scripted 
     await harness.waitForPaneUrl(url)
     await playing('one')
     await playing('two')
-    expect(await cli(harness, 'pause the kanye one', /^(pause \[2\]: |error:|No response)/)).toBe('pause [2]: paused')
+    expect(await cli(harness, 'pause the kanye one', /^(pause \[2\]: |not a command: |error:|No response)/)).toBe('pause [2]: paused')
     expect((await facts('two')).paused).toBe(true)
     expect((await facts('one')).paused).toBe(false)
     const ask = await askOf('pause the kanye one')
+    expect(ask.state).toMatch(/^\[2\] media /m)
     expect(ask.questions.action!.options!['pause-1']).toBe(`pause [1] "${MEDIA_FIXTURE_TITLES.two}"`)
     expect(ask.questions.action!.options!['pause-2']).toBe(`pause [2] "${MEDIA_FIXTURE_TITLES.one}"`)
+    expect((await recordsOf('pause the kanye one')).at(-1)).toMatchObject({ card: 'page', target: 2, appliance: { chose: 'page' } })
   }, 30_000)
 })
 

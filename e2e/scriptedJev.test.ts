@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { MediaFacts } from '../src/core/browser/snapshot'
 import type { CommandPage } from '../src/core/command/command'
-import { applianceQuestions, applianceState, type ApplianceView } from '../src/core/command/applianceCard'
-import { commandQuestions, commandState, hopQuestions, type HopContext } from '../src/core/command/jevReading'
+import { applianceQuestions, applianceState, readApplianceAnswers, type ApplianceView } from '../src/core/command/applianceCard'
+import { commandQuestions, commandState, hopQuestions, type CommandAnswers, type HopContext } from '../src/core/command/jevReading'
 import { createScriptedDecisionModel } from '../src/main/decision/createDecisionModel'
-import { decisionScript, readingOf } from './scriptedJev'
+import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
 
 // The e2e suites' scripted Jev answers every question an ask carries
 // (2026-10-22 audit): #383 added the Extent to every ask, the script never
@@ -55,6 +55,18 @@ describe('the scripted Jev', () => {
     const model = createScriptedDecisionModel(decisionScript(readingOf(LINE, 'none', { outcome: 'yes', progress: 0.9 })).BINGBONG_DECISION_SCRIPT)
     const result = await model.ask({ state: commandState(LINE, page, HOP), questions })
     expect(result.status).toBe('answered')
+  })
+
+  it("sends the hub Task on from the Appliance Card, and its first click is the page card's (#485)", async () => {
+    const model = createScriptedDecisionModel(decisionScript(...hubTaskReadings()).BINGBONG_DECISION_SCRIPT)
+    const view: ApplianceView = { url: 'http://fixture/hub-index', title: 'regional hub index' }
+    const first = await model.ask({ state: applianceState(HUB_TASK_LINE, view), questions: applianceQuestions(HUB_TASK_LINE, view) })
+    if (first.status !== 'answered') throw new Error(`the Appliance Card's ask read ${first.status}`)
+    expect(readApplianceAnswers(first.answers as unknown as CommandAnswers, HUB_TASK_LINE, view).kind).toBe('page')
+    const page: CommandPage = { url: view.url, title: view.title, refs: [{ ref: 1, kind: 'link', label: 'Regional hub Aurora', href: 'http://fixture/hub-aurora', inputType: null }] }
+    const second = await model.ask({ state: commandState(HUB_TASK_LINE, page), questions: commandQuestions(HUB_TASK_LINE, page) })
+    if (second.status !== 'answered') throw new Error(`the page card's ask read ${second.status}`)
+    expect((second.answers as unknown as CommandAnswers).action.choice).toBe('click-1')
   })
 
   it("answers the dismiss Choice a hop's ask carries over a pop-up", async () => {

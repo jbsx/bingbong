@@ -42,7 +42,8 @@ export function readingOf(line: string, action?: string, more: { readonly amount
 export const HUB_TASK_LINE = 'what defect rate did hub aurora return'
 
 /**
- * The hub Task's readings (#375), each hop's Noul judging the action
+ * The hub Task's readings (#375): the Appliance Card's `page` (#485), which
+ * sends the line on to the page card, then each hop's Noul judging the action
  * before it, every click on an address the Task has not visited (a visited
  * one is off the card): hub Aurora's link (judged to have helped, 0.9),
  * back to the index (unsure, 0.5), hub Borealis's link (judged not to have
@@ -52,6 +53,7 @@ export const HUB_TASK_LINE = 'what defect rate did hub aurora return'
  */
 export function hubTaskReadings(): Reading[] {
   return [
+    readingOf(HUB_TASK_LINE, 'page'),
     readingOf(HUB_TASK_LINE, 'click-1'),
     readingOf(HUB_TASK_LINE, 'back', { progress: 0.9, outcome: 'not_yet' }),
     readingOf(HUB_TASK_LINE, 'click-2', { progress: 0.5, outcome: 'not_yet' }),

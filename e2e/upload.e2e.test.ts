@@ -25,8 +25,10 @@ interface Change {
 interface DecisionLine {
   readonly type: string
   readonly transcript?: string
-  readonly upload?: { file: string | null; shelf: number; ask?: string }
+  readonly upload?: { file: string | null; reason?: string; shelf: number; ask?: string }
   readonly ended?: string
+  readonly card?: string
+  readonly appliance?: { chose?: string }
 }
 
 /** The JSON lines of the app's logs whose file name starts with `prefix`, in order. */
@@ -43,7 +45,7 @@ function chooserWindows(): string[] {
   return tree.split('\n').filter((line) => /"(Open Files?|Select Files?|File Upload)"/.test(line))
 }
 
-const LINES = { invoice: 'upload the invoice I downloaded', photo: 'attach a photo of me', cv: 'attach my cv', again: 'put the notes on it instead' } as const
+const LINES = { invoice: 'upload the invoice I downloaded', photo: 'attach a photo of me', cv: 'attach my cv', left: 'attach the contract', again: 'put the notes on it instead' } as const
 
 describe('upload e2e: a file chooser becomes the Shelf ask, the file set and never sent', () => {
   let harness: Harness
@@ -70,14 +72,21 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
       fixture,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      // Refs on /upload: [1] the document field, [2] the site's "Add a photo" button, [3] Send. Each line is two asks: the card, then the Shelf's.
+      // Refs on /upload: [1] the document field, [2] the site's "Add a photo" button, [3] Send. Each line is three asks: the Appliance Card, whose `page` sends it on (#485); the page card; the Shelf's.
       env: decisionScript(
+        readingOf(LINES.invoice, 'page'),
         readingOf(LINES.invoice, 'click-1'),
         readingOf(LINES.invoice, 'none', { file: 'file-2' }),
+        readingOf(LINES.photo, 'page'),
         readingOf(LINES.photo, 'click-2'),
         readingOf(LINES.photo, 'none', { file: 'file-1' }),
+        readingOf(LINES.cv, 'page'),
         readingOf(LINES.cv, 'click-1'),
         readingOf(LINES.cv, 'none', { file: 'none' }),
+        readingOf(LINES.left, 'page'),
+        readingOf(LINES.left, 'click-1'),
+        readingOf(LINES.left, 'none', { file: 'none' }),
+        readingOf(LINES.again, 'page'),
         readingOf(LINES.again, 'click-1'),
         readingOf(LINES.again, 'none', { file: 'file-3' }),
       ),
@@ -100,9 +109,11 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
   })
 
   it('"upload the invoice I downloaded": the field\'s click opens no OS dialog, the Shelf ask\'s file is set, the site sees it, nothing is sent, and the file is said', async () => {
+    const since = harness.cliMark()
     await cli(harness, LINES.invoice, /^(clicked \[1\]|error:)/)
     const record = await recordOf(LINES.invoice)
-    expect(record).toMatchObject({ ended: 'terminal', upload: { file: 'invoice.pdf', shelf: 3 } })
+    expect(record).toMatchObject({ ended: 'terminal', card: 'page', appliance: { chose: 'page' }, upload: { file: 'invoice.pdf', shelf: 3 } })
+    await harness.waitForCliOutput(/^said: "Attached invoice\.pdf\."$/, { since })
     expect(await changes()).toEqual([{ id: 'doc', names: ['invoice.pdf'] }])
     expect(await harness.paneEval<string>('document.getElementById("echo").textContent')).toBe('doc: invoice.pdf')
     expect(await harness.paneEval<boolean>('window.__submitted')).toBe(false)
@@ -115,7 +126,11 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
 
   it('"attach a photo of me": a site\'s button over a hidden field opens its chooser too, and the photo is set on that field', async () => {
     await cli(harness, LINES.photo, /^(clicked \[2\]|error:)/)
-    expect(await recordOf(LINES.photo)).toMatchObject({ upload: { file: 'me.png' } })
+    expect(await recordOf(LINES.photo)).toMatchObject({ ended: 'terminal', card: 'page', appliance: { chose: 'page' }, upload: { file: 'me.png', shelf: 3 } })
+    const asks = await logLines<{ kind: string; state: string }>(userDataDir, 'asks-')
+    const shelf = asks.filter((ask) => ask.kind === 'shelf' && ask.state.includes(LINES.photo))
+    expect(shelf).toHaveLength(1)
+    expect(shelf[0]!.state).toContain('accepts "image/*"')
     expect((await changes()).at(-1)).toEqual({ id: 'photo', names: ['me.png'] })
     expect(await harness.paneEval<boolean>('window.__submitted')).toBe(false)
     expect(chooserWindows()).toEqual([])
@@ -123,15 +138,19 @@ describe('upload e2e: a file chooser becomes the Shelf ask, the file set and nev
 
   it('"attach my cv" with nothing on the Shelf it means: nothing is set, and no dialog opens', async () => {
     const before = (await changes()).length
+    const since = harness.cliMark()
     await cli(harness, LINES.cv, /^(clicked \[1\]|error:)/)
-    expect(await recordOf(LINES.cv)).toMatchObject({ upload: { file: null, shelf: 3 } })
+    expect(await recordOf(LINES.cv)).toMatchObject({ ended: 'terminal', card: 'page', appliance: { chose: 'page' }, upload: { file: null, reason: 'none', shelf: 3 } })
+    await harness.waitForCliOutput(/^said: "No file on the shelf fits that upload\."$/, { since })
     expect(await changes()).toHaveLength(before)
     expect(chooserWindows()).toEqual([])
   }, 30_000)
 
   it('a field whose chooser was left unanswered opens again: the next line sets its file', async () => {
+    await cli(harness, LINES.left, /^(clicked \[1\]|error:)/)
+    expect(await recordOf(LINES.left)).toMatchObject({ ended: 'terminal', card: 'page', appliance: { chose: 'page' }, upload: { file: null, reason: 'none', shelf: 3 } })
     await cli(harness, LINES.again, /^(clicked \[1\]|error:)/)
-    expect(await recordOf(LINES.again)).toMatchObject({ upload: { file: 'notes.txt' } })
+    expect(await recordOf(LINES.again)).toMatchObject({ ended: 'terminal', card: 'page', appliance: { chose: 'page' }, upload: { file: 'notes.txt', shelf: 3 } })
     expect((await changes()).at(-1)).toEqual({ id: 'doc', names: ['notes.txt'] })
     expect(chooserWindows()).toEqual([])
   }, 30_000)
