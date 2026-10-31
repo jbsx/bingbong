@@ -38,7 +38,7 @@ export function useTurnCard(): TurnCardView {
         fold.onEvent(event)
         sync()
       }),
-      onCommandTap((pending) => fold.onControlTap(pending)),
+      onCommandTap((mark) => fold.onControlTap(mark)),
     ]
     // Monitoring can be up before this mounted: pull the truth.
     void window.bingbong.voice.getState().then((voice) => {

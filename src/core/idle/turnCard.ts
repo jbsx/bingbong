@@ -124,8 +124,8 @@ export interface TurnCardFold {
   expire(now: number): void
   /** A tap: the card goes; the line it reported is not touched. */
   dismiss(): void
-  /** A control on the Idle Screen was tapped: the next line to start is that tap's, until no tap's submit is still out. */
-  onControlTap(pending: boolean): void
+  /** A control on the Idle Screen was tapped (`true`): one mark, for the next line to start; `false`: a tap ran no line, and its mark comes back. */
+  onControlTap(mark: boolean): void
   state(): TurnCardState
 }
 
@@ -153,9 +153,9 @@ export function createTurnCardFold(): TurnCardFold {
   let speechPending = false
   // The running line's turns when speech started over it: their rows are the old command's, never drawn again.
   let superseded = new Set<string>()
-  // A control was tapped and its line has not started; once it has, which running turns are a tap's.
-  let tapPending = false
-  const tapTurns = new Set<string>()
+  // The taps whose lines have not started, one mark each; once one has, the running turns that took a mark, and whether each keeps the card down.
+  let tapMarks = 0
+  const tapTurns = new Map<string, boolean>()
 
   /** What one line kept: its turns, its outcome trail, its sentences sounding, its words. */
   const clearLine = (): void => {
@@ -204,11 +204,11 @@ export function createTurnCardFold(): TurnCardFold {
     if (last !== undefined && last.label === 'Listening' && last.turnId === null && last.line === line) replaceLast({ at: last.at, label: 'Listening', text, tone, turnId: null })
     else push({ at, label: 'Listening', text, tone, turnId: null })
   }
-  /** The first new line's first turn after a tap is the tap's, read before anything moves the card: a card showing a running line stays up over it. */
+  /** A new line's first turn takes one tap's mark, read before anything moves the card: a card showing a running line stays up over it. A turn that took one takes no other, the `command` of the next having moved it off the card or not. */
   const claimTap = (turnId: string, hop: number): void => {
-    if (!tapPending || hop !== 0 || turns.has(turnId)) return
-    tapPending = false
-    if (!(turnCardShows(state) && state.end === null)) tapTurns.add(turnId)
+    if (tapMarks === 0 || hop !== 0 || turns.has(turnId) || tapTurns.has(turnId)) return
+    tapMarks -= 1
+    tapTurns.set(turnId, !(turnCardShows(state) && state.end === null))
   }
   const adopt = (turnId: string, at: number, hop: number): void => {
     if (turns.has(turnId)) return
@@ -228,7 +228,7 @@ export function createTurnCardFold(): TurnCardFold {
       speechPending = false
     }
     // A new line clears the mark at its first event, so a line over a tap's shows its Receipt.
-    if (tapTurns.has(turnId)) state = { ...state, tapped: true }
+    if (tapTurns.get(turnId) === true) state = { ...state, tapped: true }
     else if (hop === 0) state = { ...state, tapped: false }
     if (state.end === null) state = { ...state, retiresAt: null }
     turns.add(turnId)
@@ -246,6 +246,8 @@ export function createTurnCardFold(): TurnCardFold {
       // comes over no longer keeps it down. Main says the state again for a sentence with the ear open: that is neither.
       const addressed = (taking && !wasTaking) || (hearing && !wasHearing)
       state = { ...state, ear, earSince: ear === was ? state.earSince : since, tapped: state.tapped && !addressed }
+      // A mark whose line never came ends here too: it hides no line after the person has spoken.
+      if (addressed) tapMarks = 0
       if (taking && !wasTaking && (ear === 'listening' || ear === 'hearing' || ear === 'starting') && (state.phase === 'hidden' || state.end !== null)) {
         // The wake: the card opens on the ear opening for an Utterance — afresh over a line that ended, whose rows are not this one's.
         open(since)
@@ -396,8 +398,8 @@ export function createTurnCardFold(): TurnCardFold {
     dismiss() {
       if (state.phase === 'open') close()
     },
-    onControlTap(pending) {
-      tapPending = pending
+    onControlTap(mark) {
+      tapMarks = mark ? tapMarks + 1 : Math.max(0, tapMarks - 1)
     },
     state: () => state,
   }

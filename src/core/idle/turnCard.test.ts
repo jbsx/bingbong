@@ -130,7 +130,6 @@ describe('the Turn Card fold', () => {
       fold.onEvent({ type: 'status', turnId, status: 'thinking', detail: 'pause', at: 1000 })
       fold.onEvent({ type: 'command', turnId, text: 'pause', action: 'pause', at: 1001 })
       fold.onEvent({ type: 'done', turnId, outcome, at: 1002 })
-      fold.onControlTap(false)
     }
     tapped('t-1', 'done')
     expect(fold.state().phase).toBe('open')
@@ -162,7 +161,6 @@ describe('the Turn Card fold', () => {
     const fold = createTurnCardFold()
     fold.onControlTap(true)
     fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'youtube.com', at: 1000 })
-    fold.onControlTap(false)
     expect(turnCardShows(fold.state())).toBe(false)
     fold.onVoice(voice({ listening: true, reason: 'wake', since: 1500 }), 1500)
     expect(turnCardShows(fold.state())).toBe(true)
@@ -177,7 +175,6 @@ describe('the Turn Card fold', () => {
     fold.onControlTap(true)
     fold.onEvent({ type: 'command', turnId: 't-1', text: 'skip', action: 'skip', at: 5000 })
     fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 5001 })
-    fold.onControlTap(false)
     // Its Answer sounds, and main says the state again with the ear still open.
     fold.onVoice(voice({ listening: true, reason: 'wake', speaking: true, since: 5002 }), 5002)
     expect(turnCardShows(fold.state())).toBe(false)
@@ -193,6 +190,109 @@ describe('the Turn Card fold', () => {
     fold.onEvent({ type: 'command', turnId: 't-2', text: 'pause', action: 'pause', at: 1100 })
     fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', hop: 0, detail: 'youtube.com', at: 1200 })
     expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('two taps before the first line\'s first event mark two lines, and neither brings a card', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    for (const turnId of ['t-1', 't-2']) {
+      fold.onEvent({ type: 'status', turnId, status: 'thinking', hop: 0, detail: 'skip', at: 1000 })
+      expect(turnCardShows(fold.state())).toBe(false)
+      fold.onEvent({ type: 'command', turnId, text: 'skip', action: 'skip', at: 1010 })
+      expect(turnCardShows(fold.state())).toBe(false)
+      fold.onEvent({ type: 'done', turnId, outcome: 'done', at: 1020 })
+      expect(turnCardShows(fold.state())).toBe(false)
+    }
+    // Two marks, two claims: the next line is not a tap's.
+    fold.onEvent({ type: 'status', turnId: 't-3', status: 'thinking', hop: 0, detail: 'open the news', at: 1100 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a tap whose submit ran no line gives back one mark, and the other tap\'s line keeps its own', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onControlTap(false)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'thinking', hop: 0, detail: 'skip', at: 1000 })
+    expect(turnCardShows(fold.state())).toBe(false)
+    fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 1010 })
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', hop: 0, detail: 'open the news', at: 1100 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('a line starting with its `command` under a running card takes one mark, not two', () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'status', turnId: 'x', status: 'loading', hop: 0, detail: 'example.com', at: 900 })
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'skip', action: 'skip', at: 1000 })
+    fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 1010 })
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', hop: 0, detail: 'skip', at: 1020 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('a late event of a line claimed under a running card takes no second mark', () => {
+    const fold = createTurnCardFold()
+    fold.onEvent({ type: 'command', turnId: 'x', text: 'open the news', action: 'navigate', at: 900 })
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'thinking', hop: 0, detail: 'previous', at: 1000 })
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', hop: 0, detail: 'skip', at: 1010 })
+    fold.onEvent({ type: 'command', turnId: 't-2', text: 'skip', action: 'skip', at: 1020 })
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', hop: 0, detail: 'youtube.com', at: 1030 })
+    fold.onEvent({ type: 'done', turnId: 't-2', outcome: 'done', at: 1040 })
+    fold.onEvent({ type: 'status', turnId: 't-3', status: 'thinking', hop: 0, detail: 'skip', at: 1050 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('a tap line\'s late event takes no second mark after the next tap\'s `command` moved on', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'previous', action: 'previous', at: 1000 })
+    fold.onEvent({ type: 'command', turnId: 't-2', text: 'skip', action: 'skip', at: 1010 })
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', hop: 0, detail: 'youtube.com', at: 1020 })
+    fold.onEvent({ type: 'command', turnId: 't-3', text: 'skip', action: 'skip', at: 1030 })
+    expect(turnCardShows(fold.state())).toBe(false)
+  })
+
+  it('a mark whose line never arrives hides no later spoken line: the ear opening clears it', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onControlTap(true)
+    fold.onEvent({ type: 'command', turnId: 't-1', text: 'skip', action: 'skip', at: 500 })
+    fold.onEvent({ type: 'done', turnId: 't-1', outcome: 'done', at: 510 })
+    // The second tap's submit is still out, and its line never comes.
+    speak(fold, 'open the news')
+    fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', hop: 0, detail: 'open the news', at: 4400 })
+    fold.onEvent({ type: 'command', turnId: 't-2', text: 'open the news', action: 'navigate', at: 5200 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('the ear opening clears every mark, so none outlives it to hide the line after a blip', () => {
+    const fold = createTurnCardFold()
+    fold.onControlTap(true)
+    fold.onVoice(voice({ listening: true, reason: 'wake', since: 1000 }), 1000)
+    fold.onVoice(voice({ since: 1500 }), 1500)
+    fold.expire(2500)
+    expect(fold.state().phase).toBe('hidden')
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'thinking', hop: 0, detail: 'open the news', at: 3000 })
+    expect(turnCardShows(fold.state())).toBe(true)
+  })
+
+  it('speech starting in an open ear clears every mark too', () => {
+    const fold = createTurnCardFold()
+    fold.onVoice(voice({ listening: true, reason: 'wake', since: 100 }), 100)
+    fold.onControlTap(true)
+    fold.onVoice(voice({ listening: true, reason: 'wake', hearing: true, since: 1000 }), 1000)
+    fold.onVoice(voice({ since: 1500 }), 1500)
+    fold.expire(2500)
+    expect(fold.state().phase).toBe('hidden')
+    fold.onEvent({ type: 'status', turnId: 't-1', status: 'thinking', hop: 0, detail: 'open the news', at: 3000 })
+    expect(turnCardShows(fold.state())).toBe(true)
   })
 
   it('a tap whose submit settled with no line leaves the next line its card', () => {
@@ -225,7 +325,6 @@ describe('the Turn Card fold', () => {
     const fold = createTurnCardFold()
     fold.onControlTap(true)
     fold.onEvent({ type: 'status', turnId: 't-1', status: 'loading', detail: 'youtube.com', at: 1000 })
-    fold.onControlTap(false)
     expect(turnCardShows(fold.state())).toBe(false)
     // Its first event, the read, well before its `command`.
     fold.onEvent({ type: 'status', turnId: 't-2', status: 'thinking', detail: 'open the news', at: 1100 })

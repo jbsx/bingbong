@@ -1,16 +1,15 @@
 // A tap on an Idle Screen control that leaves the screen up is a Command like any other, and the Turn Card is told it
-// is a tap's (#525, CONTEXT.md). A submit resolves once its line has run, so a slow line's settling can land between
-// the next tap and that tap's first event: the taps are counted, and only the last to settle says none is pending.
+// is a tap's (#525, CONTEXT.md). Each tap marks one line. A submit's reply can land before its line's events (seen on a
+// double tap, #532), so a line that ran says nothing as it settles; only a submit that ran no line takes its mark back.
 
-const listeners = new Set<(pending: boolean) => void>()
-let inFlight = 0
+const listeners = new Set<(mark: boolean) => void>()
 
-const tell = (pending: boolean): void => {
-  for (const listener of listeners) listener(pending)
+const tell = (mark: boolean): void => {
+  for (const listener of listeners) listener(mark)
 }
 
-/** Hears each tap before its line is submitted, and again once no tap's submit is still out. Returns the unsubscribe. */
-export function onCommandTap(listener: (pending: boolean) => void): () => void {
+/** Hears `true` for each tap before its line is submitted, and `false` for a tap whose submit ran no line. Returns the unsubscribe. */
+export function onCommandTap(listener: (mark: boolean) => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
@@ -18,10 +17,8 @@ export function onCommandTap(listener: (pending: boolean) => void): () => void {
 }
 
 export function tapCommand(line: string): void {
-  inFlight += 1
   tell(true)
-  void window.bingbong.assistant.submit(line).finally(() => {
-    inFlight -= 1
-    if (inFlight === 0) tell(false)
+  void window.bingbong.assistant.submit(line).then((ran) => {
+    if (!ran) tell(false)
   })
 }

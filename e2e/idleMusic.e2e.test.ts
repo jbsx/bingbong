@@ -214,6 +214,30 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     expect(await idleShown()).toBe(true)
   }, 60_000)
 
+  it('a double tap on Skip brings no Turn Card for either line, both taps down before the first line\'s first event (#532)', async () => {
+    const answers = async (): Promise<number> => ((await feedText(harness)).match(/Nothing queued\./g) ?? []).length
+    const before = await answers()
+    // Any card at any moment counts, not only one left up at the end.
+    await harness.dashboardEval(`void (window.__turnCardWatch = (() => {
+      const watch = { seen: !!document.querySelector('.turn-card'), observer: new MutationObserver(() => { if (document.querySelector('.turn-card')) watch.seen = true }) }
+      watch.observer.observe(document.body, { childList: true, subtree: true })
+      return watch
+    })())`)
+
+    // Both presses in one evaluate: no event of the first line can land between them.
+    await harness.dashboardEval(`(() => {
+      const skip = document.querySelector('.idle-music-button[aria-label="Skip"]')
+      skip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      skip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    })()`)
+
+    await waitFor(async () => ((await answers()) >= before + 2 ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    const seen = await harness.dashboardEval<boolean>(`(() => { window.__turnCardWatch.observer.disconnect(); return window.__turnCardWatch.seen })()`)
+    expect(seen).toBe(false)
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card')`)).toBe(false)
+    expect(await idleShown()).toBe(true)
+  }, 30_000)
+
   it('a song stopped a while leaves the Idle Screen and the AI Usage takes its chart back; `play` still plays it', async () => {
     const shown = (selector: string): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`)
     const until = (selector: string, want: boolean): Promise<true> => waitFor(async () => ((await shown(selector)) === want ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
