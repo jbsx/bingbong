@@ -202,6 +202,8 @@ describe('idle screen e2e: the Last Page and resume', () => {
       { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104.7k', gain: '+23.3kthis month', language: 'TypeScript' },
     ])
     expect(await harness.dashboardEval<string>(`document.querySelector('.idle-repos .idle-kicker').textContent`)).toBe('Top repos ★ this month')
+    // The `resume` of the Last Page's test ended seconds ago and woke the screen: its card went with it and does not come back.
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card')`)).toBe(false)
 
     // The usage card lands after the first layout and moves the cards: the row is tapped once it has landed and the row holds still.
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-home[data-card="usage"]')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 250 })

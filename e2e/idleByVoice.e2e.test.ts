@@ -80,6 +80,8 @@ describe('idle screen e2e: brought back by a line (#458)', () => {
 
     await harness.submitCommand('go to the idle screen')
     await waitFor(async () => ((await shows('.idle-screen')) ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
+    // The screen came up mid-turn, so the line keeps its card through to Done.
+    await waitFor(async () => ((await shows('.turn-card[data-state="done"]')) ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
     expect(standIn.asked[0]).toContain('show_idle')
     // The turn has ended (its Answer and its status have reached the dashboard), and the screen is still up.
     await new Promise((resolve) => setTimeout(resolve, 1500))

@@ -55,6 +55,8 @@ export function App() {
   // Whether the Idle Screen is up, as of the last render: once up it is
   // sticky, and only input or a Command that acts on the pane wakes it.
   const idleUp = useRef(false)
+  // The end of the line whose card the screen came up without.
+  const cardGone = useRef<number | null>(null)
   // The Idle Screen asked for (#458): the shortcut, or a line's app op, which fires mid-turn. It comes up at once, over the
   // turn still running, and from the asking on counts as up, so the rest of that turn — its Answer, its status — leaves it up.
   const idleAsked = useRef(false)
@@ -162,6 +164,8 @@ export function App() {
   const quiet = (status === 'idle' || status === 'starting' || status === 'earFailed') && !voice.listening && !voice.transcribing
   if (!idle.idle) idleAsked.current = false
   const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current || idleAsked.current)
+  // The screen coming up over a line already over shows no card for it (CONTEXT.md, Turn Card): that line is the pane's, and the fold stays open for the Peek Card's strip.
+  if (!idleUp.current && showIdle) cardGone.current = turn.state.phase === 'open' ? turn.state.endedAt : null
   idleUp.current = showIdle
   // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
   // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.
@@ -197,8 +201,8 @@ export function App() {
   }, [showIdle])
 
   if (showIdle) {
-    // The Turn Card is up while a line is taken, read and done (#474), but not over a control for its own tap (#525); the Idle Prompt sits at the foot beside it, its scrim stood down.
-    const turnUp = turnCardShows(turn.state)
+    // The Turn Card is up while a line is taken, read and done (#474), but not over a control for its own tap (#525) nor for a line over before the screen came up (#526); the Idle Prompt sits at the foot beside it, its scrim stood down.
+    const turnUp = turnCardShows(turn.state) && (cardGone.current === null || turn.state.endedAt !== cardGone.current)
     return (
       <>
         <IdleScreen
