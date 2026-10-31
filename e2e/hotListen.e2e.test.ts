@@ -12,13 +12,14 @@ import { waitFor } from './waitFor'
 // endpointing, the Command runner and the Feed. One wake, two Utterances,
 // two Commands; then the silence closes the Listen and monitoring resumes.
 //
-// The scripts advance one value per frame whoever feeds it — the test's
-// own burst or a capture device's ambient frames — so the choreography
-// holds at any frame rate: speech for the wake gate, then two runs of
-// speech each ended by silence, then silence for good.
+// Chromium's fake mic feeds the real capture graph (#442's recipe): a capture
+// that will not open disarms every listen it opens. The scripts advance one
+// value per frame at the mic's own pace: speech for the wake gate, then two
+// runs of speech each ended by silence, then silence for good.
 
 const SPEECH = 0.95
 const SILENCE = 0.01
+const FAKE_MIC = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
 const run = (value: number, frames: number): number[] => Array.from({ length: frames }, () => value)
 
 describe('Hot Listen e2e', () => {
@@ -35,6 +36,7 @@ describe('Hot Listen e2e', () => {
   it('takes two Utterances as two Commands after one wake, then closes on silence', async () => {
     const harness = await startHarness({
       fixture,
+      launchArgs: FAKE_MIC,
       env: {
         BINGBONG_WAKE_ENGINE: 'node',
         // Three quiet chunks, one hot chunk, quiet for good.
@@ -44,22 +46,13 @@ describe('Hot Listen e2e', () => {
       },
     })
     try {
-      const feed = async (frames: number): Promise<void> => {
-        await harness.dashboardEval<string>(`(() => {
-          for (let i = 0; i < ${frames}; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
-          return 'fed'
-        })()`)
-      }
-
       // The wake: the orb goes listening.
-      await feed(12)
       await waitFor(async () => (await harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--listening')`)) || undefined, {
         timeoutMs: 20000,
         intervalMs: 250,
       })
 
       // Both Utterances, one after the other, with no second wake.
-      await feed(100)
       await harness.waitForPaneUrl(fixture.url('/'))
       const entries = await waitFor(
         async () => {
@@ -70,14 +63,20 @@ describe('Hot Listen e2e', () => {
       )
       expect(entries).toContain('scroll down')
 
-      // Silence closes the Hot Listen (8 s by default); the wake ear is back.
-      await waitFor(
+      // Silence closes the Hot Listen (8 s by default); the wake ear is back. The hint holds the last spoken result (#436), so the state says so.
+      const state = () => harness.dashboardEval<{ listening: boolean; reason: string | null; monitoring: boolean }>('window.bingbong.voice.getState()')
+      await waitFor(async () => (!(await state()).listening ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+      expect(await state()).toMatchObject({ listening: false, reason: null, monitoring: true })
+      // One close, by the silence: a disarm writes no span, so this is the Hot Listen's own bound.
+      const spans = await waitFor(
         async () => {
-          const text = await harness.dashboardEval<string>(`document.querySelector('.voice-hint--monitoring')?.textContent ?? ''`)
-          return text !== '' ? text : undefined
+          const found = collectPerfRecords(join(harness.userDataDir, 'logs')).records.filter((record) => record.stage === 'listen-closed')
+          return found.length > 0 ? found : undefined
         },
-        { timeoutMs: 20000, intervalMs: 250 },
+        { timeoutMs: 5000, intervalMs: 250 },
       )
+      expect(spans).toHaveLength(1)
+      expect(spans[0]!.detail).toMatchObject({ reason: 'wake', heard: true })
     } finally {
       await harness.quit()
     }
