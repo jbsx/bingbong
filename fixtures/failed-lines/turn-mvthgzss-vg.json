@@ -7,5 +7,7 @@
   "happened": "Kiosk page road: media-start at 24 s and 38 s said started:false ready:0 time:0 paused:false; the Player reopened the page and said it failed. The song's clock began at 11:53:03, 55 s after the line and 17 s after the give-up. The next line, Loop this song, came 1 s before that, so that op may have started it.",
   "meant": "The song plays on its one page when the slow host's player has booted, about 20 s after landing, with no press, no reopen and no sentence saying it failed",
   "log": "decision-1793220684878-1.jsonl",
-  "claimedBy": "#550"
+  "claimedBy": "#550",
+  "fixedBy": "9d52c624",
+  "case": "e2e/music.e2e.test.ts: a song still loading on the watch page (#550)"
 }
