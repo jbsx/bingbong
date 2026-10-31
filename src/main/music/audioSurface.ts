@@ -82,6 +82,8 @@ export function createAudioSurface(): AudioRoadSurface {
         document.title = song.title
         const audio = holder.querySelector('audio')
         audio.loop = false
+        // This page lives on where a watch page's would not: a song that ended on it can end again, once handed back.
+        if (window.__bingbongPlayer) window.__bingbongPlayer.endedId = null
         audio.src = stream
         audio.play().catch(() => {})
       })(${JSON.stringify(song)}, ${JSON.stringify(stream)})`)
