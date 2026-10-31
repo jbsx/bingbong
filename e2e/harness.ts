@@ -81,7 +81,7 @@ export interface Harness {
   /** Write one line to the app's CLI harness stdin (requires `pipeStdio`). */
   cliWrite(line: string): void
   /** Resolve with the first CLI harness stdout line matching. */
-  waitForCliOutput(match: RegExp, options?: { since?: number }): Promise<string>
+  waitForCliOutput(match: RegExp, options?: { since?: number; timeoutMs?: number }): Promise<string>
   /** Marker for `waitForCliOutput`'s `since` — only sees lines printed after this. */
   cliMark(): number
   /** Everything the CLI harness has printed so far. */
@@ -684,8 +684,8 @@ async function buildHarness(
       app.stdin.write(`${line}\n`)
     },
 
-    waitForCliOutput: (match: RegExp, options?: { since?: number }) =>
-      app.waitForStdoutLine(match, options?.since ?? 0),
+    waitForCliOutput: (match: RegExp, options?: { since?: number; timeoutMs?: number }) =>
+      app.waitForStdoutLine(match, options?.since ?? 0, options?.timeoutMs),
 
     cliMark: () => app.stdoutLineCount(),
 

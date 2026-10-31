@@ -10,7 +10,7 @@ export interface LaunchedApp {
   /** Writable stdin — only when launched with `pipeStdio`. */
   readonly stdin: Writable | null
   /** Resolves with the first stdout line matching (only with `pipeStdio`). */
-  waitForStdoutLine(match: RegExp, since: number): Promise<string>
+  waitForStdoutLine(match: RegExp, since: number, timeoutMs?: number): Promise<string>
   /** Number of stdout lines captured so far — use as `since` to await only new output. */
   stdoutLineCount(): number
   /** Everything printed to stdout so far (only with `pipeStdio`). */
@@ -156,7 +156,7 @@ export async function launchApp({
       cdp,
       stdin: proc.stdin,
       stderrTail: () => stderr,
-      waitForStdoutLine: (match: RegExp, since = 0) =>
+      waitForStdoutLine: (match: RegExp, since = 0, timeoutMs = 20000) =>
         // Result lines follow the 'bingbong> ' prompt on the same stdout line;
         // match against the line with the prompt prefix stripped.
         waitFor(
@@ -165,7 +165,7 @@ export async function launchApp({
               .slice(since)
               .find((line) => match.test(line.replace(/^bingbong> /, '')))
               ?.replace(/^bingbong> /, ''),
-          { timeoutMs: 20000, intervalMs: 100 },
+          { timeoutMs, intervalMs: 100 },
         ),
       stdoutLineCount: () => stdoutLines.length,
       stdoutText: () => stdoutLines.join('\n'),

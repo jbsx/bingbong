@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
-import { cli } from './cliSupport'
+import { cli, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS } from './cliSupport'
 import { decisionScript, readingOf } from './scriptedJev'
 import { DEFAULT_ADBLOCK_LISTS, DEFAULT_ADBLOCK_RESOURCES_URL } from '../src/core/adblock/adblockConfig'
 import { waitFor } from './waitFor'
@@ -47,10 +47,14 @@ describe.skipIf(!out)('play timing (constrained run, live YouTube)', () => {
   for (const line of SONGS) {
     it(line, async () => {
       const started = Date.now()
-      const answer = await cli(harness, line, /^(playing: id=|No videos|.*can.t be played|error:)/)
+      let ad = false
+      // The line waits through an ad (#497), so the ad is seen while it answers.
+      const adWatch = setInterval(() => {
+        harness.paneEval<{ ad: boolean }>(SONG_PLAYING).then((facts) => { if (facts.ad) ad = true }).catch(() => {})
+      }, 250)
+      const answer = await cli(harness, line, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS).finally(() => clearInterval(adWatch))
       const answeredMs = Date.now() - started
       const id = /id=(\S+)/.exec(answer)?.[1] ?? null
-      let ad = false
       const song = await waitFor(
         async () => {
           const facts = await harness.paneEval<{ id: string | null; playing: boolean; ad: boolean }>(SONG_PLAYING).catch(() => null)

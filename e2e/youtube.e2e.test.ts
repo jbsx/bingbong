@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
-import { cli, refOf } from './cliSupport'
+import { LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS, cli, refOf } from './cliSupport'
 import { waitFor } from './waitFor'
 import { decisionScript, readingOf } from './scriptedJev'
 
@@ -231,7 +231,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
   })
 
   it('a volume line under the duck on the real watch page is read from the level put back, and the release keeps the level set (#459)', async () => {
-    expect(await cli(harness, DUCK_SONG_LINE, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)).toMatch(/^playing: id=/)
+    expect(await cli(harness, DUCK_SONG_LINE, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)).toMatch(/^playing: id=/)
     const video = `document.querySelector('#movie_player video')`
     // Past any ad: the song itself playing in YouTube's player.
     await waitFor(
