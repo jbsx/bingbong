@@ -112,8 +112,8 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
       // It plays a real song (#459): muted, as every test run is.
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      // The duck's lines (#459) are Jev's: `play` the Appliance Verb, the volume the watch page's own media ref, whichever number it has.
-      env: decisionScript(readingOf(DUCK_SONG_LINE), readingOf(DUCK_VOLUME_LINE, 'volume-*', { amount: 'up-step' })),
+      // The duck's lines (#459) are Jev's: `play` the Appliance Verb, the volume the Appliance Card's `media-volume` (#485), which works the watch page's own media, whichever ref it has.
+      env: decisionScript(readingOf(DUCK_SONG_LINE), readingOf(DUCK_VOLUME_LINE, 'media-volume', { amount: 'up-step' })),
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     screenshotPath = join(await mkdtemp(join(tmpdir(), 'bingbong-yt-')), 'gate.jpg')

@@ -63,7 +63,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
 
   beforeAll(async () => {
     // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Appliance Verb.
-    const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody'].map((line) => readingOf(line)))
+    // The stand-in spends one entry per ask and takes the first whose line is in the ask's state, so `not that one` comes before the second `play` of the song it corrects.
+    const env = decisionScript(
+      ...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody', 'play daft punk one more time'].map((line) => readingOf(line)),
+      readingOf('not that one', 'correct'),
+      readingOf('play daft punk one more time'),
+    )
     harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
     await harness.waitForCliOutput(/bingbong browser harness/)
     // A profile that has met YouTube, as every used one has. `play` lands
@@ -217,14 +222,8 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
       join(userDataDir, 'songs.json'),
       JSON.stringify({ songs: [{ words: LOUD.words, id: LOUD.id, title: 'Tum Se Tum Tak', at }, { words: LOUDER.words, id: LOUDER.id, title: 'The second loud track', at }] }),
     )
-    // The `volume-N` reading for whichever ref the watch page gives its video: each entry answers only the ask whose card carries that media ref.
-    // 250 of them stay under the 128 KB a single environment string may take.
-    const script = JSON.parse(decisionScript(readingOf(`play ${LOUD.words}`), readingOf(`queue ${LOUDER.words}`)).BINGBONG_DECISION_SCRIPT) as Record<string, unknown>[]
-    const volume = JSON.parse(decisionScript(readingOf(SET_LINE, 'volume-1', { amount: 'to' })).BINGBONG_DECISION_SCRIPT)[0] as { answers: Record<string, unknown> }
-    for (let ref = 1; ref <= 250; ref += 1) {
-      script.push({ when: `[${ref}] media "`, answers: { ...volume.answers, action: { type: 'choice', choice: `volume-${ref}`, confidence: 0.9 } } })
-    }
-    harness = await startHarness({ userDataDir, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: { BINGBONG_DECISION_SCRIPT: JSON.stringify(script) } })
+    // A line goes to the Appliance Card first (#485), and its `media-volume` works the page's own media, whichever ref the watch page gives it.
+    harness = await startHarness({ userDataDir, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: decisionScript(readingOf(`play ${LOUD.words}`), readingOf(`queue ${LOUDER.words}`), readingOf(SET_LINE, 'media-volume', { amount: 'to' })) })
     await harness.waitForCliOutput(/bingbong browser harness/)
     await cli(harness, 'navigate https://www.youtube.com/', /^(navigated|error)/)
   }, 120_000)
