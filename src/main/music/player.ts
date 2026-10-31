@@ -153,6 +153,8 @@ export interface PlayerStart {
   readonly consent: number | null
   /** How long an ad in the element held the start (#497) (ms), by the engine's own fact; null when none played. */
   readonly ad: number | null
+  /** The ad still playing when the bound ended the start's wait (#549): the song plays once it ends, with the line already answered. */
+  readonly onAd?: AdShowing
 }
 
 /** A consent wall the browser cleared for the Player (#492, #496): what the perf log keeps of each. */
@@ -365,6 +367,14 @@ const SERVED_MARGIN_MS = 250
  * 2.2 s after the landing, read every 400 ms.
  */
 const SELF_START_MS = 2_500
+/**
+ * The longest a start waits through ads before the line ends, still on one
+ * (#549): every line is answered, and an ad's moving time otherwise renews the
+ * start's bound for as long as it plays. A guess (ruling on #549): the only
+ * sample says pods of 15–54 s (dev, live, 2026-10-31); the kiosk's `media-start`
+ * records with `ad` settle it, none carrying one yet.
+ */
+const AD_START_MS = 120_000
 /** How long a pressed song may take to play before it is taken as unstarted: a guess, the self-start bound again; #488's perf `media-start` records settle it. */
 const PRESSED_START_MS = 2_500
 /**
@@ -402,6 +412,9 @@ const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 const atEnd = (status: Pick<WatchStatus, 'elapsed' | 'duration'>): boolean => status.duration !== null && status.elapsed >= status.duration - END_LEAD_S
 
 /** An Answer for a song the audio road could not play (#502): "Playing “X” on its watch page." */
+/** An ad in an element, as its read gives it (#497). */
+const adShowing = (read: Pick<StartRead, 'time' | 'duration' | 'skippable'>): AdShowing => ({ elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration), skippable: read.skippable })
+
 const onItsWatchPage = (answer: string): string => `${answer.replace(/\.$/, '')} on its watch page.`
 
 const NONE_HELD: HeldResumed = { held: 0, played: 0 }
@@ -535,9 +548,12 @@ export function createPlayer(deps: PlayerDeps): Player {
    * length, whole — or none: Now Playing says it, and the card hears it.
    */
   function showAd(song: Song, read: Pick<StartRead, 'time' | 'duration' | 'skippable'> | null): void {
-    adOver = read === null ? null : { id: song.id, ad: { elapsedS: Math.floor(read.time), durationS: read.duration === null ? null : Math.round(read.duration), skippable: read.skippable } }
+    adOver = read === null ? null : { id: song.id, ad: adShowing(read) }
     publish()
   }
+
+  /** The song whose line ended still on an ad (#549): no start reads it now, so the poll sees it through the ad's end. */
+  let leftOnAd: string | null = null
 
   /** A seek asked while an ad held the song's element (#497): put on that song once the ad ends. */
   let heldSeek: { readonly id: string; readonly action: MediaOpAction } | null = null
@@ -1014,6 +1030,7 @@ export function createPlayer(deps: PlayerDeps): Player {
    * own `play`, and read again to the same bound.
    */
   async function startOf(song: Song, current: () => boolean, background: boolean, reopened: boolean): Promise<PlayerStart | 'superseded'> {
+    leftOnAd = null
     const from = now()
     let pressed = false
     // A bound passes on the clock, or on the reads' own waits where the clock does not move (a scripted page).
@@ -1042,6 +1059,11 @@ export function createPlayer(deps: PlayerDeps): Player {
         if (ad === null) ad = { at: now(), read, ms: null }
         else ad.ms = null
         showAd(song, last)
+        // An ad's moving time renews the bound below, so this road has its own (#549). The song is not given up on: it is left to play once the ad ends.
+        if (adMs(read)! >= AD_START_MS) {
+          leftOnAd = song.id
+          return decided({ video: song.id, started: false, pressed, reopened, refused: null, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read), onAd: adShowing(last) })
+        }
         if (!last.paused && (before === null || last.time > before.time)) phase = { ...phase, at: now(), read }
       } else if (ad !== null && ad.ms === null && last !== null) {
         ad.ms = adMs(read)
@@ -1138,7 +1160,7 @@ export function createPlayer(deps: PlayerDeps): Player {
    */
   async function playOn(song: Song, current: () => boolean, background: boolean, paneIsOurs: () => boolean = () => false): Promise<PlayerStart | 'superseded'> {
     const first = await startOf(song, current, background, false)
-    if (first === 'superseded' || first.started) return first
+    if (first === 'superseded' || first.started || first.onAd !== undefined) return first
     if (!current()) return 'superseded'
     // A remembered address that would not start gets one fresh lookup first (#516), read and pressed as any new stream is; this runs at most once, the fresh one not being remembered.
     if (road === 'audio' && forgetRefused(song)) {
@@ -1193,7 +1215,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const start = await playOn(song, current, true, paneIsOurs)
     // Overtaken while its start was read, the song and the Queue are the later line's.
     if (start === 'superseded' || !current()) return false
-    if (start.started) {
+    if (start.started || start.onAd !== undefined) {
       if (again) state = unpause(state)
       return false
     }
@@ -1317,6 +1339,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (opened === 'failed') return failedToOpen(song)
     const start = await playOn(song, current, false)
     if (start === 'superseded') return superseded
+    if (start.onAd !== undefined) return { result: `on-ad: id=${song.id} title=${JSON.stringify(song.title)}`, answer: `${adWait(start.onAd)}, then ${quoted(song.title)}.`, video: song.id }
     if (!start.started) {
       holdUnstarted()
       const tried = [start.pressed ? ' pressed' : '', start.reopened ? ' reopened' : '', start.refused === null ? '' : ` refused=${start.refused}`].join('')
@@ -1585,6 +1608,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (song !== null && status.id === song.id && status.hasVideo && (sounded?.id !== song.id || sounded.time !== status.elapsed)) sounded = { id: song.id, at: wallNow(), time: status.elapsed }
     if (song === null || !showsSong(status, song)) return
     await applyHeldSeek(song, status)
+    const pressed = await pressLeftOnAd(song, status)
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
     muted = status.muted
     const opening = carrying?.id === song.id
@@ -1601,7 +1625,20 @@ export function createPlayer(deps: PlayerDeps): Player {
     // again every tick it stays up, a page pause adopted meanwhile notwithstanding.
     const continued = status.paused && !ownPause && status.prompt && (await evaluate<boolean>(CONTINUE_SCRIPT)) === true
     const resumed = !continued && (await resumeSeeked(status, readAt))
-    adoptElementFlags(continued || resumed ? { ...status, paused: false } : status)
+    adoptElementFlags(continued || resumed || pressed ? { ...status, paused: false } : status)
+  }
+
+  /**
+   * The ad a line ended on (#549) is over and the song stands paused: pressed
+   * once, as its start would have, unless the person paused it meanwhile. True
+   * when it plays.
+   */
+  async function pressLeftOnAd(song: Song, status: WatchStatus): Promise<boolean> {
+    if (leftOnAd !== song.id) return false
+    leftOnAd = null
+    if (!status.paused || ownPause || state.paused) return false
+    const element = await control({ op: 'play' })
+    return element !== null && element.found && !element.paused
   }
 
   /**

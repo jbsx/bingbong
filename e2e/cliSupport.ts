@@ -7,7 +7,7 @@ import type { Harness } from './harness'
 export const LIVE_PLAY_ANSWER_MS = 90_000
 
 /** Every way the Player ends a live `play`, `skip` or `not that one` on the CLI, as its `result` prints them: a failure answers at once and shows in the test's own `toMatch`. */
-export const LIVE_PLAY_ANSWER = /^(playing: id=|unstarted: id=|no videos: |no results data: |search failed: |not a watch page: |no more results|nothing to correct|nothing before|queue empty|not a command: |error:)/
+export const LIVE_PLAY_ANSWER = /^(playing: id=|on-ad: id=|unstarted: id=|no videos: |no results data: |search failed: |not a watch page: |no more results|nothing to correct|nothing before|queue empty|not a command: |error:)/
 
 /** Runs one CLI command and resolves with the first new matching output line. */
 export async function cli(harness: Harness, line: string, match: RegExp, timeoutMs?: number): Promise<string> {

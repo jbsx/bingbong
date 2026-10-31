@@ -1323,14 +1323,14 @@ describe("a song's start (#488): Playing only when the element plays", () => {
 })
 
 /** Song A on the scripted engine (#497); the start's waits are `sleep`'s. */
-function prerolled(sleep: () => Promise<void> = async () => {}) {
+function prerolled(sleep: (ms: number) => Promise<void> = async () => {}, now?: () => number) {
   const browser = new FakeBrowser()
   const youtube = new ScriptedYouTube(browser)
   youtube.search('song a', videoItem('aaaaaaaaaaa', 'Song A'))
   youtube.watches.set('aaaaaaaaaaa', { title: 'Song A' })
   const starts: PlayerStart[] = []
   const seekResumes: PlayerSeekResume[] = []
-  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep, onStart: (start) => starts.push(start), onSeekResume: (seek) => seekResumes.push(seek) })
+  const player = createPlayer({ browser, fetchResults: (url) => youtube.fetchResults(url), sleep, ...(now !== undefined ? { now } : {}), onStart: (start) => starts.push(start), onSeekResume: (seek) => seekResumes.push(seek) })
   const shown: (NowPlaying | null)[] = []
   player.onChange((nowPlaying) => shown.push(nowPlaying))
   return { youtube, player, starts, shown, seekResumes }
@@ -1417,6 +1417,106 @@ describe('a pre-roll ad before the song (#497): the start counts only the song�
     youtube.element = { ...youtube.element, currentTime: 2, duration: 180 }
     await player.check()
     expect(player.nowPlaying()?.ad ?? null).toBeNull()
+  })
+})
+
+describe('a start held on an ad has a total bound (#549): the line ends at 120 s, and the song is not abandoned', () => {
+  /** The Player on a clock only its own waits move: the bound is the clock's, not the reads'. */
+  function clocked() {
+    let clock = 0
+    const held = prerolled(async (ms) => { clock += ms }, () => clock)
+    return { ...held, at: () => clock }
+  }
+
+  const presses = (youtube: ScriptedYouTube): number => youtube.controls.filter((op) => op.op === 'play').length
+
+  it('an ad that outlasts the bound ends the line at 120 s, saying what the wait said: no failure, no press, no reopen', async () => {
+    const { youtube, player, starts, at } = clocked()
+    youtube.preRollS = 300
+    const played = await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(played).toMatchObject({ result: 'on-ad: id=aaaaaaaaaaa title="Song A"', answer: 'An ad first, 2:00 of 5:00, then “Song A”.', video: 'aaaaaaaaaaa' })
+    expect(played.failure).toBeUndefined()
+    expect(at()).toBeLessThanOrEqual(120_500)
+    expect(presses(youtube)).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: false, reopened: false, ad: 120_000, onAd: { elapsedS: 120, durationS: 300, skippable: false } })])
+  })
+
+  it('a pod counts as one wait: two ads of 100 s end the line at 120 s, in the second', async () => {
+    const { youtube, player, starts, at } = clocked()
+    youtube.preRollS = [100, 100]
+    expect((await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).result).toMatch(/^on-ad: /)
+    expect(at()).toBeLessThanOrEqual(120_500)
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.onAd?.durationS).toBe(100)
+  })
+
+  it('past the bound the song stays the current one, unpaused, the ad still counted on Now Playing, and it plays when the ad ends with no press', async () => {
+    const { youtube, player } = clocked()
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', paused: false, ad: { elapsedS: 120, durationS: 300 } })
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 2, duration: 180, paused: false }
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ id: 'aaaaaaaaaaa', paused: false })
+    expect(player.nowPlaying()?.ad ?? null).toBeNull()
+    expect(presses(youtube)).toBe(0)
+  })
+
+  it('an ad that ends leaving the song paused is pressed once, as a start would be, since the start is no longer reading', async () => {
+    const { youtube, player } = clocked()
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 180, paused: true }
+    await player.check()
+    expect(presses(youtube)).toBe(1)
+    expect(player.nowPlaying()).toMatchObject({ paused: false })
+    youtube.element = { ...youtube.element, paused: true, currentTime: 40 }
+    await player.check()
+    expect(presses(youtube)).toBe(1)
+  })
+
+  it('a song the person paused over the ad stays paused when the ad ends', async () => {
+    const { youtube, player } = clocked()
+    youtube.preRollS = 300
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    await player.perform({ kind: 'pause' }, null, () => true)
+    youtube.adShowing = false
+    youtube.element = { ...youtube.element, currentTime: 0, duration: 180, paused: true }
+    await player.check()
+    expect(presses(youtube)).toBe(0)
+    expect(player.nowPlaying()).toMatchObject({ paused: true })
+  })
+
+  it('a queued song opening on an endless ad is neither passed over nor held paused', async () => {
+    const { youtube, player, starts } = clocked()
+    youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
+    youtube.watches.set('bbbbbbbbbbb', { title: 'Song B' })
+    await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)
+    await player.perform({ kind: 'search', place: 'end' }, 'song b', () => true)
+    youtube.preRollS = 300
+    youtube.endVideo()
+    await player.check()
+    await vi.waitFor(() => expect(starts.at(-1)).toMatchObject({ video: 'bbbbbbbbbbb', background: true, onAd: { durationS: 300 } }))
+    await player.check()
+    expect(player.nowPlaying()).toMatchObject({ id: 'bbbbbbbbbbb', paused: false })
+  })
+
+  it('an ad under the bound is no different: the line says Playing once the song plays', async () => {
+    const { youtube, player, starts } = clocked()
+    youtube.preRollS = 100
+    expect((await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).result).toMatch(/^playing: /)
+    expect(starts[0]!.onAd).toBeUndefined()
+  })
+
+  it('a stuck ad, its time still, never reaches the bound: pressed, reopened, and the line ends unstarted within seconds', async () => {
+    const { youtube, player, starts, at } = clocked()
+    youtube.preRollS = 300
+    youtube.readyState = 2
+    expect(await player.perform({ kind: 'search', place: 'now' }, 'song a', () => true)).toMatchObject({ failure: true, unstarted: true })
+    expect(at()).toBeLessThan(15_000)
+    expect(starts).toEqual([expect.objectContaining({ started: false, pressed: true, reopened: false, ad: expect.any(Number) }), expect.objectContaining({ started: false, pressed: true, reopened: true })])
   })
 })
 
