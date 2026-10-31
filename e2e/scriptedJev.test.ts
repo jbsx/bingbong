@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MediaFacts } from '../src/core/browser/snapshot'
 import type { CommandPage } from '../src/core/command/command'
+import { applianceQuestions, applianceState, type ApplianceView } from '../src/core/command/applianceCard'
 import { commandQuestions, commandState, hopQuestions, type HopContext } from '../src/core/command/jevReading'
 import { createScriptedDecisionModel } from '../src/main/decision/createDecisionModel'
 import { decisionScript, readingOf } from './scriptedJev'
@@ -34,6 +35,34 @@ describe('the scripted Jev', () => {
     const questions = hopQuestions(LINE, WATCH, HOP)
     const model = createScriptedDecisionModel(decisionScript(readingOf(LINE, 'none', { outcome: 'yes', progress: 0.9 })).BINGBONG_DECISION_SCRIPT)
     const result = await model.ask({ state: commandState(LINE, WATCH, HOP), questions })
+    expect(result.status).toBe('answered')
+  })
+
+  // #489 added the Fate to the Appliance Card's ask over a running line, and #490 made a sentence still sounding a running line: every such ask read malformed.
+  it('answers the Fate an Appliance Card ask carries while a line runs', async () => {
+    const view: ApplianceView = { url: WATCH.url, title: WATCH.title, running: { words: 'navigate somewhere', stage: 'Speaking', done: [] } }
+    const questions = applianceQuestions('open settings', view)
+    expect(Object.keys(questions)).toContain('fate')
+    const model = createScriptedDecisionModel(decisionScript(readingOf('open settings', 'none')).BINGBONG_DECISION_SCRIPT)
+    const result = await model.ask({ state: applianceState('open settings', view), questions })
+    expect(result.status).toBe('answered')
+  })
+
+  it("answers a hop's passage Choice, asked over text in view (#401)", async () => {
+    const page: CommandPage = { ...WATCH, viewportText: ['A block of text in view.'] }
+    const questions = hopQuestions(LINE, page, HOP)
+    expect(Object.keys(questions)).toContain('passage')
+    const model = createScriptedDecisionModel(decisionScript(readingOf(LINE, 'none', { outcome: 'yes', progress: 0.9 })).BINGBONG_DECISION_SCRIPT)
+    const result = await model.ask({ state: commandState(LINE, page, HOP), questions })
+    expect(result.status).toBe('answered')
+  })
+
+  it("answers the dismiss Choice a hop's ask carries over a pop-up", async () => {
+    const page = { ...WATCH, dialog: { text: 'A pop-up', refs: [], texts: [{ text: 'Not now' }] } } as unknown as CommandPage
+    const questions = hopQuestions(LINE, page, HOP)
+    expect(Object.keys(questions)).toContain('dismiss')
+    const model = createScriptedDecisionModel(decisionScript(readingOf(LINE, 'none', { outcome: 'yes', progress: 0.9 })).BINGBONG_DECISION_SCRIPT)
+    const result = await model.ask({ state: commandState(LINE, page, HOP), questions })
     expect(result.status).toBe('answered')
   })
 })

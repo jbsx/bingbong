@@ -50,7 +50,7 @@ const LINES = {
 } as const
 
 /** What the CLI prints for an app op: its Answer. */
-const ANSWERED = /^(Showing |Opened |Closed |The activity panel |Ad blocking |Clock |Appearance |Idle timeout |Updates |error:|No response)/
+const ANSWERED = /^(Showing |Opened |Closed |The activity panel |Ad blocking |Clock |Appearance |Idle timeout |Updates |error:|No response|not a command: )/
 
 describe('app ops e2e (#420): the panel, the views and the settings in one hop', () => {
   let harness: Harness

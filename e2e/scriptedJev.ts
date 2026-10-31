@@ -64,7 +64,12 @@ export function hubTaskReadings(): Reading[] {
  * The env that scripts these readings, in the order they are typed: one
  * entry per ask, a Task's hops each their own. Every question an ask may
  * carry is answered (scriptedJev.test.ts holds it to `commandQuestions`):
- * one left out makes the stand-in read every ask as malformed.
+ * one left out makes the stand-in read every ask as malformed. What only
+ * some asks carry reads the same on every entry: the Fate over a running
+ * line (#489) `goes_on`, what the app reads when unsure (`readFate`), so the
+ * line before stands; a hop's `passage` (#401) `none`, since no scripted Task
+ * says an Answer Passage; the `dismiss` over a pop-up `escape`, the one label
+ * that Choice always offers.
  */
 export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRIPT: string } {
   const entries = readings.map((reading) => ({
@@ -77,6 +82,9 @@ export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRI
       where: choice('web'),
       steps: choice('none'),
       kind: choice(reading.kind ?? 'music'),
+      fate: choice('goes_on'),
+      passage: choice('none'),
+      dismiss: choice('escape'),
       ...(reading.outcome !== undefined ? { outcome: choice(reading.outcome) } : {}),
       ...(reading.progress !== undefined ? { progress: { type: 'noul', noul: reading.progress } } : {}),
       ...(reading.file !== undefined ? { file: choice(reading.file) } : {}),
