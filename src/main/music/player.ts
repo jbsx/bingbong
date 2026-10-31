@@ -1035,6 +1035,12 @@ export function createPlayer(deps: PlayerDeps): Player {
         ad.ms = adMs(read)
         showAd(song, null)
       }
+      // Paused in its end's lead, a seek having taken it there during the start (#538): the end rule's pause, inside PLAYED_S. It played and
+      // it ended: a press would only be paused again, and a reopen plays it from the top behind a new ad. The poll hears the end from here.
+      if (last !== null && !last.ad && last.paused && last.duration !== null && atEnd({ elapsed: last.time, duration: last.duration })) {
+        waitEnded(current)
+        return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }, ms: Math.round(now() - from), background, ad: adMs(read) })
+      }
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
       const playing = last !== null && !last.ad && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
       since = playing ? (since ?? last!.time) : null

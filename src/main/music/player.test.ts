@@ -1225,6 +1225,33 @@ describe("a song's start (#488): Playing only when the element plays", () => {
     expect(starts.at(-1)).toMatchObject({ started: false, pressed: true, reopened: true, refused: null, element: { paused: false, ended: false, ready: 2, time: 0 } })
   })
 
+  it('a song already at its end during its start has played: no press, and never opened again from the top (#538)', async () => {
+    const { youtube, player, perform, presses, starts } = starting()
+    youtube.opensAtEnd = true
+    const played = await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(played.failure).toBeUndefined()
+    expect(presses()).toBe(0)
+    expect(starts).toEqual([expect.objectContaining({ started: true, pressed: false, reopened: false })])
+    expect(player.queue().paused).toBe(false)
+  })
+
+  it('a queued song that reaches its end during its background start ends there, with nothing queued left: its page is not opened again (#538)', async () => {
+    const { youtube, player, perform, presses, starts } = starting()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    youtube.opensAtEnd = true
+    youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(starts.at(-1)).toMatchObject({ video: 'bbbbbbbbbbb', started: true, pressed: false, reopened: false, background: true })
+    expect(presses()).toBe(0)
+    youtube.endVideo()
+    await player.check()
+    await player.settled()
+    expect(player.queue().current).toBeNull()
+    expect(player.nowPlaying()).toMatchObject({ id: 'bbbbbbbbbbb' })
+  })
+
   it('a song left unstarted plays on `resume`', async () => {
     const { youtube, player, perform } = starting()
     youtube.starts = 'refuses'

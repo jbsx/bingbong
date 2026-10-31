@@ -135,6 +135,9 @@ export class ScriptedYouTube {
     this.results.set(words, resultsData(...items))
   }
 
+  /** Every page from here on opens with its song already paused in its last half second (#538). */
+  opensAtEnd = false
+
   /** The video playing ends now — an ad's, when `adShowing` is set. */
   endVideo(): void {
     this.ended = { id: this.currentId(), ad: this.adShowing }
@@ -201,6 +204,8 @@ export class ScriptedYouTube {
       this.refused = null
       this.pressed = false
       this.duckMark = null
+      // A song at its end as soon as it is read, the end rule's pause on it: seeked there during its start (#538).
+      if (this.opensAtEnd && this.element.duration !== null) this.element = { ...this.element, paused: true, currentTime: this.element.duration - 0.5 }
       // The pre-roll (#497): the element plays the ad first, at its length, the page's ad marker on.
       const pod = this.preRollS === null ? [] : typeof this.preRollS === 'number' ? [this.preRollS] : [...this.preRollS]
       this.ad = pod.length === 0 ? null : { lengthS: pod[0]!, next: pod.slice(1), song: this.ad?.song ?? this.element.duration, between: false }

@@ -11,6 +11,7 @@
 | That same background wait | a watch page opening instead | The Wait Card shows “The watch page instead”. The Capsule is not told, since no Command waits. | `fallBack`, `tellWait` |
 | The same end | the song that ended was on the audio road, or the person took the pane during the lookup | Still passed over: the pane may hold a page of the person's own. | `open` |
 | A queued song passed over, on either road | whether or not the queue goes on | One `speak` in no turn, a failure, goes to the Feed and is said: `“<title>” can't be played. Say play and its name to open its page.` Before, nothing was said. | `onPassedOver`, `passedOverLine` |
+| A song already paused at its end while its start is read | either road, a Command's or a queued song's | Its start is done: no press, and its page is not opened again. Before, a seek to the end inside the start reopened the page, and the song played again from the top behind an ad. | `startOf` |
 | A background open overtaken by a later line | it failed after the overtaking | Nothing said, and the later line's song is not dropped from the Queue. | `advanceInBackground` |
 
 The sentence's second half is a labelled guess in `passedOverLine`: no measure reaches spoken wording, and the owner's next report on it settles it.
