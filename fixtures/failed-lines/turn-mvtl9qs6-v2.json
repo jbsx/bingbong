@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvtl9qs6-v2",
+  "transcript": "Go to the video.",
+  "at": 1793281108867,
+  "source": "spoken",
+  "stage": "player",
+  "happened": "Kiosk page road: media-start at 13:38:57 and 13:39:17 said started:false ready:0 time:0 paused:false; the Player reopened the page and said it failed (TTS fired 13:39:20; words not logged, inferred from the only sentence on that path). It played from about 13:39:32, 14 s after the give-up and 64 s after the line.",
+  "meant": "The song plays on its one page when the slow host's player has booted, about 20 s after landing, with no press, no reopen and no sentence saying it failed",
+  "log": "decision-1793281101413-1.jsonl",
+  "claimedBy": "#550"
+}

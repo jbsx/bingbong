@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvtlepd6-v6",
+  "transcript": "Play My Dark Twisted Fantasy.",
+  "at": 1793281340177,
+  "source": "spoken",
+  "stage": "player",
+  "happened": "Kiosk page road: media-start at 13:42:36 and 13:42:59 said started:false ready:0 time:0 paused:false; the Player reopened the page and gave up, though it played from 13:43:08, 9 s after the give-up and 48 s after the line, and ran 33 min.",
+  "meant": "The song plays on its one page when the slow host's player has booted, about 20 s after landing, with no press, no reopen and no sentence saying it failed",
+  "log": "decision-1793281101413-1.jsonl",
+  "claimedBy": "#550"
+}

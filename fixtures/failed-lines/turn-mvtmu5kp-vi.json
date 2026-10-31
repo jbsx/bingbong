@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvtmu5kp-vi",
+  "transcript": "Play New Body by Drake and Nicki Minaj.",
+  "at": 1793283740650,
+  "source": "spoken",
+  "stage": "player",
+  "happened": "Kiosk: yt-dlp failed, the audio road fell back to the page. media-start at 14:23:00 and 14:23:25 said started:false; the Player reopened and said it failed (TTS fired 14:23:25; words not logged, inferred). It was playing by 14:25:20 at the latest and played 224 s, 6730 frames, 0 dropped.",
+  "meant": "The song plays on its one page when the slow host's player has booted, about 20 s after landing, with no press, no reopen and no sentence saying it failed",
+  "log": "decision-1793281101413-1.jsonl",
+  "claimedBy": "#550"
+}
