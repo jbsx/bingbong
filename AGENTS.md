@@ -4,13 +4,15 @@ The `main` branch, which `kachow` became on 2026-10-17 by the owner's
 ruling. The browser, the interaction surface an agent drives
 (the numbered-ref snapshot over CDP — see `src/main/browser/collectPageScript.ts`
 and `src/core/browser/snapshot.ts`), the dashboard, and the local voice
-pipeline (wake word, STT, TTS). No generating model: the orchestrator, its
-subagents, the Session and evidence machinery, vision and the evaluation
-harnesses were stripped on the `kachow` branch and are gone. The one model
-this branch knows is Jev,
-the Decision Model (`src/main/decision/`, `src/core/ports/decisionModel.ts`),
-armed by `TYPESAFE_API_KEY`. The aim is an agent that completes a task as
-fast as it can, built on top of this shell.
+pipeline (wake word, STT, TTS). The orchestrator, its subagents, the Session
+and evidence machinery, vision and the evaluation harnesses were stripped on
+the `kachow` branch and are gone. Three models remain. Jev, the Decision
+Model (`src/main/decision/`, `src/core/ports/decisionModel.ts`), armed by
+`TYPESAFE_API_KEY`, reads every line the grammar does not settle, and
+generates nothing. The Planner drives an Errand (below). The Story Brief
+writer (`src/main/news/briefWriter.ts`) writes the News card's lines, off the
+Command path. The aim is an agent that completes a task as fast as it can,
+built on top of this shell.
 
 ## Jev decides; code shapes the ask
 
@@ -121,6 +123,11 @@ measure. Measuring runs on the free models; Jev joins only on
   reads both). Each Jev call's whole ask goes to `asks-*.jsonl`, which the
   record names. `pnpm jev:candidates`, `jev:case` and `jev:replay` grow
   and replay the Jev corpus in `fixtures/jev-cases/` (#338).
+- **Errands** are the Planner's road (`src/core/errand/`, `src/main/planner/`,
+  ADR 0095): a chat model routed by `BINGBONG_PLANNER_*` carries one spoken
+  outcome across Tasks with a memory. It enters when a Task ends not done or
+  on `errand <words>`, and `BINGBONG_PLANNER=off` turns it off. An action
+  whose effect leaves the appliance is said back and waits for yes.
 - **The browser** is `BrowserController` (`src/core/ports/browser.ts`),
   implemented over CDP in `src/main/browser/createCdpBrowserController.ts`.
   Action Outcome classifiers (blockers, consent walls, empty/not-found/
@@ -233,6 +240,10 @@ and after in the completion summary.
 Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 
 ### Domain docs
+
+This file is the source of truth. A decision that changes what this file
+says changes this file in the same commit. An agent that finds this file
+disagreeing with an ADR follows this file and says so in its report.
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 `CONTEXT.md` is inherited from `main` with the removed sections cut; the
