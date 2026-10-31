@@ -244,6 +244,7 @@ function noFixture(): FixtureServer {
     setStatusBoard: refuse,
     setResultsDelay: refuse,
     refuseNextStream: refuse,
+    holdStream: refuse,
     close: async () => {},
   }
 }

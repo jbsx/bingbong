@@ -176,8 +176,10 @@ export interface FixtureServer {
   modelFetchHits(): number
   /** Hold every YouTube results page this long before it answers, as YouTube's own takes (#507: the Wait Card's Receipt over a search). */
   setResultsDelay(ms: number): void
-  /** The next request for the fixture's sound with a query, as a stream address has, answers 403 (#516). */
-  refuseNextStream(): void
+  /** The next request for the fixture's sound with a query, as a stream address has, answers 403 (#516); with `naming`, the next whose address holds those words (#548). */
+  refuseNextStream(naming?: string): void
+  /** Requests for the sound whose address holds these words get no answer until the function returned is called: a slow host, with no refusal (#548). */
+  holdStream(naming: string): () => void
   /** How many times the OpenAI-compatible vision endpoint was called (#76 e2e). */
   visionEndpointHits(): number
   /** Authorization header of the latest vision call — proves which credentials reached the wire. */
@@ -1330,6 +1332,21 @@ const LEDGERS = [
 const LEDGER_REVISION_DELAY_MS = 18_000
 
 /** The delay in force — the constant above, or the coverage override; an empty or malformed value never disarms it. */
+/** The fixture's sound, in ranges as a real host serves it: without them Chromium takes the file for a stream of no known length. */
+function serveSong(req: IncomingMessage, res: ServerResponse): void {
+  const wav = silentWav(60)
+  const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
+  if (range === null) {
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Accept-Ranges': 'bytes' })
+    res.end(wav)
+    return
+  }
+  const start = Number(range[1])
+  const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1
+  res.writeHead(206, { 'Content-Type': 'audio/wav', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${wav.length}`, 'Accept-Ranges': 'bytes' })
+  res.end(wav.subarray(start, end + 1))
+}
+
 function ledgerRevisionDelayMs(): number {
   const declared = process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS
   if (declared === undefined || declared.trim() === '') return LEDGER_REVISION_DELAY_MS
@@ -1362,7 +1379,8 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   let lastAuthorization: string | undefined
   let statusBoardValue = 'north'
   let resultsDelayMs = 0
-  let refuseStream = false
+  let refuseStream: string | null = null
+  let heldStream: { naming: string; waiting: (() => void)[] } | null = null
   /** Responses the landing fixtures never finish (#328), destroyed at close. */
   const held = new Set<ServerResponse>()
   // Late-bound (the alt listener exists only after listenOn below); the
@@ -1474,23 +1492,16 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     if (req.url?.split('?')[0] === '/youtube-fixture/song.wav') {
-      if (refuseStream && req.url.includes('?')) {
-        refuseStream = false
+      if (refuseStream !== null && req.url.includes('?') && req.url.includes(refuseStream)) {
+        refuseStream = null
         res.writeHead(403).end()
         return
       }
-      // Served in ranges, as a real host does: without them Chromium takes the file for a stream of no known length.
-      const wav = silentWav(60)
-      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
-      if (range === null) {
-        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Accept-Ranges': 'bytes' })
-        res.end(wav)
+      if (heldStream !== null && req.url.includes(heldStream.naming)) {
+        heldStream.waiting.push(() => serveSong(req, res))
         return
       }
-      const start = Number(range[1])
-      const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1
-      res.writeHead(206, { 'Content-Type': 'audio/wav', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${wav.length}`, 'Accept-Ranges': 'bytes' })
-      res.end(wav.subarray(start, end + 1))
+      serveSong(req, res)
       return
     }
     // The native video's text track (#372): served as WebVTT, above the HTML head every page below shares.
@@ -1999,8 +2010,16 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     altUrl: alt.url,
     adblockListHits: () => adblockListHits,
     modelFetchHits: () => modelFetchHits,
-    refuseNextStream: () => {
-      refuseStream = true
+    refuseNextStream: (naming = '') => {
+      refuseStream = naming
+    },
+    holdStream: (naming) => {
+      const held = { naming, waiting: [] as (() => void)[] }
+      heldStream = held
+      return () => {
+        heldStream = null
+        for (const serve of held.waiting) serve()
+      }
     },
     setResultsDelay: (ms: number) => {
       resultsDelayMs = ms

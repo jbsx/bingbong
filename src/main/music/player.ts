@@ -125,8 +125,8 @@ export interface PlayerStart {
   readonly reopened: boolean
   /** The press's `play()` rejection name (`NotAllowedError`, `AbortError`); null when none was refused. */
   readonly refused: string | null
-  /** The element as last read (null for none): what tells a refused press from one the page paused again. */
-  readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time'> | null
+  /** The element as last read (null for none): what tells a refused press from one the page paused again, and from a source it gave up on. */
+  readonly element: Pick<StartRead, 'paused' | 'ended' | 'ready' | 'time' | 'failed'> | null
   /** From the landing to the start, or to giving up on it (ms). */
   readonly ms: number
   /** Where it played (#502): the watch page in the pane, or the audio road. */
@@ -494,7 +494,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** The addresses of streams that played (#516): a repeat play skips its lookup. */
   const addresses = createStreamMemory()
   /** The stream last handed to the audio road's element (#516), which plays on through the next song's lookup; what a stream's fault is about. */
-  let onSurface: { id: string; remembered: boolean } | null = null
+  let onSurface: { id: string; remembered: boolean; refused: boolean } | null = null
   /** The song the road could not play, opened on its watch page instead (#502); null once another opens on its own road. */
   let fellBack: string | null = null
   let published = 'null'
@@ -904,7 +904,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
     lookedUp = { ...looked, ms, served: Math.round(now() - waited) }
     await leaveRoad('audio')
-    onSurface = { id: song.id, remembered: kept !== null }
+    onSurface = { id: song.id, remembered: kept !== null, refused: false }
     await audio.surface.load(song, stream.stream)
     road = 'audio'
     const landed = await landedOn(song, current)
@@ -944,6 +944,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     return true
   }
 
+  /** The pane is still on this song's watch page, whatever the road moved to since: it has not become a page of the person's own. */
+  const paneHolds = (song: Song | null): boolean => song !== null && videoIdOf(browser.state().url ?? '') === song.id
+
   /** The watch page opened for a song the audio road could not play (#502, owner's ruling 3): told, and its start marked so. */
   function fallBack(song: Song, current: () => boolean, background = false): void {
     fellBack = song.id
@@ -967,7 +970,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     let first = await openOn(song, current, leaving, on, undefined, background)
     if (first === 'failed' && on === 'audio' && forgetRefused(song)) first = await openOn(song, current, leaving, on, undefined, background)
     if (first !== 'failed' || on !== 'audio') return first
-    if (background && !(fromPage && leaving !== null && videoIdOf(browser.state().url ?? '') === leaving.id)) return first
+    if (background && !(fromPage && paneHolds(leaving))) return first
     fallBack(song, current, background)
     return openOn(song, current, leaving, 'page', undefined, background)
   }
@@ -1020,7 +1023,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       // Custody withholds the page (#433): the start goes unread, and is taken as it was before #488 — playing.
       if (last === null && withheld !== null) return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: null, ms: Math.round(now() - from), background, ad: adMs(read) })
       // A stream the element gave up on (#516), a 403 among them: no wait or press plays it without a new address.
-      if (last !== null && last.failed && road === 'audio') return decided({ video: song.id, started: false, pressed, reopened, refused: last.refused, element: { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }, ms: Math.round(now() - from), background, ad: adMs(read) })
+      if (last !== null && last.failed && road === 'audio') return decided({ video: song.id, started: false, pressed, reopened, refused: last.refused, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       // An ad in the element, by the engine's own fact (#497): its time is the ad's, never the song's start. While it plays the
       // bound holds — no press, no reopen — and Now Playing counts it off the element; the line waits through it, narrated.
       // A guess (#497 F2, the gate cannot force an ad): the line runs through the whole ad and says Playing once the song plays.
@@ -1039,7 +1042,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       // it ended: a press would only be paused again, and a reopen plays it from the top behind a new ad. The poll hears the end from here.
       if (last !== null && !last.ad && last.paused && last.duration !== null && atEnd({ elapsed: last.time, duration: last.duration })) {
         waitEnded(current)
-        return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }, ms: Math.round(now() - from), background, ad: adMs(read) })
+        return decided({ video: song.id, started: true, pressed, reopened, refused: null, element: elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       }
       // Unpaused with its time standing still (a stalled decode) is not playing either; `readyState` 3 is HAVE_FUTURE_DATA, data to play on now.
       const playing = last !== null && !last.ad && !last.paused && !last.ended && last.ready > 2 && (before === null || last.time > before.time)
@@ -1059,8 +1062,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (started || (due && pressed)) {
         // A seek asked over the ad (#497) lands as the song starts, not a poll later.
         if (started && last !== null) await applyHeldSeek(song, { elapsed: last.time, duration: last.duration })
-        const element = last === null ? null : { paused: last.paused, ended: last.ended, ready: last.ready, time: last.time }
-        return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element, ms: Math.round(now() - from), background, ad: adMs(read) })
+        return decided({ video: song.id, started, pressed, reopened, refused: last?.refused ?? null, element: last === null ? null : elementOf(last), ms: Math.round(now() - from), background, ad: adMs(read) })
       }
       if (due) {
         // The Command may have ended during the read (#489): its pane was paused under it, and a press would start the song.
@@ -1095,6 +1097,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     return consentWatch !== null && consentWatch.song.id === video ? consentWatch : null
   }
 
+  /** What a start keeps of the element as last read. */
+  const elementOf = ({ paused, ended, ready, time, failed }: StartRead): NonNullable<PlayerStart['element']> => ({ paused, ended, ready, time, failed })
+
   /** A start, decided: its page's watch told a wall cleared from here on comes after it, and the start recorded. */
   function decided(start: Omit<PlayerStart, 'consent' | 'road' | 'lookup' | 'served' | 'fallback' | 'remembered' | 'asked'>): PlayerStart {
     const watch = watchOf(start.video)
@@ -1119,9 +1124,10 @@ export function createPlayer(deps: PlayerDeps): Player {
    * element a press did not start — on a fresh profile it holds no data,
    * `readyState` 0, the page never feeding it — is opened again once in
    * full, which dismisses what walls it can, and read and pressed once more.
-   * Each try is its own `media-start`.
+   * Each try is its own `media-start`. `paneIsOurs`, for a song opened in the
+   * background: the pane may be taken for a stream that refused it (#548).
    */
-  async function playOn(song: Song, current: () => boolean, background: boolean): Promise<PlayerStart | 'superseded'> {
+  async function playOn(song: Song, current: () => boolean, background: boolean, paneIsOurs: () => boolean = () => false): Promise<PlayerStart | 'superseded'> {
     const first = await startOf(song, current, background, false)
     if (first === 'superseded' || first.started) return first
     if (!current()) return 'superseded'
@@ -1129,14 +1135,15 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (road === 'audio' && forgetRefused(song)) {
       const again = await openOn(song, current, song, 'audio', undefined, background)
       if (again === 'superseded') return 'superseded'
-      if (again === 'opened') return playOn(song, current, background)
+      if (again === 'opened') return playOn(song, current, background, paneIsOurs)
     }
     // A stream that would not start is opened again as its watch page (#502, owner's ruling 3), read and pressed once
-    // more — for a Command; in the background the pane is not the Player's to take, and the song is held unstarted.
+    // more — for a Command, or in the background for a stream that refused it, with the pane the Player's already (#548).
+    // Otherwise the pane is not the Player's to take, and the caller holds or passes over the song.
     if (road === 'audio') {
-      if (background) return first
-      fallBack(song, current)
-      const opened = await openOn(song, current, song, 'page')
+      if (background && !(hasRefused(first) && paneIsOurs())) return first
+      fallBack(song, current, background)
+      const opened = await openOn(song, current, song, 'page', undefined, background)
       if (opened !== 'opened') return opened === 'superseded' ? 'superseded' : first
       return startOf(song, current, background, true)
     }
@@ -1154,13 +1161,21 @@ export function createPlayer(deps: PlayerDeps): Player {
     return startOf(song, current, background, true)
   }
 
+  /**
+   * This unstarted song's source has refused it (#548), by kind: the element
+   * reported an error, or the road's stream was refused with a status. A press
+   * cannot bring it back without a new address. Unstarted with neither is only
+   * slow, and held.
+   */
+  const hasRefused = (start: PlayerStart): boolean => start.element?.failed === true || (start.road === 'audio' && onSurface?.id === start.video && onSurface.refused)
+
   /** A song the Queue holds whose element never played (#488): held paused, so the card says so and `resume` presses it. */
   function holdUnstarted(): void {
     state = pause(state)
     publish()
   }
 
-  /** The next queued song opens in the background, a failed one passed over, until one lands or none is left. */
+  /** The next queued song opens in the background, a failed or refused one passed over, until one lands or none is left. */
   function advanceInBackground(): void {
     const mine = (generation += 1)
     const current = (): boolean => generation === mine
@@ -1175,16 +1190,24 @@ export function createPlayer(deps: PlayerDeps): Player {
         }
         publish()
         if (next === null || !current()) return
+        // Read before the open: a stream handed to the road has moved it by then, not the pane.
+        const fromPage = road === 'page'
         const opened = await open(next, current, was, next.video === true, true)
+        if (opened === 'superseded') return
         if (opened === 'opened') {
           // A video queued by Jev's reading (#502) opens on the watch page, and is shown as a `play` of one is.
           if (roadOn() && next.video === true) for (const listener of shownListeners) listener()
-          const start = await playOn(next, current, true)
-          if (start !== 'superseded' && !start.started) holdUnstarted()
-          return
+          const start = await playOn(next, current, true, () => fromPage && paneHolds(was))
+          if (start === 'superseded' || start.started) return
+          if (!hasRefused(start)) {
+            holdUnstarted()
+            return
+          }
         }
         // Overtaken, the song is no longer ours to drop or to say.
-        if (opened !== 'failed' || !current()) return
+        if (!current()) return
+        // Refused on the road, its dead element is no media for the Appliance Card to read (#548).
+        if (opened === 'opened' && road === 'audio') await letGoOfStream()
         state = dropCurrent(state)
         publish()
         for (const listener of [...passedOverListeners]) listener(next)
@@ -1192,6 +1215,15 @@ export function createPlayer(deps: PlayerDeps): Player {
     })
     // The queued song sounds, or none will (#507): the Wait Card closes.
     background = background.finally(() => waitEnded(current))
+  }
+
+  /** The surface emptied, the road kept: nothing plays there, and the next song on it loads as ever. */
+  async function letGoOfStream(): Promise<void> {
+    try {
+      await deps.audio!.surface.stop()
+    } catch (error) {
+      reportFault('music.player.stop', error)
+    }
   }
 
   /** A song that could not be opened: the Command fails, saying so, and the next queued song plays. */
@@ -1756,6 +1788,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     road: () => road,
     streamRefused() {
       if (onSurface === null) return false
+      onSurface.refused = true
       addresses.forget(onSurface.id)
       return onSurface.remembered
     },

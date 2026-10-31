@@ -438,6 +438,164 @@ describe('audio-only music e2e: a queued song whose lookup is refused, heard at 
   }, 90_000)
 })
 
+describe('audio-only music e2e: a queued song whose stream will not play, heard at the end of the song before it (#548)', () => {
+  const ENDED = /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/
+  const QUEUED = /^(queued: id=|No videos|Couldn't search|error:)/
+  const SEEK = 'skip ahead 58 seconds'
+  const FORWARD = /^(forward \[\d+\]: |not a command: |error:|No response)/
+  /** What the fixture's search finds for these words: each `<queue words>` a song of its own. */
+  const [REFUSED, AFTER, ON_PAGE, SLOW, BEHIND] = ['refused song', 'song after it', 'song from the page', 'slow song', 'song behind it']
+  const SENTENCE = `“${REFUSED}” can't be played. Say play and its name to open its page.`
+  let harness: Harness
+  let fixture: FixtureServer
+  let userDataDir: string
+  let refuseLookups: string
+  let spoken: string
+
+  type Start = { video?: string; road?: string; fallback?: boolean; background?: boolean; started?: boolean; pressed?: boolean; element?: { failed?: boolean } | null }
+  const mediaStarts = async (): Promise<Start[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('perf-')).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as { stage: string; detail?: Start }).filter((record) => record.stage === 'media-start').map((record) => record.detail ?? {})
+  }
+  /** The start this song came to: its first, or every one of them when a fallback gave it a second. */
+  const startsOf = (id: string, count = 1): Promise<Start[]> => waitFor(async () => {
+    const mine = (await mediaStarts()).filter((each) => each.video === id)
+    return mine.length >= count ? mine : undefined
+  }, { timeoutMs: 15_000, intervalMs: 250 })
+  const saidLines = async (): Promise<string[]> => (await readFile(spoken, 'utf8').catch(() => '')).split('\n').filter((line) => line.startsWith('piper-line ')).map((line) => line.slice('piper-line '.length))
+  const queue = async (words: string): Promise<string> => {
+    const line = await cli(harness, `queue ${words}`, QUEUED)
+    expect(line).toMatch(/^queued: id=\S+ position=\d+$/)
+    return /id=(\S+)/.exec(line)![1]!
+  }
+  const idleUp = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
+  const songLine = (): Promise<string> => harness.dashboardEval<string>(`document.querySelector('.toolbar-song-line')?.textContent ?? ''`)
+  /** The Toolbar's Now Playing as its label says it: the song, and `, paused` while held. */
+  const nowPlaying = (): Promise<string> => harness.dashboardEval<string>(`document.querySelector('.toolbar-song')?.getAttribute('aria-label') ?? ''`)
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-refused-'))
+    refuseLookups = join(userDataDir, 'yt-dlp.refuse')
+    spoken = join(userDataDir, 'tts.log')
+    const voices = join(userDataDir, 'voices')
+    await mkdir(voices)
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx'), '')
+    await writeFile(join(voices, 'en_GB-alba-medium.onnx.json'), JSON.stringify({ audio: { sample_rate: 22050 } }))
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ audioOnlyMusic: true }))
+    fixture = await startFixtureServer()
+    harness = await startHarness({
+      userDataDir,
+      fixture,
+      launchArgs: ['--browser-cli', '--mute-audio'],
+      pipeStdio: true,
+      env: {
+        BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
+        // Each song an address of its own: a repeated one is answered from the element's media buffer and could not be refused.
+        BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav?v={id}'),
+        BINGBONG_FAKE_YTDLP_FAIL: refuseLookups,
+        BINGBONG_PIPER_VOICE_DIR: voices,
+        BINGBONG_FAKE_TTS_LOG: spoken,
+        ...decisionScript(
+          readingOf(PLAY), readingOf(`queue ${REFUSED}`), readingOf(`queue ${AFTER}`), readingOf(SEEK, 'media-forward', { amount: 'words' }),
+          readingOf(PLAY), readingOf(`queue ${ON_PAGE}`),
+          readingOf(PLAY), readingOf(`queue ${SLOW}`), readingOf(`queue ${BEHIND}`), readingOf(SEEK, 'media-forward', { amount: 'words' }),
+        ),
+      },
+    })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close().catch(() => {})
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('refused after a song on the audio road: passed over and said, once, the pane left alone, and the queue moves on', async () => {
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    const refused = await queue(REFUSED)
+    const after = await queue(AFTER)
+    const pane = await harness.paneUrl()
+    fixture.refuseNextStream(refused)
+    expect(await cli(harness, SEEK, FORWARD)).toMatch(/^forward \[\d+\]: /)
+    const [start] = await startsOf(refused)
+    // The element's own error, at once: no press, no wait out its bounds.
+    expect(start).toMatchObject({ road: 'audio', started: false, pressed: false, background: true, element: { failed: true } })
+    await waitFor(async () => ((await feedText(harness)).includes(SENTENCE) ? true : undefined), { timeoutMs: 15_000, intervalMs: 250 })
+    const [next] = await startsOf(after)
+    expect(next).toMatchObject({ road: 'audio', started: true, background: true })
+    await waitFor(async () => ((await songLine()).includes(AFTER) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    await waitFor(async () => ((await saidLines()).includes('Say play and its name to open its page.') ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    // Longer than a repeat would take to reach the Feed and the voice.
+    await sleep(1_000)
+    expect((await saidLines()).filter((line) => line === `“${REFUSED}” can't be played.`)).toHaveLength(1)
+    expect((await feedText(harness)).split(SENTENCE)).toHaveLength(2)
+    expect(await harness.paneUrl()).toBe(pane)
+  }, 90_000)
+
+  it('refused after a song on the watch page: its own page opens there, with the Idle Screen left up and nothing said', async () => {
+    await writeFile(refuseLookups, '')
+    // Its own lookup refused: a `play` falls back to the watch page, so the pane is the Player's when the song ends.
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    expect(await harness.paneUrl()).toContain(`/watch?v=${YOUTUBE_FIXTURE_SONG.id}`)
+    const next = await queue(ON_PAGE)
+    // The next lookup answers; its stream is what the host refuses.
+    await rm(refuseLookups, { force: true })
+    fixture.refuseNextStream(next)
+    await harness.clickDashboardElement('.idle-toggle')
+    await waitFor(async () => ((await idleUp()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    const said = (await saidLines()).length
+    await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 3 })()`)
+    const [refused, fellBack] = await startsOf(next, 2)
+    expect(refused).toMatchObject({ road: 'audio', started: false, pressed: false, background: true, element: { failed: true } })
+    expect(fellBack).toMatchObject({ road: 'page', fallback: true, background: true, started: true })
+    expect(await harness.paneUrl()).toContain(`/watch?v=${next}`)
+    // No Command asked for it: the owner's audio-only choice holds, and the dashboard does not wake over it.
+    expect(await idleUp()).toBe(true)
+    expect((await saidLines()).slice(said)).toEqual([])
+    expect(await feedText(harness)).not.toContain(`“${ON_PAGE}” can't be played`)
+    await harness.dashboardEval<string>(`document.querySelector('.idle-screen')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`)
+    await waitFor(async () => ((await idleUp()) ? undefined : true), { timeoutMs: 10_000, intervalMs: 250 })
+  }, 90_000)
+
+  it('slow, with no refusal: held paused on the card, nothing said, the queue not moved, and `resume` plays it', async () => {
+    // The song that ended on this surface in the first arm: handed back, its end is heard again.
+    expect(await cli(harness, PLAY, ENDED)).toMatch(new RegExp(`^playing: id=${YOUTUBE_FIXTURE_SONG.id}`))
+    const slow = await queue(SLOW)
+    const behind = await queue(BEHIND)
+    const said = (await saidLines()).length
+    const serve = fixture.holdStream(slow)
+    try {
+      expect(await cli(harness, SEEK, FORWARD)).toMatch(/^forward \[\d+\]: /)
+      const [start] = await startsOf(slow)
+      expect(start).toMatchObject({ road: 'audio', started: false, pressed: true, background: true, element: { failed: false } })
+      // Held on the card as paused, with the song behind it still waiting its turn.
+      const held = await waitFor(async () => {
+        const label = await nowPlaying()
+        return label.includes(SLOW) && label.endsWith(', paused') ? label : undefined
+      }, { timeoutMs: 10_000, intervalMs: 250 })
+      expect(held).not.toContain(BEHIND)
+      expect((await mediaStarts()).filter((each) => each.video === behind)).toEqual([])
+      expect((await saidLines()).slice(said)).toEqual([])
+      expect(await feedText(harness)).not.toContain(`“${SLOW}” can't be played`)
+    } finally {
+      serve()
+    }
+    expect(await cli(harness, 'resume', /^(unpause|resume|playing|Playing|No |error:|not a command)/)).not.toMatch(/^(No |error:|not a command)/)
+    await waitFor(async () => {
+      const label = await nowPlaying()
+      return label.includes(SLOW) && !label.endsWith(', paused') ? true : undefined
+    }, { timeoutMs: 10_000, intervalMs: 250 })
+    // The poll reads the element itself: past a tick of it, the card still says playing, so the element is.
+    await sleep(2_000)
+    expect(await nowPlaying()).toContain(SLOW)
+    expect(await nowPlaying()).not.toMatch(/, paused$/)
+    expect(await feedText(harness)).not.toContain(`“${SLOW}” can't be played`)
+  }, 90_000)
+})
+
 describe('audio-only music e2e: a refused stream gives up at once, and a repeat play runs no lookup (#516)', () => {
   let harness: Harness
   let fixture: FixtureServer
