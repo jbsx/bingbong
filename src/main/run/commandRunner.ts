@@ -1,3 +1,4 @@
+import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import type { ShelfFile } from '../../core/shelf/shelf'
 import type { KeepCapture } from '../shelf/keepCapture'
@@ -2368,7 +2369,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   function tellSite(text: string, alert: boolean): void {
     publish({ type: 'site_question', text, ...(alert ? { alert: true } : {}), at: at() })
-    void deps.speech?.speak(text).catch((error: unknown) => reportFault('run.commandRunner.siteSpeak', error))
+    void deps.speech?.speak(text, { turnId: APP_TURN_ID }).catch((error: unknown) => reportFault('run.commandRunner.siteSpeak', error))
   }
 
   deps.siteQuestions?.subscribe((event) => {
@@ -3593,7 +3594,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     })
     run.wait = resolveOwn
     publish({ type: 'site_question', text, errand: kind, at: at() })
-    const spoken = deps.speech?.speak(text).catch((error: unknown): SpeakOutcome => {
+    const spoken = deps.speech?.speak(text, { turnId: run.id }).catch((error: unknown): SpeakOutcome => {
       reportFault('run.commandRunner.errandSpeak', error)
       return { ok: false, error: String(error) }
     })

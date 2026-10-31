@@ -148,9 +148,7 @@ async function measure(arm: 'aplay' | 'chromium', room: Room): Promise<ArmResult
   }
 }
 
-// Off until it has a long line again (#514): typed `read` no longer speaks, and the page's alert below did not sound in
-// the CLI harness (a 60 s wait for its playback, 2026-10-30).
-describe.skip("the echo canceller and the app's own voice (#490)", () => {
+describe.skipIf(process.env.BINGBONG_SPEECH_ECHO !== '1' || !existsSync(PIPER))("the echo canceller and the app's own voice (#490)", () => {
   const dir = mkdtempSync(join(tmpdir(), 'bingbong-speech-echo-'))
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 

@@ -11,6 +11,7 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
+import type { PlannerModel } from '../../core/ports/plannerModel'
 import { type TextBelow } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
@@ -25,6 +26,7 @@ import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { cardBudgetChars, promptChars } from '../../core/decision/cardBudget'
 import { createSiteQuestionDesk, type SiteQuestionDesk } from '../../core/browser/siteQuestionDesk'
 import { withNextLine } from '../../core/command/tryLine'
+import { APP_TURN_ID } from '../../core/perf/appTelemetry'
 
 /** A failure as the Feed shows it and as it is said (#438): with the line that would have worked. */
 const shown = (line: string, next: string | null): string => withNextLine(line, next).shown
@@ -142,7 +144,7 @@ class FakeSpeech {
   }
 }
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture']; applianceCard?: CommandRunnerDeps['applianceCard'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player']; dropLastPage?: (url: string) => void; facts?: CommandRunnerDeps['facts']; lastPage?: CommandRunnerDeps['lastPage']; app?: CommandRunnerDeps['app']; siteQuestions?: SiteQuestionDesk; shelf?: CommandRunnerDeps['shelf']; keepCapture?: CommandRunnerDeps['keepCapture']; applianceCard?: CommandRunnerDeps['applianceCard']; errand?: CommandRunnerDeps['errand'] }) {
   const browser = new FakeBrowser()
   const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
@@ -199,6 +201,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     ...(player ? { player } : {}),
     ...(options?.siteQuestions ? { siteQuestions: options.siteQuestions } : {}),
     ...(options?.applianceCard ? { applianceCard: options.applianceCard } : {}),
+    ...(options?.errand ? { errand: options.errand } : {}),
     // The hosts this harness has landed on (ADR 0089): a bare word opens one with no Jev call.
     knownAddress: (word) => (({ youtube: 'youtube.com', twitter: 'twitter.com', settings: 'settings.com' }) as Record<string, string>)[word.toLowerCase()] ?? null,
     flags: {
@@ -836,6 +839,36 @@ describe('a Site Question (#423)', () => {
     siteQuestions.told('Saved.')
     expect(speech.spoken.map((line) => line.text)).toEqual(['The page says: Saved.'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'site_question', text: 'The page says: Saved.', alert: true }))
+  })
+
+  // A line said with no turn id leaves no `tts-first-sound` or `tts-playback` span (#542): `pnpm speech:echo` times the alert by them.
+  it('says a page alert under the app\'s own turn id, so its playback is timed', () => {
+    const speech = new FakeSpeech()
+    const siteQuestions = createSiteQuestionDesk()
+    harness({ siteQuestions, speech })
+    siteQuestions.told('Saved.')
+    expect(speech.spoken).toEqual([{ text: 'The page says: Saved.', turnId: APP_TURN_ID }])
+  })
+
+  it('says an Errand\'s question under the Errand\'s own run id, so its playback is timed', async () => {
+    const planner: PlannerModel = {
+      model: 'glm-5.3-flash',
+      thinking: false,
+      plan: async () => ({ status: 'answered', answer: { next: 'ask', question: 'Which shoes?' }, model: 'glm-5.3-flash', thinking: false, latencyMs: 900, waitedMs: 0 }),
+    }
+    const spoken: { text: string; turnId?: string }[] = []
+    const speech = {
+      speak: async (text: string, options?: SpeakOptions): Promise<SpeakOutcome> => {
+        spoken.push({ text, ...(options?.turnId !== undefined ? { turnId: options.turnId } : {}) })
+        return { ok: true }
+      },
+      stop: () => {},
+    }
+    const { events, runner } = harness({ speech, errand: { planner: () => planner, answerWindowMs: () => 0 } })
+    await runner.run('errand order the same shoes as last time')
+    const run = events.find((event) => event.type === 'display')
+    expect(run).toBeDefined()
+    expect(spoken.find((line) => line.text === 'Which shoes?')).toEqual({ text: 'Which shoes?', turnId: (run as { turnId: string }).turnId })
   })
 
   it('fires no partial while a question is open: the Endpoint answers it', async () => {
