@@ -9,8 +9,13 @@
 // them, through the stream's one gain node, so a duck is one gain change.
 // A silent stream (the Sound Mute, a run off screen: aplay's 'null' device)
 // plays into a context that renders on a silent clock and opens no output
-// device (`sinkId: none`, micCapture.ts's reason): it takes as long as the
-// sound would, and nothing sounds.
+// device (`sinkId: none`, micCapture.ts's reason): nothing sounds, and it takes
+// as long as the sound would, except that a fresh silent context finishes up to
+// about 80 ms early: `onended` at 135 ms of wall time for a 200 ms buffer, 213 ms
+// on its own clock, 6 of 6 (2026-10-31, #541); an established one reads 190-213
+// ms. A real output device was not measured, so whether it leads too is a guess;
+// the kiosk's first `tts-playback` after a boot, against the sentence's length,
+// settles it.
 //
 // The page is driven by `executeJavaScript` (speechSurface.ts); `first` and
 // `done` return promises the caller awaits.

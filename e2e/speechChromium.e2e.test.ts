@@ -44,7 +44,7 @@ describe('speech through Chromium e2e', () => {
     harness = await startHarness({
       launchArgs: ['--browser-cli'],
       pipeStdio: true,
-      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_SPEECH_PLAYER: 'chromium' },
+      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_SPEECH_PLAYER: 'chromium', BINGBONG_FAKE_PIPER_SENTENCE_S: '0.5' },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
   })
@@ -59,8 +59,9 @@ describe('speech through Chromium e2e', () => {
     // The line played out: the first sound and the whole playback were timed.
     const playback = await waitFor(async () => spans().find((span) => span.stage === 'tts-playback'), { timeoutMs: 15_000, intervalMs: 100 })
     expect(spans().some((span) => span.stage === 'tts-first-sound')).toBe(true)
-    // Two sentences of 0.1 s from the scripted piper, back to back.
-    expect(playback.durMs).toBeGreaterThan(150)
+    // Two sentences of 0.5 s from the scripted piper, back to back. A fresh silent context ends about 80 ms early on the wall (speechPageScript.ts),
+    // which sat inside the old bar: 150 ms against 0.1 s + 0.1 s read 145-148 ms. One sentence here reads at most about 500 ms, both read 956-968 ms.
+    expect(playback.durMs).toBeGreaterThan(750)
     const lines = readFileSync(log, 'utf8').split('\n')
     expect(lines.filter((line) => line.startsWith('piper-line '))).toHaveLength(2)
     expect(lines.some((line) => line.startsWith('aplay '))).toBe(false)

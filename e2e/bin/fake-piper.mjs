@@ -16,8 +16,8 @@ const note = (line) => {
   if (log) appendFileSync(log, `${line}\n`)
 }
 
-/** 0.1 s of silence at 22050 Hz, s16le mono. */
-const PCM = Buffer.alloc(2205 * 2)
+/** 0.1 s of silence at 22050 Hz, s16le mono, unless BINGBONG_FAKE_PIPER_SENTENCE_S says how long a sentence sounds. */
+const PCM = Buffer.alloc(Math.round(22050 * Number(process.env.BINGBONG_FAKE_PIPER_SENTENCE_S ?? 0.1)) * 2)
 
 function wav(pcm) {
   const header = Buffer.alloc(44)
