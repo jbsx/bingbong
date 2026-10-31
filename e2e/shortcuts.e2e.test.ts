@@ -11,12 +11,6 @@ import { waitFor } from './waitFor'
 
 const appWindow = (): string => execFileSync('xdotool', ['search', '--onlyvisible', '--name', 'Bing Bong'], { encoding: 'utf8' }).trim().split('\n')[0]!
 
-/** A real click on the toolbar band (the dashboard) or mid-window (the pane): X focus follows it. */
-function focus(surface: 'dashboard' | 'pane'): void {
-  const [x, y] = surface === 'dashboard' ? [640, 15] : [640, 450]
-  execFileSync('xdotool', ['mousemove', '--window', appWindow(), String(x), String(y), 'click', '1'])
-}
-
 function press(keys: string): void {
   execFileSync('xdotool', ['key', '--window', appWindow(), keys])
 }
@@ -36,6 +30,19 @@ describe('keyboard shortcuts as real keys', () => {
     await harness?.quit()
   })
 
+  /**
+   * A real click on the address field (the dashboard) or mid-window (the pane): X focus
+   * follows it, a CDP click never moves it. The Toolbar's band is a drag region and takes no
+   * focus, so the dashboard's point is read off the field, and the focus is checked landed.
+   */
+  async function focus(surface: 'dashboard' | 'pane'): Promise<void> {
+    const [x, y] = surface === 'dashboard'
+      ? await harness.dashboardEval<[number, number]>(`(() => { const r = document.querySelector('.url-input').getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)] })()`)
+      : [640, 450]
+    execFileSync('xdotool', ['mousemove', '--window', appWindow(), String(x), String(y), 'click', '1'])
+    await waitFor(async () => ((await harness.dashboardEval<boolean>('document.hasFocus()')) === (surface === 'dashboard') ? true : undefined), { timeoutMs: 5_000, intervalMs: 50 })
+  }
+
   beforeEach(async () => {
     await harness.navigatePane(harness.fixture.url('/'))
     await harness.navigatePane(harness.fixture.url('/second'))
@@ -45,7 +52,7 @@ describe('keyboard shortcuts as real keys', () => {
 
   for (const surface of ['dashboard', 'pane'] as const) {
     it(`Ctrl+R on the ${surface} reloads the page, never the dashboard`, async () => {
-      focus(surface)
+      await focus(surface)
       await settle(800)
       press('ctrl+r')
       await waitFor(async () => ((await harness.paneEval<boolean>('window.__kept === true').catch(() => true)) ? undefined : true), { timeoutMs: 10_000, intervalMs: 100 })
@@ -55,7 +62,7 @@ describe('keyboard shortcuts as real keys', () => {
   }
 
   it('F5 reloads the page too', async () => {
-    focus('pane')
+    await focus('pane')
     await settle(800)
     press('F5')
     await waitFor(async () => ((await harness.paneEval<boolean>('window.__kept === true').catch(() => true)) ? undefined : true), { timeoutMs: 10_000, intervalMs: 100 })
@@ -63,7 +70,7 @@ describe('keyboard shortcuts as real keys', () => {
   })
 
   it('Alt+Left and Alt+Right step the page back and forward', async () => {
-    focus('dashboard')
+    await focus('dashboard')
     await settle(800)
     press('alt+Left')
     expect(await harness.waitForPaneUrl(harness.fixture.url('/'))).toBe(harness.fixture.url('/'))
@@ -72,7 +79,7 @@ describe('keyboard shortcuts as real keys', () => {
   })
 
   it('the zoom chords leave the pane at its zoom Setting', async () => {
-    focus('pane')
+    await focus('pane')
     await settle(800)
     for (const keys of ['ctrl+0', 'ctrl+minus', 'ctrl+plus', 'ctrl+equal']) press(keys)
     await settle()
@@ -82,7 +89,7 @@ describe('keyboard shortcuts as real keys', () => {
 
   it('Ctrl+Space arms listening from the pane, and disarms it again', async () => {
     const listening = () => harness.dashboardEval<boolean>('window.bingbong.voice.getState().then((s) => s.listening)')
-    focus('pane')
+    await focus('pane')
     await settle(800)
     press('ctrl+space')
     await waitFor(async () => ((await listening()) ? true : undefined), { timeoutMs: 5_000, intervalMs: 100 })
@@ -91,8 +98,7 @@ describe('keyboard shortcuts as real keys', () => {
   })
 
   it('the clipboard chords still edit a field with no menu behind them', async () => {
-    focus('dashboard')
-    await harness.clickDashboardElement('.url-input')
+    await focus('dashboard')
     await harness.dashboardEval(`document.querySelector('.url-input').value = 'kept words'`)
     await settle(500)
     press('ctrl+a')
@@ -106,7 +112,7 @@ describe('keyboard shortcuts as real keys', () => {
   })
 
   it('Ctrl+W and Ctrl+Q leave the appliance up', async () => {
-    focus('pane')
+    await focus('pane')
     await settle(800)
     press('ctrl+w')
     press('ctrl+q')
