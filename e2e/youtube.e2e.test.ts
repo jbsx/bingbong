@@ -256,7 +256,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
     // And the level holds on the real page once the duck is gone.
     await new Promise((resolve) => setTimeout(resolve, 2000))
     expect(await element()).toBe(70)
-  }, 150_000)
+  }, 240_000)
 
   it('captures a real screenshot of youtube', async () => {
     await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^screenshot saved: ${screenshotPath}$`))

@@ -64,6 +64,6 @@ describe.skipIf(!out)('play timing (constrained run, live YouTube)', () => {
         { timeoutMs: 90_000, intervalMs: 100 },
       ).catch(() => null)
       runs.push({ line, answeredMs, songMs: song ? Date.now() - started : null, ad })
-    }, 200_000)
+    }, 240_000)
   }
 })

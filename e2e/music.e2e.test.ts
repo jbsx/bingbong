@@ -99,7 +99,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     firstId = /id=(\S+)/.exec(line)![1]!
     const playing = await until(harness, (video) => video.found && !video.paused && video.currentTime > 0.5)
     expect(playing).toMatchObject({ path: '/watch', id: firstId })
-  }, 120_000)
+  }, 180_000)
 
   it('`loop` makes it play past its end', async () => {
     // An ad plays in the same element first: wait for the song itself.
@@ -128,7 +128,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     expect(skipped).toMatch(new RegExp(`^playing: id=${secondId}`))
     const second = await until(harness, (video) => video.id === secondId && video.found && !video.paused && video.currentTime > 0.5)
     expect(second.path).toBe('/watch')
-  }, 120_000)
+  }, 180_000)
 
   it('a song\'s end opens the next queued song', async () => {
     const queued = await cli(harness, 'queue queen bohemian rhapsody', /^(queued: id=|No videos|YouTube didn't|error:)/)
@@ -141,7 +141,8 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   }, 90_000)
 
   it('with nothing queued the song ends and stays ended: YouTube\'s Autoplay never opens another (owner\'s ruling 4)', async () => {
-    await until(harness, (video) => !video.ad && video.duration > 10, 60_000)
+    // The song the last test's end opened, with no line waiting: its pre-roll may still be playing.
+    await until(harness, (video) => !video.ad && video.duration > 10, LIVE_PLAY_ANSWER_MS)
     await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 2 })()`)
     // Paused in its last second, before YouTube's own end would load an ad and Autoplay another video.
     await until(harness, (video) => video.paused && video.currentTime >= video.duration - 1, 20_000)
@@ -149,7 +150,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     await new Promise((resolve) => setTimeout(resolve, 12_000))
     const after = await facts(harness)
     expect(after).toMatchObject({ path: '/watch', id: secondSong, paused: true, ad: false })
-  }, 90_000)
+  }, 180_000)
 
   it('`not that one` plays the second result, and once it stayed a second `play` opens it with no results page (#345, AC5)', async () => {
     const SONG = 'daft punk one more time'
@@ -174,7 +175,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
       [secondId, 'remembered'],
     ])
     await until(harness, (video) => video.id === secondId && video.found && video.path === '/watch')
-  }, 180_000)
+  }, 480_000)
 })
 
 let secondSong = ''
@@ -258,5 +259,5 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
     expect(after.volume).toBeCloseTo(expected, 0)
     // The issue's tracks at 5.22 and 5.25 dB: about 19.9.
     if (before.loudnessDb !== null && after.loudnessDb !== null && Math.abs(before.loudnessDb - 5.22) < 0.05 && Math.abs(after.loudnessDb - 5.25) < 0.05) expect(after.volume).toBeCloseTo(19.9, 0)
-  }, 240_000)
+  }, 420_000)
 })
