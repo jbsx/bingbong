@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { feedText, waitForDisplay } from './feed'
+import { feedText, submitAndAwaitAnswer, waitForDisplay } from './feed'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
 
@@ -87,7 +87,8 @@ describe('native pop-ups e2e (#423)', () => {
   })
 
   it("says the page's confirm, and the next typed line answers it: \"yes\" accepts", async () => {
-    await harness.navigatePane(harness.fixture.url('/native-dialog'))
+    // By a Command, not the URL bar: its outcome is what shows the page's numbers (ADR 0033), and since #485 an exact `click 2` collects nothing itself.
+    await submitAndAwaitAnswer(harness, `navigate ${harness.fixture.url('/native-dialog')}`, 'Opened')
     // [2] Ask confirm: its click freezes on the page's confirm until the user answers.
     expect(await harness.submitCommand('click 2')).toBe('submitted')
     await waitFor(async () => ((await feedText(harness)).includes('The page asks: really proceed? Yes or no?') ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })

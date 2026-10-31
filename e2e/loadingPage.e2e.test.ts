@@ -1,9 +1,10 @@
-import { readdir } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { feedDisplays, feedText } from './feed'
 import { startHarness, type Harness } from './harness'
 import { HELD_RESPONSE_MS } from './fixtureServer'
+import { decisionScript, readingOf } from './scriptedJev'
 import { sleep, waitFor } from './waitFor'
 
 // A page still loading never stalls, crashes or scrambles the Commands
@@ -11,6 +12,11 @@ import { sleep, waitFor } from './waitFor'
 // are held back 12 s, and gives Commands while it loads: Stop ends the
 // load, a scroll is answered, the Feed keeps the order Commands
 // were given, and a failed navigation's address is the one shown.
+
+/** A line no grammar reads: the Appliance Card's to read, the stand-in holding its answer so a later line comes first (#330, #489). */
+const READ_LINE = 'take me home'
+/** Long enough that the line after it, 300 ms on, arrives inside the read on a loaded machine (a guess: 0.7 s measured between the two). */
+const READ_HELD_MS = 3_000
 
 describe('a page still loading e2e', () => {
   let harness: Harness
@@ -23,6 +29,14 @@ describe('a page still loading e2e', () => {
       `Array.from(document.querySelectorAll('.feed-entry--command')).map((el) => ({ text: el.textContent, muted: el.classList.contains('feed-entry--muted') }))`,
     )
 
+  /** The decision records the app has written so far. */
+  const decisionRecords = async (): Promise<Record<string, unknown>[]> => {
+    const logs = join(harness.userDataDir, 'logs')
+    const names = (await readdir(logs)).filter((name) => name.startsWith('decision-'))
+    const files = await Promise.all(names.map((name) => readFile(join(logs, name), 'utf8')))
+    return files.join('').split('\n').filter((line) => line !== '').map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+
   /** Submit a navigate to the held page and wait until the pane is loading it. */
   async function startHeldNavigation(): Promise<void> {
     expect(await harness.submitCommand(`navigate ${harness.fixture.url('/held-response')}`)).toBe('submitted')
@@ -30,7 +44,7 @@ describe('a page still loading e2e', () => {
   }
 
   beforeAll(async () => {
-    harness = await startHarness()
+    harness = await startHarness({ env: decisionScript(readingOf(READ_LINE, 'say_time', { delayMs: READ_HELD_MS })) })
   })
 
   afterAll(async () => {
@@ -73,17 +87,30 @@ describe('a page still loading e2e', () => {
   it('keeps the Feed in the order Commands were given, an abandoned one filed where it was given and saying why', async () => {
     const before = (await commandEntries()).length
     await startHeldNavigation()
-    expect(await harness.submitCommand('click 999')).toBe('submitted')
+    expect(await harness.submitCommand(READ_LINE)).toBe('submitted')
     await sleep(300)
     expect(await harness.submitCommand(`navigate ${harness.fixture.url('/second')}`)).toBe('submitted')
     await waitFor(async () => ((await commandEntries()).length - before >= 3 ? true : undefined), { timeoutMs: HELD_RESPONSE_MS + 5_000, intervalMs: 250 })
     const entries = (await commandEntries()).slice(before)
     expect(entries.map((entry) => entry.text)).toEqual([
       expect.stringMatching(/^navigate .*\/held-response/),
-      expect.stringMatching(/^click 999abandoned: a later Command came first$/),
+      `${READ_LINE}abandoned: a later Command came first`,
       expect.stringMatching(/^navigate .*\/second/),
     ])
     expect(entries.map((entry) => entry.muted)).toEqual([false, true, false])
+    // Read whole on the card it ships on, its reading kept as data, and nothing fired: `say_time`'s Answer never shows.
+    const record = await waitFor(async () => (await decisionRecords()).find((line) => line.transcript === READ_LINE), { timeoutMs: 5_000, intervalMs: 100 })
+    expect(record).toMatchObject({ reading: 'jev', card: 'appliance', ended: 'superseded', jev: expect.any(Object) })
+    expect(record.jev).not.toHaveProperty('reason')
+    // `Opened` comes from a separate navigate: nothing promises it lands before the third Feed entry.
+    const displays = await waitFor(
+      async () => {
+        const shown = (await feedDisplays(harness)).split('\n---\n').slice(-2).map((display) => display.replace(/^\d\d:\d\d:\d\dBing Bong/, ''))
+        return /^Opened .*\/second\.$/.test(shown.at(-1) ?? '') ? shown : undefined
+      },
+      { timeoutMs: 5_000, intervalMs: 100 },
+    )
+    expect(displays).toEqual(['Stopped.', expect.stringMatching(/^Opened .*\/second\.$/)])
   }, 30_000)
 
   it('shows the address that failed after a failed navigation', async () => {
