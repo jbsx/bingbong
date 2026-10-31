@@ -1,6 +1,6 @@
 Do a competitive teardown of WebBrain (https://github.com/webbrain-one/webbrain) and compare it against our app. The goal is a list of concrete improvements for our app, ranked by the yield of the scenario each one serves, plus a clear picture of where our approach is stronger. This is research only: do not modify our codebase.
 
-WebBrain and our app differ in kind. It is a general-purpose extension for typing to an LLM in a side panel; ours is a voice appliance that fires on a decision model. Do not assume a feature of theirs is a gap of ours. A feature with no scenario on our Yield list is not recommended for today. If a full browser would need it, it goes on the Full-browser Option list (below) instead of being dropped.
+WebBrain and our app differ in kind. It is a general-purpose extension for typing to an LLM in a side panel; ours is a voice appliance that fires on a decision model. Do not assume a feature of theirs is a gap of ours. The Yield list may have missed something, so a feature with no scenario on it is first tested as evidence of a missed scenario (see the template). If it shows none, it is not recommended for today. If a full browser would need it, it goes on the Full-browser Option list (below) instead of being dropped.
 
 ## Context
 
@@ -46,7 +46,7 @@ For each feature found:
 - What it does and how it works (with citations)
 - Decision type: LLM-dependent, deterministic, or hybrid
 - Our equivalent: what we have (with citations), or "none"
-- Scenario served: which row of `docs/agents/yield.md`, or "none on the list". A daily scenario the list lacks is proposed as `undated`; the per-day counts are mine.
+- Scenario served: which row of `docs/agents/yield.md`, or "none on the list". For "none on the list", ask whether I would plausibly be in this situation on a normal day of spoken use. If so, propose the scenario: the situation, its state (`missing` if we have no road, otherwise reproduce it or mark it `undated`), your guess at a per-day count, marked as a guess, with your reasoning, and the yield that guess would give. WebBrain having a feature is not evidence that I need it, so say what in our logs, ledger or my normal day supports it. The per-day counts are mine, so do not edit `yield.md`.
 - Comparison: is theirs better, worse, or different? Why?
 - Jev fit: under AGENTS.md's "Jev decides", is this a fact or mechanism code should keep, or a choice to put on the card? Would it widen the ask, or answer in Jev's place? Is the deterministic scaffolding portable to us regardless of decision engine?
 - Tier cost: if it adds a stage to a Command's path, which Tier, and its likely effect on the Felt Reaction
@@ -70,7 +70,7 @@ Verify liveness before giving any status: check processes and log times, and put
 ## Final deliverable
 
 Write docs/research/webbrain-teardown.md in our repo (this file is the only exception to the no-modification rule); the folder does not exist yet. Commit it and push to `main` on the `gitlab` remote; we do not use PRs. It should contain:
-1. Executive summary: the 10 highest-value improvements, ranked by the yield of the scenario each serves, with effort breaking ties only. Each carries the statement from `docs/agents/yield.md`: Scenario, Place, State, Change. Improvements that serve no scenario on the list and that a full browser would not need go in a separate short list, unranked.
+1. Executive summary: the 10 highest-value improvements, ranked by the yield of the scenario each serves, with effort breaking ties only. Each carries the statement from `docs/agents/yield.md`: Scenario, Place, State, Change. Directly beneath it, a Proposed Scenarios table: each scenario the list has missed, its evidence, its guessed count and yield, the place it would take in the top 10 at that guess, and the improvement that serves it. These stay out of the ranking until I set a count, and the table is the first thing to ask me about. Improvements that serve no scenario, listed or proposed, and that a full browser would not need go in a separate short list, unranked.
 2. Where we are ahead, and why, with evidence
 3. Full-browser Option: the evidence by form, what the switch would take, the list of features a full browser would need that we lack, what to do now to keep the option cheap, what would close it, and what signs should prompt the decision. State your view as a recommendation for me to decide on. These items do not compete with the top 10, unless one is also the cheapest time to avoid a costly reversal, in which case flag it.
 4. The full feature comparison table across all subsystems
