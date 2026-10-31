@@ -95,15 +95,18 @@ export function pickVideo(data: unknown): Song | null {
   return plainVideos(data)[0] ?? null
 }
 
+/** The data's own element: a page carrying it assigns `ytInitialData` by parsing that element's text, so there is no object after the assignment to read. */
+const INITIAL_DATA_ELEMENT = /<script\b[^>]*\bid=["']yt-initial-data["'][^>]*>/
 const INITIAL_DATA_HEAD = /(?:var |window\[["'])ytInitialData(?:["']\])?\s*=\s*/
 
 /**
- * The `ytInitialData` a results page's HTML assigns, parsed; null when the
+ * The `ytInitialData` a results page's HTML carries, parsed: in its data
+ * element, or assigned inline (YouTube serves both, #553). Null when the
  * page carries none (a consent page, a sign-in wall). The object ends at
  * its closing brace, found outside its strings: they may hold `;` and `</`.
  */
 export function initialDataOf(html: string): unknown {
-  const head = INITIAL_DATA_HEAD.exec(html)
+  const head = INITIAL_DATA_ELEMENT.exec(html) ?? INITIAL_DATA_HEAD.exec(html)
   if (head === null) return null
   return scanObject(html, head.index + head[0].length)
 }

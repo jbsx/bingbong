@@ -81,6 +81,13 @@ describe('the search pick', () => {
     expect(initialDataOf('<html>consent</html>')).toBeNull()
   })
 
+  it('reads the results a page carries in its data element, whose script only assigns what the element holds (#553)', () => {
+    const data = resultsData(video('dQw4w9WgXcQ', 'Never; Gonna </ Give'))
+    // The shape of a live body, 2026-10-31: the element first, then a script that parses it.
+    const html = `<html><script id="yt-initial-data" type="application/json" nonce="x">${JSON.stringify(data)}</script><script nonce="x">var ytDataEl = document.getElementById('yt-initial-data'); if (ytDataEl) {try {window['ytInitialData'] = JSON.parse(ytDataEl.textContent);} catch (e) {}}(function serverContract() {window['ytPageType'] = "search";})();</script></html>`
+    expect(pickVideo(initialDataOf(html))).toEqual({ id: 'dQw4w9WgXcQ', title: 'Never; Gonna </ Give' })
+  })
+
   it('addresses the results and the watch page, and reads a watch address\'s id', () => {
     expect(resultsUrl('daft punk & co')).toBe('https://www.youtube.com/results?search_query=daft+punk+%26+co')
     expect(watchUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
