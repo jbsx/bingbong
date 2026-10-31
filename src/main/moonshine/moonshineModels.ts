@@ -146,6 +146,13 @@ export async function ensureModelFiles(
   return { dir, fetched }
 }
 
+/**
+ * The e2e's stand-in for the model hosts: with BINGBONG_MODELS_FIXTURE set,
+ * every engine's download asks that address instead, whatever the file. Test
+ * support only: nothing sets it outside the e2e harness.
+ */
+export const MODELS_FIXTURE_ENV = 'BINGBONG_MODELS_FIXTURE'
+
 /** Node fs + fetch implementation for the app and scripts (redirect-following). */
 export const fsMoonshineStore: MoonshineModelStore = {
   exists: existsSync,
@@ -158,9 +165,10 @@ export const fsMoonshineStore: MoonshineModelStore = {
     }
   },
   async fetch(url, dest) {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`fetch ${url} → HTTP ${response.status}`)
-    if (!response.body) throw new Error(`fetch ${url} → no body`)
+    const address = process.env[MODELS_FIXTURE_ENV] ?? url
+    const response = await fetch(address)
+    if (!response.ok) throw new Error(`fetch ${address} → HTTP ${response.status}`)
+    if (!response.body) throw new Error(`fetch ${address} → no body`)
     // Streamed to disk, never buffered: Parakeet's encoder is 650 MB (#358).
     // The .part rename means a cut download never sits at dest.
     mkdirSync(dirname(dest), { recursive: true })

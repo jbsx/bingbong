@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import { MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber'
 import {
   ensureMoonshineModels,
+  fsMoonshineStore,
+  MODELS_FIXTURE_ENV,
   MOONSHINE_BASE_DIR,
   MOONSHINE_BASE_FILES,
   MOONSHINE_MEDIUM_DIR,
@@ -172,5 +179,56 @@ describe('ensureMoonshineModels', () => {
     const result = await ensureMoonshineModels('/m', store, 'medium')
 
     expect(result.fetched.sort()).toEqual(['decoder_model_merged.onnx', 'tokenizer.json'])
+  })
+})
+
+// The e2e's stand-in for Hugging Face (#533): every engine's download goes through this one fetch.
+describe('fsMoonshineStore.fetch under the models fixture', () => {
+  let server: Server | undefined
+  let dir: string | undefined
+
+  afterEach(async () => {
+    delete process.env[MODELS_FIXTURE_ENV]
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = undefined
+    const closing = server
+    server = undefined
+    if (closing) await new Promise((resolve) => closing.close(resolve))
+  })
+
+  /** A local server that answers every ask with `status` and keeps what was asked. */
+  async function standIn(status: number, body: string): Promise<{ origin: string; asked: string[] }> {
+    const asked: string[] = []
+    server = createServer((req, res) => {
+      asked.push(req.url ?? '')
+      res.writeHead(status)
+      res.end(body)
+    })
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve))
+    return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, asked }
+  }
+
+  it('asks the fixture and never the url, and a 404 leaves nothing on disk', async () => {
+    const { origin, asked } = await standIn(404, 'no models')
+    process.env[MODELS_FIXTURE_ENV] = `${origin}/no-models`
+    dir = mkdtempSync(join(tmpdir(), 'bingbong-models-'))
+    const dest = join(dir, 'tier', 'encoder.onnx')
+
+    // A loopback port nothing listens on: reaching it would throw a connection error, not the 404.
+    await expect(fsMoonshineStore.fetch('http://127.0.0.1:9/encoder.onnx', dest)).rejects.toThrow('HTTP 404')
+
+    expect(asked).toEqual(['/no-models'])
+    expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('asks the url itself when the fixture is not set, as production does', async () => {
+    const { origin, asked } = await standIn(200, 'weights')
+    dir = mkdtempSync(join(tmpdir(), 'bingbong-models-'))
+    const dest = join(dir, 'encoder.onnx')
+
+    await fsMoonshineStore.fetch(`${origin}/encoder.onnx`, dest)
+
+    expect(asked).toEqual(['/encoder.onnx'])
+    expect(existsSync(dest)).toBe(true)
   })
 })

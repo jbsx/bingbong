@@ -172,6 +172,8 @@ export interface FixtureServer {
   altUrl(path: string): string
   /** How many times the adblock filter list has been fetched (cache probes). */
   adblockListHits(): number
+  /** How many times an engine asked for a model file (#533): the launch's prefetch, answered 404 so nothing downloads. */
+  modelFetchHits(): number
   /** Hold every YouTube results page this long before it answers, as YouTube's own takes (#507: the Wait Card's Receipt over a search). */
   setResultsDelay(ms: number): void
   /** The next request for the fixture's sound with a query, as a stream address has, answers 403 (#516). */
@@ -1355,6 +1357,7 @@ function ledgerRevisionPage(ledger: (typeof LEDGERS)[number], revision: number, 
 
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
+  let modelFetchHits = 0
   let visionEndpointHits = 0
   let lastAuthorization: string | undefined
   let statusBoardValue = 'north'
@@ -1411,6 +1414,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       adblockListHits += 1
       res.writeHead(200, { 'Content-Type': 'text/plain' })
       res.end(ADBLOCK_LIST_BODY)
+      return
+    }
+    if (req.url === '/no-models') {
+      modelFetchHits += 1
+      res.writeHead(404, { 'Content-Type': 'text/plain' })
+      res.end('no models here')
       return
     }
     if (req.url === '/adblock-resources') {
@@ -1989,6 +1998,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     url: primary.url,
     altUrl: alt.url,
     adblockListHits: () => adblockListHits,
+    modelFetchHits: () => modelFetchHits,
     refuseNextStream: () => {
       refuseStream = true
     },

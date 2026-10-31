@@ -198,7 +198,15 @@ function elementCenterScript(selector: string): string {
  * the developer's ~/bingbong_downloads. The News card's Top Repos ask the
  * fixture server for GitHub's trending page and the READMEs instead, which
  * has none of them to answer, so no launch reaches GitHub; a test that
- * wants repositories seeds repos.json.
+ * wants repositories seeds repos.json. The model files (#533) ask the fixture
+ * server too, which answers 404: the road an offline first boot takes, so no
+ * launch downloads Parakeet or Smart Turn into a profile thrown away after it.
+ *
+ * The rule: no default test needs a host. `pnpm test:e2e`, `shot:idle` and
+ * `shot:states` run under e2e/bin/no-network.sh, in a network namespace with
+ * loopback only, and a live gate's own variable is what lets a run out. A
+ * launch that skips the wrapper (a live gate, a direct xvfb-run) keeps this
+ * template, so it downloads no model, but its other hosts stay reachable.
  */
 export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
   return {
@@ -212,6 +220,7 @@ export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string)
     BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
     BINGBONG_DOWNLOADS_DIR: join(userDataDir, 'downloads'),
     BINGBONG_NEWS_FIXTURE: fixture.url('/no-news'),
+    BINGBONG_MODELS_FIXTURE: fixture.url('/no-models'),
     ...ROUTING_ENV_UNSET,
   }
 }
@@ -229,6 +238,7 @@ function noFixture(): FixtureServer {
     url: refuse,
     altUrl: refuse,
     adblockListHits: () => 0,
+    modelFetchHits: () => 0,
     visionEndpointHits: () => 0,
     lastVisionAuthorization: () => undefined,
     setStatusBoard: refuse,
