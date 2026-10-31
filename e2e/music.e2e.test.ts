@@ -59,6 +59,18 @@ async function until(harness: Harness, predicate: (video: VideoFacts) => boolean
   )
 }
 
+/**
+ * A live `play` or `skip`, answered (#549): `playing:`, or `on-ad:` when a long pod held it past the Player's 120 s bound, and then that song plays as
+ * the ad ends, which is waited for here. Either way the song is its own from here on. `id`: the song it must be.
+ */
+async function songLine(harness: Harness, line: string, id = ''): Promise<string> {
+  const answer = await cli(harness, line, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
+  expect(answer).toMatch(new RegExp(`^(playing|on-ad): id=${id}`))
+  const song = /id=(\S+)/.exec(answer)![1]!
+  if (answer.startsWith('on-ad:')) await until(harness, (video) => video.id === song && !video.ad && !video.paused && video.currentTime > 0, LIVE_PLAY_ANSWER_MS)
+  return answer
+}
+
 describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouTube (network)', () => {
   let harness: Harness
   let firstId = ''
@@ -96,12 +108,11 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   }
 
   it('`play <a known song>` lands on its watch page with the video playing', async () => {
-    const line = await cli(harness, 'play rick astley never gonna give you up', LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
-    expect(line).toMatch(/^playing: id=/)
+    const line = await songLine(harness, 'play rick astley never gonna give you up')
     firstId = /id=(\S+)/.exec(line)![1]!
     const playing = await until(harness, (video) => video.found && !video.paused && video.currentTime > 0.5)
     expect(playing).toMatchObject({ path: '/watch', id: firstId })
-  }, 180_000)
+  }, 300_000)
 
   it('`loop` makes it play past its end', async () => {
     // An ad plays in the same element first: wait for the song itself.
@@ -126,11 +137,10 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     const secondId = /id=(\S+)/.exec(queued)![1]!
     // Queuing never left the song playing.
     expect((await facts(harness)).id).toBe(firstId)
-    const skipped = await cli(harness, 'skip', LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
-    expect(skipped).toMatch(new RegExp(`^playing: id=${secondId}`))
+    await songLine(harness, 'skip', secondId)
     const second = await until(harness, (video) => video.id === secondId && video.found && !video.paused && video.currentTime > 0.5)
     expect(second.path).toBe('/watch')
-  }, 180_000)
+  }, 300_000)
 
   it('a song\'s end opens the next queued song', async () => {
     const queued = await cli(harness, 'queue queen bohemian rhapsody', /^(queued: id=|No videos|YouTube didn't|error:)/)
@@ -156,11 +166,9 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
 
   it('`not that one` plays the second result, and once it stayed a second `play` opens it with no results page (#345, AC5)', async () => {
     const SONG = 'daft punk one more time'
-    const first = await cli(harness, `play ${SONG}`, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
-    expect(first).toMatch(/^playing: id=/)
+    const first = await songLine(harness, `play ${SONG}`)
     const pickedId = /id=(\S+)/.exec(first)![1]!
-    const corrected = await cli(harness, 'not that one', LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
-    expect(corrected).toMatch(/^playing: id=/)
+    const corrected = await songLine(harness, 'not that one')
     const secondId = /id=(\S+)/.exec(corrected)![1]!
     expect(secondId).not.toBe(pickedId)
     await until(harness, (video) => video.id === secondId && video.found && !video.paused && !video.ad && video.duration > 40, 60_000)
@@ -168,8 +176,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     await harness.paneEval(`(() => { document.querySelector('#movie_player video').currentTime = 31 })()`)
     await until(harness, (video) => video.currentTime >= 31)
     await waitFor(async () => ((await readFile(join(harness.userDataDir, 'songs.json'), 'utf8').catch(() => '')).includes(secondId) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
-    const again = await cli(harness, `play ${SONG}`, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
-    expect(again).toMatch(new RegExp(`^playing: id=${secondId}`))
+    await songLine(harness, `play ${SONG}`, secondId)
     const plays = (await decisions()).filter((record) => record.type === 'decision' && record.verb === 'play')
     expect(plays.slice(-3).map((record) => [record.video, record.pick])).toEqual([
       [pickedId, 'searched'],
@@ -248,12 +255,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
     )
 
   it('a `volume` Media Op to 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s: about 19.9', async () => {
-    expect(await cli(harness, `play ${LOUD.words}`, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)).toMatch(new RegExp(`^playing: id=${LOUD.id}`))
+    await songLine(harness, `play ${LOUD.words}`, LOUD.id)
     expect(await cli(harness, `queue ${LOUDER.words}`, /^(queued: id=|No videos|Couldn't search|error:)/)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
     const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1, 90_000)
     expect(await cli(harness, SET_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume \d+% → 20%$/)
     expect((await level()).volume).toBeCloseTo(20, 1)
-    expect(await cli(harness, 'skip', LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)).toMatch(new RegExp(`^playing: id=${LOUDER.id}`))
+    await songLine(harness, 'skip', LOUDER.id)
     // Past any ad and the song's first second, where YouTube may put its own level back.
     const after = await levelUntil((facts) => facts.id === LOUDER.id && !facts.ad && facts.currentTime > 2.5, 90_000)
     const expected = 20 * (loudnessFactor(after.loudnessDb) / loudnessFactor(before.loudnessDb))
@@ -261,7 +268,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
     expect(after.volume).toBeCloseTo(expected, 0)
     // The issue's tracks at 5.22 and 5.25 dB: about 19.9.
     if (before.loudnessDb !== null && after.loudnessDb !== null && Math.abs(before.loudnessDb - 5.22) < 0.05 && Math.abs(after.loudnessDb - 5.25) < 0.05) expect(after.volume).toBeCloseTo(19.9, 0)
-  }, 420_000)
+  }, 600_000)
 })
 
 // A slow host's page road (#550), hermetic: the fixture's watch page with its
@@ -351,6 +358,12 @@ describe('a song still loading on the watch page (#550)', () => {
 //   BINGBONG_YOUTUBE_E2E=1 BINGBONG_PLAY_THROTTLE=<rate> BINGBONG_PLAY_THROTTLE_OUT=<file> pnpm test:e2e e2e/music.e2e.test.ts -t 'slow host'
 // The real adblock lists, as a production launch has them; BINGBONG_ADBLOCK=off gives the adblocker's share.
 const THROTTLE = Number(process.env.BINGBONG_PLAY_THROTTLE ?? 0)
+/** The element's load as a slow host's start reads it: each change kept, so a start that stands still says in what state (#550). */
+const LOAD_FACTS = `(() => {
+  const video = document.querySelector('#movie_player video')
+  if (!video) return { id: new URLSearchParams(location.search).get('v'), found: false }
+  return { id: new URLSearchParams(location.search).get('v'), found: true, paused: video.paused, ready: video.readyState, network: video.networkState, src: video.currentSrc.slice(0, 5), error: video.error ? video.error.code : null }
+})()`
 const THROTTLED_SONGS = ['play tum se tum tak', 'play kanye west runaway', 'play arijit singh kesariya', 'play fleetwood mac dreams', 'play daft punk get lucky', 'play radiohead let down']
 
 describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E || THROTTLE === 0)('a slow host\'s page road under a CPU throttle (#550, network)', () => {
@@ -384,7 +397,14 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E || THROTTLE === 0)('a slow hos
       /** When each video in the pane first played, by id: the song before this line's goes on moving until its page is left. */
       const played = new Map<string, number>()
       let adSeen = false
+      const load: unknown[] = []
+      let lastLoad = ''
       const watching = setInterval(() => {
+        harness.paneEval<Record<string, unknown>>(LOAD_FACTS).then((read) => {
+          const key = JSON.stringify(read)
+          if (key !== lastLoad) load.push({ ms: Date.now() - from, ...read })
+          lastLoad = key
+        }).catch(() => {})
         facts(harness).then((video) => {
           if (video.ad) adSeen = true
           if (video.id !== null && !played.has(video.id) && video.found && !video.ad && !video.paused && video.currentTime > 0) played.set(video.id, Date.now() - from)
@@ -397,7 +417,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E || THROTTLE === 0)('a slow hos
       const id = /id=(\S+)/.exec(answer)?.[1] ?? ''
       await waitFor(async () => (played.has(id) ? true : undefined), { timeoutMs: 60_000, intervalMs: 500 }).catch(() => {})
       clearInterval(watching)
-      runs.push({ line, answer, answeredMs, firstPlayMs: played.get(id) ?? null, adSeen })
+      runs.push({ line, answer, answeredMs, firstPlayMs: played.get(id) ?? null, adSeen, load })
       await keep()
     }, 320_000)
   }
