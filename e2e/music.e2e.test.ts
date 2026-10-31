@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loudnessFactor } from '../src/core/music/loudness'
 import { startFixtureServer, YOUTUBE_FIXTURE_SONG, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
-import { cli, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS } from './cliSupport'
+import { cli, LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS, LIVE_QUEUE_ANSWER } from './cliSupport'
 import { facts, type VideoFacts } from './playerFacts'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
@@ -41,17 +41,22 @@ async function songLine(harness: Harness, line: string, id = ''): Promise<string
   return answer
 }
 
+const A_SONG = 'play rick astley never gonna give you up'
+/** How long a page just opened may take to show its element playing, before it counts as no song. */
+const OPENING_MS = 15_000
+
 describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouTube (network)', () => {
   let harness: Harness
-  let firstId = ''
 
   beforeAll(async () => {
     // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Appliance Verb.
     // The stand-in spends one entry per ask and takes the first whose line is in the ask's state, so `not that one` comes before the second `play` of the song it corrects.
     const env = decisionScript(
-      ...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody', 'play daft punk one more time'].map((line) => readingOf(line)),
+      ...['queue daft punk around the world', 'queue queen bohemian rhapsody', 'play daft punk one more time'].map((line) => readingOf(line)),
       readingOf('not that one', 'correct'),
       readingOf('play daft punk one more time'),
+      // One per test at most: each opens its own song when the test before left none (`aSongPlaying`).
+      ...Array.from({ length: 5 }, () => readingOf(A_SONG)),
     )
     harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
     await harness.waitForCliOutput(/bingbong browser harness/)
@@ -69,6 +74,30 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     await harness?.quit()
   })
 
+  /**
+   * What a test here starts from, whatever the one before it left (#553): a song playing past its ad, no loop on it, nothing queued. Resolves with its
+   * id. Without this a queue that failed leaves the first song looping, and every later test that waits for a song's end falls with it.
+   */
+  async function aSongPlaying(): Promise<string> {
+    const playing = (video: VideoFacts): boolean => video.found && !video.paused && video.path === '/watch'
+    const opened = await until(harness, playing, OPENING_MS).catch(() => null)
+    if (opened === null) await songLine(harness, A_SONG)
+    await until(harness, (video) => playing(video) && !video.ad && video.duration > 10, LIVE_PLAY_ANSWER_MS)
+    // A test that fell left at most a song or two queued.
+    let left = 3
+    while (left > 0 && !(await emptied())) left -= 1
+    await cli(harness, 'loop off', /^loop: /)
+    return (await facts(harness)).id!
+  }
+
+  /** One `skip`: true when the Queue was empty; else its song is played past its ad. */
+  async function emptied(): Promise<boolean> {
+    const answer = await cli(harness, 'skip', LIVE_PLAY_ANSWER, LIVE_PLAY_ANSWER_MS)
+    if (answer.startsWith('queue empty')) return true
+    await until(harness, (video) => !video.ad && !video.paused && video.duration > 10, LIVE_PLAY_ANSWER_MS)
+    return false
+  }
+
   /** The decision records the app has written so far, in order. */
   async function decisions(): Promise<{ type: string; verb?: string; slot?: string; video?: string; pick?: string }[]> {
     const dir = join(harness.userDataDir, 'logs')
@@ -78,31 +107,32 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   }
 
   it('`play <a known song>` lands on its watch page with the video playing', async () => {
-    const line = await songLine(harness, 'play rick astley never gonna give you up')
-    firstId = /id=(\S+)/.exec(line)![1]!
+    const line = await songLine(harness, A_SONG)
+    const firstId = /id=(\S+)/.exec(line)![1]!
     const playing = await until(harness, (video) => video.found && !video.paused && video.currentTime > 0.5)
     expect(playing).toMatchObject({ path: '/watch', id: firstId })
   }, 300_000)
 
   it('`loop` makes it play past its end', async () => {
-    // An ad plays in the same element first: wait for the song itself.
-    await until(harness, (video) => !video.ad && video.duration > 10, 60_000)
+    const id = await aSongPlaying()
     expect(await cli(harness, 'loop', /^loop: /)).toMatch(/loop=true/)
     await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 2 })()`)
     const looped = await until(harness, (video) => video.currentTime > 0 && video.currentTime < 5 && !video.paused, 20_000)
-    expect(looped).toMatchObject({ id: firstId, loop: true })
-  }, 90_000)
+    expect(looped).toMatchObject({ id, loop: true })
+  }, 300_000)
 
   it('`restart` seeks to zero', async () => {
+    await aSongPlaying()
     await harness.paneEval(`(() => { document.querySelector('#movie_player video').currentTime = 60 })()`)
     await until(harness, (video) => video.currentTime >= 60)
     await cli(harness, 'restart', /^restart: /)
     const restarted = await facts(harness)
     expect(restarted.currentTime).toBeLessThan(2)
-  }, 60_000)
+  }, 300_000)
 
   it('`queue <another song>` then `skip` plays the second', async () => {
-    const queued = await cli(harness, 'queue daft punk around the world', /^(queued: id=|No videos|Couldn't search|error:)/)
+    const firstId = await aSongPlaying()
+    const queued = await cli(harness, 'queue daft punk around the world', LIVE_QUEUE_ANSWER)
     expect(queued).toMatch(/^queued: id=\S+ position=1$/)
     const secondId = /id=(\S+)/.exec(queued)![1]!
     // Queuing never left the song playing.
@@ -113,25 +143,23 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   }, 300_000)
 
   it('a song\'s end opens the next queued song', async () => {
-    const queued = await cli(harness, 'queue queen bohemian rhapsody', /^(queued: id=|No videos|YouTube didn't|error:)/)
+    await aSongPlaying()
+    const queued = await cli(harness, 'queue queen bohemian rhapsody', LIVE_QUEUE_ANSWER)
     expect(queued).toMatch(/^queued: id=\S+ position=1$/)
     const thirdId = /id=(\S+)/.exec(queued)![1]!
-    await until(harness, (video) => !video.ad && video.duration > 10, 60_000)
     await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 3 })()`)
     await until(harness, (video) => video.id === thirdId && video.found, 30_000)
-    secondSong = thirdId
-  }, 90_000)
+  }, 300_000)
 
   it('with nothing queued the song ends and stays ended: YouTube\'s Autoplay never opens another (owner\'s ruling 4)', async () => {
-    // The song the last test's end opened, with no line waiting: its pre-roll may still be playing.
-    await until(harness, (video) => !video.ad && video.duration > 10, LIVE_PLAY_ANSWER_MS)
+    const id = await aSongPlaying()
     await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 2 })()`)
     // Paused in its last second, before YouTube's own end would load an ad and Autoplay another video.
     await until(harness, (video) => video.paused && video.currentTime >= video.duration - 1, 20_000)
     // Longer than YouTube's Autoplay countdown.
     await new Promise((resolve) => setTimeout(resolve, 12_000))
     const after = await facts(harness)
-    expect(after).toMatchObject({ path: '/watch', id: secondSong, paused: true, ad: false })
+    expect(after).toMatchObject({ path: '/watch', id, paused: true, ad: false })
   }, 180_000)
 
   it('`not that one` plays the second result, and once it stayed a second `play` opens it with no results page (#345, AC5)', async () => {
@@ -156,8 +184,6 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     await until(harness, (video) => video.id === secondId && video.found && video.path === '/watch')
   }, 480_000)
 })
-
-let secondSong = ''
 
 // A volume a Media Op sets lasts into the next song (#460): the op sets the
 // element alone (#408), YouTube opens the next song at its own remembered
@@ -226,7 +252,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
 
   it('a `volume` Media Op to 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s: about 19.9', async () => {
     await songLine(harness, `play ${LOUD.words}`, LOUD.id)
-    expect(await cli(harness, `queue ${LOUDER.words}`, /^(queued: id=|No videos|Couldn't search|error:)/)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
+    expect(await cli(harness, `queue ${LOUDER.words}`, LIVE_QUEUE_ANSWER)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
     const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1, 90_000)
     expect(await cli(harness, SET_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume \d+% → 20%$/)
     expect((await level()).volume).toBeCloseTo(20, 1)
