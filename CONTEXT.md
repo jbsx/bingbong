@@ -1025,6 +1025,7 @@ starting after a line has ended is the next line's card. A Command that
 acts on the pane wakes the screen as before, and the card goes with it.
 The screen brought back over a line already over shows no card for it; a line still running keeps its card.
 A tap on an Idle Screen control that leaves the screen up (a Now Playing control, the ringing Timer) brings no card: the control shows what it did, and the next tap lands on it. If its line fails, the card comes up on Failed.
+A ringing Timer stands above the scrim, so a tap on it still turns it off with a card up.
 The Status Capsule no longer floats over the Idle Screen, and the Peek
 Card's Idle Screen form is gone: the Turn Card is what the screen shows
 for a line's answer and failure. The Idle Prompt sits at the foot of the

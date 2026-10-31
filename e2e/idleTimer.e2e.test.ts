@@ -57,6 +57,8 @@ describe('idle screen e2e: the Timer', () => {
     expect(await timerStatus()).toBe('ringing')
     expect(await harness.dashboardEval<string>(`document.querySelector('.idle-timer--ringing .idle-timer-left')?.textContent ?? ''`)).toBe('Time’s up')
     expect(await harness.dashboardEval<boolean>(`window.__woke`)).toBe(false)
+    // The line that set a short Timer is still on its Turn Card as it rings: the tap below has that card's scrim to get past.
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card')`)).toBe(true)
 
     await harness.clickDashboardElement('.idle-timer--ringing')
 
@@ -65,6 +67,19 @@ describe('idle screen e2e: the Timer', () => {
     // With no page in the pane the tap leaves the screen up (#361); the Timer's off reaches it a moment after main's.
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     expect(await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })).toBe(true)
+  })
+
+  it('a line answered over the ringing Timer keeps its card, and a tap on the Timer still turns it off', async () => {
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 2s')`)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer--ringing')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    await harness.dashboardEval(`window.bingbong.assistant.submit('xyzzy plugh')`)
+    // Read as no Command, the line is shown (AGENTS.md, Reliability): the ring does not push its card off.
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`document.querySelector('.turn-card')?.getAttribute('data-state') === 'dropped'`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    expect(await timerStatus()).toBe('ringing')
+
+    await harness.clickDashboardElement('.idle-timer--ringing')
+
+    expect(await waitFor(async () => ((await timerStatus()) === 'off' ? 'off' : undefined), { timeoutMs: 10000, intervalMs: 100 })).toBe('off')
   })
 
   it('a Command that acts on the pane wakes the idle screen', async () => {

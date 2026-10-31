@@ -2656,7 +2656,10 @@ details[open] > .settings-summary::before {
 }
 
 /* Ringing, the Timer Clock is the control that turns it off: "Time's up", pulsing. A live thing (#446, principle 8), it takes the accent; running, it stays quiet. */
+/* A ringing Timer stands above a Turn Card's scrim (z-index 4) and beside its card (5): it is live, says "tap to stop", and a line's card reports only one line. */
 .idle-timer--ringing {
+  position: relative;
+  z-index: 6;
   cursor: pointer;
 }
 
