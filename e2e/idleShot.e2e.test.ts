@@ -448,6 +448,8 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
       await new Promise((resolve) => setTimeout(resolve, 600))
       return
     }
+    // The last line's Turn Card lies over the date until 15 s after the line is over, and a tap on it takes the card away, not the screen.
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 100 })
     await harness.clickDashboardElement('.idle-date')
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
