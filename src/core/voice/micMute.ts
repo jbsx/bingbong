@@ -11,6 +11,7 @@ export function micMutedState(state: VoiceState): VoiceState {
   const shown: VoiceState = { ...state, listening: false, reason: null, monitoring: false, transcribing: false, hearing: false, micMuted: true }
   delete shown.loading
   delete shown.since
+  delete shown.captureFailed
   delete shown.speaking
   return shown
 }

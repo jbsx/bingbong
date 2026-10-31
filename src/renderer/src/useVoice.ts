@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CAPTURE_RETRY_MS, EAR_SHUT, earAsksCapture, opensCapture, type EarAsk } from '../../core/voice/captureAsk'
 import type { EarLoading, VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
 import { reportRendererFault } from './diagnostics'
 import { openMicCapture } from './micCapture'
@@ -28,6 +29,8 @@ export interface VoiceApi {
   since?: number
   /** The Mic Mute is on: the ear is shown shut and the microphone is closed. */
   micMuted: boolean
+  /** The microphone's capture did not open (#530): nothing said is heard until one does. Absent otherwise. */
+  captureFailed?: boolean
 }
 
 export interface UseVoiceDeps {
@@ -57,7 +60,9 @@ async function preferC920(micId: string): Promise<string> {
  * open: the session endpoints an utterance after each activation, then falls
  * back to listening for the wake word. The capture graph is `openMicCapture`
  * (micCapture.ts): a 16 kHz context with no output device, a worklet that
- * downmixes to mono, and whole 512-sample frames over IPC.
+ * downmixes to mono, and whole 512-sample frames over IPC. A capture that does
+ * not open, or loses its device, is told to main (#530) and tried again on a
+ * device change, a new ask or a slow clock (captureAsk.ts), until one opens.
  */
 export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
@@ -74,6 +79,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [loading, setLoading] = useState<EarLoading | undefined>(undefined)
   const [since, setSince] = useState<number | undefined>(undefined)
   const [micMuted, setMicMuted] = useState(false)
+  const [captureFailed, setCaptureFailed] = useState(false)
 
   // Latest deps without resubscribing when callers rebuild the object.
   const depsRef = useRef(deps)
@@ -83,14 +89,33 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   // listening ends (hotkey disarm, utterance handled, window closed).
   const captureRef = useRef<{ stop(): void } | null>(null)
   const startingRef = useRef(false)
+  const failedRef = useRef(false)
+  // A device change that came while a capture was opening: that try may have read the devices before it.
+  const changedWhileStartingRef = useRef(false)
+  // Someone asked during this try, so its failure is reported; a try nobody asked for fails quietly.
+  const reportFailureRef = useRef(false)
+  const askRef = useRef<EarAsk>(EAR_SHUT)
 
   const stopCapture = useCallback(() => {
     captureRef.current?.stop()
     captureRef.current = null
   }, [])
 
-  const startCapture = useCallback(async () => {
-    if (captureRef.current || startingRef.current) return
+  // The capture is gone or never came: told to main, and any listen that needs it closes.
+  const captureDown = useCallback(async (message?: string) => {
+    failedRef.current = true
+    window.bingbong.voice.captureFailed(true, message)
+    await window.bingbong.voice.disarm()
+  }, [])
+
+  // `quiet`: nobody asked (a device change, the slow clock), so a try that fails again reports nothing.
+  const startCapture = useCallback(async (quiet = false) => {
+    if (captureRef.current) return
+    if (!quiet) reportFailureRef.current = true
+    if (startingRef.current) {
+      if (quiet) changedWhileStartingRef.current = true
+      return
+    }
     startingRef.current = true
     try {
       const micId = await preferC920(depsRef.current.getMicId())
@@ -101,20 +126,35 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
         workletUrl: new URL('./micCaptureWorklet.js', import.meta.url),
         send: (samples) => window.bingbong.voice.sendAudio(samples),
         onFault: reportRendererFault,
+        onLost: () => {
+          stopCapture()
+          const message = 'The microphone went away'
+          reportRendererFault('voice.captureLost', new Error(message))
+          void captureDown(message)
+        },
       })
+      failedRef.current = false
+      // Always told: main may hold a failure from before this renderer reloaded.
+      window.bingbong.voice.captureFailed(false)
+      // The ear shut while it opened: a retry can outlast a Mic Mute, and a muted microphone stays closed.
+      if (!earAsksCapture(askRef.current)) stopCapture()
     } catch (err) {
-      // The one renderer→history call the app had (#187): a mic failure
-      // is a swallowed failure like any other, so it now takes the
-      // diagnostics channel and the Feed line stamps its own clock —
-      // the shared timestamp only ever existed to join the two.
-      reportRendererFault('voice.startCapture', err)
-      const message = err instanceof Error ? err.message : String(err)
-      depsRef.current.onError(message, Date.now())
-      await window.bingbong.voice.disarm()
+      // A mic failure takes the diagnostics channel, and main stamps its Feed line (#187, #530).
+      let message: string | undefined
+      if (reportFailureRef.current) {
+        reportRendererFault('voice.startCapture', err)
+        message = err instanceof Error ? err.message : String(err)
+      }
+      await captureDown(message)
     } finally {
       startingRef.current = false
+      reportFailureRef.current = false
+      if (changedWhileStartingRef.current) {
+        changedWhileStartingRef.current = false
+        if (failedRef.current && earAsksCapture(askRef.current)) void startCapture(true)
+      }
     }
-  }, [])
+  }, [stopCapture, captureDown])
 
   useEffect(() => {
     const applyState = (state: VoiceState) => {
@@ -130,14 +170,14 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
       setLoading(state.loading)
       setSince(state.since)
       setMicMuted(state.micMuted === true)
+      setCaptureFailed(state.captureFailed === true)
       // The mic also stays up through the STT window: a discarded blip
       // returns to listening, and re-acquiring the device would eat the
       // first frames of whatever the user says next (#38).
-      if (state.listening || state.transcribing || state.monitoring) {
-        void startCapture()
-      } else {
-        stopCapture()
-      }
+      const before = askRef.current
+      askRef.current = state
+      if (opensCapture(before, state, failedRef.current)) void startCapture()
+      else if (!earAsksCapture(state)) stopCapture()
     }
     const unsubscribeState = window.bingbong.voice.onState(applyState)
     // Monitoring can start before this component mounted — pull the truth.
@@ -160,5 +200,21 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, hearing, speaking, overSpeech, reason, monitoring, partial, lastWords, micMuted, ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
+  // The way back without a restart (#530): a device came or went, so the one that would not open may now.
+  useEffect(() => {
+    const onDeviceChange = (): void => {
+      if (earAsksCapture(askRef.current)) void startCapture(true)
+    }
+    navigator.mediaDevices.addEventListener('devicechange', onDeviceChange)
+    // A cause that clears with no device event (a sound server back, a mic someone freed, another mic chosen in Settings).
+    const clock = setInterval(() => {
+      if (failedRef.current && earAsksCapture(askRef.current)) void startCapture(true)
+    }, CAPTURE_RETRY_MS)
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange)
+      clearInterval(clock)
+    }
+  }, [startCapture])
+
+  return { listening, transcribing, hearing, speaking, overSpeech, reason, monitoring, partial, lastWords, micMuted, ...(captureFailed ? { captureFailed } : {}), ...(loading !== undefined ? { loading } : {}), ...(since !== undefined ? { since } : {}) }
 }

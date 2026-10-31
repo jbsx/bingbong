@@ -9,6 +9,7 @@ describe('micMutedState', () => {
       { listening: true, reason: 'wake' as const, monitoring: true, transcribing: false, hearing: true },
       { listening: false, reason: null, monitoring: true, transcribing: true, hearing: false, loading: 'words' as const, since: 5 },
       { listening: false, reason: null, monitoring: true, transcribing: false, hearing: false, loading: 'failed' as const },
+      { listening: false, reason: null, monitoring: true, transcribing: false, hearing: false, captureFailed: true },
     ]
     for (const state of states) {
       const shown = micMutedState(state)

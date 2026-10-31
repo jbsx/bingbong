@@ -33,6 +33,8 @@ import { ECHO_WINDOW_MS, type OverSpeech } from '../../core/voice/ownVoice'
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
 // The ear's state as each window's screen reads it (#442): the session's, with what a cold ear waits for and its phase's start.
 const shownStates = new WeakMap<BrowserWindow, () => VoiceState>()
+// Each window's capture failing or opening, as its renderer tells it (#530).
+const captureReports = new WeakMap<BrowserWindow, (failed: boolean, message?: string) => void>()
 // A wake listen's opening, until the dashboard says it painted Listening (#429).
 const wakeOpenings = new WeakMap<BrowserWindow, { tracer: PerfTracer; at: number | null }>()
 // The hearing receipt (#441): when each chunk not yet scored arrived, oldest first, and the arrival of the one
@@ -54,6 +56,11 @@ export function registerVoiceIpc(micMute: MuteSwitch): void {
 
   ipcMain.handle(VOICE_IPC.disarm, (event) => {
     sessionFor(event)?.disarm()
+  })
+
+  ipcMain.on(VOICE_IPC.captureFailed, (event, failed: unknown, message: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) captureReports.get(win)?.(failed === true, typeof message === 'string' ? message : undefined)
   })
 
   ipcMain.on(VOICE_IPC.audio, (event, chunk: unknown) => {
@@ -112,8 +119,10 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   // Speech heard starting over the app's voice (#490): the `speech-yield` span runs from it to the app's voice ending.
   let yieldFrom: number | null = null
   // The Mic Mute shows the ear shut on every surface, and the renderer closes the microphone on it.
+  let captureFailed = false
   const shown = (state: VoiceState): VoiceState => {
-    const told = ear.show(withSpeech(state))
+    const earShown = ear.show(withSpeech(state))
+    const told = captureFailed ? { ...earShown, captureFailed: true } : earShown
     return deps.micMute?.muted() === true ? micMutedState(told) : told
   }
   const publishState = (): void => deps.publisher.publish({ source: 'voice-state', state: shown(raw) })
@@ -212,6 +221,13 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
 
   sessions.set(win, session)
   shownStates.set(win, () => shown(session.getState()))
+  captureReports.set(win, (failed, message) => {
+    // The Feed is the panel's, so its line goes where the voice's own errors go.
+    if (message !== undefined) deps.publisher.publish({ source: 'voice-error', error: { message, at: Date.now() } })
+    if (failed === captureFailed) return
+    captureFailed = failed
+    publishState()
+  })
   const unsubSpeech = deps.speaking?.onSpeakingChange((speaking) => {
     if (!speaking && yieldFrom !== null && tracer) {
       tracer.span(APP_TURN_ID, 'speech-yield', tracer.now() - yieldFrom)
@@ -227,6 +243,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
   win.on('closed', () => {
     sessions.delete(win)
     shownStates.delete(win)
+    captureReports.delete(win)
     unsubSpeech?.()
     unsubMic?.()
     session.stop()

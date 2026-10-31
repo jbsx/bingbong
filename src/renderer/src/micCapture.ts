@@ -66,6 +66,8 @@ export interface MicCaptureDeps {
   workletUrl: URL | string
   send(samples: Float32Array): void
   onFault(where: string, error: unknown): void
+  /** The open capture lost its device (#530): a track ended that nobody stopped. */
+  onLost(): void
 }
 
 export interface MicCapture {
@@ -90,9 +92,12 @@ export async function openMicCapture(micId: string, deps: MicCaptureDeps): Promi
 
   const chunk = createFrameChunker(deps.send)
   node.port.onmessage = (event: MessageEvent<Float32Array>) => chunk(event.data)
+  const onEnded = (): void => deps.onLost()
+  stream.getTracks().forEach((track) => track.addEventListener('ended', onEnded))
 
   return {
     stop: () => {
+      stream.getTracks().forEach((track) => track.removeEventListener('ended', onEnded))
       node.port.onmessage = null
       source.disconnect()
       node.disconnect()

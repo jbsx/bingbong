@@ -177,6 +177,8 @@ export interface IdleVoice {
   lastWords?: string
   /** What a cold ear still waits for (#442). */
   loading?: EarLoading
+  /** The microphone's capture did not open (#530). */
+  captureFailed?: boolean
   /** When the ear's phase began, on main's wall clock (#442). */
   since?: number
   /** The Mic Mute is on: the ear is shut and the microphone closed. */

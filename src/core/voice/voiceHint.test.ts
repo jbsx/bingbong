@@ -24,6 +24,10 @@ describe('voiceHint', () => {
     expect(voiceHint({ ...quiet, monitoring: true, loading: 'failed' }, { promptShown: true })).toBeNull()
   })
 
+  it('says the same for a capture that did not open, and never the rest hint (#530, ui.md 9)', () => {
+    expect(voiceHint({ ...quiet, monitoring: true, captureFailed: true })).toEqual({ kind: 'failed', text: 'type, or restart' })
+  })
+
   it('leaves the waits to the Voice Prompt while it is on screen', () => {
     expect(voiceHint({ ...quiet, transcribing: true }, { promptShown: true })).toBeNull()
     expect(voiceHint({ ...quiet, monitoring: true, loading: 'ear' }, { promptShown: true })).toBeNull()

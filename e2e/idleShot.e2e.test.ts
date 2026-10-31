@@ -46,6 +46,7 @@ function topRepos() {
   }
 }
 
+const FAKE_MIC = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
@@ -151,13 +152,13 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
         userDataDir,
         fixture,
         wakeFromBootIdle: false,
-        launchArgs: ['--browser-cli', '--mute-audio'],
+        launchArgs: ['--browser-cli', '--mute-audio', ...FAKE_MIC],
         pipeStdio: true,
         env: { ...ear, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song')) },
       })
       await harness.waitForCliOutput(/bingbong browser harness/)
     } else {
-      harness = await startHarness({ userDataDir, wakeFromBootIdle: false, launchArgs: ['--mute-audio'], env: ear })
+      harness = await startHarness({ userDataDir, wakeFromBootIdle: false, launchArgs: ['--mute-audio', ...FAKE_MIC], env: ear })
     }
 
     const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })

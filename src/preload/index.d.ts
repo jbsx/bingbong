@@ -152,6 +152,8 @@ export interface BingbongVoiceApi {
   disarm(): Promise<void>
   /** Flip the Mic Mute; resolves with the new state, which the voice state carries as `micMuted`. */
   toggleMic(): Promise<boolean>
+  /** The capture did not open, or a later one did (#530): main says it in the voice state as `captureFailed`, and a `message` in the Feed. */
+  captureFailed(failed: boolean, message?: string): void
   /** One chunk of mono 16 kHz PCM from the mic worklet (multiple of 512 samples). */
   sendAudio(chunk: Float32Array): void
   /** Current voice state — pulled on mount since events can predate the renderer. */

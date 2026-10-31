@@ -109,6 +109,43 @@ describe('earPhase at the cold start (#442)', () => {
   })
 })
 
+describe('earPhase with a capture that did not open (#530)', () => {
+  const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>, loading?: 'ear' | 'words' | 'failed') => ({
+    listening: open.listening ?? false,
+    transcribing: open.transcribing ?? false,
+    monitoring: open.monitoring ?? false,
+    hearing: false,
+    captureFailed: true,
+    ...(loading !== undefined ? { loading } : {}),
+  })
+
+  it('is failed at rest, not the rest that invites speech', () => {
+    expect(earPhase(ear({ monitoring: true }))).toBe('failed')
+  })
+
+  it('is off with the ear shut: it asks for no capture, and the next Ctrl+Space tries one', () => {
+    expect(earPhase(ear({}))).toBe('off')
+  })
+
+  it('is failed with a listen open too: no frame reaches that listen, so nothing said is heard', () => {
+    expect(earPhase(ear({ listening: true, monitoring: true }))).toBe('failed')
+  })
+
+  it('is failed over a cold start: the models coming in would hear nothing', () => {
+    expect(earPhase(ear({ monitoring: true }, 'ear'))).toBe('failed')
+    expect(earPhase(ear({ monitoring: true }, 'words'))).toBe('failed')
+  })
+
+  it('still names the read of a line it already took: those words are in hand', () => {
+    expect(earPhase(ear({ transcribing: true, monitoring: true }))).toBe('transcribing')
+  })
+
+  it('is the ear as ever once a capture opens and the fact clears', () => {
+    expect(earPhase({ ...ear({ monitoring: true }), captureFailed: false })).toBe('rest')
+    expect(earPhase({ ...ear({ listening: true }), captureFailed: false })).toBe('listening')
+  })
+})
+
 describe('earPhase after a failed load (#447)', () => {
   const ear = (open: Partial<{ listening: boolean; transcribing: boolean; monitoring: boolean }>) => ({
     listening: open.listening ?? false,

@@ -42,7 +42,8 @@ export type EarPhase = 'starting' | 'failed' | 'rest' | 'listening' | 'hearing' 
 /**
  * What the ear is doing: starting (#442) — open but unable to hear yet, or
  * holding a line it took until it can read it; failed (#447) — a model it
- * hears or reads with did not load, the wait ended; open for an Utterance,
+ * hears or reads with did not load, the wait ended, or the capture did not
+ * open (#530), so no frame reaches it; open for an Utterance,
  * hearing one being spoken (#441), reading one it took, waiting for the
  * wake word (at rest), or nothing at all — the microphone off. While the
  * app speaks, an open ear that has heard nothing is at rest (#472): what
@@ -50,8 +51,11 @@ export type EarPhase = 'starting' | 'failed' | 'rest' | 'listening' | 'hearing' 
  * word, which cuts it, is heard — unless it hears the person over the
  * app's voice (#490), when it listens still. Before main has said, at rest.
  */
-export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; speaking?: boolean; overSpeech?: boolean; loading?: EarLoading } | null): EarPhase {
+export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean; hearing: boolean; speaking?: boolean; overSpeech?: boolean; loading?: EarLoading; captureFailed?: boolean } | null): EarPhase {
   if (voice === null) return 'rest'
+  // No capture hears nothing, listen open or not; only a line already taken is still in hand to read.
+  // An ear that asks for none is off as ever: a hotkey-only ear's next Ctrl+Space tries again.
+  if (voice.captureFailed === true && !voice.transcribing && (voice.listening || voice.monitoring)) return 'failed'
   // A model that did not load ends the wait (#447) open or shut — a monitor whose VAD threw has stopped itself, and is not a microphone switched off —
   // unless a listen or a read is under way: with only the wake word failed, Ctrl+Space still opens an ear that hears.
   if (voice.loading === 'failed' && !voice.listening && !voice.transcribing) return 'failed'

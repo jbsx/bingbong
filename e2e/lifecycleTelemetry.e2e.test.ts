@@ -174,6 +174,8 @@ describe('the ear starting at boot (#442)', () => {
     harness = await startHarness({
       userDataDir,
       wakeFromBootIdle: false,
+      // A capture that opens: with none, the ear did not start, and that outranks loading (#530).
+      launchArgs: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
       env: {
         BINGBONG_WAKE_ENGINE: 'node',
         BINGBONG_WAKE_SCRIPT: '[0.01]',

@@ -38,7 +38,7 @@ describe('the capture context (#431)', () => {
   })
 
   it('builds stream → worklet → frames over IPC with those options, and tears it all down', async () => {
-    const track = { stop: vi.fn() }
+    const track = { stop: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() }
     const stream = { getTracks: () => [track] } as unknown as MediaStream
     const source = { connect: vi.fn(), disconnect: vi.fn() }
     const node = { port: { onmessage: null as ((event: MessageEvent<Float32Array>) => void) | null }, disconnect: vi.fn() }
@@ -60,6 +60,7 @@ describe('the capture context (#431)', () => {
       workletUrl: 'worklet.js',
       send: (samples) => sent.push(samples.slice()),
       onFault: () => {},
+      onLost: () => {},
     })
     expect(getUserMedia).toHaveBeenCalledWith({ audio: captureConstraints('c920-id') })
     expect(createContext).toHaveBeenCalledWith({ sampleRate: 16000, sinkId: { type: 'none' } })
@@ -77,8 +78,33 @@ describe('the capture context (#431)', () => {
     expect(context.close).toHaveBeenCalled()
   })
 
+  it('tells when a track ends with nobody having stopped it, and not after its own stop (#530)', async () => {
+    const track = new EventTarget() as EventTarget & { stop(): void }
+    track.stop = () => {}
+    const onLost = vi.fn()
+    const capture = await openMicCapture('default', {
+      getUserMedia: async () => ({ getTracks: () => [track] }) as unknown as MediaStream,
+      createContext: () =>
+        ({
+          audioWorklet: { addModule: async () => {} },
+          createMediaStreamSource: () => ({ connect: () => {}, disconnect: () => {} }),
+          close: async () => {},
+        }) as unknown as AudioContext,
+      createWorkletNode: () => ({ port: { onmessage: null }, disconnect: () => {} }) as unknown as AudioWorkletNode,
+      workletUrl: 'worklet.js',
+      send: () => {},
+      onFault: () => {},
+      onLost,
+    })
+    track.dispatchEvent(new Event('ended'))
+    expect(onLost).toHaveBeenCalledTimes(1)
+    capture.stop()
+    track.dispatchEvent(new Event('ended'))
+    expect(onLost).toHaveBeenCalledTimes(1)
+  })
+
   it('closes the context and stops the mic when the worklet will not load', async () => {
-    const track = { stop: vi.fn() }
+    const track = { stop: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() }
     const context = { audioWorklet: { addModule: vi.fn(async () => Promise.reject(new Error('no'))) }, close: vi.fn(async () => {}) }
     const onFault = vi.fn()
     await expect(
@@ -91,6 +117,7 @@ describe('the capture context (#431)', () => {
         workletUrl: 'worklet.js',
         send: () => {},
         onFault,
+        onLost: () => {},
       }),
     ).rejects.toThrow('mic capture worklet failed to load')
     expect(onFault).toHaveBeenCalledWith('voice.audioWorklet.addModule', expect.any(Error))

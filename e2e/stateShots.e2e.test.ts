@@ -264,7 +264,7 @@ interface Size {
 }
 const APPLIANCE: Size = { width: WIDTH, height: HEIGHT }
 
-async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = [], size: Size = APPLIANCE): Promise<Run> {
+async function launch(theme: Theme, env: Record<string, string> = {}, launchArgs: string[] = FAKE_MIC, size: Size = APPLIANCE): Promise<Run> {
   const fixture = await startFixtureServer()
   // The owner's two providers, so the Idle Screen's middle Column is laid out as on the appliance.
   const usage = await startUsageStandIn(2)

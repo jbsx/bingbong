@@ -24,7 +24,8 @@ export const REST_HINT_MORE = 'or start typing'
 export const REST_HINT = `${REST_HINT_SAY} ${REST_HINT_WAKE} ${REST_HINT_MORE}`
 
 /**
- * The cold start's failed outcome (#447, principles 2 and 9): what did not
+ * The cold start's failed outcome (#447, principles 2 and 9), and a capture's
+ * that did not open (#530): what did not
  * start and what to do, on every surface — speaking is not heard, typing
  * is, and a restart loads the ear again. The Idle Screen sets the two
  * halves apart, as it does "Microphone off".
@@ -50,6 +51,8 @@ export interface VoiceHintInput {
   loading?: EarLoading
   /** When the ear's phase began, on main's wall clock (#442). */
   since?: number
+  /** The microphone's capture did not open (#530). */
+  captureFailed?: boolean
 }
 
 export interface VoiceHint {

@@ -21,6 +21,8 @@ export const VOICE_IPC = {
   error: 'voice:error',
   /** Renderer → main: flip the Mic Mute (the button beside the settings cog); resolves with the new state. */
   toggleMic: 'voice:toggleMic',
+  /** Renderer → main: the capture did not open, or a later one did (#530). */
+  captureFailed: 'voice:captureFailed',
 } as const
 
 export type VoiceListenReason = 'hotkey' | 'wake'
@@ -62,6 +64,12 @@ export interface VoiceState {
   loading?: EarLoading
   /** When the ear's phase began, on main's wall clock (#442): the screen counts a wait's seconds from it on its own. */
   since?: number
+  /**
+   * The microphone's capture did not open (#530), whatever the error, the
+   * renderer's to tell and main's to say: no frame reaches the ear until one
+   * opens, which clears it. Absent otherwise.
+   */
+  captureFailed?: boolean
   /**
    * The Mic Mute is on: the ear is shown shut — not listening, monitoring
    * or transcribing, so every surface says "Microphone off" — and the
