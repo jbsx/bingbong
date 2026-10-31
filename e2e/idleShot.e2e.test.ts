@@ -94,18 +94,23 @@ function forecast() {
   }
 }
 
-/** This month's entries for the Calendar's stand-in source: a dinner tonight, a trip later in the month, a call next week. */
+/** The Calendar's stand-in source on any date: three of this month's entries (a dinner tonight, a call, a trip), and a dentist just past the month. */
 function calendarEvents() {
   const at = (days: number, hour: number): number => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour).getTime()
   }
   const event = (id: string, title: string, start: number, end: number, allDay = false) => ({ id, source: 'stand-in', title, start, end, allDay })
+  const today = new Date()
+  const left = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate()
   return {
     events: [
       event('dinner', 'Dinner with Barun', at(0, 23), at(0, 24)),
-      event('call', 'Call the landlord about the boiler', at(3, 10), at(3, 11)),
-      event('trip', 'Edinburgh', at(5, 0), at(7, 0), true),
+      // The card lists what starts before the month ends (core/calendar monthEntries): on its last days these three stay inside it.
+      left >= 1 ? event('call', 'Call the landlord about the boiler', at(Math.min(3, left), 10), at(Math.min(3, left), 11)) : event('call', 'Call the landlord about the boiler', at(0, 23) + 30 * 60_000, at(0, 24)),
+      event('trip', 'Edinburgh', at(Math.min(5, left), 0), at(Math.min(5, left) + 1, 0), true),
+      // Past the month: a dot under its day in the weeks, no line in the list.
+      event('dentist', 'Dentist', at(left + 2, 9), at(left + 2, 10)),
     ],
   }
 }
