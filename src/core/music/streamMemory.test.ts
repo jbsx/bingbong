@@ -20,6 +20,14 @@ describe('a remembered stream address (#516)', () => {
     expect(memory.recall('a', NOW)).toBeNull()
   })
 
+  it('an address that fails to parse is a value, not a fault: no expiry, and not kept', () => {
+    expect(keptUntil('')).toBeNull()
+    expect(keptUntil('//rr1.googlevideo.com/videoplayback?expire=1793021600')).toBeNull()
+    const memory = createStreamMemory()
+    memory.keep('a', { stream: 'not an address?expire=1793021600', availableAt: null })
+    expect(memory.recall('a', NOW)).toBeNull()
+  })
+
   it('a kept address comes back by its video until its time is up', () => {
     const memory = createStreamMemory()
     const stream = { stream: address(`expire=${NOW / 1000 + SIX_HOURS_S}&dur=240`), availableAt: NOW }

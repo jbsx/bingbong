@@ -20,12 +20,8 @@ export interface RememberedStream {
  * names no expiry.
  */
 export function keptUntil(address: string): number | null {
-  let query: URLSearchParams
-  try {
-    query = new URL(address).searchParams
-  } catch {
-    return null
-  }
+  if (!URL.canParse(address)) return null
+  const query = new URL(address).searchParams
   const expire = Number(query.get('expire') ?? NaN)
   if (!Number.isFinite(expire)) return null
   const trackS = Number(query.get('dur') ?? 0)
