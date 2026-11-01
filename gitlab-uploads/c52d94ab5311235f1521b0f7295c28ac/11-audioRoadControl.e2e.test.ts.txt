@@ -1,0 +1,99 @@
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { YOUTUBE_FIXTURE_SONG, startFixtureServer, type FixtureServer } from './fixtureServer'
+import { startHarness, type Harness } from './harness'
+import { cli } from './cliSupport'
+import { decisionScript, readingOf } from './scriptedJev'
+import { waitFor } from './waitFor'
+
+describe('audio road: control on the road the app ships', () => {
+  let harness: Harness
+  let fixture: FixtureServer
+  let userDataDir: string
+  const logLines = async <T>(prefix: string): Promise<T[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith(prefix)).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as T)
+  }
+  const idleShown = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
+  const cardIs = (state: string): Promise<true> => waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card--${state}')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+  const asksOf = async (line: string): Promise<{ state: string }[]> => (await logLines<{ state: string }>('asks-')).filter((ask) => ask.state.includes(JSON.stringify(line)))
+  const levelIn = (state: string): number => Number(/^Playing: .* volume (\d+)% /m.exec(state)![1])
+  const seconds = async (): Promise<number> => {
+    const [m, s] = (await harness.dashboardEval<string>(`document.querySelector('.idle-music-time')?.textContent ?? '0:00'`)).split(':').map(Number)
+    return m! * 60 + s!
+  }
+
+  beforeAll(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-audio-control-'))
+    await writeFile(join(userDataDir, 'settings.json'), '{}')
+    fixture = await startFixtureServer()
+    harness = await startHarness({
+      userDataDir,
+      fixture,
+      wakeFromBootIdle: false,
+      launchArgs: ['--browser-cli', '--mute-audio'],
+      pipeStdio: true,
+      env: {
+        BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin,
+        BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav'),
+        ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'media-loop'), readingOf('skip ahead ten seconds', 'media-forward', { amount: 'words' }), readingOf('turn the music up', 'media-volume', { amount: 'up-step' }), readingOf('pause the song', 'media-pause')),
+      },
+    })
+    await harness.waitForCliOutput(/bingbong browser harness/)
+    await waitFor(async () => ((await idleShown()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close().catch(() => {})
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('a play takes the audio road on the default', async () => {
+    expect(await cli(harness, 'play fixture song', /^(playing: |No videos|error:|not a command: )/)).toMatch(/^playing: /)
+    const start = await waitFor(async () => (await logLines<{ stage: string; detail?: { road?: string; fallback?: boolean } }>('perf-')).find((record) => record.stage === 'media-start'), { timeoutMs: 15_000, intervalMs: 250 })
+    expect(start.detail).toMatchObject({ road: 'audio', fallback: false })
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-music-title')?.textContent ?? ''`)).toBe(YOUTUBE_FIXTURE_SONG.title)
+    expect(await idleShown()).toBe(true)
+  }, 60_000)
+
+  it('"loop the song": one ask, the op by kind', async () => {
+    expect(await cli(harness, 'loop the song', /^(loop \[\d+\]: |not a command: |error:|No response)/)).toBe('loop [0]: loop on')
+    const asks = await asksOf('loop the song')
+    expect(asks).toHaveLength(1)
+    expect(asks[0]!.state).toMatch(/^Playing: "Fixture Song" playing .* loop off$/m)
+    const record = (await logLines<{ transcript?: string }>('decision-')).filter((line) => line.transcript === 'loop the song').at(-1)
+    expect(record).toMatchObject({ verb: 'media', card: 'appliance', target: null, mediaOp: { op: 'loop' }, ended: 'terminal' })
+  }, 30_000)
+
+  it('"skip ahead ten seconds" moves the song', async () => {
+    const before = await seconds()
+    expect(await cli(harness, 'skip ahead ten seconds', /^(forward \[\d+\]: |not a command: |error:|No response)/)).toMatch(/^forward \[0\]: \d:\d\d → \d:\d\d$/)
+    await waitFor(async () => ((await seconds()) >= before + 9 ? true : undefined), { timeoutMs: 5_000, intervalMs: 100 })
+  }, 30_000)
+
+  it('a volume line under the duck reads the level put back', async () => {
+    expect(await cli(harness, 'timer 1s', /^(timer|error:)/)).toMatch(/^timer/)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer--ringing')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    const line = await cli(harness, 'turn the music up', /^(volume \[\d+\]: |not a command: |error:|No response)/)
+    const level = levelIn((await asksOf('turn the music up'))[0]!.state)
+    expect(level).toBeGreaterThan(20)
+    expect(line).toBe(`volume [0]: volume ${level}% → ${level + 10}%`)
+    expect(await cli(harness, 'timer off', /^(timer off|error:)/)).toMatch(/^timer off/)
+    expect(await cli(harness, 'pause the song', /^(pause \[\d+\]: |not a command: |error:|No response)/)).toBe('pause [0]: paused')
+    expect(levelIn((await asksOf('pause the song'))[0]!.state)).toBe(level + 10)
+  }, 30_000)
+
+  it('the Now Playing card follows, and its tap plays again', async () => {
+    await cardIs('paused')
+    if (await harness.dashboardEval<boolean>(`!!document.querySelector('.turn-card')`)) await harness.clickDashboardElement('.turn-card')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 5_000, intervalMs: 100 })
+    await harness.clickDashboardElement('.idle-music-button--main')
+    await cardIs('playing')
+    expect(await idleShown()).toBe(true)
+  }, 30_000)
+})
