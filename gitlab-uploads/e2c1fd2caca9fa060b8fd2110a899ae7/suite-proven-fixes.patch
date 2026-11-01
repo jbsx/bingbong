@@ -1,0 +1,385 @@
+diff --git a/e2e/bin/fake-piper.mjs b/e2e/bin/fake-piper.mjs
+index 7c91f708..21385696 100755
+--- a/e2e/bin/fake-piper.mjs
++++ b/e2e/bin/fake-piper.mjs
+@@ -16,8 +16,8 @@ const note = (line) => {
+   if (log) appendFileSync(log, `${line}\n`)
+ }
+ 
+-/** 0.1 s of silence at 22050 Hz, s16le mono. */
+-const PCM = Buffer.alloc(2205 * 2)
++/** 0.1 s of silence at 22050 Hz, s16le mono, unless BINGBONG_FAKE_PIPER_SENTENCE_S says how long a sentence sounds. */
++const PCM = Buffer.alloc(Math.round(22050 * Number(process.env.BINGBONG_FAKE_PIPER_SENTENCE_S ?? 0.1)) * 2)
+ 
+ function wav(pcm) {
+   const header = Buffer.alloc(44)
+diff --git a/e2e/cliSupport.ts b/e2e/cliSupport.ts
+index 9cd0bafa..14eff8c4 100644
+--- a/e2e/cliSupport.ts
++++ b/e2e/cliSupport.ts
+@@ -1,10 +1,16 @@
+ import type { Harness } from './harness'
+ 
++/**
++ * How long a `play` on live YouTube may take to answer: since #497 the line waits through a pre-roll ad and says `playing:` once the
++ * song plays. Measured 2026-10-31: 24.2-24.8 s on 5 of 6 songs with a 20.3 s ad (`media-start-ad`). The same 90 s playTiming gives the song.
++ */
++export const LIVE_PLAY_ANSWER_MS = 90_000
++
+ /** Runs one CLI command and resolves with the first new matching output line. */
+-export async function cli(harness: Harness, line: string, match: RegExp): Promise<string> {
++export async function cli(harness: Harness, line: string, match: RegExp, timeoutMs?: number): Promise<string> {
+   const since = harness.cliMark()
+   harness.cliWrite(line)
+-  return harness.waitForCliOutput(match, { since })
++  return harness.waitForCliOutput(match, { since, ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+ }
+ 
+ /** "[7] link …" → 7 */
+diff --git a/e2e/electronApp.ts b/e2e/electronApp.ts
+index b9517b7d..33c0304e 100644
+--- a/e2e/electronApp.ts
++++ b/e2e/electronApp.ts
+@@ -10,7 +10,7 @@ export interface LaunchedApp {
+   /** Writable stdin — only when launched with `pipeStdio`. */
+   readonly stdin: Writable | null
+   /** Resolves with the first stdout line matching (only with `pipeStdio`). */
+-  waitForStdoutLine(match: RegExp, since: number): Promise<string>
++  waitForStdoutLine(match: RegExp, since: number, timeoutMs?: number): Promise<string>
+   /** Number of stdout lines captured so far — use as `since` to await only new output. */
+   stdoutLineCount(): number
+   /** Everything printed to stdout so far (only with `pipeStdio`). */
+@@ -156,7 +156,7 @@ export async function launchApp({
+       cdp,
+       stdin: proc.stdin,
+       stderrTail: () => stderr,
+-      waitForStdoutLine: (match: RegExp, since = 0) =>
++      waitForStdoutLine: (match: RegExp, since = 0, timeoutMs = 20000) =>
+         // Result lines follow the 'bingbong> ' prompt on the same stdout line;
+         // match against the line with the prompt prefix stripped.
+         waitFor(
+@@ -165,7 +165,7 @@ export async function launchApp({
+               .slice(since)
+               .find((line) => match.test(line.replace(/^bingbong> /, '')))
+               ?.replace(/^bingbong> /, ''),
+-          { timeoutMs: 20000, intervalMs: 100 },
++          { timeoutMs, intervalMs: 100 },
+         ),
+       stdoutLineCount: () => stdoutLines.length,
+       stdoutText: () => stdoutLines.join('\n'),
+diff --git a/e2e/harness.ts b/e2e/harness.ts
+index ddbbc201..64ea3b0e 100644
+--- a/e2e/harness.ts
++++ b/e2e/harness.ts
+@@ -81,7 +81,7 @@ export interface Harness {
+   /** Write one line to the app's CLI harness stdin (requires `pipeStdio`). */
+   cliWrite(line: string): void
+   /** Resolve with the first CLI harness stdout line matching. */
+-  waitForCliOutput(match: RegExp, options?: { since?: number }): Promise<string>
++  waitForCliOutput(match: RegExp, options?: { since?: number; timeoutMs?: number }): Promise<string>
+   /** Marker for `waitForCliOutput`'s `since` — only sees lines printed after this. */
+   cliMark(): number
+   /** Everything the CLI harness has printed so far. */
+@@ -674,8 +674,8 @@ async function buildHarness(
+       app.stdin.write(`${line}\n`)
+     },
+ 
+-    waitForCliOutput: (match: RegExp, options?: { since?: number }) =>
+-      app.waitForStdoutLine(match, options?.since ?? 0),
++    waitForCliOutput: (match: RegExp, options?: { since?: number; timeoutMs?: number }) =>
++      app.waitForStdoutLine(match, options?.since ?? 0, options?.timeoutMs),
+ 
+     cliMark: () => app.stdoutLineCount(),
+ 
+diff --git a/e2e/idleCpu.e2e.test.ts b/e2e/idleCpu.e2e.test.ts
+index b6197622..fe22a284 100644
+--- a/e2e/idleCpu.e2e.test.ts
++++ b/e2e/idleCpu.e2e.test.ts
+@@ -55,7 +55,7 @@ describe.skipIf(!out)('idle screen cpu with a song (constrained run)', () => {
+       wakeFromBootIdle: false,
+       launchArgs: ['--browser-cli', '--mute-audio'],
+       pipeStdio: true,
+-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song')) },
++      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_FAKE_YTDLP_STREAM: fixture.url('/youtube-fixture/song.wav'), ...decisionScript(readingOf('play fixture song')) },
+     })
+     await harness.waitForCliOutput(/bingbong browser harness/)
+     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+diff --git a/e2e/idleShot.e2e.test.ts b/e2e/idleShot.e2e.test.ts
+index c628e2a6..6f0d5b40 100644
+--- a/e2e/idleShot.e2e.test.ts
++++ b/e2e/idleShot.e2e.test.ts
+@@ -101,11 +101,16 @@ function calendarEvents() {
+     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour).getTime()
+   }
+   const event = (id: string, title: string, start: number, end: number, allDay = false) => ({ id, source: 'stand-in', title, start, end, allDay })
++  const today = new Date()
++  const left = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate()
+   return {
+     events: [
+       event('dinner', 'Dinner with Barun', at(0, 23), at(0, 24)),
+-      event('call', 'Call the landlord about the boiler', at(3, 10), at(3, 11)),
+-      event('trip', 'Edinburgh', at(5, 0), at(7, 0), true),
++      // The card lists what starts before the month ends (core/calendar monthEntries): on its last days these three stay inside it.
++      left >= 1 ? event('call', 'Call the landlord about the boiler', at(Math.min(3, left), 10), at(Math.min(3, left), 11)) : event('call', 'Call the landlord about the boiler', at(0, 23) + 30 * 60_000, at(0, 24)),
++      event('trip', 'Edinburgh', at(Math.min(5, left), 0), at(Math.min(5, left) + 1, 0), true),
++      // Past the month: a dot under its day in the weeks, no line in the list.
++      event('dentist', 'Dentist', at(left + 2, 9), at(left + 2, 10)),
+     ],
+   }
+ }
+@@ -443,6 +448,8 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review
+       await new Promise((resolve) => setTimeout(resolve, 600))
+       return
+     }
++    // The last line's Turn Card lies over the date until 15 s after the line is over, and a tap on it takes the card away, not the screen.
++    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 100 })
+     await harness.clickDashboardElement('.idle-date')
+     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+diff --git a/e2e/music.e2e.test.ts b/e2e/music.e2e.test.ts
+index 6d463848..de4c6503 100644
+--- a/e2e/music.e2e.test.ts
++++ b/e2e/music.e2e.test.ts
+@@ -4,7 +4,7 @@ import { join } from 'node:path'
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+ import { loudnessFactor } from '../src/core/music/loudness'
+ import { startHarness, type Harness } from './harness'
+-import { cli } from './cliSupport'
++import { cli, LIVE_PLAY_ANSWER_MS } from './cliSupport'
+ import { decisionScript, readingOf } from './scriptedJev'
+ import { waitFor } from './waitFor'
+ 
+@@ -63,7 +63,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
+ 
+   beforeAll(async () => {
+     // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Appliance Verb.
+-    const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody'].map((line) => readingOf(line)))
++    const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody', 'play daft punk one more time'].map((line) => readingOf(line)), readingOf('not that one', 'correct'))
+     harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
+     await harness.waitForCliOutput(/bingbong browser harness/)
+     // A profile that has met YouTube, as every used one has. `play` lands
+@@ -89,7 +89,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
+   }
+ 
+   it('`play <a known song>` lands on its watch page with the video playing', async () => {
+-    const line = await cli(harness, 'play rick astley never gonna give you up', /^(playing: id=|No videos|.*can't be played|error:)/)
++    const line = await cli(harness, 'play rick astley never gonna give you up', /^(playing: id=|No videos|.*can't be played|error:)/, LIVE_PLAY_ANSWER_MS)
+     expect(line).toMatch(/^playing: id=/)
+     firstId = /id=(\S+)/.exec(line)![1]!
+     const playing = await until(harness, (video) => video.found && !video.paused && video.currentTime > 0.5)
+@@ -119,7 +119,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
+     const secondId = /id=(\S+)/.exec(queued)![1]!
+     // Queuing never left the song playing.
+     expect((await facts(harness)).id).toBe(firstId)
+-    const skipped = await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/)
++    const skipped = await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/, LIVE_PLAY_ANSWER_MS)
+     expect(skipped).toMatch(new RegExp(`^playing: id=${secondId}`))
+     const second = await until(harness, (video) => video.id === secondId && video.found && !video.paused && video.currentTime > 0.5)
+     expect(second.path).toBe('/watch')
+@@ -148,10 +148,10 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
+ 
+   it('`not that one` plays the second result, and once it stayed a second `play` opens it with no results page (#345, AC5)', async () => {
+     const SONG = 'daft punk one more time'
+-    const first = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/)
++    const first = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/, LIVE_PLAY_ANSWER_MS)
+     expect(first).toMatch(/^playing: id=/)
+     const pickedId = /id=(\S+)/.exec(first)![1]!
+-    const corrected = await cli(harness, 'not that one', /^(playing: id=|no more results|nothing to correct|not a watch page|error:)/)
++    const corrected = await cli(harness, 'not that one', /^(playing: id=|no more results|nothing to correct|not a watch page|error:)/, LIVE_PLAY_ANSWER_MS)
+     expect(corrected).toMatch(/^playing: id=/)
+     const secondId = /id=(\S+)/.exec(corrected)![1]!
+     expect(secondId).not.toBe(pickedId)
+@@ -160,7 +160,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
+     await harness.paneEval(`(() => { document.querySelector('#movie_player video').currentTime = 31 })()`)
+     await until(harness, (video) => video.currentTime >= 31)
+     await waitFor(async () => ((await readFile(join(harness.userDataDir, 'songs.json'), 'utf8').catch(() => '')).includes(secondId) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+-    const again = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/)
++    const again = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/, LIVE_PLAY_ANSWER_MS)
+     expect(again).toMatch(new RegExp(`^playing: id=${secondId}`))
+     const plays = (await decisions()).filter((record) => record.type === 'decision' && record.verb === 'play')
+     expect(plays.slice(-3).map((record) => [record.video, record.pick])).toEqual([
+@@ -217,14 +217,8 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
+       join(userDataDir, 'songs.json'),
+       JSON.stringify({ songs: [{ words: LOUD.words, id: LOUD.id, title: 'Tum Se Tum Tak', at }, { words: LOUDER.words, id: LOUDER.id, title: 'The second loud track', at }] }),
+     )
+-    // The `volume-N` reading for whichever ref the watch page gives its video: each entry answers only the ask whose card carries that media ref.
+-    // 250 of them stay under the 128 KB a single environment string may take.
+-    const script = JSON.parse(decisionScript(readingOf(`play ${LOUD.words}`), readingOf(`queue ${LOUDER.words}`)).BINGBONG_DECISION_SCRIPT) as Record<string, unknown>[]
+-    const volume = JSON.parse(decisionScript(readingOf(SET_LINE, 'volume-1', { amount: 'to' })).BINGBONG_DECISION_SCRIPT)[0] as { answers: Record<string, unknown> }
+-    for (let ref = 1; ref <= 250; ref += 1) {
+-      script.push({ when: `[${ref}] media "`, answers: { ...volume.answers, action: { type: 'choice', choice: `volume-${ref}`, confidence: 0.9 } } })
+-    }
+-    harness = await startHarness({ userDataDir, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: { BINGBONG_DECISION_SCRIPT: JSON.stringify(script) } })
++    // `volume-*` answers with whichever ref the watch page gives its video (#459).
++    harness = await startHarness({ userDataDir, launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env: decisionScript(readingOf(`play ${LOUD.words}`), readingOf(`queue ${LOUDER.words}`), readingOf(SET_LINE, 'media-volume', { amount: 'to' })) })
+     await harness.waitForCliOutput(/bingbong browser harness/)
+     await cli(harness, 'navigate https://www.youtube.com/', /^(navigated|error)/)
+   }, 120_000)
+@@ -246,12 +240,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('a Media Op\'s volume carries
+     )
+ 
+   it('a `volume` Media Op to 20 then `skip` leaves the next song at 20 × its factor ÷ the last one\'s: about 19.9', async () => {
+-    expect(await cli(harness, `play ${LOUD.words}`, /^(playing: id=|No videos|.*can't be played|error:)/)).toMatch(new RegExp(`^playing: id=${LOUD.id}`))
++    expect(await cli(harness, `play ${LOUD.words}`, /^(playing: id=|No videos|.*can't be played|error:)/, LIVE_PLAY_ANSWER_MS)).toMatch(new RegExp(`^playing: id=${LOUD.id}`))
+     expect(await cli(harness, `queue ${LOUDER.words}`, /^(queued: id=|No videos|Couldn't search|error:)/)).toMatch(new RegExp(`^queued: id=${LOUDER.id}`))
+     const before = await levelUntil((facts) => facts.id === LOUD.id && !facts.ad && facts.currentTime > 1, 90_000)
+     expect(await cli(harness, SET_LINE, /^(volume \[\d+\]: |error:|No response)/)).toMatch(/^volume \[\d+\]: volume \d+% → 20%$/)
+     expect((await level()).volume).toBeCloseTo(20, 1)
+-    expect(await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/)).toMatch(new RegExp(`^playing: id=${LOUDER.id}`))
++    expect(await cli(harness, 'skip', /^(playing: id=|not a watch page|error:)/, LIVE_PLAY_ANSWER_MS)).toMatch(new RegExp(`^playing: id=${LOUDER.id}`))
+     // Past any ad and the song's first second, where YouTube may put its own level back.
+     const after = await levelUntil((facts) => facts.id === LOUDER.id && !facts.ad && facts.currentTime > 2.5, 90_000)
+     const expected = 20 * (loudnessFactor(after.loudnessDb) / loudnessFactor(before.loudnessDb))
+diff --git a/e2e/playTiming.e2e.test.ts b/e2e/playTiming.e2e.test.ts
+index 9320a575..7b21f192 100644
+--- a/e2e/playTiming.e2e.test.ts
++++ b/e2e/playTiming.e2e.test.ts
+@@ -1,7 +1,7 @@
+ import { writeFileSync } from 'node:fs'
+ import { afterAll, beforeAll, describe, it } from 'vitest'
+ import { startHarness, type Harness } from './harness'
+-import { cli } from './cliSupport'
++import { cli, LIVE_PLAY_ANSWER_MS } from './cliSupport'
+ import { decisionScript, readingOf } from './scriptedJev'
+ import { DEFAULT_ADBLOCK_LISTS, DEFAULT_ADBLOCK_RESOURCES_URL } from '../src/core/adblock/adblockConfig'
+ import { waitFor } from './waitFor'
+@@ -47,7 +47,7 @@ describe.skipIf(!out)('play timing (constrained run, live YouTube)', () => {
+   for (const line of SONGS) {
+     it(line, async () => {
+       const started = Date.now()
+-      const answer = await cli(harness, line, /^(playing: id=|No videos|.*can.t be played|error:)/)
++      const answer = await cli(harness, line, /^(playing: id=|No videos|.*can.t be played|error:)/, LIVE_PLAY_ANSWER_MS)
+       const answeredMs = Date.now() - started
+       const id = /id=(\S+)/.exec(answer)?.[1] ?? null
+       let ad = false
+diff --git a/e2e/speechChromium.e2e.test.ts b/e2e/speechChromium.e2e.test.ts
+index 64cdeb41..c5e6d932 100644
+--- a/e2e/speechChromium.e2e.test.ts
++++ b/e2e/speechChromium.e2e.test.ts
+@@ -44,7 +44,7 @@ describe('speech through Chromium e2e', () => {
+     harness = await startHarness({
+       launchArgs: ['--browser-cli'],
+       pipeStdio: true,
+-      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_SPEECH_PLAYER: 'chromium' },
++      env: { BINGBONG_PIPER_VOICE_DIR: voices, BINGBONG_FAKE_TTS_LOG: log, BINGBONG_SPEECH_PLAYER: 'chromium', BINGBONG_FAKE_PIPER_SENTENCE_S: '0.5' },
+     })
+     await harness.waitForCliOutput(/bingbong browser harness/)
+   })
+@@ -59,8 +59,9 @@ describe('speech through Chromium e2e', () => {
+     // The line played out: the first sound and the whole playback were timed.
+     const playback = await waitFor(async () => spans().find((span) => span.stage === 'tts-playback'), { timeoutMs: 15_000, intervalMs: 100 })
+     expect(spans().some((span) => span.stage === 'tts-first-sound')).toBe(true)
+-    // Two sentences of 0.1 s from the scripted piper, back to back.
+-    expect(playback.durMs).toBeGreaterThan(150)
++    // Two sentences of 0.5 s from the scripted piper, back to back. A fresh silent context's clock runs ahead of the wall (one sentence
++    // of 0.1 s + 0.1 s read 146 ms, 2026-10-31; these read 956-968 ms), so the line between one sentence and both sits well clear of it.
++    expect(playback.durMs).toBeGreaterThan(750)
+     const lines = readFileSync(log, 'utf8').split('\n')
+     expect(lines.filter((line) => line.startsWith('piper-line '))).toHaveLength(2)
+     expect(lines.some((line) => line.startsWith('aplay '))).toBe(false)
+diff --git a/e2e/speechEcho.e2e.test.ts b/e2e/speechEcho.e2e.test.ts
+index 4305a8b7..0e14df8c 100644
+--- a/e2e/speechEcho.e2e.test.ts
++++ b/e2e/speechEcho.e2e.test.ts
+@@ -148,9 +148,7 @@ async function measure(arm: 'aplay' | 'chromium', room: Room): Promise<ArmResult
+   }
+ }
+ 
+-// Off until it has a long line again (#514): typed `read` no longer speaks, and the page's alert below did not sound in
+-// the CLI harness (a 60 s wait for its playback, 2026-10-30).
+-describe.skip("the echo canceller and the app's own voice (#490)", () => {
++describe.skipIf(process.env.BINGBONG_SPEECH_ECHO !== '1' || !existsSync(PIPER))("the echo canceller and the app's own voice (#490)", () => {
+   const dir = mkdtempSync(join(tmpdir(), 'bingbong-speech-echo-'))
+   afterAll(() => rmSync(dir, { recursive: true, force: true }))
+ 
+diff --git a/e2e/youtube.e2e.test.ts b/e2e/youtube.e2e.test.ts
+index f1678bcc..9bac6cd8 100644
+--- a/e2e/youtube.e2e.test.ts
++++ b/e2e/youtube.e2e.test.ts
+@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
+ import { dirname, join } from 'node:path'
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+ import { startHarness, type Harness } from './harness'
+-import { cli, refOf } from './cliSupport'
++import { LIVE_PLAY_ANSWER_MS, cli, refOf } from './cliSupport'
+ import { waitFor } from './waitFor'
+ import { decisionScript, readingOf } from './scriptedJev'
+ 
+@@ -113,7 +113,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+       launchArgs: ['--browser-cli', '--mute-audio'],
+       pipeStdio: true,
+       // The duck's lines (#459) are Jev's: `play` the Appliance Verb, the volume the watch page's own media ref, whichever number it has.
+-      env: decisionScript(readingOf(DUCK_SONG_LINE), readingOf(DUCK_VOLUME_LINE, 'volume-*', { amount: 'up-step' })),
++      env: decisionScript(readingOf(DUCK_SONG_LINE), readingOf(DUCK_VOLUME_LINE, 'media-volume', { amount: 'up-step' })),
+     })
+     await harness.waitForCliOutput(/bingbong browser harness/)
+     screenshotPath = join(await mkdtemp(join(tmpdir(), 'bingbong-yt-')), 'gate.jpg')
+@@ -126,7 +126,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+   })
+ 
+   it('snapshots the youtube home page with numbered refs', async () => {
+-    await cli(harness, `navigate ${YOUTUBE_HOME}`, /^navigated: https:\/\/(www\.)?youtube\.com\//)
++    await cli(harness, `navigate ${YOUTUBE_HOME}`, /^navigated: url=https:\/\/(www\.)?youtube\.com\//)
+     await harness.waitForPaneUrl(YOUTUBE_HOME)
+     await harness.focusPane()
+     await dismissConsentDialog(harness)
+@@ -159,7 +159,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+       const lines = await readRefLines(harness)
+       candidates = selectVideoLinks(lines)
+       if (candidates.length === 0) {
+-        await cli(harness, 'scroll down', /^scrolled down$/)
++        await cli(harness, 'scroll down', /^scrolled down: /)
+       }
+     }
+     expect(candidates.length).toBeGreaterThan(0)
+@@ -171,12 +171,12 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+     let landed: string | undefined
+     for (let batch = 0; batch < 3 && !landed; batch++) {
+       if (batch > 0) {
+-        await cli(harness, 'scroll down', /^scrolled down$/)
++        await cli(harness, 'scroll down', /^scrolled down: /)
+         candidates = selectVideoLinks(await readRefLines(harness))
+       }
+       for (const candidate of candidates.slice(0, 5)) {
+         const ref = refOf(candidate)
+-        await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
++        await cli(harness, `click ${ref}`, new RegExp(`^clicked \\[${ref}\\]: `))
+         landed = await waitFor(
+           async () => {
+             const url = await harness.paneUrl()
+@@ -231,7 +231,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+   })
+ 
+   it('a volume line under the duck on the real watch page is read from the level put back, and the release keeps the level set (#459)', async () => {
+-    expect(await cli(harness, DUCK_SONG_LINE, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)).toMatch(/^playing: id=/)
++    expect(await cli(harness, DUCK_SONG_LINE, /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/, LIVE_PLAY_ANSWER_MS)).toMatch(/^playing: id=/)
+     const video = `document.querySelector('#movie_player video')`
+     // Past any ad: the song itself playing in YouTube's player.
+     await waitFor(
+@@ -259,7 +259,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
+   }, 150_000)
+ 
+   it('captures a real screenshot of youtube', async () => {
+-    await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^saved screenshot to ${screenshotPath} \\(\\d+ bytes\\)$`))
++    await cli(harness, `screenshot ${screenshotPath}`, new RegExp(`^screenshot saved: ${screenshotPath}`))
+     const bytes = await readFile(screenshotPath)
+     expect(bytes.byteLength).toBeGreaterThan(10_000)
+     expect(bytes[0]).toBe(0xff)
+diff --git a/src/main/run/commandRunner.ts b/src/main/run/commandRunner.ts
+index c7cec2f0..c4e04ea1 100644
+--- a/src/main/run/commandRunner.ts
++++ b/src/main/run/commandRunner.ts
+@@ -1,3 +1,4 @@
++import { APP_TURN_ID } from '../../core/perf/appTelemetry'
+ import type { BrowserController, FileChooser, PageLanding, VisualGroundingController } from '../../core/ports/browser'
+ import type { ShelfFile } from '../../core/shelf/shelf'
+ import type { KeepCapture } from '../shelf/keepCapture'
+@@ -2368,7 +2369,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
+    */
+   function tellSite(text: string, alert: boolean): void {
+     publish({ type: 'site_question', text, ...(alert ? { alert: true } : {}), at: at() })
+-    void deps.speech?.speak(text).catch((error: unknown) => reportFault('run.commandRunner.siteSpeak', error))
++    void deps.speech?.speak(text, { turnId: APP_TURN_ID }).catch((error: unknown) => reportFault('run.commandRunner.siteSpeak', error))
+   }
+ 
+   deps.siteQuestions?.subscribe((event) => {
