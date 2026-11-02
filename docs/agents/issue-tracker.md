@@ -4,7 +4,7 @@ Issues and specs for this repo live as GitHub issues on `jbsx/bingbong`. Use the
 
 The account was suspended from 2026-10-25 to about 2026-11-01, and the tracker lived on GitLab meanwhile. #429–#555 were moved back with their numbers, so a bare `#n` means the same issue on both. Each moved issue and comment opens with a small line giving its GitLab date, because GitHub stamps it with the day of the move. A "note 4116396410" in older prose is a GitLab note id: GitHub has no such number, so find the comment by its date.
 
-GitLab (`jbsx/bingbong`, private) stays as a code backup: `git push origin` goes to both. If the GitLab half fails, for instance a shell with no ssh agent, the GitHub half has still landed, so read the output instead of pushing again. Its issues are frozen, so nothing new is filed there.
+GitLab (`jbsx/bingbong`, private) stays as a code backup: `git push origin` reaches GitHub only, and `git push gitlab main` brings the backup up. A shell with no ssh agent cannot reach it; that loses nothing, since GitHub is the home. Its issues are frozen, so nothing new is filed there.
 
 ## Conventions
 
