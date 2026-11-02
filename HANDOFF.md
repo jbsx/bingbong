@@ -5,7 +5,7 @@ Written by the orchestrator for the next one. The previous handoff (2026-10-28 r
 ## Goal (owner, 2026-10-29)
 "Make the app play music with no fuss and as quickly as possible whilst still remaining reliable." Issues #502–#510 were handed over with "answer on my behalf". Opus implementers ran via `claude -p --model opus --permission-mode auto --settings <job>/tmp/impl-settings.json -w impl-N`, with a context-guard hook (300k soft, 350k hard).
 
-## Done (all on gitlab main, all CLOSED)
+## Done (all on main, all CLOSED)
 | Issue | What landed |
 |---|---|
 | #502 | Now Playing shows title + channel on both roads; 2-correct-by-radiohead 3/3 on Jev |
@@ -27,7 +27,7 @@ Runs **0.1.4-local.202610291303 = main c6db2c34**, pushed 13:04 on the owner's w
 
 ## How to verify
 ```sh
-git fetch gitlab && git log --oneline -3 gitlab/main
+git fetch origin && git log --oneline -3 origin/main
 pnpm test && pnpm typecheck && pnpm lint
 ssh jbsx@192.168.1.217 'ls -l ~/.local/bin/bingbong.AppImage; ls ~/.config/bingbong/yt-dlp'
 ```

@@ -154,7 +154,7 @@ measure. Measuring runs on the free models; Jev joins only on
 
 ### Issue tracker
 
-Issues are tracked in GitLab Issues on `jbsx/bingbong`, over its REST API, while the GitHub account is suspended. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues on `jbsx/bingbong`. See `docs/agents/issue-tracker.md`.
 
 ### Bugs
 
