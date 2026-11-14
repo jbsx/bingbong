@@ -42,6 +42,13 @@ export function attachUpdater(options: { windows(): readonly IdleShown[]; env: R
   if (!app.isPackaged || !options.env.APPIMAGE) return { shownChanged: () => {}, checkNow: async () => ({ kind: 'unavailable' }) }
   const { autoUpdater } = electronUpdater
   autoUpdater.autoDownload = true
+  // Only Releases, never a prerelease channel. electron-updater turns
+  // prereleases on by itself when the running version has a prerelease
+  // part, and a `kiosk:push` build is one (`0.1.4-local.<stamp>`): it then
+  // looks only for a "local" channel, finds none among the Releases, and
+  // fails every check with "No published versions on GitHub". That held the
+  // kiosk on 0.1.4-local from 2026-10-31 to 2026-11-14 (315 failed checks).
+  autoUpdater.allowPrerelease = false
   // One road in: the Idle Screen, never a quit in the middle of something.
   autoUpdater.autoInstallOnAppQuit = false
   // Under systemd (INVOCATION_ID) the unit starts the new version; anywhere else the updater does.
