@@ -1429,8 +1429,10 @@ steps off. The first QN-family scale it connects to is remembered by
 address in settings and others are ignored after that; Forget in the Weight
 section clears it. A scale quiet for 15 s is let go, and a scale let go
 is not connected again until its adverts have stopped for 10 s (it has
-slept): a connection keeps it awake, so reconnecting at once looped a
-connect and a drop every half minute (2026-10-20). With Bluetooth
+slept), counted from the end of the link at the earliest, since no advert
+is heard while one holds: a connection keeps it awake, so reconnecting at
+once looped a connect and a drop every half minute (2026-10-20, again
+2026-11-14 while the silence was counted from before the link). With Bluetooth
 missing, off or without LE, it says so once to the log and in the Weight
 section, and tries again when an adapter or BlueZ appears; nothing else is
 disturbed. The e2e replaces it with a stand-in scale that plays captured

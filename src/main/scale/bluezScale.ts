@@ -209,7 +209,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         busy = false
         connected = null
         endSession = () => undefined
-        if (reached) wake.hold(address)
+        if (reached) wake.hold(address, Date.now())
         events.disconnected()
         if (!stopped && adapter !== null) {
           status({ state: 'searching', detail: '' })

@@ -36,4 +36,20 @@ describe('createWakeGate', () => {
     gate.hold(SCALE)
     expect(gate.heard('11:22:33:44:55:66', 0)).toBe(true)
   })
+
+  it('holds a scale still awake when a link ends, though no advert was heard during it — the kiosk loop of 2026-11-14', () => {
+    // Discovery is off for the whole link, so the advert before it is the last one heard.
+    const gate = createWakeGate()
+    expect(gate.heard(SCALE, 0)).toBe(true)
+    gate.hold(SCALE, 17_000)
+    expect(gate.heard(SCALE, 17_800)).toBe(false)
+    for (let at = 18_000; at <= 60_000; at += 1_000) expect(gate.heard(SCALE, at)).toBe(false)
+  })
+
+  it('connects a scale stepped on again after it fell silent for ASLEEP_MS from the end of the link', () => {
+    const gate = createWakeGate()
+    gate.heard(SCALE, 0)
+    gate.hold(SCALE, 17_000)
+    expect(gate.heard(SCALE, 17_000 + ASLEEP_MS)).toBe(true)
+  })
 })
