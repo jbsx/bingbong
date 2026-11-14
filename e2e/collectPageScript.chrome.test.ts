@@ -522,7 +522,10 @@ describe.skipIf(!canDriveChrome)('the collector reads whether the document is in
   let fixtures: FixtureChrome
 
   beforeAll(async () => {
-    fixtures = await serveFixtures({ '/player': '<body><div id="player"><button>Play</button></div><p>A player page.</p></body>' }, 'bingbong-collector-fullscreen-')
+    fixtures = await serveFixtures(
+      { '/player': `<body><div id="player"><button id="go" onclick="document.getElementById('player').requestFullscreen()">Play</button></div><p>A player page.</p></body>` },
+      'bingbong-collector-fullscreen-',
+    )
   }, 60_000)
 
   afterAll(() => fixtures?.close())
@@ -531,8 +534,11 @@ describe.skipIf(!canDriveChrome)('the collector reads whether the document is in
     await fixtures.open('/player')
     const read = async (): Promise<string> => commandState('exit full screen', commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))).split('\n').find((line) => line.startsWith('Full screen:'))!
     expect(await read()).toBe('Full screen: off')
-    // As a person's press would: requestFullscreen needs a gesture.
-    await fixtures.chrome.cdp.send('Runtime.evaluate', { expression: "document.getElementById('player').requestFullscreen()", userGesture: true, awaitPromise: true })
+    // As a person's press would: requestFullscreen needs a gesture, and from
+    // Chrome 157 headless refuses an evaluate's userGesture ("not granted"),
+    // so the press is a real mouse click on a button that asks for it.
+    const at = await fixtures.chrome.evaluate<{ x: number; y: number }>("(() => { const box = document.getElementById('go').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 } })()")
+    for (const type of ['mousePressed', 'mouseReleased'] as const) await fixtures.chrome.cdp.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 })
     await until(() => fixtures.chrome.evaluate<boolean>('document.fullscreenElement !== null'), 'the page to go full screen')
     expect(await read()).toBe('Full screen: on')
     // The action probe reads it too: a press whose only effect is full screen changed the page.
