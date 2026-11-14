@@ -1,6 +1,7 @@
 import * as dbus from 'dbus-next'
 import type { QnCharacteristic } from '../../core/scale/qn'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
+import { CallLimitError, withinLimit } from '../../core/scale/callLimit'
 import { createWakeGate } from '../../core/scale/wakeGate'
 import { reportFault } from '../../core/trace/fault'
 import { waitForServices } from './servicesWait'
@@ -46,6 +47,23 @@ const QN_NAME = /qn-scale|renpho-scale/i
 
 /** How long the services may take to resolve after Connect returns. */
 const RESOLVE_MS = 10_000
+// Every awaited BlueZ call has a limit (#556): dbus-next sets none, and on the
+// kiosk one call BlueZ never answered held the listener for days.
+/**
+ * Calls BlueZ answers from its own state (the object fetch, introspection,
+ * a property, the discovery switches): they answer in milliseconds, so this
+ * is a guess with room for a loaded i3 and a busy daemon, not a measure.
+ */
+const LOCAL_CALL_MS = 10_000
+/**
+ * Calls that wait on the radio. Connect at range ends in the kernel's own
+ * give-up, `le-connection-abort-by-local`, after its LE connection timeout
+ * (HCI_LE_CONN_TIMEOUT, 20 s); StartNotify and WriteValue are one ATT
+ * request each, which BlueZ gives up after the ATT transaction timeout of
+ * 30 s. The limit sits above both, so a slow link fails with BlueZ's own
+ * error and only a call BlueZ never answers meets it.
+ */
+const AIR_CALL_MS = 35_000
 /** How long between connection attempts to the same advert, so a scale that refuses is not hammered. */
 const RETRY_CONNECT_MS = 3_000
 /** How often an unavailable Bluetooth is tried again, beside the adapter and service appearing. */
@@ -73,7 +91,13 @@ function unavailableDetail(error: unknown): string {
   return `Bluetooth unavailable: ${text}`
 }
 
-export function createBluezScaleTransport(): ScaleTransport {
+export interface BluezScaleOptions {
+  /** The system bus; a test hands in a fake BlueZ. */
+  readonly systemBus?: () => dbus.MessageBus
+}
+
+export function createBluezScaleTransport(options: BluezScaleOptions = {}): ScaleTransport {
+  const systemBus = options.systemBus ?? (() => dbus.systemBus())
   return (events) => {
     let stopped = false
     let bus: dbus.MessageBus | null = null
@@ -112,16 +136,25 @@ export function createBluezScaleTransport(): ScaleTransport {
       }
     }
 
-    const objects = async (): Promise<Objects> => {
-      const root = await bus!.getProxyObject(BLUEZ, '/')
-      return (await root.getInterface(OBJECT_MANAGER).GetManagedObjects()) as Objects
+    /** A BlueZ object's proxy: dbus-next introspects it, which is a call of its own. */
+    const proxyFor = (path: string, abandoned?: Promise<unknown>): Promise<dbus.ProxyObject> =>
+      withinLimit(bus!.getProxyObject(BLUEZ, path), `Introspect ${path}`, LOCAL_CALL_MS, abandoned)
+
+    const objects = async (abandoned?: Promise<unknown>): Promise<Objects> => {
+      const root = await proxyFor('/', abandoned)
+      return (await withinLimit(root.getInterface(OBJECT_MANAGER).GetManagedObjects(), 'GetManagedObjects', LOCAL_CALL_MS, abandoned)) as Objects
     }
 
     const discover = async (): Promise<void> => {
       if (adapter === null) return
-      await adapter.SetDiscoveryFilter({ Transport: new dbus.Variant('s', 'le'), UUIDs: new dbus.Variant('as', [QN_SERVICE]), DuplicateData: new dbus.Variant('b', true) })
+      const held = adapter
+      await withinLimit(
+        held.SetDiscoveryFilter({ Transport: new dbus.Variant('s', 'le'), UUIDs: new dbus.Variant('as', [QN_SERVICE]), DuplicateData: new dbus.Variant('b', true) }),
+        'SetDiscoveryFilter',
+        LOCAL_CALL_MS,
+      )
       const props = (await objects())[adapterPath!]?.[ADAPTER]
-      if (value<boolean>(props, 'Discovering') !== true) await adapter.StartDiscovery()
+      if (value<boolean>(props, 'Discovering') !== true) await withinLimit(held.StartDiscovery(), 'StartDiscovery', LOCAL_CALL_MS)
     }
 
     const isScale = (address: string | undefined, props: Props | undefined): boolean => {
@@ -140,24 +173,31 @@ export function createBluezScaleTransport(): ScaleTransport {
       const cleanups: (() => void)[] = []
       let reached = false
       let device: dbus.ClientInterface | null = null
+      // The session's end also abandons any call it is waiting on, so a BlueZ restart or a lost adapter ends it at once.
+      let ended: () => void = () => undefined
+      const over = new Promise<void>((resolve) => (ended = resolve))
+      endSession = ended
+      const disconnect = async (): Promise<void> => {
+        if (device === null) return
+        await withinLimit(device.Disconnect(), 'Disconnect', AIR_CALL_MS).catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
+      }
       try {
         // Discovery may already be off; the connection goes ahead either way.
-        await adapter?.StopDiscovery().catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error))
-        const proxy = await bus!.getProxyObject(BLUEZ, path)
+        if (adapter !== null) await withinLimit(adapter.StopDiscovery(), 'StopDiscovery', LOCAL_CALL_MS, over).catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error))
+        const proxy = await proxyFor(path, over)
         device = proxy.getInterface(DEVICE)
         const deviceProps = proxy.getInterface(PROPERTIES)
-        let ended: () => void = () => undefined
-        const over = new Promise<void>((resolve) => (ended = resolve))
-        endSession = ended
         const onDevice = (iface: string, changed: Props): void => {
           if (iface === DEVICE && value<boolean>(changed, 'Connected') === false) ended()
         }
         deviceProps.on('PropertiesChanged', onDevice)
         cleanups.push(() => deviceProps.removeListener('PropertiesChanged', onDevice))
-        await device.Connect()
+        await withinLimit(device.Connect(), 'Connect', AIR_CALL_MS, over)
         // A drop mid-resolve ends the session at once (#397).
-        await waitForServices(async () => (await deviceProps.Get(DEVICE, 'ServicesResolved')).value === true, over, { timeoutMs: RESOLVE_MS })
-        const all = await objects()
+        const resolved = async (): Promise<boolean> =>
+          (await withinLimit<dbus.Variant>(deviceProps.Get(DEVICE, 'ServicesResolved'), 'Get ServicesResolved', LOCAL_CALL_MS, over)).value === true
+        await waitForServices(resolved, over, { timeoutMs: RESOLVE_MS })
+        const all = await objects(over)
         const characteristics = new Map<string, string>()
         for (const [charPath, ifaces] of Object.entries(all)) {
           const char = ifaces[CHARACTERISTIC]
@@ -166,16 +206,14 @@ export function createBluezScaleTransport(): ScaleTransport {
         const writer = async (short: QnCharacteristic): Promise<dbus.ClientInterface> => {
           const charPath = characteristics.get(uuid(short))
           if (charPath === undefined) throw new Error(`the scale has no ${short}`)
-          return (await bus!.getProxyObject(BLUEZ, charPath)).getInterface(CHARACTERISTIC)
+          return (await proxyFor(charPath, over)).getInterface(CHARACTERISTIC)
         }
         const writers = { ffe3: await writer('ffe3'), ffe4: await writer('ffe4') }
         const connection: ScaleConnection = {
           write: async (characteristic, bytes) => {
-            await writers[characteristic].WriteValue(Buffer.from(bytes), { type: new dbus.Variant('s', 'request') })
+            await withinLimit(writers[characteristic].WriteValue(Buffer.from(bytes), { type: new dbus.Variant('s', 'request') }), `WriteValue ${characteristic}`, AIR_CALL_MS, over)
           },
-          disconnect: async () => {
-            await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
-          },
+          disconnect,
         }
         // The session exists before notifications start: the scale sends its info frame at once, and it must be answered.
         connected = connection
@@ -185,7 +223,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         for (const notifyUuid of NOTIFY) {
           const charPath = characteristics.get(notifyUuid)
           if (charPath === undefined) continue
-          const proxyChar = await bus!.getProxyObject(BLUEZ, charPath)
+          const proxyChar = await proxyFor(charPath, over)
           const charProps = proxyChar.getInterface(PROPERTIES)
           const onValue = (iface: string, changed: Props): void => {
             const bytes = value<Buffer>(changed, 'Value')
@@ -193,17 +231,17 @@ export function createBluezScaleTransport(): ScaleTransport {
           }
           charProps.on('PropertiesChanged', onValue)
           cleanups.push(() => charProps.removeListener('PropertiesChanged', onValue))
-          // ffe2 only indicates acknowledgements; a scale without it still weighs.
-          await proxyChar
-            .getInterface(CHARACTERISTIC)
-            .StartNotify()
-            .catch((error: unknown) => reportFault('scale.bluez.startNotify', error))
+          // ffe2 only indicates acknowledgements; a scale without it still weighs. A call that hangs ends the session all the same.
+          await withinLimit(proxyChar.getInterface(CHARACTERISTIC).StartNotify(), 'StartNotify', AIR_CALL_MS, over).catch((error: unknown) => {
+            if (error instanceof CallLimitError) throw error
+            reportFault('scale.bluez.startNotify', error)
+          })
         }
         await over
       } catch (error) {
         // A stop ends the session too; only a link that failed on its own is a fault.
         if (!stopped) reportFault('scale.bluez.session', error)
-        await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
+        await disconnect()
       } finally {
         for (const cleanup of cleanups) cleanup()
         busy = false
@@ -230,7 +268,7 @@ export function createBluezScaleTransport(): ScaleTransport {
     /** Follow a device's adverts: with DuplicateData each one moves its RSSI. */
     const watch = async (path: string, initial: Props): Promise<void> => {
       if (watched.has(path)) return
-      const props = (await bus!.getProxyObject(BLUEZ, path)).getInterface(PROPERTIES)
+      const props = (await proxyFor(path)).getInterface(PROPERTIES)
       let known: Props = { ...initial }
       const onChange = (iface: string, changed: Props): void => {
         if (iface !== DEVICE) return
@@ -247,26 +285,44 @@ export function createBluezScaleTransport(): ScaleTransport {
       QN_NAME.test(value<string>(props, 'Name') ?? value<string>(props, 'Alias') ?? '') || (value<string[]>(props, 'UUIDs') ?? []).includes(QN_SERVICE) || isScale(value<string>(props, 'Address'), props)
 
     let following = false
-    /** BlueZ's new objects: an adapter plugged in starts the listener again, a new device is followed. */
+    /** Let go of the adapter: the session under way ends, and the devices followed through it are let go too. */
+    const forgetAdapter = (): void => {
+      endSession()
+      for (const unwatch of watched.values()) unwatch()
+      watched.clear()
+      adapter = null
+      adapterPath = null
+    }
+
+    let startAgain = false
+    /** BlueZ or its adapter changed under the listener: begin again from nothing, after any start under way. */
+    const restart = (): void => {
+      forgetAdapter()
+      if (starting) startAgain = true
+      else void start()
+    }
+
+    /** BlueZ's objects coming and going: an adapter plugged in starts the listener again, the one in use unplugged drops it, a new device is followed. */
     const follow = async (): Promise<void> => {
       if (following) return
-      const root = await bus!.getProxyObject(BLUEZ, '/')
+      const root = await proxyFor('/')
       following = true
-      root.getInterface(OBJECT_MANAGER).on('InterfacesAdded', (path: string, ifaces: Record<string, Props>) => {
+      const manager = root.getInterface(OBJECT_MANAGER)
+      manager.on('InterfacesAdded', (path: string, ifaces: Record<string, Props>) => {
         if (ifaces[ADAPTER] !== undefined && adapter === null) void start()
         const device = ifaces[DEVICE]
         if (device !== undefined && adapter !== null && candidate(device)) void watch(path, device).catch((error: unknown) => reportFault('scale.bluez.watch', error))
+      })
+      // Its proxy would otherwise outlive the adapter, and the listener would wait on a radio that is gone.
+      manager.on('InterfacesRemoved', (path: string, ifaces: string[]) => {
+        if (path === adapterPath && ifaces.includes(ADAPTER)) restart()
       })
     }
 
     /** Forget a bus that failed: the devices it followed go with it, and the next start connects afresh. */
     const dropBus = (): void => {
-      endSession()
-      for (const unwatch of watched.values()) unwatch()
-      watched.clear()
+      forgetAdapter()
       following = false
-      adapter = null
-      adapterPath = null
       const old = bus
       bus = null
       old?.disconnect()
@@ -275,7 +331,7 @@ export function createBluezScaleTransport(): ScaleTransport {
     /** The system bus, connected once and kept: its own failure fails the listener, and BlueZ starting starts it again. */
     const connectBus = async (): Promise<dbus.MessageBus> => {
       if (bus !== null) return bus
-      const next = dbus.systemBus()
+      const next = systemBus()
       bus = next
       next.on('error', (error: unknown) => {
         if (bus !== next) return
@@ -283,9 +339,16 @@ export function createBluezScaleTransport(): ScaleTransport {
         fail(error)
       })
       try {
-        const dbusProxy = await next.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus')
+        const dbusProxy = await withinLimit(next.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus'), 'Introspect /org/freedesktop/DBus', LOCAL_CALL_MS)
+        // A bluetoothd that went or came back owns none of what the listener holds: an adapter kept
+        // across a restart was how the listener sat for days with discovery off (#556).
         dbusProxy.getInterface('org.freedesktop.DBus').on('NameOwnerChanged', (name: string, _old: string, owner: string) => {
-          if (name === BLUEZ && owner !== '' && adapter === null) void start()
+          if (name !== BLUEZ) return
+          if (owner !== '') restart()
+          else if (adapter !== null) {
+            forgetAdapter()
+            fail(new Error('ServiceUnknown: org.bluez left the bus'))
+          }
         })
       } catch (error) {
         if (bus === next) dropBus()
@@ -306,7 +369,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         if (found === undefined) throw new Error('No Bluetooth adapter')
         adapterPath = found[0]
         if (value<boolean>(found[1][ADAPTER], 'Powered') !== true) throw new Error('Bluetooth NotReady: adapter not Powered')
-        adapter = (await connected.getProxyObject(BLUEZ, adapterPath)).getInterface(ADAPTER)
+        adapter = (await withinLimit(connected.getProxyObject(BLUEZ, adapterPath), `Introspect ${adapterPath}`, LOCAL_CALL_MS)).getInterface(ADAPTER)
         await discover()
         status({ state: 'searching', detail: '' })
         for (const [path, ifaces] of Object.entries(all)) {
@@ -317,6 +380,10 @@ export function createBluezScaleTransport(): ScaleTransport {
         fail(error)
       } finally {
         starting = false
+        if (startAgain) {
+          startAgain = false
+          void start()
+        }
       }
     }
     void start()
@@ -329,7 +396,7 @@ export function createBluezScaleTransport(): ScaleTransport {
       // A scale still connected is let go before the bus closes, so BlueZ does not hold the link.
       void Promise.all([
         scale?.disconnect(),
-        discovery?.StopDiscovery().catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error)),
+        discovery && withinLimit(discovery.StopDiscovery(), 'StopDiscovery', LOCAL_CALL_MS).catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error)),
       ]).finally(dropBus)
     }
   }
