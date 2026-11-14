@@ -1398,8 +1398,9 @@ One stepping-on of the household's bathroom scale, recorded (#350; owner,
 2026-10-19: "keeps track of my weight, along with other metrics the scale
 can measure"): the time the reading settled, the weight in kg and the
 scale's two resistances — nothing worked out from them, so a Body Profile
-edit or a formula fix recomputes the whole history. Kept in
-`weighins.json` in userData. Its figures are worked out on every read:
+edit or a formula fix recomputes the whole history. Recorded in the
+Weigh-in Log; `weighins.json` in userData holds what the log replays to.
+Its figures are worked out on every read:
 BMI from the height; body fat, water, muscle, bone and lean mass from the
 weight, the first resistance and the whole Body Profile (openScale's Trisa
 formulas, fed as its QNHandler feeds them); BMR (Mifflin–St Jeor) from the
@@ -1413,8 +1414,22 @@ with the closest guess"); a wrong guess is moved with one tap, on the
 Weigh-in pop-up or on the Weight page. Those recorded before #351 are
 Jaish's.
 Bing Bong is the scale's only reader (owner: "ill stop using the renpho
-app"), so there is no history import and no cloud.
+app"), so there is no history import and no cloud. The app sends no
+Weigh-in anywhere; a copy off the kiosk is the owner's separate `weighin`
+repo, which reads the Weigh-in Log from userData.
 _Avoid_: measurement, reading (for the record), entry
+
+**Weigh-in Log**:
+`weighin-events.jsonl` beside `weighins.json` (#558): one JSON line
+appended per change to the Weigh-ins (`add`, `remove`, `move` with whose
+it was, `removePerson`), never rewritten, so a moved or deleted Weigh-in
+keeps its history. An `add` carries the scale's stable reading frame as
+hex, so a decoding fix can be checked against what the scale sent. The
+log is the record: on start the Weigh-ins are what it replays to, an
+unreadable `weighins.json` is rebuilt from it, and a line cut short is
+skipped. A kiosk with no log yet starts one from `weighins.json`, each
+Weigh-in a `seeded` add with no frame.
+_Avoid_: history, audit trail, backup
 
 **Scale Listener**:
 The part of main that reads the scale over Bluetooth while Bing Bong runs

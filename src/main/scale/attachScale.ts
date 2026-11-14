@@ -75,7 +75,7 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
       if (step.weighIn !== null) {
         const { people } = deps.settings.get().weight
         const weighIn = { ...step.weighIn, person: guessPerson(step.weighIn.kg, deps.store.list(), people) }
-        const weighIns = deps.store.add(weighIn)
+        const weighIns = deps.store.add(weighIn, bytes)
         send(WEIGHT_IPC.changed, weighIns)
         popup.weighIn(settledWeighIn(weighIn, weighIns, people))
       }
