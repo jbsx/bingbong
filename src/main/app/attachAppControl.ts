@@ -11,6 +11,7 @@ import type { UpdateCheck } from '../../core/update/updateCheck'
 import type { AppControl } from '../run/commandRunner'
 import type { FeedPanelOverlay } from '../panel/createFeedPanelOverlay'
 import type { SettingsStore } from '../settings/settingsStore'
+import { dropBody } from '../net/dropBody'
 
 // The app's own surfaces as the runner reaches them (#420, ADR 0091): the
 // Feed panel's fold, the settings store, and the dashboard's view, which is
@@ -33,7 +34,10 @@ export interface AppControlDeps {
 
 const fetchJson = async (url: string): Promise<unknown> => {
   const response = await fetch(url)
-  if (!response.ok) throw new Error(`geocoder answered ${response.status}`)
+  if (!response.ok) {
+    await dropBody(response)
+    throw new Error(`geocoder answered ${response.status}`)
+  }
   return response.json()
 }
 

@@ -8,6 +8,7 @@ import type { SttModel } from '../../core/settings/settings'
 // runtime graph, where Node resolves no extensionless imports.
 import { MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber.ts'
 import { reportFault } from '../../core/trace/fault.ts'
+import { dropBody } from '../net/dropBody.ts'
 
 // Where Moonshine Base lives (#41): the model-dir convention puts engine
 // files under <userData>/models (README), one subdir per engine (the wake
@@ -167,7 +168,10 @@ export const fsMoonshineStore: MoonshineModelStore = {
   async fetch(url, dest) {
     const address = process.env[MODELS_FIXTURE_ENV] ?? url
     const response = await fetch(address)
-    if (!response.ok) throw new Error(`fetch ${address} → HTTP ${response.status}`)
+    if (!response.ok) {
+      await dropBody(response)
+      throw new Error(`fetch ${address} → HTTP ${response.status}`)
+    }
     if (!response.body) throw new Error(`fetch ${address} → no body`)
     // Streamed to disk, never buffered: Parakeet's encoder is 650 MB (#358).
     // The .part rename means a cut download never sits at dest.

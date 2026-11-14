@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { join } from 'node:path'
 import { reportFault } from '../../core/trace/fault'
 import type { AudioStream } from './ytDlp'
+import { dropBody } from '../net/dropBody'
 
 // The app's own yt-dlp (#503): YouTube changes its scheme often and a stale
 // yt-dlp fails quietly — on 2026-10-28 a 2026.07.04 build's streams were
@@ -87,7 +88,7 @@ const DOWNLOAD_MS = 5 * 60_000
 const REJECTED_FOR_MS = 24 * 60 * 60_000
 
 /** The slice of `fetch` the updater uses: a fake in the tests. */
-export type UpdaterFetch = (url: string, init?: { headers?: Record<string, string>; redirect?: 'follow' | 'manual'; signal?: AbortSignal }) => Promise<Pick<Response, 'ok' | 'status' | 'url' | 'headers' | 'text' | 'arrayBuffer'>>
+export type UpdaterFetch = (url: string, init?: { headers?: Record<string, string>; redirect?: 'follow' | 'manual'; signal?: AbortSignal }) => Promise<Pick<Response, 'ok' | 'status' | 'url' | 'headers' | 'text' | 'arrayBuffer'> & { readonly body?: ReadableStream<Uint8Array> | null }>
 
 export interface YtDlpUpdaterDeps {
   /** Where the app's copies live: userData's `yt-dlp/`. */
@@ -300,7 +301,11 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     const [from, to] = SELF_CHECK_RANGE
     try {
       const response = await deps.fetch(stream.stream, { headers: { Range: `bytes=${from}-${to}` }, signal: AbortSignal.timeout(SELF_CHECK_FETCH_MS) })
-      if (response.status !== 206) return `the stream answered ${response.status} to bytes ${from}-${to}`
+      // A stream that ignores the range answers the whole video: unread, it would end in an uncatchable assert (nodejs/undici#5360).
+      if (response.status !== 206) {
+        await dropBody(response)
+        return `the stream answered ${response.status} to bytes ${from}-${to}`
+      }
       const length = (await response.arrayBuffer()).byteLength
       if (length !== to - from + 1) return `the stream sent ${length} of bytes ${from}-${to}`
       return null
@@ -311,7 +316,10 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
 
   async function fetchOk(url: string): Promise<Awaited<ReturnType<UpdaterFetch>>> {
     const response = await deps.fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_MS) })
-    if (!response.ok) throw new Error(`${url} answered ${response.status}`)
+    if (!response.ok) {
+      await dropBody(response)
+      throw new Error(`${url} answered ${response.status}`)
+    }
     return response
   }
 
@@ -339,6 +347,7 @@ export function createYtDlpUpdater(deps: YtDlpUpdaterDeps): YtDlpUpdater {
     let version: string | null
     try {
       const latest = await deps.fetch(LATEST_SUMS, { redirect: 'manual', signal: AbortSignal.timeout(DOWNLOAD_MS) })
+      await dropBody(latest)
       version = releaseTag(latest.headers.get('location') ?? '')
       if (version === null || !VERSION.test(version)) throw new Error(`the latest release names no version (${latest.status} from ${LATEST_SUMS})`)
     } catch (error) {

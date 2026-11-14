@@ -4,6 +4,7 @@ import { NEWS_IPC } from '../../core/news/ipcChannels'
 import { createTopReposDesk, type RepoSummaryWriter } from '../../core/news/topRepos'
 import { createRepoSummaryWriter } from './briefWriter'
 import { createTopReposStore } from './newsStore'
+import { dropBody } from '../net/dropBody'
 
 /**
  * The e2e's stand-in for GitHub: with BINGBONG_NEWS_FIXTURE set to a local
@@ -52,7 +53,10 @@ export function registerNewsIpc(deps: {
   const desk = createTopReposDesk({
     async fetchText(url) {
       const response = await fetch(rebase(url), { headers: { 'user-agent': USER_AGENT, accept: 'text/html,text/plain;q=0.9,*/*;q=0.8' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-      if (!response.ok) throw new Error(`${new URL(url).host} answered ${response.status}`)
+      if (!response.ok) {
+        await dropBody(response)
+        throw new Error(`${new URL(url).host} answered ${response.status}`)
+      }
       return response.text()
     },
     store: createTopReposStore(deps.storePath),

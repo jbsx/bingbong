@@ -1,6 +1,7 @@
 import type { ModelEndpointConfig } from '../../core/decision/decisionRouting'
 import { BRIEF_INSTRUCTIONS, briefAsk, readBriefs, type StoryBriefWriter } from '../../core/news/storyBrief'
 import { readSummaries, SUMMARY_INSTRUCTIONS, summaryAsk, type RepoSummaryWriter } from '../../core/news/topRepos'
+import { dropBody } from '../net/dropBody'
 
 /** A handful of stories' briefs come back in a few seconds; past this the poll gives up and asks again next hour. */
 const WRITE_TIMEOUT_MS = 45_000
@@ -21,7 +22,10 @@ async function askWriter(endpoint: ModelEndpointConfig, instructions: string, as
     }),
     signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
   })
-  if (!response.ok) throw new Error(`the brief writer answered ${response.status}`)
+  if (!response.ok) {
+    await dropBody(response)
+    throw new Error(`the brief writer answered ${response.status}`)
+  }
   const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] }
   const content = body.choices?.[0]?.message?.content
   if (typeof content !== 'string') throw new Error('the brief writer answered no message')

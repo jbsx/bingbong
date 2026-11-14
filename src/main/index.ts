@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, crashReporter, ipcMain, Menu, nativeImage, session } from 'electron'
+import { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, nativeImage, session } from 'electron'
+import { createUncaughtGuard } from './app/uncaughtGuard'
 import { join } from 'node:path'
 import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -225,6 +226,8 @@ const appDirs = resolveAppDirs({ isPackaged: app.isPackaged, appPath: app.getApp
 // Every failure the app swallows through `reportFault` goes to the fault log (#397).
 const logsDir = join(app.getPath('userData'), 'logs')
 setFaultSink(createFaultLogSink(logsDir))
+// undici's paused-parser assert goes to the fault log, not a modal over the kiosk; every other uncaught exception keeps Electron's dialog.
+process.on('uncaughtException', createUncaughtGuard({ report: reportFault, showErrorBox: (title, content) => dialog.showErrorBox(title, content) }))
 // The ear's usage tally (#463): every `stt` span tallies the seconds its engine heard, the decision log settles whether the line fired.
 const earTally = createEarTallyStore(join(app.getPath('userData'), 'ear-tally.json'))
 const perfSink = createJsonlPerfSink(logsDir)

@@ -2,13 +2,17 @@ import { ipcMain } from 'electron'
 import { USAGE_IPC } from '../../core/usage/ipcChannels'
 import { fetchUsage, usageBaseUrl, type UsageSnapshot } from '../../core/usage/usage'
 import type { EarDay } from '../../core/usage/earTally'
+import { dropBody } from '../net/dropBody'
 
 /** Long enough for a LAN box that is waking; short enough that a dead one never stacks polls. */
 const REQUEST_TIMEOUT_MS = 8_000
 
 const fetchJson = async (url: string): Promise<unknown> => {
   const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  if (!response.ok) throw new Error(`usage request failed (${response.status})`)
+  if (!response.ok) {
+    await dropBody(response)
+    throw new Error(`usage request failed (${response.status})`)
+  }
   return response.json() as Promise<unknown>
 }
 

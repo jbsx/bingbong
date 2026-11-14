@@ -13,6 +13,7 @@ import { ADBLOCK_SCRIPTLETS_CHANNEL, isolateScriptlet } from '../../core/adblock
 import type { SettingsStore } from '../settings/settingsStore'
 import { reportFault } from '../../core/trace/fault'
 import scriptletsPreloadPath from './adblockScriptletsPreload.cjs?asset'
+import { dropBody } from '../net/dropBody'
 
 // Electron glue for the embedder-level adblocker (issue #21): maps the
 // unit-tested controller onto @ghostery/adblocker-electron and the persistent
@@ -83,7 +84,10 @@ export function attachAdblock(deps: {
 
     fetchText: async (url) => {
       const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-      if (!response.ok) throw new Error(`${url} responded ${response.status}`)
+      if (!response.ok) {
+        await dropBody(response)
+        throw new Error(`${url} responded ${response.status}`)
+      }
       return response.text()
     },
 
