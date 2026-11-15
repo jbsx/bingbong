@@ -122,7 +122,8 @@ const CHECK_SCRIPT = `(() => {
     // The live words and the kept result in the capsule (#331, #436), a stage's long detail and then its words beside its seconds (#428, #462), the words an ear's wait is on beside its seconds (#442), a long address after its host (#453), and a Turn Card history row's text (#474), ellipsize by design: the clips allowed.
     if (!field && clipsX && el.scrollWidth > el.clientWidth + 1 && !el.matches('.voice-hint--listening, .voice-hint--result, .run-hint-detail, .run-hint-stage, .ear-wait-object, .url-display, .turn-step-text')) issues.push('clipped across: ' + name(el))
     // The Ledger Strip's words row (#475) holds two lines and cuts a longer Answer there: the Feed holds the rest.
-    if (!field && clipsY && el.scrollHeight > el.clientHeight + 1 && !el.matches('.peek-card--band .turn-words')) issues.push('clipped down: ' + name(el))
+    // The Idle Screen clock clips only Inter's empty ascent and descent to its 209 px line; its figures sit inside it (idleShot checks the row).
+    if (!field && clipsY && el.scrollHeight > el.clientHeight + 1 && !el.matches('.peek-card--band .turn-words, .idle-clock')) issues.push('clipped down: ' + name(el))
     if (box.right > innerWidth + 1 || box.left < -1) issues.push('off the surface: ' + name(el))
     // Words squeezed into a column a few letters wide, wrapping down the screen; a label set vertical on purpose (the Feed's edge tab) is not.
     if (!field && !style.writingMode.startsWith('vertical') && box.width < 80 && box.height > parseFloat(style.fontSize) * 6) issues.push('squeezed: ' + name(el))
@@ -559,7 +560,7 @@ async function walkTheIdleMusic(run: Run): Promise<void> {
   await idle()
   await shown('.idle-music-card--full.idle-music-card--playing')
   await shoot(run, '26-idle-music-playing')
-  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`), `${run.theme} 26-idle-music-playing: the Idle Screen's rest hint`).toBe(REST_HINT)
+  expect.soft(await harness.dashboardEval<string>(`document.querySelector('.idle-voice')?.textContent ?? ''`), `${run.theme} 26-idle-music-playing: the Idle Screen's Voice Prompt at rest, no words`).toBe('')
   await submit('pause')
   await shown('.idle-music-card--full.idle-music-card--paused')
   await shoot(run, '26-idle-music-paused')
@@ -638,14 +639,14 @@ async function held(run: Run, state: string, during: () => Promise<void>): Promi
 }
 
 /**
- * A tap that wakes the Idle Screen to the page under it. While a Turn Card (#474) is up it covers the date, and a tap on
+ * A tap that wakes the Idle Screen to the page under it. While a Turn Card (#474) is up it covers the clock, and a tap on
  * the card only closes it, keeping the Idle Screen up by design: the tap goes to its scrim, beside the card, instead.
  */
 async function tapIdleAwake(run: Run): Promise<void> {
   const { harness } = run
   const scrim = await harness.dashboardEval<boolean>(`document.elementFromPoint(8, 8)?.classList.contains('turn-scrim') ?? false`)
   if (scrim) await harness.clickDashboardAt(8, 8)
-  else await harness.clickDashboardElement('.idle-date')
+  else await harness.clickDashboardElement('.idle-clock')
 }
 
 /**

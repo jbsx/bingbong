@@ -7,9 +7,9 @@ import type { CalendarEvent } from '../../core/calendar/calendar'
 import { firstDayOfWeek, monthEntries, twoWeeks, upNext, type UpNext, type WeekStart } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
-import { clockParts, dateOptions, timeOfDay, type DateFormat, type TimeFormat } from '../../core/idle/timeFormat'
+import { clockParts, timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
 import { defaultNightDim, isNightDimmed, type NightDim } from '../../core/idle/nightDim'
-import { EAR_FAILED, EAR_FAILED_MORE, REST_HINT_MORE, REST_HINT_SAY, REST_HINT_WAKE } from '../../core/voice/voiceHint'
+import { EAR_FAILED, EAR_FAILED_MORE } from '../../core/voice/voiceHint'
 import { earPhase, wordlessLine, type EarPhase } from '../../core/voice/voicePrompt'
 import type { EarLoading } from '../../core/voice/ipcChannels'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
@@ -54,20 +54,19 @@ const LEAN_NEWS_PX = 330
 const ENTRIES_SHOWN = 4
 
 /**
- * The time on the Time Format's clock, the colon in the accent, the
- * seconds when asked for and a 12-hour clock's "pm" small beside the
- * minutes; under it the date in its Date Format. Stepped down beside a
- * Timer the clock is its hours and minutes alone and the date drops its
- * year: the half of the row it has holds no more ("Wednesday, 30 September
- * 2026" is 349 px of its 306), and the Timer counts the seconds and writes
- * its end with its "pm".
+ * The time on the Time Format's clock, the seconds when asked for and a
+ * 12-hour clock's "pm" small beside the minutes. It is the time alone: the
+ * day and date are the Calendar's Date Tile, so the screen says each once
+ * (owner, 2026-11-15). Stepped down beside a Timer the clock is its hours
+ * and minutes alone, and the Timer counts the seconds and writes its end
+ * with its "pm".
  */
-function Clock({ now, small, format, seconds, dateFormat }: { now: Date; small: boolean; format: TimeFormat; seconds: boolean; dateFormat: DateFormat }) {
+function Clock({ now, small, format, seconds }: { now: Date; small: boolean; format: TimeFormat; seconds: boolean }) {
   const full = clockParts(now, format, { seconds: seconds && !small })
   const parts = small ? { ...full, seconds: '', period: '' } : full
   return (
     <div className={small ? 'idle-clock-block idle-clock-block--split' : 'idle-clock-block'}>
-      <p className="idle-clock" data-display aria-label="clock">
+      <p className={parts.seconds === '' && parts.period === '' ? 'idle-clock' : 'idle-clock idle-clock--tail'} data-display aria-label="clock">
         {parts.hours}
         <span className="idle-clock-colon">{parts.separator}</span>
         {parts.minutes}
@@ -78,7 +77,6 @@ function Clock({ now, small, format, seconds, dateFormat }: { now: Date; small: 
           </span>
         )}
       </p>
-      <p className="idle-date">{dateLabel(now, dateOptions(small && dateFormat === 'long-year' ? 'long' : dateFormat))}</p>
     </div>
   )
 }
@@ -189,9 +187,10 @@ export interface IdleVoice {
 const EAR_WORD: Record<Exclude<EarPhase, 'rest' | 'off' | 'failed'>, string> = { starting: PILL_LABELS.starting, listening: PILL_LABELS.listening, hearing: PILL_LABELS.listening, transcribing: PILL_LABELS.transcribing }
 
 /**
- * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb and the
- * hint, saying the ear's real state in the Status Capsule's word — waiting
- * for the wake word, the orb and the hint with the waveform still;
+ * The Voice Prompt (CONTEXT.md), the first Clock Line: the orb, saying the
+ * ear's real state in the Status Capsule's word — waiting for the wake
+ * word, the orb and the still waveform with no words, since a hint that
+ * never changes is read once and then is clutter (owner, 2026-11-15);
  * "Listening…" with the waveform live and the live words only while an
  * Utterance is taken — an empty line from the frame speech starts until the
  * first partial (#441, #455); "Transcribing…" while its words are read, with
@@ -228,17 +227,10 @@ export function VoiceLine({ voice, result = null }: { voice: IdleVoice; result?:
         <span className={phase === 'listening' && voice.partial === '' ? 'idle-voice-said idle-voice-said--waiting' : 'idle-voice-said'}>{voice.partial === '' ? (phase === 'listening' ? wordlessLine(phase) : '') : `“${voice.partial}…”`}</span>
       ) : result !== null ? (
         <span className="idle-voice-said idle-voice-result">{result}</span>
-      ) : (
-        <>
-          <span className="idle-voice-hint">
-            {REST_HINT_SAY} <span className="idle-voice-word">{REST_HINT_WAKE}</span>
-          </span>{' '}
-          <span className="idle-voice-more">{REST_HINT_MORE}</span>
-        </>
-      )}
+      ) : null}
       {phase !== 'off' && phase !== 'failed' && phase !== 'starting' && phase !== 'transcribing' ? (
         <>
-          <span className="idle-line-sep" aria-hidden="true" />
+          {phase === 'rest' && result === null ? null : <span className="idle-line-sep" aria-hidden="true" />}
           <VoiceWave bars={6} />
         </>
       ) : null}
@@ -330,7 +322,7 @@ const A_SUNDAY = new Date(2026, 0, 4)
 
 function weekdayName(weekday: number): string {
   const date = new Date(A_SUNDAY.getFullYear(), A_SUNDAY.getMonth(), A_SUNDAY.getDate() + weekday)
-  return date.toLocaleDateString([], { weekday: 'short' })
+  return date.toLocaleDateString([], { weekday: 'narrow' })
 }
 
 /** Whether a holiday is worth the header: this month's or next month's, not one a season away. */
@@ -357,12 +349,13 @@ function entryWhen(event: CalendarEvent, format: TimeFormat): string {
 }
 
 /**
- * The Calendar (CONTEXT.md), top right: today's date large in peach beside
- * the weekday and month, and under it the next bank holiday by name when
- * it falls this month or next, else how many entries the month has; then
- * this week and next, today boxed in peach, a dot under a day with an
- * entry; and the month's entries still to come listed under the weeks while
- * it has any (its full form).
+ * The Calendar (CONTEXT.md), top right. The Date Tile, a tear-off leaf
+ * of the weekday over today's date, is the one place the screen writes the
+ * day and date, at a size read from the chair (owner, 2026-11-15); beside
+ * it the month and year over this week and next, compact, today boxed, a
+ * dot under a day with an entry. Under them the next bank holiday by name
+ * when it falls this month or next, else how many entries the month has;
+ * and the month's entries still to come while it has any (its full form).
  */
 function CalendarCard({ now, weekStart, events, form, format }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; form: 'full' | 'small'; format: TimeFormat }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
@@ -374,45 +367,52 @@ function CalendarCard({ now, weekStart, events, form, format }: { now: Date; wee
   const monthName = now.toLocaleDateString([], { month: 'long' })
   return (
     <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
-      <header className="idle-cal-head">
-        <span className="idle-cal-today" data-display>{now.getDate()}</span>
-        <span className="idle-cal-words">
-          <span className="idle-cal-month">
-            {now.toLocaleDateString([], { weekday: 'short' })} · {monthName} {now.getFullYear()}
+      <div className="idle-cal-head">
+        <p className="idle-cal-tile" aria-label={dateLabel(now, { weekday: 'long', day: 'numeric', month: 'long' })}>
+          <span className="idle-cal-tile-day" aria-hidden="true">
+            {now.toLocaleDateString([], { weekday: 'short' })}
           </span>
-          {coming !== null ? (
-            <span className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
-              <span className="idle-cal-swatch" aria-hidden="true" />
-              {coming.title} · {holidayDate(coming.date, now)}
-            </span>
-          ) : (
-            <span className="idle-cal-none">{entries.length === 0 ? 'no events' : `${entries.length} this month`}</span>
-          )}
-        </span>
-      </header>
-      <div className="idle-cal-grid" role="grid">
-        <div className="idle-cal-weekdays" role="row">
-          {weeks[0].map((day) => (
-            <span key={day.start} role="columnheader" className={day.isToday ? 'idle-cal-weekday idle-cal-weekday--today' : 'idle-cal-weekday'}>
-              {weekdayName(new Date(day.start).getDay())}
-            </span>
-          ))}
-        </div>
-        {weeks.map((week) => (
-          <div key={week[0].start} className="idle-cal-week" role="row">
-            {week.map((day) => {
-              const className = ['idle-cal-day', day.inMonth ? '' : 'idle-cal-day--outside', day.isToday ? 'idle-cal-day--today' : '', day.holiday !== null ? 'idle-cal-day--holiday' : ''].filter(Boolean).join(' ')
-              const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
-              return (
-                <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
-                  <span className="idle-cal-num">{day.day}</span>
-                  {day.holiday !== null || day.events.length > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
-                </div>
-              )
-            })}
+          <span className="idle-cal-today" data-display aria-hidden="true">
+            {now.getDate()}
+          </span>
+        </p>
+        <div className="idle-cal-side">
+          <p className="idle-cal-month">
+            {monthName} <span className="idle-cal-year">{now.getFullYear()}</span>
+          </p>
+          <div className="idle-cal-grid" role="grid">
+            <div className="idle-cal-weekdays" role="row">
+              {weeks[0].map((day) => (
+                <span key={day.start} role="columnheader" className={day.isToday ? 'idle-cal-weekday idle-cal-weekday--today' : 'idle-cal-weekday'}>
+                  {weekdayName(new Date(day.start).getDay())}
+                </span>
+              ))}
+            </div>
+            {weeks.map((week) => (
+              <div key={week[0].start} className="idle-cal-week" role="row">
+                {week.map((day) => {
+                  const className = ['idle-cal-day', day.inMonth ? '' : 'idle-cal-day--outside', day.isToday ? 'idle-cal-day--today' : '', day.holiday !== null ? 'idle-cal-day--holiday' : ''].filter(Boolean).join(' ')
+                  const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
+                  return (
+                    <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
+                      <span className="idle-cal-num">{day.day}</span>
+                      {day.holiday !== null || day.events.length > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
+      {coming !== null ? (
+        <p className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
+          <span className="idle-cal-swatch" aria-hidden="true" />
+          {coming.title} · {holidayDate(coming.date, now)}
+        </p>
+      ) : (
+        <p className="idle-cal-none">{entries.length === 0 ? 'no events' : `${entries.length} this month`}</p>
+      )}
       {form === 'full' && entries.length > 0 ? (
         <ul className="idle-cal-entries" aria-label="this month">
           {entries.slice(0, ENTRIES_SHOWN).map((event) => (
@@ -496,7 +496,6 @@ export function IdleScreen({
   weight = defaultWeightSettings(),
   timeFormat = 'system',
   clockSeconds = false,
-  dateFormat = 'long',
   weekStart: weekStartSetting = 'system',
   nightDim = defaultNightDim(),
   monitorDimmed = false,
@@ -530,8 +529,6 @@ export function IdleScreen({
   timeFormat?: TimeFormat
   /** Whether the clock shows its seconds (settings' clockSeconds). */
   clockSeconds?: boolean
-  /** How the date under the clock is written (settings' dateFormat). */
-  dateFormat?: DateFormat
   /** The weekday the Calendar's weeks start on (settings' weekStart). */
   weekStart?: WeekStart
   /** The screen darkened between two times of day (settings' nightDim). */
@@ -707,7 +704,7 @@ export function IdleScreen({
       </div>
       <div className="idle-col idle-col--middle">
         <div className={timer.status === 'off' ? 'idle-clock-row' : 'idle-clock-row idle-clock-row--timer'}>
-          <Clock now={now} small={timer.status !== 'off'} format={timeFormat} seconds={clockSeconds} dateFormat={dateFormat} />
+          <Clock now={now} small={timer.status !== 'off'} format={timeFormat} seconds={clockSeconds} />
           {timer.status !== 'off' ? (
             <>
               <span className="idle-clock-rule" aria-hidden="true" />

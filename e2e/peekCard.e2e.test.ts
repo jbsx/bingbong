@@ -88,8 +88,8 @@ describe('peek card e2e: the card goes, and over the Idle Screen the Turn Card t
     await waitFor(async () => ((await idleCardState()) === 'done' ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
     expect(await harness.dashboardEval<string>(`document.querySelector('.turn-stage-word')?.textContent`)).toBe('Done')
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    // Back to the rest hint — the mic-off one here, with no microphone under Xvfb.
-    expect(await voiceLine()).toMatch(/^(Say “Bing Bong” or start typing|Microphone off — start typing)/)
+    // Back to rest: no words at rest (owner, 2026-11-15), or the mic-off hint here, with no microphone under Xvfb.
+    expect(await voiceLine()).toMatch(/^(|Microphone off — start typing)$/)
     await submit('timer off')
     await waitFor(async () => ((await harness.dashboardEval<string>(`window.bingbong.timer.get().then((state) => state.status)`)) === 'off' ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
   }, 30_000)

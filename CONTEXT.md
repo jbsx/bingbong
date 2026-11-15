@@ -838,7 +838,9 @@ The slim line that is both ear and keyboard (owner, 2026-10-20, F1
 Headline): the peach orb, `Say "Bing Bong" or start typing`, a waveform and
 the voice state. It says the real state of the ear, the same word the
 Status Capsule uses: waiting for the wake word it is the orb and the hint
-with the waveform still; `LISTENING`, the waveform live, only while an
+with the waveform still — on the Idle Screen the orb and the still waveform
+alone, no words (owner, 2026-11-15: the hint said nothing that changes);
+`LISTENING`, the waveform live, only while an
 Utterance is being taken; with the microphone off it says so. In the Feed
 Panel's footer (#359) the hint reads `Say "Bing Bong" or type a command`,
 `Type a command` while a Command runs with Stop beside it, and
@@ -1198,11 +1200,13 @@ and Wales's), then its events, an all-day one as a red bar and a timed one
 as a dot and its title, "+N" beside the date past one — today's date in a
 red disc, the next bank holiday named in the header when it falls this
 month or next, else "No events" when there are none. At the top of the
-right Column (2026-10-20): today's date large in peach beside the weekday
-and month — under them the next bank holiday when it falls this month or
-next, else "no events" or how many the month has — then this week and
-next with today boxed in peach, a dot under a day with an entry, and the
-month's entries still to come listed under them while it has any. Bank holidays are computed, not
+right Column (2026-10-20, reshaped 2026-11-15): the **Date Tile**, a
+tear-off leaf of the weekday over today's date, the one place the Idle
+Screen writes the day and date (the clock is the time alone); beside it
+the month and year over this week and next, compact, today boxed, a dot
+under a day with an entry; under them the next bank holiday when it falls
+this month or next, else "no events" or how many the month has; and the
+month's entries still to come while it has any. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each
@@ -1490,8 +1494,11 @@ The Idle Screen's Pinned Card of each Person's latest Weigh-in (#350,
 brother including the line chart"): in the right Column under the
 Calendar, one row per Person with a Weigh-in — the name in their colour,
 when, the weight, its change against their last Weigh-in a week or more
-before it (green down, amber up), the body fat and their own line of the
-last 30 days, each line on its own axis; smaller, each name with the
+before it (green down, amber up), the body fat and their own **Weight
+Trend** of the last 30 days, each on its own axis: a smooth moving average
+of the Weigh-ins, each Weigh-in a faint dot beside it and the latest full
+size, so a day's swing is a dot off the line rather than a jerk in it
+(owner, 2026-11-15; the Weight page keeps the Weigh-ins joined); smaller, each name with the
 weight and the change. The People, figures and range are chosen in the
 Weight section. With no Weigh-in yet it is a note, "Step on the scale". A
 tap on a row opens the Weight page on that Person, on the pointer going

@@ -44,7 +44,8 @@ const where = (d: Declaration): string => `${d.sheet} ${d.selector} { ${d.proper
 /** The sizes off the ladder, each a display numeral (or a part of one) or the root. */
 const SIZE_ALLOWLIST: readonly { selector: string; value: string; reason: string }[] = [
   { selector: 'html', value: 'calc(var(--type-s) * var(--font-scale))', reason: 'the root size: the small step times the one calibration knob' },
-  { selector: '.idle-clock', value: '176px', reason: 'the Idle Screen clock, display numeral (owner 2026-10-25)' },
+  { selector: '.idle-clock', value: '232px', reason: 'the Idle Screen clock, the time alone, display numeral (owner 2026-11-15)' },
+  { selector: '.idle-clock--tail', value: '184px', reason: 'the Idle Screen clock with its seconds or pm, display numeral' },
   { selector: '.idle-clock-tail', value: '0.3em', reason: "the clock's seconds and pm, part of the clock numeral" },
   { selector: '.idle-clock-block--split .idle-clock, .idle-timer-left', value: '112px', reason: 'the clock beside a Timer, and the Timer Clock, display numerals' },
   { selector: '.idle-timer--ringing .idle-timer-left', value: '84px', reason: "the Timer Clock's “Time’s up”, display" },
@@ -59,7 +60,7 @@ const SIZE_ALLOWLIST: readonly { selector: string; value: string; reason: string
   { selector: '.wx-peak-figure', value: '88px', reason: "the day's peak temperature, display numeral" },
   { selector: '.wx-peak-figure small', value: '0.42em', reason: "the peak's unit, part of the numeral" },
   { selector: '.wx-days-low, .wx-days-high', value: '28px', reason: "the week's lows and highs, display numerals" },
-  { selector: '.idle-cal-today', value: '88px', reason: "the calendar's date, display numeral" },
+  { selector: '.idle-cal-today', value: '100px', reason: "the Date Tile's date, display numeral (owner 2026-11-15)" },
   { selector: '.weight-card-kg', value: '68px', reason: 'the weight, display numeral' },
   { selector: '.weight-card-kg small', value: '20px', reason: "the weight's kg, part of the numeral" },
   { selector: '.weight-card-change', value: '38px', reason: "the weight's change, display numeral" },

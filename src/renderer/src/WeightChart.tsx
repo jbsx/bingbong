@@ -1,4 +1,5 @@
 import { chartScale } from '../../core/scale/weightFormat'
+import { monotonePath, weightTrend } from '../../core/scale/weightTrend'
 import { dateLabel } from './dateLabel'
 
 /** One figure's value at a Weigh-in. */
@@ -18,9 +19,12 @@ function dayLabel(at: number): string {
  * HTML so nothing stretches with the plot. The value axis spans the
  * figure's own range in the span (chartScale), so a half-kilo week still
  * reads as a slope. `compact` leaves the date axis off (the Weight card's
- * trend).
+ * trend). `trend` draws the Weight Trend instead of the readings joined
+ * (owner, 2026-11-15): a smooth moving average, each reading a faint dot
+ * beside it, the latest reading's dot full size, so a day's swing is a dot
+ * off the line, not a jerk in it.
  */
-export function WeightChart({ points, start, end, digits, label, compact = false }: { points: readonly ChartPoint[]; start: number; end: number; digits: number; label: string; compact?: boolean }) {
+export function WeightChart({ points, start, end, digits, label, compact = false, trend = false }: { points: readonly ChartPoint[]; start: number; end: number; digits: number; label: string; compact?: boolean; trend?: boolean }) {
   const { top, bottom, floor, span } = chartScale(
     points.map((point) => point.value),
     digits,
@@ -30,10 +34,11 @@ export function WeightChart({ points, start, end, digits, label, compact = false
   const heightOf = (label: string): number => 100 - ((Number(label) - floor) / span) * 100
   const at = (point: ChartPoint): [number, number] => [Math.min(1000, Math.max(0, ((point.at - start) / width) * 1000)), 100 - ((point.value - floor) / span) * 100]
   const drawn = points.map(at)
-  const line = drawn.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(2)}`).join('')
-  const area = drawn.length > 0 ? `M${drawn[0][0].toFixed(1)},100${drawn.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(2)}`).join('')}L${drawn[drawn.length - 1][0].toFixed(1)},100Z` : ''
+  const traced = trend ? weightTrend(points).map(at) : drawn
+  const line = trend ? monotonePath(traced) : traced.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(2)}`).join('')
+  const area = traced.length > 0 ? `M${traced[0][0].toFixed(1)},100${trend ? `L${line.slice(1)}` : traced.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(2)}`).join('')}L${traced[traced.length - 1][0].toFixed(1)},100Z` : ''
   return (
-    <div className={compact ? 'weight-chart weight-chart--compact' : 'weight-chart'} role="img" aria-label={label}>
+    <div className={['weight-chart', compact ? 'weight-chart--compact' : '', trend ? 'weight-chart--trend' : ''].filter(Boolean).join(' ')} role="img" aria-label={label}>
       <span className="weight-chart-y" data-display aria-hidden="true">
         {/* The column's width: the longer label, unseen; the labels themselves sit at their heights. */}
         <span className="weight-chart-y-size">{points.length > 0 ? (top.length >= bottom.length ? top : bottom) : ''}</span>

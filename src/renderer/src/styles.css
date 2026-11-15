@@ -2506,11 +2506,16 @@ details[open] > .settings-summary::before {
   text-align: center;
 }
 
+/* The time alone fills the 209 px row the middle Column counts on (core/idle/columns CLOCK) now the date
+   is the Calendar's Date Tile (owner, 2026-11-15): 232 px on a 209 px line, figures about 170 px tall.
+   Clipped to its line box: the figures sit inside it, and Inter's empty ascent and descent above and below
+   them would otherwise count as the row's overflow. */
 .idle-clock {
   margin: 0;
-  font-size: 176px;
-  font-weight: 500;
-  line-height: 1;
+  overflow: hidden;
+  font-size: 232px;
+  font-weight: 600;
+  line-height: 209px;
   letter-spacing: -0.045em;
   color: var(--fg);
   white-space: nowrap;
@@ -2525,6 +2530,7 @@ details[open] > .settings-summary::before {
 .idle-clock-tail {
   margin-left: 0.12em;
   font-size: 0.3em;
+  line-height: 1;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--fg2);
@@ -2532,6 +2538,11 @@ details[open] > .settings-summary::before {
 
 .idle-clock-seconds {
   font-variant-numeric: tabular-nums;
+}
+
+/* With seconds or a "pm" beside it the clock steps down, so "12:35:07 pm" still holds the Column's 720 px. */
+.idle-clock--tail {
+  font-size: 184px;
 }
 
 .idle-clock-seconds + .idle-clock-period {
@@ -2545,18 +2556,6 @@ details[open] > .settings-summary::before {
   z-index: 10;
   background: #000;
   pointer-events: none;
-}
-
-/* The date is the line under the clock a glance reads (#450): 40 px, the step under the status size, so it holds from 2 m.
-   It rises into the clock's line box, under figures that have no descenders, so the row keeps the 209 px the
-   middle Column counts on (core/idle/columns CLOCK) and the cards under it keep their forms. */
-.idle-date {
-  margin: -16px 0 0;
-  font-size: var(--type-l);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--fg2);
-  white-space: nowrap;
 }
 
 /* With a Timer set the clock steps down and the Timer Clock sits beside it, a hairline between; the
@@ -2575,7 +2574,6 @@ details[open] > .settings-summary::before {
   line-height: 1.02;
 }
 
-.idle-clock-block--split .idle-date,
 .idle-timer-sub {
   margin-top: 2px;
   font-size: var(--type-m);
@@ -2775,11 +2773,6 @@ button.idle-line {
 .idle-voice-more {
   font-size: var(--type-s);
   color: var(--fg3);
-}
-
-.idle-voice-word {
-  color: var(--fg2);
-  font-weight: 500;
 }
 
 /* The Turn Card (#474): one Tile-sized card centred over the Idle Screen on
@@ -4405,58 +4398,108 @@ button.idle-line {
   padding: 28px 28px 0;
 }
 
+/* The Date Tile beside the month and the two weeks; the tile as tall as they are. */
 .idle-cal-head {
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: stretch;
+  gap: 24px;
+}
+
+/* The Date Tile (owner, 2026-11-15): a tear-off leaf, the weekday on its solid band over today's date,
+   the one place the screen writes them; 30 px clear either side of the widest date so no figure meets the edge. */
+.idle-cal-tile {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 184px;
+  margin: 0;
+  overflow: hidden;
+  border: 3px solid var(--fgh);
+  border-radius: var(--radius-lg);
+}
+
+.idle-cal-tile-day {
+  padding: 7px 0 5px;
+  background: var(--fgh);
+  font-size: var(--type-l);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--bg);
 }
 
 .idle-cal-today {
-  font-size: 88px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 4px;
+  font-size: 100px;
   font-weight: 600;
-  line-height: 0.86;
+  line-height: 1;
   letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
   color: var(--fgh);
 }
 
-.idle-cal-words {
+.idle-cal-side {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
   min-width: 0;
-  padding-bottom: 4px;
-  font-size: var(--type-s);
-  line-height: 1.25;
-  color: var(--fg3);
 }
 
 .idle-cal-month {
+  margin: 0;
+  font-size: var(--type-l);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fgh);
+  white-space: nowrap;
+}
+
+.idle-cal-year {
+  display: block;
+  margin-top: 6px;
   font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
+}
+
+.idle-cal-holiday,
+.idle-cal-none {
+  margin: 18px 0 0;
+  font-size: var(--type-m);
+  line-height: 1.25;
   white-space: nowrap;
+}
+
+.idle-cal-none {
+  color: var(--fg3);
 }
 
 .idle-cal-holiday {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--ok);
 }
 
 .idle-cal-swatch {
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 0;
   background: var(--ok);
 }
 
+/* This week and next, compact beside the tile: a column a letter wide over two-figure days. */
 .idle-cal-grid {
-  margin-top: 22px;
+  margin-top: 12px;
   font-family: var(--font-mono);
 }
 
@@ -4468,8 +4511,7 @@ button.idle-line {
 }
 
 .idle-cal-weekdays {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--hair);
+  padding-bottom: 4px;
 }
 
 .idle-cal-weekday {
@@ -4485,15 +4527,16 @@ button.idle-line {
 }
 
 .idle-cal-week {
-  margin-top: 6px;
+  margin-top: 2px;
 }
 
 .idle-cal-day {
   position: relative;
   z-index: 0;
-  height: 50px;
-  line-height: 50px;
+  height: 46px;
+  line-height: 46px;
   font-size: var(--type-m);
+  letter-spacing: -0.04em;
   color: var(--fg2);
 }
 
@@ -4509,9 +4552,9 @@ button.idle-line {
 .idle-cal-day--today::before {
   content: '';
   position: absolute;
-  inset: 4px 12px;
+  inset: 3px 1px;
   z-index: -1;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--fgh);
 }
 
@@ -4661,8 +4704,15 @@ button.idle-line {
 }
 
 /* The card's trend dots its latest Weigh-in only, as round 6 draws it. */
-.weight-card .weight-chart-dot:not(.weight-chart-dot--last) {
+.weight-card .weight-chart:not(.weight-chart--trend) .weight-chart-dot:not(.weight-chart-dot--last) {
   display: none;
+}
+
+/* The Weight Trend's readings: faint beside the line, so the eye follows the line and the dots say how far a day strayed. */
+.weight-chart--trend .weight-chart-dot:not(.weight-chart-dot--last) {
+  width: 8px;
+  height: 8px;
+  opacity: 0.5;
 }
 
 .weight-card-foot {

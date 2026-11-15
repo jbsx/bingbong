@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { startApplianceScreen, type ApplianceScreen } from './applianceScreen'
-import { REST_HINT } from '../src/core/voice/voiceHint'
 import { cli } from './cliSupport'
 import { colourFloor, settledPaint } from './colourFloor'
 import { decisionScript, readingOf } from './scriptedJev'
@@ -241,7 +240,9 @@ describe.each([
     expect(geometry.homes).toEqual({ weather: 'left full', ...(music ? { music: 'middle full', usage: 'middle small' } : { usage: 'middle full' }), calendar: 'right full', weight: 'right full', news: 'right full' })
     expect(geometry.lines).toEqual(['voice', 'lastPage'])
     expect(geometry.rings).toBe(count)
-    expect(await text('.idle-voice')).toBe(REST_HINT)
+    // At rest the Voice Prompt is its orb and still waveform alone, no words (owner, 2026-11-15).
+    expect(await text('.idle-voice')).toBe('')
+    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-voice--rest .idle-voice-orb') && !!document.querySelector('.idle-voice--rest .voice-wave')`)).toBe(true)
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
@@ -409,32 +410,33 @@ describe.each([
     }
   })
 
-  it('writes the date under the clock at 40 px, the next step of the four sizes (#450)', async () => {
-    expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.idle-date')).fontSize`)).toBe('40px')
-    // Inside the clock row the middle Column counts on (core/idle/columns CLOCK.plain, 209), and clear of the clock's figures:
-    // the clock's baseline (its figures have no descenders) over the top of the date's capitals (Inter's cap height, 0.727 em).
-    const row = await harness.dashboardEval<{ zoom: string; innerWidth: number; height: number; gap: number }>(`(() => {
-      const baseline = (el) => {
-        const mark = document.createElement('span')
-        mark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
-        el.append(mark)
-        const y = mark.getBoundingClientRect().top
-        mark.remove()
-        return y
-      }
-      const date = document.querySelector('.idle-date')
-      const capTop = baseline(date) - 0.727 * parseFloat(getComputedStyle(date).fontSize)
+  it('writes the time alone at 232 px in the clock row, and the day and date once, on the Date Tile (owner, 2026-11-15)', async () => {
+    const row = await harness.dashboardEval<{ zoom: string; innerWidth: number; height: number; clock: string; dates: number; day: string; date: string; weekday: string; today: string; tileWidth: number; figureWidth: number }>(`(() => {
+      const figure = document.querySelector('.idle-cal-today')
+      const range = document.createRange()
+      range.selectNodeContents(figure)
       return {
         zoom: document.querySelector('.idle-screen').style.zoom,
         innerWidth,
         height: document.querySelector('.idle-clock-row').getBoundingClientRect().height,
-        gap: capTop - baseline(document.querySelector('.idle-clock')),
+        clock: getComputedStyle(document.querySelector('.idle-clock')).fontSize,
+        dates: document.querySelectorAll('.idle-date').length,
+        day: document.querySelector('.idle-cal-tile-day').textContent,
+        date: figure.textContent,
+        weekday: new Date().toLocaleDateString([], { weekday: 'short' }),
+        today: String(new Date().getDate()),
+        tileWidth: document.querySelector('.idle-cal-tile').getBoundingClientRect().width,
+        figureWidth: range.getBoundingClientRect().width,
       }
     })()`)
-    // Read at the appliance's size, or the two figures below are the fit zoom's: at 1280×800 the row is a smaller 138.67 and the gap 2.59 (#537).
+    // Read at the appliance's size, or the figures below are the fit zoom's (#537).
     expect({ zoom: row.zoom, innerWidth: row.innerWidth }).toEqual({ zoom: '', innerWidth: 1920 })
+    expect(row.clock).toBe('232px')
     expect(row.height).toBeLessThanOrEqual(209)
-    expect(row.gap).toBeGreaterThanOrEqual(8)
+    expect(row.dates).toBe(0)
+    expect({ day: row.day, date: row.date }).toEqual({ day: row.weekday, date: row.today })
+    // The tile's figure keeps clear of its border on both sides, the owner's "too close" fixed: 28 px a side at the least.
+    expect(row.tileWidth - row.figureWidth).toBeGreaterThanOrEqual(56)
   })
 
   it('draws one Person larger, then the note with no Weigh-ins', async () => {
@@ -474,9 +476,9 @@ describe.each([
       await new Promise((resolve) => setTimeout(resolve, 600))
       return
     }
-    // The last line's Turn Card lies over the date until 15 s after the line is over, and a tap on it takes the card away, not the screen.
+    // The last line's Turn Card lies over the clock until 15 s after the line is over, and a tap on it takes the card away, not the screen.
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.turn-card')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 100 })
-    await harness.clickDashboardElement('.idle-date')
+    await harness.clickDashboardElement('.idle-clock')
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })

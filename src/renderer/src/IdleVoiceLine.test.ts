@@ -11,9 +11,10 @@ const render = (voice: IdleVoice): string => renderToStaticMarkup(createElement(
 const text = (html: string): string => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
 describe('the idle Voice Prompt', () => {
-  it('waits for the wake word with the orb, the hint and a still waveform — no Listening…', () => {
+  it('waits for the wake word with the orb and a still waveform alone — no words, no Listening… (owner, 2026-11-15)', () => {
     const html = render(AT_REST)
-    expect(text(html)).toBe('Say “Bing Bong” or start typing')
+    expect(text(html)).toBe('')
+    expect(html).toContain('idle-voice-orb')
     expect(html).toContain('idle-voice--rest')
     expect(html).toContain('voice-wave')
     expect(html).not.toContain('idle-voice-state')

@@ -218,7 +218,6 @@ export function App() {
           weight={settings?.weight}
           timeFormat={settings?.timeFormat}
           clockSeconds={settings?.clockSeconds}
-          dateFormat={settings?.dateFormat}
           weekStart={settings?.weekStart}
           nightDim={settings?.nightDim}
           monitorDimmed={monitorDimmed}

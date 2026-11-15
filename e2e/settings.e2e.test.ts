@@ -264,14 +264,13 @@ describe('settings page e2e', () => {
     await harness.pressKey('dashboard', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
     const idle = await waitFor(
       async () => {
-        const found = await harness.dashboardEval<{ seconds: string; date: string; firstDay: string; sunday: string; veil: string } | null>(`(() => {
+        const found = await harness.dashboardEval<{ seconds: string; firstDay: string; sunday: string; veil: string } | null>(`(() => {
           if (!document.querySelector('.idle-screen')) return null
           const veil = document.querySelector('.idle-night')
           return {
             seconds: document.querySelector('.idle-clock-seconds')?.textContent ?? '',
-            date: document.querySelector('.idle-date').textContent,
             firstDay: document.querySelector('.idle-cal-weekday')?.textContent ?? '',
-            sunday: new Date(2026, 9, 25).toLocaleDateString([], { weekday: 'short' }),
+            sunday: new Date(2026, 9, 25).toLocaleDateString([], { weekday: 'narrow' }),
             veil: veil ? getComputedStyle(veil).opacity : '',
           }
         })()`)
@@ -280,7 +279,6 @@ describe('settings page e2e', () => {
       { timeoutMs: 10000, intervalMs: 100 },
     )
     expect(idle.seconds).toMatch(/^:[0-5]\d$/)
-    expect(idle.date).toBe(await harness.dashboardEval<string>(`new Date().toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }).replace('Sept', 'Sep')`))
     expect(idle.firstDay).toBe(idle.sunday)
     expect(Number(idle.veil)).toBeCloseTo(0.7, 2)
     // The veil lets a tap through: the corner's settings button still opens settings under it.

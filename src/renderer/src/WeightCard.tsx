@@ -142,7 +142,7 @@ export function WeightCard({
                 {card.fat ? <span className="weight-card-fat">{fat === 'unavailable' ? '– fat' : `${formatFigure(fat, 1)}% fat`}</span> : null}
               </span>
             </div>
-            {card.line ? <WeightChart points={line} start={now - rangeMs} end={now} digits={1} label={`${person.name}’s weight over the last ${card.rangeDays} days`} compact /> : null}
+            {card.line ? <WeightChart points={line} start={now - rangeMs} end={now} digits={1} label={`${person.name}’s weight trend over the last ${card.rangeDays} days`} compact trend /> : null}
           </div>
         )
       })}
