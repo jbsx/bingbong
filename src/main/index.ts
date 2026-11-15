@@ -110,7 +110,9 @@ import { registerCalendarIpc } from './calendar/attachCalendar'
 import { CALENDAR_FIXTURE_ENV, createStandInCalendarSource } from './calendar/standInCalendar'
 import { registerNewsIpc } from './news/attachNews'
 import { attachScaleListener, type ScaleListener } from './scale/attachScale'
-import { createBluezScaleTransport } from './scale/bluezScale'
+import { createBluezScaleTransport, type ScaleSessionRecord } from './scale/bluezScale'
+import { createJsonlSink } from './logs/jsonlSink'
+import { SCALE_FILE_PATTERN } from './perf/perfFiles'
 import { createStandInScaleTransport, SCALE_FIXTURE_ENV } from './scale/standInScale'
 import { createWeighInStore } from './scale/weighInStore'
 import { attachTimerAlarm } from './timer/timerAlarm'
@@ -922,8 +924,10 @@ app.whenReady().then(async () => {
   }
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
   const scaleFixture = process.env[SCALE_FIXTURE_ENV]
+  // Every scale session's attempts, frames and end, so a missed Weigh-in can be read back (#560).
+  const scaleLog = createJsonlSink<ScaleSessionRecord>(logsDir, { prefix: 'scale', pattern: SCALE_FILE_PATTERN })
   scaleListener = attachScaleListener({
-    transport: scaleFixture ? createStandInScaleTransport(scaleFixture) : createBluezScaleTransport(),
+    transport: scaleFixture ? createStandInScaleTransport(scaleFixture) : createBluezScaleTransport({ log: scaleLog.write }),
     store: createWeighInStore(join(app.getPath('userData'), 'weighins.json')),
     settings: settingsStore,
   })

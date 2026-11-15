@@ -3,7 +3,7 @@ import * as dbus from 'dbus-next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
-import { createBluezScaleTransport, type ScaleTransportEvents } from './bluezScale'
+import { createBluezScaleTransport, type ScaleConnection, type ScaleSessionRecord, type ScaleTransportEvents } from './bluezScale'
 
 // A fake BlueZ on a fake system bus: enough of org.bluez for the listener to
 // find an adapter, follow a scale's adverts, connect and stream. A method can
@@ -19,6 +19,8 @@ type Props = Record<string, dbus.Variant>
 class FakeBluez {
   readonly calls: string[] = []
   readonly hanging = new Set<string>()
+  /** Errors a method gives, one per call, before it answers again: what BlueZ says when the link fails. */
+  readonly failing = new Map<string, string[]>()
   discovering = false
   private objects: Record<string, Record<string, Props>> = {}
   private readonly ifaces = new Map<string, EventEmitter & Record<string, unknown>>()
@@ -78,12 +80,26 @@ class FakeBluez {
     this.iface('/', 'org.freedesktop.DBus.ObjectManager').emit('InterfacesAdded', ADAPTER_PATH, this.objects[ADAPTER_PATH])
   }
 
+  /** The scale notifies a frame on one of its characteristics. */
+  frame(short: string, hex: string): void {
+    this.iface(`${DEVICE_PATH}/service000c/char_${short}`, 'org.freedesktop.DBus.Properties').emit('PropertiesChanged', 'org.bluez.GattCharacteristic1', {
+      Value: new dbus.Variant('ay', Buffer.from(hex, 'hex')),
+    })
+  }
+
+  /** The link drops from the scale's side. */
+  drop(): void {
+    this.iface(DEVICE_PATH, 'org.freedesktop.DBus.Properties').emit('PropertiesChanged', 'org.bluez.Device1', { Connected: new dbus.Variant('b', false) })
+  }
+
   connects(): number {
     return this.calls.filter((call) => call === 'Connect').length
   }
 
   private answer<T>(name: string, value: () => T): Promise<T> {
     this.calls.push(name)
+    const failure = this.failing.get(name)?.shift()
+    if (failure !== undefined) return Promise.reject(new Error(failure))
     if (this.hanging.has(name)) return new Promise<T>((_resolve, reject) => void this.pending.push(reject))
     return Promise.resolve().then(value)
   }
@@ -134,16 +150,21 @@ class FakeBluez {
 function listen(bluez: FakeBluez) {
   const statuses: ScaleStatus[] = []
   const connected: string[] = []
+  const records: ScaleSessionRecord[] = []
+  let link: ScaleConnection | null = null
   let disconnected = 0
   const events: ScaleTransportEvents = {
     status: (status) => void statuses.push(status),
     remembered: () => '',
-    connected: (address) => void connected.push(address),
+    connected: (address, connection) => {
+      connected.push(address)
+      link = connection
+    },
     frame: () => undefined,
     disconnected: () => void disconnected++,
   }
-  const stop = createBluezScaleTransport({ systemBus: () => bluez.bus })(events)
-  return { statuses, connected, disconnected: () => disconnected, stop, last: () => statuses.at(-1) }
+  const stop = createBluezScaleTransport({ systemBus: () => bluez.bus, log: (record) => void records.push(record) })(events)
+  return { statuses, connected, records, link: () => link, disconnected: () => disconnected, stop, last: () => statuses.at(-1) }
 }
 
 /** Long enough for the scale to sleep and wake, so the next advert is a new stepping-on. */
@@ -269,6 +290,131 @@ describe('the BlueZ Scale Listener always recovers (#556)', () => {
     bluez.advertiseNew()
     await vi.advanceTimersByTimeAsync(0)
     expect(scale.connected).toEqual([ADDRESS, ADDRESS])
+    scale.stop()
+  })
+})
+
+const ABORT = 'le-connection-abort-by-local'
+
+describe('the BlueZ Scale Listener connects in the scale\'s awake window, and records every session (#560)', () => {
+  const faults: FaultReport[] = []
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    faults.length = 0
+    setFaultSink((report) => void faults.push(report))
+  })
+  afterEach(() => {
+    setFaultSink(null)
+    vi.useRealTimers()
+  })
+
+  it('a Connect aborted on the local side is tried again at once, without waiting for another advert', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.failing.set('Connect', [ABORT, ABORT])
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(bluez.connects()).toBe(3)
+    expect(scale.connected).toEqual([ADDRESS])
+    expect(faults.filter((fault) => fault.site === 'scale.bluez.session')).toEqual([])
+    scale.stop()
+  })
+
+  it('a link the scale drops while Connect is being tried again does not end the session', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.failing.set('Connect', [ABORT])
+    bluez.hanging.add('Connect')
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    // The first attempt failed; the second waits on the radio while BlueZ reports the half-made link gone.
+    bluez.drop()
+    bluez.hanging.delete('Connect')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scale.disconnected()).toBe(0)
+    scale.stop()
+  })
+
+  it('three aborted Connects end the session as one fault, and each attempt is recorded', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.failing.set('Connect', [ABORT, ABORT, ABORT, ABORT])
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(bluez.connects()).toBe(3)
+    expect(scale.connected).toEqual([])
+    expect(faults.filter((fault) => fault.site === 'scale.bluez.session').map((fault) => fault.message)).toEqual([ABORT])
+    expect(scale.records).toHaveLength(1)
+    expect(scale.records[0]).toMatchObject({ address: ADDRESS, end: 'failed', error: ABORT, connectedAt: null, resolvedAt: null, frames: [] })
+    expect(scale.records[0].attempts.map((attempt) => attempt.error)).toEqual([ABORT, ABORT, ABORT])
+    scale.stop()
+  })
+
+  it('any other Connect failure is not tried again', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.failing.set('Connect', ['Operation already in progress'])
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(bluez.connects()).toBe(1)
+    expect(scale.records[0]).toMatchObject({ end: 'failed', error: 'Operation already in progress' })
+    scale.stop()
+  })
+
+  it('a session let go by the listener records when the scale woke, the link, its frames and the end', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    const woke = Date.now()
+    bluez.failing.set('Connect', [ABORT])
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+    bluez.frame('ffe1', '12112001')
+    await vi.advanceTimersByTimeAsync(500)
+    bluez.frame('ffe1', '100b20209e')
+    await scale.link()!.disconnect()
+    bluez.drop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(scale.records).toHaveLength(1)
+    const [record] = scale.records
+    expect(record).toMatchObject({ address: ADDRESS, wokeAt: woke, startedAt: woke, end: 'let go' })
+    expect(record.attempts.map((attempt) => attempt.error)).toEqual([ABORT, undefined])
+    expect(record.connectedAt).not.toBeNull()
+    expect(record.resolvedAt).not.toBeNull()
+    expect(record.frames).toEqual([
+      { at: woke + 1_000, hex: '12112001' },
+      { at: woke + 1_500, hex: '100b20209e' },
+    ])
+    expect(record.endedAt).toBe(woke + 1_500)
+    expect(record.error).toBeUndefined()
+    scale.stop()
+  })
+
+  it('a link the scale drops is recorded as dropped, and the wake time is not reset by the adverts after it', async () => {
+    const bluez = new FakeBluez()
+    const scale = listen(bluez)
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.advertiseNew()
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.drop()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scale.records.at(-1)).toMatchObject({ end: 'dropped', frames: [] })
+
+    // The scale sleeps and is stepped on again: a new wake.
+    await vi.advanceTimersByTimeAsync(ASLEEP)
+    const woke = Date.now()
+    bluez.advertise()
+    await vi.advanceTimersByTimeAsync(0)
+    bluez.drop()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scale.records).toHaveLength(2)
+    expect(scale.records[1]).toMatchObject({ wokeAt: woke, startedAt: woke, end: 'dropped' })
     scale.stop()
   })
 })

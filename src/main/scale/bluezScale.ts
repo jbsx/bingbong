@@ -2,7 +2,7 @@ import * as dbus from 'dbus-next'
 import type { QnCharacteristic } from '../../core/scale/qn'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import { CallLimitError, withinLimit } from '../../core/scale/callLimit'
-import { createWakeGate } from '../../core/scale/wakeGate'
+import { ASLEEP_MS, createWakeGate } from '../../core/scale/wakeGate'
 import { reportFault } from '../../core/trace/fault'
 import { waitForServices } from './servicesWait'
 
@@ -26,6 +26,31 @@ export interface ScaleTransportEvents {
   connected(address: string, connection: ScaleConnection): void
   frame(bytes: Uint8Array): void
   disconnected(): void
+}
+
+/** How a session ended: the listener let the scale go, the scale dropped the link, a call failed, the listener stopped, or BlueZ or its adapter went. */
+export type ScaleSessionEnd = 'let go' | 'dropped' | 'failed' | 'stopped' | 'adapter lost'
+
+/**
+ * One scale session as the scale log keeps it (#560), every time in ms from
+ * the epoch: what a missed Weigh-in is read back from. The frames are the
+ * scale's own notifications, so a session that heard nothing shows it.
+ */
+export interface ScaleSessionRecord {
+  readonly address: string
+  /** The first advert after ASLEEP_MS of silence: the stepping-on this session serves. */
+  readonly wokeAt: number | null
+  readonly startedAt: number
+  /** StopDiscovery's start and how long BlueZ took to answer it. */
+  readonly stopDiscovery: { at: number; ms: number; error?: string } | null
+  /** Each Connect, with BlueZ's error when it failed. */
+  readonly attempts: { at: number; ms: number; error?: string }[]
+  readonly connectedAt: number | null
+  readonly resolvedAt: number | null
+  readonly frames: { at: number; hex: string }[]
+  readonly endedAt: number
+  readonly end: ScaleSessionEnd
+  readonly error?: string
 }
 
 /** Starts listening; the returned function stops it. */
@@ -64,6 +89,16 @@ const LOCAL_CALL_MS = 10_000
  * error and only a call BlueZ never answers meets it.
  */
 const AIR_CALL_MS = 35_000
+/**
+ * What BlueZ answers when the kernel gave up making the LE link: at the kiosk
+ * it comes within a second of the try, and waiting for the next advert to
+ * try again spent the scale's awake window (#560).
+ */
+const ABORTED_LOCALLY = /le-connection-abort-by-local/
+/** Connects tried within one session before it fails. */
+const CONNECT_TRIES = 3
+/** Frames kept in one session's record; a weighing sends a few dozen. */
+const MAX_FRAMES = 200
 /** How long between connection attempts to the same advert, so a scale that refuses is not hammered. */
 const RETRY_CONNECT_MS = 3_000
 /** How often an unavailable Bluetooth is tried again, beside the adapter and service appearing. */
@@ -94,6 +129,8 @@ function unavailableDetail(error: unknown): string {
 export interface BluezScaleOptions {
   /** The system bus; a test hands in a fake BlueZ. */
   readonly systemBus?: () => dbus.MessageBus
+  /** Where each ended session's record goes (#560): the scale log. */
+  readonly log?: (record: ScaleSessionRecord) => void
 }
 
 export function createBluezScaleTransport(options: BluezScaleOptions = {}): ScaleTransport {
@@ -104,8 +141,8 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
     let adapterPath: string | null = null
     let adapter: dbus.ClientInterface | null = null
     let busy = false
-    /** Ends the session under way, if any: the link dropped, the bus failed, or the listener stopped. */
-    let endSession: () => void = () => undefined
+    /** Ends the session under way, if any, for that reason: the link dropped, the bus failed, or the listener stopped. */
+    let endSession: (end: ScaleSessionEnd) => void = () => undefined
     let starting = false
     let connected: ScaleConnection | null = null
     let lastAttempt = 0
@@ -113,6 +150,9 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
     let retry: ReturnType<typeof setTimeout> | null = null
     // A scale let go is not connected again until it has slept (core/scale/wakeGate).
     const wake = createWakeGate()
+    /** Per address: the last advert heard, and the first after a silence (the record's wokeAt). */
+    const lastAdvert = new Map<string, number>()
+    const wokeAt = new Map<string, number>()
     const watched = new Map<string, () => void>()
 
     const status = (next: ScaleStatus): void => {
@@ -173,9 +213,21 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
       const cleanups: (() => void)[] = []
       let reached = false
       let device: dbus.ClientInterface | null = null
+      const startedAt = lastAttempt
+      let stopDiscovery: ScaleSessionRecord['stopDiscovery'] = null
+      const attempts: { at: number; ms: number; error?: string }[] = []
+      let connectedAt: number | null = null
+      let resolvedAt: number | null = null
+      const frames: { at: number; hex: string }[] = []
+      let end: ScaleSessionEnd | null = null
+      let failure: string | undefined
       // The session's end also abandons any call it is waiting on, so a BlueZ restart or a lost adapter ends it at once.
-      let ended: () => void = () => undefined
-      const over = new Promise<void>((resolve) => (ended = resolve))
+      let resolveOver: () => void = () => undefined
+      const over = new Promise<void>((resolve) => (resolveOver = resolve))
+      const ended = (why: ScaleSessionEnd): void => {
+        end ??= why
+        resolveOver()
+      }
       endSession = ended
       const disconnect = async (): Promise<void> => {
         if (device === null) return
@@ -183,20 +235,41 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
       }
       try {
         // Discovery may already be off; the connection goes ahead either way.
-        if (adapter !== null) await withinLimit(adapter.StopDiscovery(), 'StopDiscovery', LOCAL_CALL_MS, over).catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error))
+        if (adapter !== null) {
+          const at = Date.now()
+          await withinLimit(adapter.StopDiscovery(), 'StopDiscovery', LOCAL_CALL_MS, over).then(
+            () => void (stopDiscovery = { at, ms: Date.now() - at }),
+            (error: unknown) => {
+              stopDiscovery = { at, ms: Date.now() - at, error: message(error) }
+              reportFault('scale.bluez.stopDiscovery', error)
+            },
+          )
+        }
         const proxy = await proxyFor(path, over)
         device = proxy.getInterface(DEVICE)
         const deviceProps = proxy.getInterface(PROPERTIES)
+        // A half-made link BlueZ reports gone while Connect is tried again is not the end: only a made one is.
         const onDevice = (iface: string, changed: Props): void => {
-          if (iface === DEVICE && value<boolean>(changed, 'Connected') === false) ended()
+          if (iface === DEVICE && connectedAt !== null && value<boolean>(changed, 'Connected') === false) ended('dropped')
         }
         deviceProps.on('PropertiesChanged', onDevice)
         cleanups.push(() => deviceProps.removeListener('PropertiesChanged', onDevice))
-        await withinLimit(device.Connect(), 'Connect', AIR_CALL_MS, over)
+        for (let tries = 1; connectedAt === null; tries++) {
+          const at = Date.now()
+          try {
+            await withinLimit(device.Connect(), 'Connect', AIR_CALL_MS, over)
+            attempts.push({ at, ms: Date.now() - at })
+            connectedAt = Date.now()
+          } catch (error) {
+            attempts.push({ at, ms: Date.now() - at, error: message(error) })
+            if (tries >= CONNECT_TRIES || error instanceof CallLimitError || !ABORTED_LOCALLY.test(message(error))) throw error
+          }
+        }
         // A drop mid-resolve ends the session at once (#397).
         const resolved = async (): Promise<boolean> =>
           (await withinLimit<dbus.Variant>(deviceProps.Get(DEVICE, 'ServicesResolved'), 'Get ServicesResolved', LOCAL_CALL_MS, over)).value === true
         await waitForServices(resolved, over, { timeoutMs: RESOLVE_MS })
+        resolvedAt = Date.now()
         const all = await objects(over)
         const characteristics = new Map<string, string>()
         for (const [charPath, ifaces] of Object.entries(all)) {
@@ -213,7 +286,10 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
           write: async (characteristic, bytes) => {
             await withinLimit(writers[characteristic].WriteValue(Buffer.from(bytes), { type: new dbus.Variant('s', 'request') }), `WriteValue ${characteristic}`, AIR_CALL_MS, over)
           },
-          disconnect,
+          disconnect: async () => {
+            end ??= 'let go'
+            await disconnect()
+          },
         }
         // The session exists before notifications start: the scale sends its info frame at once, and it must be answered.
         connected = connection
@@ -227,7 +303,9 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
           const charProps = proxyChar.getInterface(PROPERTIES)
           const onValue = (iface: string, changed: Props): void => {
             const bytes = value<Buffer>(changed, 'Value')
-            if (iface === CHARACTERISTIC && bytes !== undefined) events.frame(new Uint8Array(bytes))
+            if (iface !== CHARACTERISTIC || bytes === undefined) return
+            if (frames.length < MAX_FRAMES) frames.push({ at: Date.now(), hex: Buffer.from(bytes).toString('hex') })
+            events.frame(new Uint8Array(bytes))
           }
           charProps.on('PropertiesChanged', onValue)
           cleanups.push(() => charProps.removeListener('PropertiesChanged', onValue))
@@ -241,9 +319,27 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
       } catch (error) {
         // A stop ends the session too; only a link that failed on its own is a fault.
         if (!stopped) reportFault('scale.bluez.session', error)
+        end ??= stopped ? 'stopped' : 'failed'
+        failure = message(error)
         await disconnect()
       } finally {
         for (const cleanup of cleanups) cleanup()
+        const endedAt = Date.now()
+        options.log?.({
+          address,
+          wokeAt: wokeAt.get(address) ?? null,
+          startedAt,
+          stopDiscovery,
+          attempts,
+          connectedAt,
+          resolvedAt,
+          frames,
+          endedAt,
+          end: stopped ? 'stopped' : (end ?? 'failed'),
+          ...(failure === undefined ? {} : { error: failure }),
+        })
+        // No advert is heard while discovery is off for the link, so the silence that marks a new wake counts from its end.
+        lastAdvert.set(address, Math.max(lastAdvert.get(address) ?? endedAt, endedAt))
         busy = false
         connected = null
         endSession = () => undefined
@@ -261,6 +357,10 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
       const address = value<string>(props, 'Address')
       if (stopped || !isScale(address, props)) return
       const now = Date.now()
+      const key = address!.toUpperCase()
+      const last = lastAdvert.get(key)
+      if (last === undefined || now - last >= ASLEEP_MS) wokeAt.set(key, now)
+      lastAdvert.set(key, now)
       if (!wake.heard(address!.toUpperCase(), now) || busy || now - lastAttempt < RETRY_CONNECT_MS) return
       void session(path, address!.toUpperCase())
     }
@@ -287,7 +387,7 @@ export function createBluezScaleTransport(options: BluezScaleOptions = {}): Scal
     let following = false
     /** Let go of the adapter: the session under way ends, and the devices followed through it are let go too. */
     const forgetAdapter = (): void => {
-      endSession()
+      endSession('adapter lost')
       for (const unwatch of watched.values()) unwatch()
       watched.clear()
       adapter = null

@@ -10,3 +10,5 @@ export const DECISION_FILE_PATTERN = /^decision-.*\.jsonl$/
 export const ASK_FILE_PATTERN = /^asks-.*\.jsonl$/
 /** The faults-*.jsonl family (#397): every swallowed failure `reportFault` names, app-wide. */
 export const FAULT_FILE_PATTERN = /^faults-.*\.jsonl$/
+/** The scale-*.jsonl family (#560): one record per scale session, its attempts, frames and end. */
+export const SCALE_FILE_PATTERN = /^scale-.*\.jsonl$/
