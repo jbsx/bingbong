@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { fromHex, toHex } from './qn'
-import { createScaleSession } from './scaleSession'
+import { createScaleSession, QUIET_AFTER_READING_MS, WAITING_FOR_READING_MS } from './scaleSession'
+
+// The kiosk's connection at 13:57:28 on 2026-11-15 (#560): the handshake, then 15 s of nothing while the
+// owner had not yet stepped on. The listener let the scale go just as the first readings came.
+const HANDSHAKE_THEN_WAITING = ['120f1558c6f738c1a43f013f01076f', '140b150000010000000035']
+
+describe('how long a quiet scale is kept (#560)', () => {
+  it('a scale that has shaken hands but sent no reading is kept the long wait: the owner has not stepped on yet', () => {
+    const session = createScaleSession()
+    expect(session.quietMs()).toBe(WAITING_FOR_READING_MS)
+    for (const hex of HANDSHAKE_THEN_WAITING) session.receive(fromHex(hex), 1_000)
+    expect(session.quietMs()).toBe(WAITING_FOR_READING_MS)
+    expect(WAITING_FOR_READING_MS).toBeGreaterThan(QUIET_AFTER_READING_MS)
+  })
+
+  it('once a reading has come, a quiet scale is let go after the short wait: the owner has stepped off', () => {
+    const session = createScaleSession()
+    for (const hex of [...HANDSHAKE_THEN_WAITING, '100b152111000000000062']) session.receive(fromHex(hex), 1_000)
+    expect(session.quietMs()).toBe(QUIET_AFTER_READING_MS)
+  })
+})
 
 // The probe's connection at 14:16:01 on 2026-10-19 (#350): the handshake, the owner already settled (the stable frame three times), stepping off.
 const SETTLED_AND_OFF = [

@@ -2,16 +2,13 @@ import { ipcMain } from 'electron'
 import { WEIGHT_IPC, type ScaleStatus } from '../../core/scale/ipcChannels'
 import { guessPerson, JAISH, settledWeighIn } from '../../core/scale/people'
 import { withoutPerson } from '../../core/scale/weightSettings'
-import { createScaleSession, type ScaleSession } from '../../core/scale/scaleSession'
+import { createScaleSession, QUIET_AFTER_READING_MS, type ScaleSession } from '../../core/scale/scaleSession'
 import { createWeighInPopup } from '../../core/scale/weighInPopup'
 import { reportFault } from '../../core/trace/fault'
 import type { SettingsStore } from '../settings/settingsStore'
 import type { ScaleConnection, ScaleTransport } from './bluezScale'
 import { STAND_IN_ADDRESS } from './standInScale'
 import type { WeighInStore } from './weighInStore'
-
-/** A connected scale that sends nothing for this long has been left: the link is dropped so the next stepping-on connects afresh. */
-const QUIET_MS = 15_000
 
 export interface ScaleListener {
   /** A renderer (the dashboard, the overlay) that hears the Weigh-ins, the pop-up and the status. */
@@ -25,8 +22,9 @@ export interface ScaleListener {
  * replies written back in order, its readings driving the Weigh-in pop-up,
  * its Weigh-in given to the nearest Person (no asking), added to
  * weighins.json and sent to the renderers; a tap moves it. The first
- * scale it connects to is remembered by address in settings; a scale
- * quiet for 15 s is let go. Nothing here speaks.
+ * scale it connects to is remembered by address in settings; a quiet
+ * scale is let go after the session's own wait (core/scale/scaleSession:
+ * long before the first reading, 15 s after). Nothing here speaks.
  */
 export function attachScaleListener(deps: { transport: ScaleTransport; store: WeighInStore; settings: SettingsStore }): ScaleListener {
   const receivers = new Set<Electron.WebContents>()
@@ -47,7 +45,7 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
 
   const listen = (): void => {
     if (quiet !== null) clearTimeout(quiet)
-    quiet = setTimeout(() => void connection?.disconnect(), QUIET_MS)
+    quiet = setTimeout(() => void connection?.disconnect(), session?.quietMs() ?? QUIET_AFTER_READING_MS)
   }
 
   const stop = deps.transport({

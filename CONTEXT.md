@@ -1442,7 +1442,9 @@ weight frames and records the first stable one of at least 5 kg as the
 Weigh-in — its repeats and later stable frames ignored until the owner
 steps off. The first QN-family scale it connects to is remembered by
 address in settings and others are ignored after that; Forget in the Weight
-section clears it. A scale quiet for 15 s is let go, and a scale let go
+section clears it. A scale that has sent a reading and then nothing for
+15 s is let go; before its first reading it is waiting for the owner to
+step on, and is kept up to 2 minutes (#560). A scale let go
 is not connected again until its adverts have stopped for 10 s (it has
 slept), counted from the end of the link at the earliest, since no advert
 is heard while one holds: a connection keeps it awake, so reconnecting at
