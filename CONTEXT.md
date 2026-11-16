@@ -1040,7 +1040,7 @@ What renders while nothing is happening: flat Tiles on a flat near-black
 ground (ADR 0078; the glass bento of #352 before it), in three Columns.
 Down the left the weather: the current conditions, today's high, low and
 rain chance, a day bar of sunrise to sunset with now marked on it and the
-two times under it at 40 px (2026-11-16, read from the chair), the rain
+two times under it at 40 px in white (2026-11-16, read from the chair), the rain
 chance at its peak and the hour it peaks, the six coming hours and the three
 coming days, all in the city's own clock — every temperature in its hue
 from blue through green to red, rain in blue, so the day reads from across
@@ -1206,10 +1206,12 @@ tear-off leaf of the weekday over today's date, the one place the Idle
 Screen writes the day and date (the clock is the time alone); beside it
 the month and year over the next bank holiday when it falls this month
 or next, else "no events" or how many the month has; under them, across
-the card (2026-11-16, "enlarge the calendar"), four weeks from this one
-with the days at 40 px, read from the chair, today boxed, a dot under a
-day with an entry; and the month's entries still to come while it has
-any, the weeks giving two of their rows to the list. Bank holidays are computed, not
+the card (2026-11-16, "enlarge the calendar"), this week and next with
+the days at 40 px, read from the chair, today boxed, a dot under a day
+with an entry; and the month's entries still to come while it has any.
+With no entries to list the tile is tall, the weekday at 65 px over the
+date at 136 px ("the tile is more useful than the 2 extra weeks", after
+four weeks were tried the same day). Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each

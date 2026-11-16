@@ -4133,7 +4133,9 @@ button.idle-line {
 }
 
 /* The day bar: the 24 hours, sunrise to sunset lit, now marked; under it the two times in the sun's colour
-   at 40 px, read from the chair (owner, 2026-11-16: at 16 px they were gone in the 2 m blur test). */
+   at 40 px, read from the chair (owner, 2026-11-16: at 16 px they were gone in the 2 m blur test), in the
+   values' white: in the sun's yellow they read brown, as its 35 % wash on the track did, so the lit span is
+   the sun's colour whole, as the low/high bar over it is its own. */
 .wx-day {
   position: relative;
   height: 84px;
@@ -4142,7 +4144,7 @@ button.idle-line {
   font-weight: 600;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-  color: var(--wx-sun);
+  color: var(--fgh);
 }
 
 .wx-day-track {
@@ -4160,7 +4162,8 @@ button.idle-line {
   top: 0;
   bottom: 0;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--wx-sun) 35%, transparent);
+  background: var(--wx-sun);
+  opacity: 0.8;
 }
 
 .wx-day-edge,
@@ -4170,7 +4173,7 @@ button.idle-line {
   width: 2px;
   height: 20px;
   margin-left: -1px;
-  background: color-mix(in srgb, var(--wx-sun) 70%, var(--fg3));
+  background: var(--wx-sun);
 }
 
 .wx-day-now {
@@ -4448,6 +4451,27 @@ button.idle-line {
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
   color: var(--fgh);
+}
+
+/* The tile with the card's room to itself (owner, 2026-11-16: "the tile is more useful than the 2 extra weeks",
+   "make it visible from afar"): the weekday at the status size, the date as large as the widest keeps 28 px clear
+   a side, and beside it 204 px, the widest month's name at 40 px. */
+.idle-cal--tall .idle-cal-head {
+  gap: 20px;
+}
+
+.idle-cal--tall .idle-cal-tile {
+  width: 230px;
+  height: 272px;
+}
+
+.idle-cal--tall .idle-cal-tile-day {
+  padding: 8px 0 6px;
+  font-size: var(--type-xl);
+}
+
+.idle-cal--tall .idle-cal-today {
+  font-size: 136px;
 }
 
 .idle-cal-side {

@@ -247,7 +247,7 @@ describe.each([
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     expect(await harness.dashboardEval<number>(`[...document.querySelectorAll('.idle-repos li')].filter((row) => !row.hidden).length`)).toBe(3)
-    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-week').length`)).toBe(4)
+    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-week').length`)).toBe(2)
     expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.wx-day-time')).fontSize`)).toBe('40px')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
     expect(await harness.dashboardEval<string[]>(settledPaint(colourFloor(true)))).toEqual([])

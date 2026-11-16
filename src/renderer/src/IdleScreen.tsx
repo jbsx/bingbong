@@ -53,12 +53,12 @@ const LEAN_NEWS_PX = 330
 /** How many of the month's entries the Calendar lists under its weeks. */
 const ENTRIES_SHOWN = 4
 
-/** The weeks the Calendar draws over a list of entries, and with its room to itself: the weeks give two rows to the list (a guess, 2026-11-16: no Calendar Source is wired, so no day has shown which the owner would rather keep). */
-const WEEKS_OVER_ENTRIES = 2
+/** The Date Tile's height (styles.css, .idle-cal-tile): tall with the card's room to itself, read from across the room (owner, 2026-11-16), and short over a list of entries or in a short Column. */
+const TILE_PX = { tall: 272, short: 148 }
 
-/** The Calendar's height holding so many weeks (styles.css, .idle-cal): its padding, the Date Tile, the weekdays, a 62 px row a week and the room under the last row's dots. */
-function calendarHeight(weeks: number): number {
-  return 26 + 148 + 14 + 34 + 62 * weeks + 9
+/** The Calendar's height around its Date Tile (styles.css, .idle-cal): its padding, the tile, the weekdays, a 62 px row for each of the two weeks and the room under the last row's dots. */
+function calendarHeight(tile: number): number {
+  return 26 + tile + 14 + 34 + 62 * WEEKS_AHEAD + 9
 }
 
 /** The Top Repos' three one-line rows, close set: what the News card asks for beside a Weight card that grows, and the least that still holds all three. */
@@ -365,21 +365,23 @@ function entryWhen(event: CalendarEvent, format: TimeFormat): string {
  * day and date, at a size read from the chair (owner, 2026-11-15); beside
  * it the month and year over the next bank holiday by name when it falls
  * this month or next, else how many entries the month has. Under them,
- * across the card, the weeks from this one with their days at 40 px
- * (owner, 2026-11-16: read from the chair), today boxed, a dot under a day
- * with an entry: four weeks, or two over the month's entries still to come
- * while it has any (its full form).
+ * across the card, this week and next with their days at 40 px (owner,
+ * 2026-11-16: read from the chair), today boxed, a dot under a day with an
+ * entry; and the month's entries still to come while it has any (its full
+ * form). With no entries to list the tile is tall, the weekday at 65 px
+ * over the date at 136 px.
  */
 function CalendarCard({ now, weekStart, events, form, format }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; form: 'full' | 'small'; format: TimeFormat }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
   const holidays = [...ukBankHolidays(now.getFullYear()), ...ukBankHolidays(now.getFullYear() + 1)]
   const entries = monthEntries(now, events)
-  const weeks = weeksFrom(now, weekStart, form === 'full' && entries.length === 0 ? WEEKS_AHEAD : WEEKS_OVER_ENTRIES, events, holidays)
+  const weeks = weeksFrom(now, weekStart, WEEKS_AHEAD, events, holidays)
+  const tall = form === 'full' && entries.length === 0
   const next = nextHoliday(now, holidays)
   const coming = next !== null && holidaySoon(next.date, now) ? next : null
   const monthName = now.toLocaleDateString([], { month: 'long' })
   return (
-    <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
+    <section className={tall ? 'idle-card idle-cal idle-cal--tall' : 'idle-card idle-cal'} aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
       <div className="idle-cal-head">
         <p className="idle-cal-tile" aria-label={dateLabel(now, { weekday: 'long', day: 'numeric', month: 'long' })}>
           <span className="idle-cal-tile-day" aria-hidden="true">
@@ -598,8 +600,8 @@ export function IdleScreen({
   const ask = (id: IdleCardId): BandAsk<IdleCardId> => {
     switch (id) {
       case 'calendar':
-        // Four weeks with its room to itself; two over its entries, and two alone when the Column is short.
-        return { id, full: entries > 0 ? calendarHeight(WEEKS_OVER_ENTRIES) + 20 + 42 * entries : calendarHeight(WEEKS_AHEAD), small: calendarHeight(WEEKS_OVER_ENTRIES), grows: false }
+        // The tall Date Tile with its room to itself; the short one over its entries, and alone when the Column is short.
+        return { id, full: entries > 0 ? calendarHeight(TILE_PX.short) + 20 + 42 * entries : calendarHeight(TILE_PX.tall), small: calendarHeight(TILE_PX.short), grows: false }
       case 'weight':
         if (weightRows.length === 0) return { id, full: 140, small: 140, grows: false }
         // Smaller, each row keeps its figures over a shorter line.

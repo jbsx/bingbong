@@ -31,8 +31,8 @@ export function monthRange(now: Date, weekStart: number): CalendarRange {
   return { from: midnight(year, month, 1 - lead), to: midnight(year, month, 1 - lead + weeks * 7) }
 }
 
-/** The most weeks the Idle Screen's Calendar draws: this one and the three after it (owner, 2026-11-16). */
-export const WEEKS_AHEAD = 4
+/** The weeks the Idle Screen's Calendar draws: this one and the next (four were tried and taken back the same day, owner 2026-11-16: the Date Tile is worth more than two more weeks). */
+export const WEEKS_AHEAD = 2
 
 /**
  * This week and the ones after it (the Idle Screen's Calendar, #360): `count`
