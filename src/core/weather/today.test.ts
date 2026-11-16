@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cityWallClock, dayBar, rainPeak } from './today'
+import { cityWallClock, dayBar, rainPeak, sunLabelPlaces } from './today'
 import type { WeatherHour } from './weather'
 
 const hour = (time: string, precipitationChance: number | null): WeatherHour => ({ time, temperature: 12, description: 'drizzle', sky: 'drizzle', isDay: true, precipitationChance })
@@ -14,6 +14,22 @@ describe('rainPeak', () => {
     expect(rainPeak([hour('2026-10-20T23:00', 0), hour('2026-10-21T00:00', 0)])).toEqual({ chance: 0, time: '2026-10-20T23:00' })
     expect(rainPeak([hour('2026-10-20T23:00', null)])).toBeNull()
     expect(rainPeak([])).toBeNull()
+  })
+})
+
+describe('sunLabelPlaces', () => {
+  it('leaves each time under its own edge while both fit', () => {
+    expect(sunLabelPlaces({ sunrise: 0.3, sunset: 0.75 }, 0.3)).toEqual({ sunrise: 0.3, sunset: 0.75 })
+  })
+
+  it('parts a short day’s two times by one time’s width, about the middle of the day', () => {
+    const places = sunLabelPlaces({ sunrise: 0.45, sunset: 0.55 }, 0.3)
+    expect(places.sunset - places.sunrise).toBeCloseTo(0.3)
+    expect((places.sunrise + places.sunset) / 2).toBeCloseTo(0.5)
+  })
+
+  it('keeps both inside the bar when the sun rises early and sets late', () => {
+    expect(sunLabelPlaces({ sunrise: 0.05, sunset: 0.98 }, 0.3)).toEqual({ sunrise: 0.15, sunset: 0.85 })
   })
 })
 

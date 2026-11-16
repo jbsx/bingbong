@@ -237,7 +237,8 @@ describe.each([
     expect(geometry.overflowing).toEqual([])
     expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
     // Weather down the left; Now Playing, while a song is held, over the AI Usage under the clock; the Calendar, the Weight card and News down the right.
-    expect(geometry.homes).toEqual({ weather: 'left full', ...(music ? { music: 'middle full', usage: 'middle small' } : { usage: 'middle full' }), calendar: 'right full', weight: 'right full', news: 'right full' })
+    // Under the Calendar's four weeks (owner, 2026-11-16) two People's rows leave the Top Repos their smaller band, which still holds all three.
+    expect(geometry.homes).toEqual({ weather: 'left full', ...(music ? { music: 'middle full', usage: 'middle small' } : { usage: 'middle full' }), calendar: 'right full', weight: 'right full', news: 'right small' })
     expect(geometry.lines).toEqual(['voice', 'lastPage'])
     expect(geometry.rings).toBe(count)
     // At rest the Voice Prompt is its orb and still waveform alone, no words (owner, 2026-11-15).
@@ -245,6 +246,9 @@ describe.each([
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-voice--rest .idle-voice-orb') && !!document.querySelector('.idle-voice--rest .voice-wave')`)).toBe(true)
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
+    expect(await harness.dashboardEval<number>(`[...document.querySelectorAll('.idle-repos li')].filter((row) => !row.hidden).length`)).toBe(3)
+    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-week').length`)).toBe(4)
+    expect(await harness.dashboardEval<string>(`getComputedStyle(document.querySelector('.wx-day-time')).fontSize`)).toBe('40px')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
     expect(await harness.dashboardEval<string[]>(settledPaint(colourFloor(true)))).toEqual([])
   })

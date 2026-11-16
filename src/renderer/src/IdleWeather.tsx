@@ -1,6 +1,6 @@
 import type { TimeFormat } from '../../core/idle/timeFormat'
 import { hourLabel } from '../../core/weather/hourLabel'
-import { cityWallClock, dayBar, rainPeak } from '../../core/weather/today'
+import { cityWallClock, dayBar, rainPeak, sunLabelPlaces } from '../../core/weather/today'
 import { temperatureHue, type WeatherHour, type WeatherOutlookDay, type WeatherReport } from '../../core/weather/weather'
 import type { WeatherUnits } from '../../core/settings/settings'
 import { WeatherIcon } from './WeatherIcon'
@@ -31,25 +31,31 @@ function Drop({ size }: { size: number }) {
   )
 }
 
-/** The day from sunrise to sunset on its 24 hours, now marked on it — past sunset at night. */
+/** One sun time's share of the day bar's width at 40 px: "07:32" (120 of the bar's 454 px, with its gap), or a longer 12-hour time (a guess, no 12-hour shot measures it). */
+const SUN_TIME_SHARE = { short: 0.3, long: 0.42 } as const
+
+/** The day from sunrise to sunset on its 24 hours, now marked on it — past sunset at night; the two times under it, read from the chair (owner, 2026-11-16). */
 function DayBar({ report, now, format }: { report: WeatherReport; now: number; format: TimeFormat }) {
   const at = report.utcOffsetSeconds === undefined ? null : cityWallClock(now, report.utcOffsetSeconds)
   const bar = at === null ? null : dayBar(report.today?.sunrise ?? null, report.today?.sunset ?? null, at)
   if (bar === null || report.today?.sunrise == null || report.today.sunset == null) return null
   const percent = (share: number): string => `${(share * 100).toFixed(2)}%`
+  const sunrise = hourLabel(report.today.sunrise, { withMinutes: true, format })
+  const sunset = hourLabel(report.today.sunset, { withMinutes: true, format })
+  const places = sunLabelPlaces(bar, Math.max(sunrise.length, sunset.length) > 5 ? SUN_TIME_SHARE.long : SUN_TIME_SHARE.short)
   return (
-    <div className="wx-day" aria-label={`sunrise ${hourLabel(report.today.sunrise, { withMinutes: true, format })}, sunset ${hourLabel(report.today.sunset, { withMinutes: true, format })}`}>
+    <div className="wx-day" aria-label={`sunrise ${sunrise}, sunset ${sunset}`}>
       <span className="wx-day-track">
         <span className="wx-day-sun" style={{ left: percent(bar.sunrise), width: percent(bar.sunset - bar.sunrise) }} />
         <span className="wx-day-edge" style={{ left: percent(bar.sunrise) }} />
         <span className="wx-day-edge" style={{ left: percent(bar.sunset) }} />
         <span className="wx-day-now" style={{ left: percent(bar.now) }} />
       </span>
-      <span className="wx-day-time" style={{ left: percent(bar.sunrise) }}>
-        {hourLabel(report.today.sunrise, { withMinutes: true, format })}
+      <span className="wx-day-time" style={{ left: percent(places.sunrise) }}>
+        {sunrise}
       </span>
-      <span className="wx-day-time" style={{ left: percent(bar.sunset) }}>
-        {hourLabel(report.today.sunset, { withMinutes: true, format })}
+      <span className="wx-day-time" style={{ left: percent(places.sunset) }}>
+        {sunset}
       </span>
     </div>
   )

@@ -4132,19 +4132,22 @@ button.idle-line {
   background: var(--fg);
 }
 
-/* The day bar: the 24 hours, sunrise to sunset lit, now marked. */
+/* The day bar: the 24 hours, sunrise to sunset lit, now marked; under it the two times in the sun's colour
+   at 40 px, read from the chair (owner, 2026-11-16: at 16 px they were gone in the 2 m blur test). */
 .wx-day {
   position: relative;
-  height: 62px;
-  margin-top: 16px;
-  font-family: var(--font-mono);
-  font-size: var(--type-s);
-  color: var(--fg3);
+  height: 84px;
+  margin-top: 14px;
+  font-size: var(--type-l);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--wx-sun);
 }
 
 .wx-day-track {
   position: absolute;
-  top: 15px;
+  top: 12px;
   left: 0;
   right: 0;
   height: 6px;
@@ -4181,7 +4184,8 @@ button.idle-line {
 
 .wx-day-time {
   position: absolute;
-  top: 38px;
+  top: 36px;
+  line-height: 1;
   transform: translateX(-50%);
   white-space: nowrap;
 }
@@ -4395,14 +4399,15 @@ button.idle-line {
 .idle-cal {
   display: flex;
   flex-direction: column;
-  padding: 28px 28px 0;
+  padding: 26px 28px 0;
 }
 
-/* The Date Tile beside the month and the two weeks; the tile as tall as they are. */
+/* The Date Tile beside the month and the next bank holiday; the weeks across the whole card under them (owner, 2026-11-16). */
+
 .idle-cal-head {
   display: flex;
   align-items: stretch;
-  gap: 24px;
+  gap: 22px;
 }
 
 /* The Date Tile (owner, 2026-11-15): a tear-off leaf, the weekday on its solid band over today's date,
@@ -4412,6 +4417,7 @@ button.idle-line {
   display: flex;
   flex-direction: column;
   width: 184px;
+  height: 148px;
   margin: 0;
   overflow: hidden;
   border: 3px solid var(--fgh);
@@ -4436,7 +4442,7 @@ button.idle-line {
   align-items: center;
   justify-content: center;
   padding-bottom: 4px;
-  font-size: 100px;
+  font-size: 92px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.035em;
@@ -4448,6 +4454,7 @@ button.idle-line {
   flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -4462,7 +4469,7 @@ button.idle-line {
 
 .idle-cal-year {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: var(--type-m);
   font-weight: 500;
   color: var(--fg2);
@@ -4470,36 +4477,48 @@ button.idle-line {
 
 .idle-cal-holiday,
 .idle-cal-none {
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   font-size: var(--type-m);
-  line-height: 1.25;
-  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .idle-cal-none {
   color: var(--fg3);
 }
 
+/* The holiday's name over its date, beside the tile. */
 .idle-cal-holiday {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--ok);
+}
+
+.idle-cal-holiday-words {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.idle-cal-holiday-date {
+  white-space: nowrap;
 }
 
 .idle-cal-swatch {
   flex: none;
   width: 12px;
   height: 12px;
+  margin-top: 9px;
   border-radius: 0;
   background: var(--ok);
 }
 
-/* This week and next, compact beside the tile: a column a letter wide over two-figure days. */
+/* The weeks from this one, across the card: the days at 40 px, read from the chair. */
 .idle-cal-grid {
-  margin-top: 12px;
+  margin-top: 14px;
   font-family: var(--font-mono);
 }
 
@@ -4511,14 +4530,13 @@ button.idle-line {
 }
 
 .idle-cal-weekdays {
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .idle-cal-weekday {
-  font-size: var(--type-s);
-  letter-spacing: 0.06em;
+  font-size: var(--type-m);
   text-transform: uppercase;
-  color: var(--fg3);
+  color: var(--fg2);
 }
 
 .idle-cal-weekday--today {
@@ -4526,18 +4544,15 @@ button.idle-line {
   color: var(--fgh);
 }
 
-.idle-cal-week {
-  margin-top: 2px;
-}
-
 .idle-cal-day {
   position: relative;
   z-index: 0;
-  height: 46px;
-  line-height: 46px;
-  font-size: var(--type-m);
-  letter-spacing: -0.04em;
-  color: var(--fg2);
+  height: 62px;
+  line-height: 62px;
+  font-size: var(--type-l);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  color: var(--fgh);
 }
 
 .idle-cal-day--outside {
@@ -4545,14 +4560,14 @@ button.idle-line {
 }
 
 .idle-cal-day--today {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--bg);
 }
 
 .idle-cal-day--today::before {
   content: '';
   position: absolute;
-  inset: 3px 1px;
+  inset: 5px 3px;
   z-index: -1;
   border-radius: var(--radius-sm);
   background: var(--fgh);
@@ -4561,10 +4576,10 @@ button.idle-line {
 .idle-cal-dot {
   position: absolute;
   left: 50%;
-  bottom: 3px;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
   border-radius: 50%;
   background: var(--fg2);
 }
@@ -4574,12 +4589,13 @@ button.idle-line {
 }
 
 .idle-cal-day--today .idle-cal-dot {
+  bottom: 7px;
   background: var(--bg);
 }
 
 /* The month's entries still to come, under the weeks. */
 .idle-cal-entries {
-  margin: 20px 0 0;
+  margin: 12px 0 0;
   padding: 8px 0 0;
   border-top: 1px solid var(--hair);
   list-style: none;
@@ -5626,11 +5642,17 @@ button.idle-line {
 }
 
 /* The News card in a short band: each row on one line — the month's gain,
-   the name and the stars — so the three rows still show. */
+   the name and the stars — so the three rows still show, close set in the
+   190 px the Calendar's weeks leave it (owner, 2026-11-16). */
+.idle-repos--lean {
+  gap: 0;
+  padding: 16px 26px 8px;
+}
+
 .idle-repos--lean .idle-repo {
   grid-template-columns: 5.4rem minmax(0, 1fr);
   align-items: baseline;
-  padding: 6px 0;
+  padding: 3px 0;
 }
 
 .idle-repos--lean .idle-repo-gain-label,

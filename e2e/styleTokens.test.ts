@@ -60,7 +60,7 @@ const SIZE_ALLOWLIST: readonly { selector: string; value: string; reason: string
   { selector: '.wx-peak-figure', value: '88px', reason: "the day's peak temperature, display numeral" },
   { selector: '.wx-peak-figure small', value: '0.42em', reason: "the peak's unit, part of the numeral" },
   { selector: '.wx-days-low, .wx-days-high', value: '28px', reason: "the week's lows and highs, display numerals" },
-  { selector: '.idle-cal-today', value: '100px', reason: "the Date Tile's date, display numeral (owner 2026-11-15)" },
+  { selector: '.idle-cal-today', value: '92px', reason: "the Date Tile's date, display numeral (owner 2026-11-15; 92 px in the 148 px tile beside the month, 2026-11-16)" },
   { selector: '.weight-card-kg', value: '68px', reason: 'the weight, display numeral' },
   { selector: '.weight-card-kg small', value: '20px', reason: "the weight's kg, part of the numeral" },
   { selector: '.weight-card-change', value: '38px', reason: "the weight's change, display numeral" },

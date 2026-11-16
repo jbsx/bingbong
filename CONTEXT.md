@@ -1039,7 +1039,8 @@ _Avoid_: toast, status pop-up, turn dialog
 What renders while nothing is happening: flat Tiles on a flat near-black
 ground (ADR 0078; the glass bento of #352 before it), in three Columns.
 Down the left the weather: the current conditions, today's high, low and
-rain chance, a day bar of sunrise to sunset with now marked on it, the rain
+rain chance, a day bar of sunrise to sunset with now marked on it and the
+two times under it at 40 px (2026-11-16, read from the chair), the rain
 chance at its peak and the hour it peaks, the six coming hours and the three
 coming days, all in the city's own clock — every temperature in its hue
 from blue through green to red, rain in blue, so the day reads from across
@@ -1203,10 +1204,12 @@ month or next, else "No events" when there are none. At the top of the
 right Column (2026-10-20, reshaped 2026-11-15): the **Date Tile**, a
 tear-off leaf of the weekday over today's date, the one place the Idle
 Screen writes the day and date (the clock is the time alone); beside it
-the month and year over this week and next, compact, today boxed, a dot
-under a day with an entry; under them the next bank holiday when it falls
-this month or next, else "no events" or how many the month has; and the
-month's entries still to come while it has any. Bank holidays are computed, not
+the month and year over the next bank holiday when it falls this month
+or next, else "no events" or how many the month has; under them, across
+the card (2026-11-16, "enlarge the calendar"), four weeks from this one
+with the days at 40 px, read from the chair, today boxed, a dot under a
+day with an entry; and the month's entries still to come while it has
+any, the weeks giving two of their rows to the list. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each
@@ -1223,7 +1226,9 @@ The Idle Screen's card of what is going on in the owner's world, one
 tile since 2026-10-19: the Top Repos, at the foot of the right Column
 under "TOP REPOS ★ this month", every row it can hold whole — in a short
 band each row on one line (the month's gain, the name, the stars), so all
-three show; with none read yet, "No repos yet". Until then it held two tiles, Today's Highlight and Big News, from
+three show, which is its form under the Calendar's weeks beside a Weight
+card that draws its line (2026-11-16, "the top repo doesnt need that much
+space"); with none read yet, "No repos yet". Until then it held two tiles, Today's Highlight and Big News, from
 the News Desk; the owner retired them ("the news cards are kinda useless
 right now. collapse the two cards into one and have the top 3 starred
 repos of the month in the card instead"). With GitHub never read it keeps

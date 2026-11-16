@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from './calendar'
-import { asWeekStart, eventsLeftToday, firstDayOfWeek, monthEntries, monthRange, twoWeeks, upNext, weekStartOf } from './month'
+import { asWeekStart, eventsLeftToday, firstDayOfWeek, monthEntries, monthRange, weeksFrom, upNext, weekStartOf } from './month'
 import { ukBankHolidays } from './ukBankHolidays'
 
 function event(title: string, start: Date, end: Date, allDay = false): CalendarEvent {
   return { id: title, source: 'test', title, start: start.getTime(), end: end.getTime(), allDay }
 }
 
-describe('twoWeeks', () => {
+describe('weeksFrom', () => {
   it('is this week and next from the week’s start, running into the next month, today marked — round 6’s 19 to 1 November', () => {
-    const weeks = twoWeeks(new Date(2026, 9, 20, 9, 52), 1)
+    const weeks = weeksFrom(new Date(2026, 9, 20, 9, 52), 1, 2)
     expect(weeks.map((week) => week.map((day) => day.day))).toEqual([
       [19, 20, 21, 22, 23, 24, 25],
       [26, 27, 28, 29, 30, 31, 1],
@@ -18,9 +18,20 @@ describe('twoWeeks', () => {
     expect(weeks[1].map((day) => day.inMonth)).toEqual([true, true, true, true, true, true, false])
   })
 
+  it('is as many weeks as asked for: four from 16 November reach 13 December, the next month’s days marked', () => {
+    const weeks = weeksFrom(new Date(2026, 10, 16, 16), 1, 4)
+    expect(weeks.map((week) => [week[0].day, week[6].day])).toEqual([
+      [16, 22],
+      [23, 29],
+      [30, 6],
+      [7, 13],
+    ])
+    expect(weeks[2].map((day) => day.inMonth)).toEqual([true, false, false, false, false, false, false])
+  })
+
   it('gives each day its events and its holiday', () => {
     const events = [event('dentist', new Date(2026, 11, 22, 10), new Date(2026, 11, 22, 11))]
-    const days = twoWeeks(new Date(2026, 11, 21, 8), 1, events, ukBankHolidays(2026)).flat()
+    const days = weeksFrom(new Date(2026, 11, 21, 8), 1, 2, events, ukBankHolidays(2026)).flat()
     expect(days.find((day) => day.day === 22)?.events.map((e) => e.title)).toEqual(['dentist'])
     expect(days.find((day) => day.day === 25)?.holiday).toBe('Christmas Day')
   })

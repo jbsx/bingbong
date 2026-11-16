@@ -4,7 +4,7 @@ import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import { onIdleCard, type NowPlaying } from '../../core/music/nowPlaying'
 import type { CalendarEvent } from '../../core/calendar/calendar'
-import { firstDayOfWeek, monthEntries, twoWeeks, upNext, type UpNext, type WeekStart } from '../../core/calendar/month'
+import { firstDayOfWeek, monthEntries, upNext, weeksFrom, WEEKS_AHEAD, type UpNext, type WeekStart } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { clockParts, timeOfDay, type TimeFormat } from '../../core/idle/timeFormat'
@@ -52,6 +52,17 @@ const LEAN_NEWS_PX = 330
 
 /** How many of the month's entries the Calendar lists under its weeks. */
 const ENTRIES_SHOWN = 4
+
+/** The weeks the Calendar draws over a list of entries, and with its room to itself: the weeks give two rows to the list (a guess, 2026-11-16: no Calendar Source is wired, so no day has shown which the owner would rather keep). */
+const WEEKS_OVER_ENTRIES = 2
+
+/** The Calendar's height holding so many weeks (styles.css, .idle-cal): its padding, the Date Tile, the weekdays, a 62 px row a week and the room under the last row's dots. */
+function calendarHeight(weeks: number): number {
+  return 26 + 148 + 14 + 34 + 62 * weeks + 9
+}
+
+/** The Top Repos' three one-line rows, close set: what the News card asks for beside a Weight card that grows, and the least that still holds all three. */
+const NEWS_LEAN_PX = { full: 190, small: 160 }
 
 /**
  * The time on the Time Format's clock, the seconds when asked for and a
@@ -352,18 +363,20 @@ function entryWhen(event: CalendarEvent, format: TimeFormat): string {
  * The Calendar (CONTEXT.md), top right. The Date Tile, a tear-off leaf
  * of the weekday over today's date, is the one place the screen writes the
  * day and date, at a size read from the chair (owner, 2026-11-15); beside
- * it the month and year over this week and next, compact, today boxed, a
- * dot under a day with an entry. Under them the next bank holiday by name
- * when it falls this month or next, else how many entries the month has;
- * and the month's entries still to come while it has any (its full form).
+ * it the month and year over the next bank holiday by name when it falls
+ * this month or next, else how many entries the month has. Under them,
+ * across the card, the weeks from this one with their days at 40 px
+ * (owner, 2026-11-16: read from the chair), today boxed, a dot under a day
+ * with an entry: four weeks, or two over the month's entries still to come
+ * while it has any (its full form).
  */
 function CalendarCard({ now, weekStart, events, form, format }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; form: 'full' | 'small'; format: TimeFormat }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
   const holidays = [...ukBankHolidays(now.getFullYear()), ...ukBankHolidays(now.getFullYear() + 1)]
-  const weeks = twoWeeks(now, weekStart, events, holidays)
+  const entries = monthEntries(now, events)
+  const weeks = weeksFrom(now, weekStart, form === 'full' && entries.length === 0 ? WEEKS_AHEAD : WEEKS_OVER_ENTRIES, events, holidays)
   const next = nextHoliday(now, holidays)
   const coming = next !== null && holidaySoon(next.date, now) ? next : null
-  const entries = monthEntries(now, events)
   const monthName = now.toLocaleDateString([], { month: 'long' })
   return (
     <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
@@ -380,39 +393,43 @@ function CalendarCard({ now, weekStart, events, form, format }: { now: Date; wee
           <p className="idle-cal-month">
             {monthName} <span className="idle-cal-year">{now.getFullYear()}</span>
           </p>
-          <div className="idle-cal-grid" role="grid">
-            <div className="idle-cal-weekdays" role="row">
-              {weeks[0].map((day) => (
-                <span key={day.start} role="columnheader" className={day.isToday ? 'idle-cal-weekday idle-cal-weekday--today' : 'idle-cal-weekday'}>
-                  {weekdayName(new Date(day.start).getDay())}
-                </span>
-              ))}
-            </div>
-            {weeks.map((week) => (
-              <div key={week[0].start} className="idle-cal-week" role="row">
-                {week.map((day) => {
-                  const className = ['idle-cal-day', day.inMonth ? '' : 'idle-cal-day--outside', day.isToday ? 'idle-cal-day--today' : '', day.holiday !== null ? 'idle-cal-day--holiday' : ''].filter(Boolean).join(' ')
-                  const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
-                  return (
-                    <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
-                      <span className="idle-cal-num">{day.day}</span>
-                      {day.holiday !== null || day.events.length > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
+          {coming !== null ? (
+            <p className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
+              <span className="idle-cal-swatch" aria-hidden="true" />
+              <span className="idle-cal-holiday-words">
+                {coming.title}
+                <br />
+                <span className="idle-cal-holiday-date">{holidayDate(coming.date, now)}</span>
+              </span>
+            </p>
+          ) : (
+            <p className="idle-cal-none">{entries.length === 0 ? 'no events' : `${entries.length} this month`}</p>
+          )}
         </div>
       </div>
-      {coming !== null ? (
-        <p className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
-          <span className="idle-cal-swatch" aria-hidden="true" />
-          {coming.title} · {holidayDate(coming.date, now)}
-        </p>
-      ) : (
-        <p className="idle-cal-none">{entries.length === 0 ? 'no events' : `${entries.length} this month`}</p>
-      )}
+      <div className="idle-cal-grid" role="grid">
+        <div className="idle-cal-weekdays" role="row">
+          {weeks[0].map((day) => (
+            <span key={day.start} role="columnheader" className={day.isToday ? 'idle-cal-weekday idle-cal-weekday--today' : 'idle-cal-weekday'}>
+              {weekdayName(new Date(day.start).getDay())}
+            </span>
+          ))}
+        </div>
+        {weeks.map((week) => (
+          <div key={week[0].start} className="idle-cal-week" role="row">
+            {week.map((day) => {
+              const className = ['idle-cal-day', day.inMonth ? '' : 'idle-cal-day--outside', day.isToday ? 'idle-cal-day--today' : '', day.holiday !== null ? 'idle-cal-day--holiday' : ''].filter(Boolean).join(' ')
+              const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
+              return (
+                <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
+                  <span className="idle-cal-num">{day.day}</span>
+                  {day.holiday !== null || day.events.length > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
       {form === 'full' && entries.length > 0 ? (
         <ul className="idle-cal-entries" aria-label="this month">
           {entries.slice(0, ENTRIES_SHOWN).map((event) => (
@@ -576,17 +593,20 @@ export function IdleScreen({
   const weightRows = weighIns === null ? [] : weightCardRows(weighIns, weight)
   const entries = Math.min(ENTRIES_SHOWN, monthEntries(now, events).length)
 
+  const weightGrows = cards.includes('weight') && weightRows.length > 0 && weight.card.line
   // What each right-Column card asks of its Column (core/idle/columns): its full and smaller heights, and whether it grows.
   const ask = (id: IdleCardId): BandAsk<IdleCardId> => {
     switch (id) {
       case 'calendar':
-        return { id, full: 340 + (entries > 0 ? 28 + 42 * entries : 0), small: 340, grows: false }
+        // Four weeks with its room to itself; two over its entries, and two alone when the Column is short.
+        return { id, full: entries > 0 ? calendarHeight(WEEKS_OVER_ENTRIES) + 20 + 42 * entries : calendarHeight(WEEKS_AHEAD), small: calendarHeight(WEEKS_OVER_ENTRIES), grows: false }
       case 'weight':
         if (weightRows.length === 0) return { id, full: 140, small: 140, grows: false }
         // Smaller, each row keeps its figures over a shorter line.
         return weight.card.line ? { id, full: 64 + 178 * weightRows.length, small: weightRowsHeight(weightRows.length), grows: true } : { id, full: 40 + 100 * weightRows.length, small: 40 + 64 * weightRows.length, grows: false }
       case 'news':
-        return { id, full: 240, small: 150, grows: news.status === 'ready' }
+        // Its three rows on a line each, and the Column's spare room the Weight card's while that grows (owner, 2026-11-16: the Top Repos need no more).
+        return { id, full: NEWS_LEAN_PX.full, small: NEWS_LEAN_PX.small, grows: news.status === 'ready' && !weightGrows }
       default:
         // Not a right-Column card (columnCards hands this none).
         return { id, full: 0, small: 0, grows: false }

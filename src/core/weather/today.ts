@@ -36,6 +36,24 @@ export function dayBar(sunrise: string | null, sunset: string | null, now: strin
   return { sunrise: rise, sunset: set, now: at }
 }
 
+/**
+ * Where the sunrise and sunset times sit under the day bar, as shares of its width: each under its own edge, then
+ * moved the least it takes for both to stay inside the bar and clear of each other. `width` is one time's share of
+ * the bar (owner, 2026-11-16: the times at 40 px, read from the chair, so a short day's two no longer fit under their edges).
+ */
+export function sunLabelPlaces(bar: { sunrise: number; sunset: number }, width: number): { sunrise: number; sunset: number } {
+  const half = width / 2
+  const clamp = (share: number, low: number, high: number): number => Math.min(Math.max(share, low), Math.max(low, high))
+  let rise = clamp(bar.sunrise, half, 1 - half - width)
+  let set = clamp(bar.sunset, half + width, 1 - half)
+  const short = width - (set - rise)
+  if (short > 0) {
+    rise = clamp(rise - short / 2, half, 1 - half - width)
+    set = clamp(rise + width, half + width, 1 - half)
+  }
+  return { sunrise: rise, sunset: set }
+}
+
 /** An instant on the city's clock (its offset from UTC, as the forecast gives it), written as the forecast writes its times. */
 export function cityWallClock(at: number, utcOffsetSeconds: number): string {
   const city = new Date(at + utcOffsetSeconds * 1000)
