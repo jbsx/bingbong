@@ -3,7 +3,7 @@ import { hourLabel } from '../../core/weather/hourLabel'
 import { cityWallClock, dayBar, rainPeak, sunLabelPlaces } from '../../core/weather/today'
 import { temperatureHue, type WeatherHour, type WeatherOutlookDay, type WeatherReport } from '../../core/weather/weather'
 import type { WeatherUnits } from '../../core/settings/settings'
-import { WeatherIcon } from './WeatherIcon'
+import { SunriseIcon, SunsetIcon, WeatherIcon } from './WeatherIcon'
 
 function degrees(temperature: number): string {
   return `${Math.round(temperature)}°`
@@ -31,8 +31,8 @@ function Drop({ size }: { size: number }) {
   )
 }
 
-/** One sun time's share of the day bar's width at 40 px: "07:32" (120 of the bar's 454 px, with its gap), or a longer 12-hour time (a guess, no 12-hour shot measures it). */
-const SUN_TIME_SHARE = { short: 0.3, long: 0.42 } as const
+/** One sun time's share of the day bar's width at 40 px after its 36 px glyph: "07:32" (164 of the bar's 454 px, with its gap), or a longer 12-hour time (a guess, no 12-hour shot measures it). */
+const SUN_TIME_SHARE = { short: 0.4, long: 0.5 } as const
 
 /** The day from sunrise to sunset on its 24 hours, now marked on it — past sunset at night; the two times under it, read from the chair (owner, 2026-11-16). */
 function DayBar({ report, now, format }: { report: WeatherReport; now: number; format: TimeFormat }) {
@@ -52,9 +52,11 @@ function DayBar({ report, now, format }: { report: WeatherReport; now: number; f
         <span className="wx-day-now" style={{ left: percent(bar.now) }} />
       </span>
       <span className="wx-day-time" style={{ left: percent(places.sunrise) }}>
+        <SunriseIcon size={36} />
         {sunrise}
       </span>
       <span className="wx-day-time" style={{ left: percent(places.sunset) }}>
+        <SunsetIcon size={36} />
         {sunset}
       </span>
     </div>

@@ -118,6 +118,9 @@
   --wx-bolt: #c97a00;
   --wx-bolt-fill: rgba(201, 122, 0, 0.3);
   --wx-sunset: #b87600;
+  /* The day bar: the sky at dawn and dusk, and in daylight between them. */
+  --wx-dawn: #d6456b;
+  --wx-daylight: #3c9be0;
   --wx-sat: 72%;
   --wx-light: 42%;
   /* The AI usage card's provider tones. */
@@ -199,6 +202,8 @@
     --wx-bolt: #ff9f0a;
     --wx-bolt-fill: rgba(255, 159, 10, 0.3);
     --wx-sunset: #ffb340;
+    --wx-dawn: #ff9db5;
+    --wx-daylight: #9fd8ff;
     --wx-sat: 100%;
     --wx-light: 71%;
     --usage-glm: #8f5bff;
@@ -4134,8 +4139,8 @@ button.idle-line {
 
 /* The day bar: the 24 hours, sunrise to sunset lit, now marked; under it the two times in the sun's colour
    at 40 px, read from the chair (owner, 2026-11-16: at 16 px they were gone in the 2 m blur test), in the
-   values' white: in the sun's yellow they read brown, as its 35 % wash on the track did, so the lit span is
-   the sun's colour whole, as the low/high bar over it is its own. */
+   values' white, each after its sunrise or sunset glyph. The lit span is the sky: dawn's rose at its ends,
+   daylight's blue between (owner, 2026-11-16: the sun's yellow on the dark track "looks ugly"). */
 .wx-day {
   position: relative;
   height: 84px;
@@ -4162,8 +4167,7 @@ button.idle-line {
   top: 0;
   bottom: 0;
   border-radius: var(--radius-sm);
-  background: var(--wx-sun);
-  opacity: 0.8;
+  background: linear-gradient(90deg, var(--wx-dawn), var(--wx-daylight) 30%, var(--wx-daylight) 70%, var(--wx-dawn));
 }
 
 .wx-day-edge,
@@ -4173,7 +4177,7 @@ button.idle-line {
   width: 2px;
   height: 20px;
   margin-left: -1px;
-  background: var(--wx-sun);
+  background: var(--wx-dawn);
 }
 
 .wx-day-now {
@@ -4187,10 +4191,18 @@ button.idle-line {
 
 .wx-day-time {
   position: absolute;
-  top: 36px;
+  top: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   line-height: 1;
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+/* The sunrise and sunset glyphs, both in dawn's rose: which time is which, read before the figures. */
+.wx-day-time .wx-icon path {
+  stroke: var(--wx-dawn);
 }
 
 /* The rain at its peak, large, over the hours' chart. */

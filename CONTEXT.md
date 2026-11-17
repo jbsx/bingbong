@@ -1040,7 +1040,8 @@ What renders while nothing is happening: flat Tiles on a flat near-black
 ground (ADR 0078; the glass bento of #352 before it), in three Columns.
 Down the left the weather: the current conditions, today's high, low and
 rain chance, a day bar of sunrise to sunset with now marked on it and the
-two times under it at 40 px in white (2026-11-16, read from the chair), the rain
+two times under it at 40 px in white, each after its sunrise or sunset
+glyph (2026-11-16, read from the chair), the rain
 chance at its peak and the hour it peaks, the six coming hours and the three
 coming days, all in the city's own clock — every temperature in its hue
 from blue through green to red, rain in blue, so the day reads from across
